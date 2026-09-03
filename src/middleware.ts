@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/config-publica";
 
 /**
  * Renova a sessão Supabase a cada requisição e redireciona quem não está
@@ -15,19 +16,9 @@ import { createServerClient } from "@supabase/ssr";
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    // Sem config do Supabase o app não tem como validar sessão nenhuma.
-    // Fail-closed: não deixamos passar tráfego autenticado por engano.
-    return NextResponse.json(
-      { erro: "config_ausente", mensagem: "Configuração do Supabase ausente no servidor." },
-      { status: 503 },
-    );
-  }
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+  // Config pública vem de constante (ver src/lib/config-publica.ts): o proxy do
+  // Next não lê .env em execução, e depender disso aqui derrubava o site inteiro.
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
