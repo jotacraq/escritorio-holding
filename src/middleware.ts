@@ -75,6 +75,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Roda em tudo, exceto assets estáticos e o próprio Next internals.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|versao.txt|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
