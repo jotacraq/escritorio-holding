@@ -13,7 +13,34 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/config-publica";
  * execução; migrar para `proxy.ts` via `npx @next/codemod@canary middleware-to-proxy .`
  * é um follow-up de baixo risco, não uma correção urgente.
  */
+
+/**
+ * Prefixos que são o próprio produto de superfície pública (Link Público, Fase 2
+ * §2): jornada do cliente sem login, sem cookie, sem sessão. `pessoas.auth_user_id`
+ * continua NULL — ninguém aqui é "usuário autenticado", e mandar para /login
+ * apagaria a feature inteira (gap G17 do plano). Passar batido é intencional:
+ * a autorização de cada link é feita pela RPC (hash do token), não por este
+ * middleware — mesmo modelo de `ehRotaApi` mais abaixo.
+ */
+function ehRotaPublica(pathname: string): boolean {
+  return (
+    pathname === "/p" ||
+    pathname.startsWith("/p/") ||
+    pathname === "/api/publico" ||
+    pathname.startsWith("/api/publico/")
+  );
+}
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Bypass explícito e único: nada de sessão, nada de cookie Supabase, nada de
+  // redirect. Confira o matcher abaixo — mesmo que uma futura mudança amplie a
+  // regex, esta checagem continua restrita a estes dois prefixos exatos.
+  if (ehRotaPublica(pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   // Config pública vem de constante (ver src/lib/config-publica.ts): o proxy do
@@ -40,7 +67,6 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
   const ehRotaApi = pathname.startsWith("/api/");
   const ehPaginaLogin = pathname === "/login";
 

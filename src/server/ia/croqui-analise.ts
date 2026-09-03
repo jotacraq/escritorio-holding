@@ -1,12 +1,13 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { anthropicConfigurado, obterClienteAnthropic, type EffortIa } from "./cliente";
+import { obterClienteAnthropic, type EffortIa } from "./cliente";
 import { montarContextoAnaliseCroqui } from "./contexto-croqui";
 import { CroquiAnaliseSchema, type CroquiAnalise } from "./schema-croqui-analise";
 import { calcularCustoUsd } from "./precos";
 import { temConsentimento } from "./consentimento";
 import { erroServicoIndisponivel, erroNaoEncontrado, erroConsentimentoAusente, ErroIa } from "./erros";
+import { resolverModoIa, gerarAnaliseCroquiDemonstracao } from "./demonstracao";
 
 const CHAVE_PROMPT = "agente_croqui_analise";
 
@@ -28,8 +29,13 @@ interface PromptVersao {
  * Orquestra a análise do Agente do Croqui: recebe a transcrição da SV (no corpo
  * da requisição, nunca persistida além do necessário) + dados de ficha já
  * registrados, e devolve as 14 seções carimbadas por categoria. Mesmas travas
- * do briefing: sem ANTHROPIC_API_KEY → 503 antes de chamar; recusa/saída
- * inválida → execução marcada `falhou`, nunca análise fabricada.
+ * do briefing: sem ANTHROPIC_API_KEY e sem modo demonstração ligado → 503 antes
+ * de chamar; recusa/saída inválida → execução marcada `falhou`, nunca análise
+ * fabricada. Com o modo demonstração ligado (`resolverModoIa`,
+ * ARQUITETURA-FASE-2.md §3), devolve o exemplo fixo e marcado, ANTES de checar
+ * consentimento — a demonstração não olha `pessoaId`/`transcricaoSessao` de
+ * verdade, então a trava de consentimento (que existe para proteger dado real)
+ * não se aplica a ela.
  *
  * ALTO 2 (pentest 03/09/2026): exige `tem_consentimento(pessoa,'tratamento_ia')`
  * ANTES de montar contexto ou registrar execução — nome completo, familiares,
@@ -41,11 +47,15 @@ export async function gerarAnaliseCroqui(
   supabaseAdmin: SupabaseClient,
   params: { croquiId: string; jornadaId: string; pessoaId: string; transcricaoSessao: string; criadoPor: string | null },
 ): Promise<ResultadoAnaliseCroqui> {
-  if (!anthropicConfigurado()) {
+  const { croquiId, jornadaId, pessoaId, transcricaoSessao, criadoPor } = params;
+
+  const modoIa = resolverModoIa();
+  if (modoIa === "indisponivel") {
     throw erroServicoIndisponivel("ANTHROPIC_API_KEY ausente — análise do croqui indisponível");
   }
-
-  const { croquiId, jornadaId, pessoaId, transcricaoSessao, criadoPor } = params;
+  if (modoIa === "demonstracao") {
+    return gerarAnaliseCroquiDemonstracao(supabaseAdmin, { croquiId, jornadaId, criadoPor });
+  }
 
   const consentiu = await temConsentimento(supabaseAdmin, pessoaId, "tratamento_ia");
   if (!consentiu) {

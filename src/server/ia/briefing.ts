@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { anthropicConfigurado, obterClienteAnthropic, type EffortIa } from "./cliente";
+import { obterClienteAnthropic, type EffortIa } from "./cliente";
 import { montarContextoBriefing } from "./contexto-briefing";
 import { BriefingSchema, type Briefing } from "./schema-briefing";
 import { calcularCustoUsd } from "./precos";
 import { erroServicoIndisponivel, erroNaoEncontrado, ErroIa } from "./erros";
+import { resolverModoIa, gerarBriefingDemonstracao } from "./demonstracao";
 
 const CHAVE_PROMPT = "protocolo_01_briefing";
 
@@ -27,22 +28,28 @@ interface PromptVersao {
 }
 
 /**
- * Orquestra a geração do Briefing Estratégico (Protocolo 01). Nunca retorna
- * briefing de exemplo: se a IA não estiver configurada, lança 503 antes de
- * qualquer chamada. Se a IA recusar ou a saída não validar, grava a execução
- * como `falhou` e propaga o erro — nunca renderiza um briefing vazio como se
- * fosse análise.
+ * Orquestra a geração do Briefing Estratégico (Protocolo 01). Se a IA não
+ * estiver configurada: com o modo demonstração ligado (`resolverModoIa`,
+ * ARQUITETURA-FASE-2.md §3), devolve o exemplo fixo e marcado — nunca análise
+ * fabricada de um cliente real; sem o modo demonstração, lança 503 antes de
+ * qualquer chamada, exatamente como antes da Fase 2. Se a IA recusar ou a
+ * saída não validar, grava a execução como `falhou` e propaga o erro — nunca
+ * renderiza um briefing vazio como se fosse análise.
  */
 export async function gerarBriefing(
   supabaseAdmin: SupabaseClient,
   params: { jornadaId: string; criadoPor: string | null; forcarRegeracao?: boolean },
 ): Promise<ResultadoBriefing> {
-  if (!anthropicConfigurado()) {
+  const { jornadaId, criadoPor, forcarRegeracao } = params;
+
+  const modoIa = resolverModoIa();
+  if (modoIa === "indisponivel") {
     throw erroServicoIndisponivel("ANTHROPIC_API_KEY ausente — geração de briefing indisponível");
   }
 
-  const { jornadaId, criadoPor, forcarRegeracao } = params;
-
+  // "atual já existe, use forcar_regeracao" vale para os dois modos: sem isto,
+  // gerar demonstração em cima de um briefing real (ou vice-versa) criaria
+  // versão nova em silêncio a cada clique.
   if (!forcarRegeracao) {
     const { data: existente } = await supabaseAdmin
       .from("briefings")
@@ -53,6 +60,10 @@ export async function gerarBriefing(
     if (existente) {
       throw new ErroIa("briefing_atual_ja_existe: use forcar_regeracao=true para regerar", 409, "conflito");
     }
+  }
+
+  if (modoIa === "demonstracao") {
+    return gerarBriefingDemonstracao(supabaseAdmin, { jornadaId, criadoPor });
   }
 
   const { data: prompt, error: erroPrompt } = await supabaseAdmin

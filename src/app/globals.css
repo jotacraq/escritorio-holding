@@ -31,6 +31,15 @@
   --azul-fraco: #e5ecf3;
 
   --sombra-cartao: 0 1px 2px rgba(27, 28, 31, 0.06), 0 1px 0 rgba(27, 28, 31, 0.04);
+
+  /* Selo de demonstração (Fase 2, §3.4): fixos de propósito, NÃO redefinidos
+     em .dark e nem em @media print. A faixa que avisa "isto não é análise
+     real" não pode mudar de cor com o tema — tem que continuar óbvia no
+     escuro, na tela e na folha impressa. */
+  --demo-faixa: #92620a;
+  --demo-faixa-forte: #5f4718;
+  --demo-faixa-texto: #fff9ec;
+  --demo-fundo: #fbecc9;
 }
 
 .dark {
@@ -145,6 +154,33 @@ h1, h2, h3, h4 {
   border-radius: 999px;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Área pública — `src/app/(publico)/layout.tsx` (Fase 2, §2.5).           */
+/* Quem responde aqui é o cliente, no celular, muitas vezes sem ajuda por  */
+/* perto. Tipografia maior que o padrão interno e alvo de toque >= 44px.   */
+/* ---------------------------------------------------------------------- */
+.area-publica {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+.area-publica h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+.area-publica button,
+.area-publica input,
+.area-publica select,
+.area-publica textarea,
+.area-publica a.botao {
+  min-height: 44px;
+  font-size: 1rem;
+}
+@media (min-width: 640px) {
+  .area-publica h1 {
+    font-size: 1.75rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -168,5 +204,73 @@ h1, h2, h3, h4 {
   }
   a[href]::after {
     content: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Marca d'água do modo demonstração da IA (Fase 2, §3.4).                 */
+/* Aplicar `.marca-dagua-demonstracao` no contêiner de qualquer conteúdo   */
+/* gerado sem IA (o `<SeloDemonstracao>` já carrega a classe sozinho).     */
+/* A folha impressa e o modo apresentação não podem sair "limpos" — por    */
+/* isso a marca aparece na TELA também, não só em @media print.           */
+/* ---------------------------------------------------------------------- */
+.marca-dagua-demonstracao {
+  position: relative;
+  isolation: isolate;
+}
+
+.marca-dagua-demonstracao::before {
+  content: "EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO   EXEMPLO";
+  position: absolute;
+  inset: -60% -20%;
+  z-index: 0;
+  display: block;
+  overflow: hidden;
+  white-space: normal;
+  word-spacing: 1.75rem;
+  line-height: 3.5rem;
+  transform: rotate(-30deg);
+  font-family: var(--font-sans);
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--demo-faixa);
+  opacity: 0.14;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Conteúdo real do bloco fica acima da marca d'água. */
+.marca-dagua-demonstracao > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media print {
+  .marca-dagua-demonstracao::before {
+    color: #000;
+    opacity: 0.08;
+  }
+
+  /* Rodapé carimbado em toda folha impressa que contiver um bloco de
+     demonstração — `position: fixed` em @media print se repete em cada
+     página no Chromium, que é o motor por trás do "Salvar como PDF" do
+     navegador (o caminho real de impressão desta tela). */
+  .marca-dagua-demonstracao::after {
+    content: "EXEMPLO DE DEMONSTRAÇÃO — nenhum dado deste cliente foi analisado por IA. Documento sem valor de análise real.";
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 999;
+    padding: 6px 14px;
+    text-align: center;
+    background: #fff;
+    border-top: 2px solid #000;
+    color: #000;
+    font-family: var(--font-sans);
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.01em;
   }
 }

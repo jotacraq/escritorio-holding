@@ -5,6 +5,9 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 const ICONES: Record<string, ReactNode> = {
+  painel: (
+    <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4A1.5 1.5 0 0 1 10 3.5v4A1.5 1.5 0 0 1 8.5 9h-4A1.5 1.5 0 0 1 3 7.5v-4Zm9 0A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v4A1.5 1.5 0 0 1 15.5 9h-2A1.5 1.5 0 0 1 12 7.5v-4ZM3 12.5A1.5 1.5 0 0 1 4.5 11h2A1.5 1.5 0 0 1 8 12.5v4A1.5 1.5 0 0 1 6.5 18h-2A1.5 1.5 0 0 1 3 16.5v-4Zm9-1A1.5 1.5 0 0 1 13.5 10h4a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a1.5 1.5 0 0 1-1.5-1.5v-4Z" />
+  ),
   esteira: (
     <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h4A1.5 1.5 0 0 1 10 4.5v11A1.5 1.5 0 0 1 8.5 17h-4A1.5 1.5 0 0 1 3 15.5v-11Zm9-1A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v6A1.5 1.5 0 0 1 15.5 11h-2A1.5 1.5 0 0 1 12 9.5v-6Zm0 9A1.5 1.5 0 0 1 13.5 11h2a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-2a1.5 1.5 0 0 1-1.5-1.5v-3Z" />
   ),
@@ -20,13 +23,22 @@ const ICONES: Record<string, ReactNode> = {
   admin: (
     <path d="M10 2 3 5v5c0 4.2 2.9 7.7 7 8.9 4.1-1.2 7-4.7 7-8.9V5l-7-3Zm0 4.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5ZM6 14.2c.7-1.6 2.2-2.7 4-2.7s3.3 1.1 4 2.7c-1.1 1-2.5 1.7-4 2.1-1.5-.4-2.9-1.1-4-2.1Z" />
   ),
+  conhecimento: (
+    <path d="M3 4.2A1.2 1.2 0 0 1 4.2 3h4.6c.85 0 1.66.34 2.2.94A3.15 3.15 0 0 1 13.2 3h2.6A1.2 1.2 0 0 1 17 4.2v10.6a1.2 1.2 0 0 1-1.2 1.2h-3.51a2 2 0 0 0-1.42.59l-.29.29a1 1 0 0 1-1.16 0l-.29-.29a2 2 0 0 0-1.42-.59H4.2A1.2 1.2 0 0 1 3 14.8V4.2ZM9.25 6.1v8.4c.34.08.66.22.96.4V7.53a1.4 1.4 0 0 0-.96-1.43Z" />
+  ),
+  importacoes: (
+    <path d="M10 2a1 1 0 0 1 1 1v7.59l1.8-1.8a1 1 0 1 1 1.4 1.42l-3.5 3.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.42l1.8 1.8V3a1 1 0 0 1 1-1ZM4 13a1 1 0 0 1 1 1v1.5a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V14a1 1 0 1 1 2 0v1.5A2.5 2.5 0 0 1 14.5 18h-9A2.5 2.5 0 0 1 3 15.5V14a1 1 0 0 1 1-1Z" />
+  ),
 };
 
 const ITENS = [
+  { href: "/painel", rotulo: "Painel", icone: "painel" },
   { href: "/esteira", rotulo: "Esteira", icone: "esteira" },
   { href: "/agenda", rotulo: "Agenda", icone: "agenda" },
   { href: "/comunicacao", rotulo: "Comunicação", icone: "comunicacao" },
   { href: "/indicadores", rotulo: "Indicadores", icone: "indicadores" },
+  { href: "/conhecimento", rotulo: "Conhecimento", icone: "conhecimento" },
+  { href: "/importacoes", rotulo: "Importações", icone: "importacoes" },
   { href: "/admin", rotulo: "Admin", icone: "admin" },
 ] as const;
 
