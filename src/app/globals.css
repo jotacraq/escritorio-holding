@@ -1,26 +1,172 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------- */
+/* SIC-HF — sistema de tokens visuais                                      */
+/* Escritório de planejamento patrimonial: sóbrio, denso, imprimível.      */
+/* Papel + tinta + selo de latão. Nada de gradiente de startup.            */
+/* ---------------------------------------------------------------------- */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --papel: #f6f4ee;
+  --papel-elevado: #fffdf8;
+  --papel-fundo: #efece2;
+  --tinta: #1b1c1f;
+  --tinta-suave: #52514c;
+  --tinta-fraca: #85837a;
+  --linha: #ded9c9;
+  --linha-forte: #c7c0aa;
+  --latao: #7c5e26;
+  --latao-forte: #5f4718;
+  --latao-fraco: #efe4c9;
+  --verde: #2f6b4f;
+  --verde-fraco: #e4efe8;
+  --vermelho: #9c3b2e;
+  --vermelho-fraco: #f6e6e3;
+  --ambar: #92620a;
+  --ambar-fraco: #fbecc9;
+  --ambar-borda: #d6a324;
+  --azul: #395a80;
+  --azul-fraco: #e5ecf3;
+
+  --sombra-cartao: 0 1px 2px rgba(27, 28, 31, 0.06), 0 1px 0 rgba(27, 28, 31, 0.04);
+}
+
+.dark {
+  --papel: #16171a;
+  --papel-elevado: #1d1f23;
+  --papel-fundo: #0f1012;
+  --tinta: #ece9df;
+  --tinta-suave: #b3b0a3;
+  --tinta-fraca: #837f72;
+  --linha: #2d2f34;
+  --linha-forte: #3c3e44;
+  --latao: #d3ac4c;
+  --latao-forte: #e9c765;
+  --latao-fraco: #362c14;
+  --verde: #5fa683;
+  --verde-fraco: #163024;
+  --vermelho: #e08979;
+  --vermelho-fraco: #341c18;
+  --ambar: #e4b23c;
+  --ambar-fraco: #332a11;
+  --ambar-borda: #92620a;
+  --azul: #8fb0d6;
+  --azul-fraco: #182430;
+
+  --sombra-cartao: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-papel: var(--papel);
+  --color-papel-elevado: var(--papel-elevado);
+  --color-papel-fundo: var(--papel-fundo);
+  --color-tinta: var(--tinta);
+  --color-tinta-suave: var(--tinta-suave);
+  --color-tinta-fraca: var(--tinta-fraca);
+  --color-linha: var(--linha);
+  --color-linha-forte: var(--linha-forte);
+  --color-latao: var(--latao);
+  --color-latao-forte: var(--latao-forte);
+  --color-latao-fraco: var(--latao-fraco);
+  --color-verde: var(--verde);
+  --color-verde-fraco: var(--verde-fraco);
+  --color-vermelho: var(--vermelho);
+  --color-vermelho-fraco: var(--vermelho-fraco);
+  --color-ambar: var(--ambar);
+  --color-ambar-fraco: var(--ambar-fraco);
+  --color-ambar-borda: var(--ambar-borda);
+  --color-azul: var(--azul);
+  --color-azul-fraco: var(--azul-fraco);
+
+  --font-serif: var(--font-plex-serif), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-plex-sans), "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), "SFMono-Regular", Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--linha);
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--papel-fundo);
+  color: var(--tinta);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+
+/* Foco visível — nunca removido, só redesenhado. */
+:focus-visible {
+  outline: 2px solid var(--latao);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--latao-fraco);
+  color: var(--tinta);
+}
+
+/* Barra de rolagem discreta, consistente nos dois temas */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--linha-forte) transparent;
+}
+
+/* Trilha da esteira (kanban): rolagem própria na horizontal, sem levar o body
+   junto. O contraste do polegar é reforçado aqui — no resto da tela ele fica
+   discreto de propósito, mas numa faixa que é a única pista de "tem mais
+   coluna pra lá" ele precisa ser visto. */
+.trilha-esteira {
+  scrollbar-width: auto;
+  scrollbar-color: var(--tinta-fraca) var(--linha);
+}
+.trilha-esteira::-webkit-scrollbar {
+  height: 10px;
+}
+.trilha-esteira::-webkit-scrollbar-track {
+  background: var(--linha);
+  border-radius: 999px;
+}
+.trilha-esteira::-webkit-scrollbar-thumb {
+  background: var(--tinta-fraca);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Impressão: a Dra. Elaine leva isto para a mesa de reunião. */
+@media print {
+  .nao-imprimir {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .imprimir-quebra {
+    break-after: page;
+  }
+  a[href]::after {
+    content: none !important;
+  }
 }
