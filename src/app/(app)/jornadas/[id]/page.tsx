@@ -7,10 +7,14 @@ import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { FormularioAba } from "@/components/ficha360/FormularioAba";
 import { LigacaoAba } from "@/components/ficha360/LigacaoAba";
+import { LinksAba } from "@/components/ficha360/LinksAba";
 import { PatrimonioAba } from "@/components/ficha360/PatrimonioAba";
 import { DocumentosAba } from "@/components/ficha360/DocumentosAba";
 import { SessaoAba } from "@/components/ficha360/SessaoAba";
+import { RelatorioAba } from "@/components/ficha360/RelatorioAba";
 import { BriefingAba } from "@/components/briefing/BriefingAba";
+import { MaterialAba } from "@/components/ficha360/MaterialAba";
+import { PesquisaPublicaAba } from "@/components/ficha360/PesquisaPublicaAba";
 import { CroquiAba } from "@/components/ficha360/CroquiAba";
 import { TimelineAba } from "@/components/ficha360/TimelineAba";
 
@@ -29,6 +33,7 @@ export default function PaginaFicha360({ params }: { params: Promise<{ id: strin
   const abas: DefinicaoAba[] = [
     { id: "formulario", rotulo: "Formulário", conteudo: <FormularioAba jornadaId={id} /> },
     { id: "ligacao", rotulo: "Ligação", conteudo: <LigacaoAba jornadaId={id} ligacaoInicial={ficha.ligacao} trilha={ficha.jornada.trilha} aoAtualizar={recarregar} /> },
+    { id: "links", rotulo: "Links", conteudo: <LinksAba jornadaId={id} /> },
   ];
 
   if (podeVerPatrimonio) {
@@ -41,7 +46,17 @@ export default function PaginaFicha360({ params }: { params: Promise<{ id: strin
   }
 
   abas.push({ id: "sessao", rotulo: "Sessão", conteudo: <SessaoAba jornadaId={id} sessao={ficha.sessao} agendamentos={ficha.agendamentos} aoAtualizar={recarregar} /> });
+
+  // Relatório da SV carrega patrimônio (`exigirVePatrimonio` na rota) — mesmo
+  // recorte de Patrimônio/Documentos/Croqui: a aba nem aparece pra quem o
+  // servidor negaria.
+  if (podeVerPatrimonio) {
+    abas.push({ id: "relatorio", rotulo: "Relatório", conteudo: <RelatorioAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} /> });
+  }
+
   abas.push({ id: "briefing", rotulo: "Briefing", conteudo: <BriefingAba jornadaId={id} briefingAtualId={ficha.briefingAtual?.id ?? null} /> });
+  abas.push({ id: "material", rotulo: "Material", conteudo: <MaterialAba jornadaId={id} /> });
+  abas.push({ id: "pesquisa", rotulo: "Pesquisa pública", conteudo: <PesquisaPublicaAba /> });
 
   if (podeVerPatrimonio) {
     abas.push({ id: "croqui", rotulo: "Croqui", conteudo: <CroquiAba jornadaId={id} timeline={ficha.timeline} /> });

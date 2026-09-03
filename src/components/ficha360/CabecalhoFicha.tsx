@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useEtapasOrdem } from "@/hooks/useJornadas";
 import { atualizarEtapa, ApiError, type DesfechoJornada, type Ficha360 } from "@/lib/api";
 import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
@@ -63,6 +64,12 @@ export function CabecalhoFicha({ ficha, aoAtualizar }: { ficha: Ficha360; aoAtua
           <Selo tom="azul">{rotuloEtapa}</Selo>
           <Selo tom={ROTULOS_DESFECHO[jornada.desfecho].tom}>{ROTULOS_DESFECHO[jornada.desfecho].rotulo}</Selo>
           <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
+          <Link
+            href={`/sessoes/${jornada.id}/conduzir`}
+            className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-sm border border-transparent bg-[color:var(--latao)] px-3.5 py-2 text-sm font-medium text-papel-elevado transition-colors hover:bg-[color:var(--latao-forte)]"
+          >
+            Conduzir sessão
+          </Link>
         </div>
       </div>
 
