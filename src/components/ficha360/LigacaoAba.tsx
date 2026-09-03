@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { atualizarLigacao, criarLigacao, ApiError, type EstiloResposta, type Ficha360, type LigacaoEstrategica, type ProcessoDecisorio, type Ritmo } from "@/lib/api";
+import { buscarRoteiroAtivo, ErroFicha360Api } from "@/components/ficha360/api";
+import type { RoteiroBloco } from "@/types/roteiro";
 import { Botao } from "@/components/ui/Botao";
-import { SeloStub } from "@/components/ui/Selo";
+import { EstadoCarregando } from "@/components/ui/Estado";
 import { formatarDataHora } from "@/lib/formatar";
 
 const SINAIS_CONHECIDOS = [
@@ -36,10 +38,11 @@ const PERGUNTAS_ROTEIRO = [
   { id: "p5", texto: "Que assunto merece atenção especial da Dra. Elaine?" },
 ];
 
-function vazio(jornadaId: string): LigacaoEstrategica {
+/** Trilha "preliminar" (sem seminário) roda o POP 03-B; "seminario" roda o POP 03 — mesmo mapeamento do trigger `ligacoes_estrategicas_roteiro` (0030). */
+function vazio(jornadaId: string, trilha: Ficha360["jornada"]["trilha"]): LigacaoEstrategica {
   return {
     jornada_id: jornadaId,
-    pop: "03",
+    pop: trilha === "preliminar" ? "03-B" : "03",
     realizada_em: null,
     duracao_segundos: null,
     respostas: {},
@@ -98,15 +101,90 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
   );
 }
 
+/**
+ * Roteiro do POP 03-B vem do banco (`roteiros_versoes`, chave `pop_03b`) — ao
+ * contrário do POP 03, que segue com as 5 perguntas fixas de `PERGUNTAS_ROTEIRO`
+ * (histórico, sem risco de regressão). Um único bloco na definição (ver seed
+ * 0030): os `campos` viram as perguntas do formulário, `observar`/`proibido`
+ * viram os dois avisos abaixo — mesmo vocabulário de `BlocoRoteiro` (modo
+ * conduzir), simplificado aqui porque isto é registro pós-ligação, não leitura
+ * ao vivo.
+ */
+function RoteiroPop03B({ respostas, aoMudarResposta }: { respostas: Record<string, string>; aoMudarResposta: (id: string, valor: string) => void }) {
+  const [bloco, setBloco] = useState<RoteiroBloco | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    setCarregando(true);
+    setErro(null);
+    buscarRoteiroAtivo("pop_03b")
+      .then((roteiro) => {
+        if (!vivo) return;
+        setBloco(roteiro.definicao.blocos[0] ?? null);
+      })
+      .catch((e) => {
+        if (vivo) setErro(e instanceof ErroFicha360Api ? e.message : "Não foi possível carregar o roteiro do POP 03-B.");
+      })
+      .finally(() => {
+        if (vivo) setCarregando(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  if (carregando) return <EstadoCarregando rotulo="Carregando roteiro do POP 03-B…" />;
+  if (erro) return <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>;
+  if (!bloco) return <p className="text-sm text-tinta-suave">Nenhuma versão ativa de roteiro para o POP 03-B.</p>;
+
+  return (
+    <>
+      {bloco.campos.map((campo) => (
+        <div key={campo.id} className="flex flex-col gap-1">
+          <label htmlFor={`ligacao-${campo.id}`} className="text-sm font-medium text-tinta">
+            {campo.rotulo}
+          </label>
+          <textarea
+            id={`ligacao-${campo.id}`}
+            rows={2}
+            value={respostas[campo.id] ?? ""}
+            onChange={(e) => aoMudarResposta(campo.id, e.target.value)}
+            className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
+          />
+        </div>
+      ))}
+      {bloco.observar.length > 0 && (
+        <div className="rounded-sm border border-azul bg-azul-fraco px-3 py-2.5">
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--azul)]">Observar na resposta</p>
+          <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--azul)]">
+            {bloco.observar.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {bloco.proibido.length > 0 && (
+        <div role="alert" className="rounded-sm border-2 border-vermelho bg-vermelho-fraco px-3 py-2.5">
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Proibido nesta ligação</p>
+          <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--vermelho)]">
+            {bloco.proibido.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: { jornadaId: string; ligacaoInicial: LigacaoEstrategica | null; trilha: Ficha360["jornada"]["trilha"]; aoAtualizar: () => void }) {
-  const [ligacao, setLigacao] = useState<LigacaoEstrategica>(ligacaoInicial ?? vazio(jornadaId));
+  const [ligacao, setLigacao] = useState<LigacaoEstrategica>(ligacaoInicial ?? vazio(jornadaId, trilha));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
-
-  if (trilha === "preliminar") {
-    return <SeloStub texto="POP 03-B (trilha preliminar, sem seminário) — desenhado no schema, não implementado nesta fase do MVP." />;
-  }
+  const pop03b = ligacao.pop === "03-B";
 
   async function salvar() {
     setSalvando(true);
@@ -127,25 +205,34 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-tinta-fraca">
-        POP 03 · Ligação Estratégica{ligacaoInicial?.realizada_em && ` · registrada em ${formatarDataHora(ligacaoInicial.realizada_em)}`}
+        POP {pop03b ? "03-B" : "03"} · Ligação Estratégica{ligacaoInicial?.realizada_em && ` · registrada em ${formatarDataHora(ligacaoInicial.realizada_em)}`}
       </p>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Roteiro (5 perguntas)</legend>
-        {PERGUNTAS_ROTEIRO.map((p) => (
-          <div key={p.id} className="flex flex-col gap-1">
-            <label htmlFor={`ligacao-${p.id}`} className="text-sm font-medium text-tinta">
-              {p.texto}
-            </label>
-            <textarea
-              id={`ligacao-${p.id}`}
-              rows={2}
-              value={ligacao.respostas[p.id] ?? ""}
-              onChange={(e) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [p.id]: e.target.value } }))}
-              className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
-            />
-          </div>
-        ))}
+        <legend className="font-serif text-base font-semibold text-tinta">
+          {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro (5 perguntas)"}
+        </legend>
+        {pop03b ? (
+          <RoteiroPop03B
+            respostas={ligacao.respostas}
+            aoMudarResposta={(id, valor) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [id]: valor } }))}
+          />
+        ) : (
+          PERGUNTAS_ROTEIRO.map((p) => (
+            <div key={p.id} className="flex flex-col gap-1">
+              <label htmlFor={`ligacao-${p.id}`} className="text-sm font-medium text-tinta">
+                {p.texto}
+              </label>
+              <textarea
+                id={`ligacao-${p.id}`}
+                rows={2}
+                value={ligacao.respostas[p.id] ?? ""}
+                onChange={(e) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [p.id]: e.target.value } }))}
+                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
+              />
+            </div>
+          ))
+        )}
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
