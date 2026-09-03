@@ -3,6 +3,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Custo em USD nunca é constante no código — vive em `modelos_ia_precos`
  * (ARQUITETURA.md §4.6, §2.9). Trocar preço é UPDATE, não deploy.
+ *
+ * FALLBACK desde a migração para OpenRouter (B1-5): o OpenRouter informa
+ * `usage.cost` pronto na resposta — `executar.ts` usa isso primeiro. Esta
+ * função só roda quando `custoUsdInformado` vier `null` (adaptador Anthropic
+ * direto, ou resposta do OpenRouter sem `cost`). Não apagar: é o fallback E o
+ * histórico de preço para telemetria antiga.
  */
 
 export interface TokensUso {

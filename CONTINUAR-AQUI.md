@@ -1,7 +1,16 @@
 # Continuar daqui — SIC-HF
 
-Escrito em **03/09/2026**, para retomar o projeto em outra máquina sem perder contexto.
+Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — Fase 3),
+para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
+
+> **Sessão de 03/09 à noite (esta atualização):** deploy destravado (site estava
+> respondendo por um processo Node órfão — resolvido recriando o site do zero no
+> hPanel, não por API) e camada de IA migrada de Anthropic direta para
+> OpenRouter (rota pinada só na Anthropic). Ver §2, §4b e §7 para o que mudou e
+> o que ainda falta. O usuário não pôde auditar o fechamento desta sessão — leia
+> §11 (Pendências desta sessão que precisam de revisão humana) antes de confiar
+> cegamente no que está aqui.
 
 ---
 
@@ -27,8 +36,9 @@ Três frases que mudam o produto inteiro, e vêm do documento institucional da p
 | **Banco** | Supabase `fcfsnqqaphtamhrpuyoh`, região `sa-east-1` — **39 migrations aplicadas** |
 | **Banco, números** | 51 tabelas · 12 views · 109 policies · **0 tabela sem RLS** · **0 policy `ALL` em tabela com PII** · **0 grant de tabela para `anon`** |
 | **Conteúdo real** | 70 transcrições de reuniões · 52 casos · 6 roteiros versionados · 5 prompts ativos · 5 modelos de material |
-| **Deploy** | `escritorio.grupoparticipa.app.br` — **travado, ver §6** |
-| **Rodadas feitas** | MVP (fase 1) e Fase 2, ambas aprovadas na trava de qualidade |
+| **Deploy** | `escritorio.grupoparticipa.app.br` — **no ar**, site recriado do zero no hPanel nesta sessão, build via GitHub, login funcionando |
+| **Provedor de IA** | **OpenRouter** (rota pinada `provider.order=["anthropic"]`), não mais Anthropic direto — ver §4b |
+| **Rodadas feitas** | MVP (fase 1), Fase 2 e início da Fase 3 (migração de IA), aprovadas na trava de qualidade |
 
 ---
 
@@ -56,18 +66,74 @@ O banco é compartilhado: **a máquina nova já vê todo o dado**, não precisa 
 
 ## 4. As chaves que faltam — a maior alavanca
 
-Estas são a diferença entre "o sistema funciona" e "o sistema está no ar":
+Estado após a sessão de 03/09 à noite: `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`,
+`LINK_PUBLICO_PEPPER` e `OPENROUTER_API_KEY` **já estão aplicadas** nas
+Environment Variables do Node.js App na Hostinger (hPanel → o site → Node.js →
+Environment) e replicadas em `.env.local` (não versionado — cópia deixada em
+`Downloads\.env.local` na máquina onde isso foi feito, para levar à máquina nova).
+
+Ainda faltam:
 
 | Variável | Onde pegar | O que destrava |
 |---|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | painel do Supabase → Settings → API | upload de documento, webhook, cron da régua, convite de equipe, geração de IA |
-| `ANTHROPIC_API_KEY` | console.anthropic.com | **as duas IAs** (Briefing e Agente do Croqui) |
 | `HOTMART_WEBHOOK_SECRET` + os 3 `hotmart_produto_id` | painel da Hotmart | entrada de pagamento; hoje todo evento cai em `produto_nao_mapeado` |
 | `RESEND_API_KEY` + `EMAIL_FROM` | Resend | envio real da régua; hoje a mensagem fica na fila |
-
-Já geradas e em uso: `LINK_PUBLICO_PEPPER` e `CRON_SECRET` (estão no `.env.local` da máquina antiga — **regenere na nova**, são segredos e não estão versionados).
+| `ANTHROPIC_API_KEY` | console.anthropic.com | **opcional** — só serve como caminho de rollback de incidente (`IA_PROVEDOR=anthropic`); a IA já funciona via OpenRouter sem ela |
 
 **Nada disso quebra o sistema sem existir.** Todo caminho responde **503 dizendo o que falta** — nunca um dado falso. `GET /api/diagnostico` (header `x-cron-secret`) diz quais variáveis o servidor enxerga, sem revelar valor.
+
+## 4b. Migração de IA: Anthropic direta → OpenRouter (feita em 03/09 à noite)
+
+**Por quê:** decisão do usuário para reduzir custo/dependência, usando crédito já
+disponível no OpenRouter em vez de criar uma API key paga direto na Anthropic.
+
+**O que mudou:**
+- Nova interface `ProvedorIa` (`src/server/ia/provedor/tipos.ts`) — os 4
+  chamadores de IA (`briefing.ts`, `croqui-analise.ts`, `material.ts`,
+  `agenda/ordenar-horarios.ts`) não falam mais com um SDK específico; falam com
+  `executarComAuditoria()` (`src/server/ia/executar.ts`), que resolve o
+  provedor ativo via `IA_PROVEDOR` (env, default `openrouter`).
+- Adaptador OpenRouter (`provedor/openrouter.ts`): `fetch` cru (sem SDK novo,
+  mesmo padrão de `regua/email.ts`), rota **pinada só na Anthropic**
+  (`provider.order=["anthropic"], allow_fallbacks:false`) — decisão de LGPD:
+  mantém a mesma cadeia de subprocessador de hoje, sem risco de o dado de
+  patrimônio ser roteado silenciosamente para Bedrock/Vertex/Azure.
+- Adaptador Anthropic antigo preservado (`provedor/anthropic.ts`) — caminho de
+  reversão sem deploy: `IA_PROVEDOR=anthropic` na Hostinger + restart, se o
+  OpenRouter falhar ou o crédito acabar. `@anthropic-ai/sdk` continua no
+  `package.json` de propósito.
+- Structured output: `zodOutputFormat` nativo da Anthropic não existe no
+  OpenRouter — substituído por `response_format` com JSON Schema estrito
+  (`provedor/json-schema-estrito.ts`, remove `minLength/minimum/maximum` que o
+  modo `strict:true` rejeita) + `schema.safeParse()` como autoridade final +
+  1 re-tentativa automática se a saída não validar.
+- Custo: `usage.cost` do OpenRouter é usado direto quando disponível;
+  `calcularCustoUsd` (`precos.ts`) virou fallback, não caminho principal.
+- Migration `0040_modelos_openrouter.sql` — aplicada no banco remoto
+  (`fcfsnqqaphtamhrpuyoh`) nesta sessão via MCP do Supabase.
+
+**Modelo escolhido — MUDOU DE PLANO NO MEIO DA SESSÃO, leia isto:**
+O plano original (arquiteto) previa Opus para Briefing/Análise do Croqui
+(diagnóstico) e Sonnet para material/ordenação (personalização). Na prática,
+`anthropic/claude-opus-5` com `reasoning.max_tokens=4096` + `response_format`
+estrito + o `BriefingSchema` completo (13 seções) devolveu corpo vazio/inválido
+(`openrouter_resposta_vazia`) em chamada real, embora chamadas isoladas com
+schema simples no mesmo modelo funcionassem normalmente. **Não houve tempo de
+isolar a causa raiz** (schema grande demais para o strict do Opus? falha
+transitória do provider?) antes do fim da sessão. Decisão tomada: **Sonnet nas
+4 tarefas** — testado de ponta a ponta com sucesso (`gerarBriefing` real contra
+jornada existente, custo medido **US$0,0738**, latência ~70s, `stop_reason:
+end_turn`, `status: concluida`). Se algum dia quiser Opus no diagnóstico,
+reproduza o bug primeiro com um script descartável antes de trocar
+`prompts_versoes.modelo_padrao` de volta — não assuma que foi resolvido só por
+trocar o modelo.
+
+**Pentest (03/09, mesma sessão):** aprovado, zero achado crítico/alto. Um médio
+corrigido na hora (timeout ausente no adaptador Anthropic de rollback — agora
+tem os mesmos 120s do OpenRouter). Uma observação baixa não corrigida: mensagem
+de erro do OpenRouter gravada em `execucoes_ia.erro` pode, em teoria, ecoar
+fragmento de prompt se o provedor alguma vez devolver isso num erro 400 — não
+reproduzido, fica registrado como hipótese para o próximo pentest.
 
 ---
 
@@ -87,20 +153,38 @@ Sem elas o sistema funciona, mas parte do método fica desligada. Estão detalha
 
 ---
 
-## 6. Deploy — o que está travado e como destravar
+## 6. Deploy — RESOLVIDO em 03/09 à noite (histórico abaixo, para quem chegar depois)
 
-**Domínio:** `escritorio.grupoparticipa.app.br` (DNS na Cloudflare, hospedagem Hostinger).
+**Domínio:** `escritorio.grupoparticipa.app.br` (DNS na Cloudflare, hospedagem Hostinger). **No ar.**
 
-**Sintoma:** qualquer rota responde `{"erro":"config_ausente"}` — uma string que **não existe mais no código**. O servidor executa um build antigo e os deploys novos não assumem o hostname.
+**O que estava acontecendo:** qualquer rota respondia `{"erro":"config_ausente"}` —
+uma string que não existia mais no código. Builds novos compilavam limpos
+(confirmado via API da Hostinger: `state: completed`), mas o processo que
+respondia ao hostname continuava sendo outro, mais antigo — processo Node
+órfão, exatamente a hipótese que já estava escrita aqui. Restart do app
+(`hosting_restartNode_jsApplicationV1`) e build novo via zip **não resolveram**
+— o processo órfão sobreviveu aos dois.
 
-**Já tentado, sem efeito:** 6 deploys com pacote de nome único, 3 reinícios, apagar o site inteiro e recriar do zero, cache-buster. O build no servidor compila o código novo (o log lista rotas que só existem na versão nova) — o processo que atende é que é outro.
+**O que resolveu:** o site foi **apagado e recriado do zero** no hPanel
+(ação manual, feita pelo usuário — não por API; a API não expõe como matar um
+processo específico, só listar/criar/deletar o site inteiro, e deletar+recriar
+por API também não tinha sido tentado com sucesso antes). Isso matou o processo
+órfão junto com o site velho. O site novo foi conectado direto ao repositório
+GitHub (`source_type: git`, não mais zip manual) — Node 22, autodetectado pelo
+hPanel ao conectar via git (os builds antigos bem-sucedidos usavam Node 20; não
+houve tempo de confirmar se o Node 22 é 100% estável para este projeto, ver §11).
 
-**Hipótese:** processo Node órfão do primeiro deploy, de quando o host ainda era subdomínio do site pai. A API de hospedagem não expõe como matá-lo.
+**Env vars reaplicadas** após a recriação (o site novo nasce sem nenhuma):
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_APP_URL`, `IA_MODO_DEMONSTRACAO`,
+`CONHECIMENTO_ANALISE_IA`, `CRON_SECRET`, `LINK_PUBLICO_PEPPER`,
+`OPENROUTER_API_KEY` — todas via hPanel → Node.js App → Environment Variables.
 
-**Como resolver — precisa de mão humana:**
-1. hPanel → `grupoparticipa.app.br` → **Node.js App**: achar uma aplicação órfã apontando para `.../public_html/escritorio` e **parar/remover**.
-2. Se não aparecer: chamado no suporte da Hostinger — *"processo Node preso servindo escritorio.grupoparticipa.app.br; o site foi recriado e os deploys novos não assumem o hostname"*.
-3. Depois disso, redeployar (o passo a passo está em `brain/04 - Tecnico/Deploy na Hostinger.md`).
+**Se o sintoma voltar em outra recriação futura:** repetir o mesmo caminho —
+apagar e recriar o site no hPanel é mais confiável do que tentar destravar o
+processo órfão por restart/rebuild. Redeployar depois: reconectar ao GitHub
+(mais simples que subir zip manual) ou usar o fluxo de upload TUS documentado
+em `brain/04 - Tecnico/Deploy na Hostinger.md`.
 
 O site principal `grupoparticipa.app.br` **está intacto** — foi conferido; são apps distintos.
 
@@ -111,11 +195,11 @@ O site principal `grupoparticipa.app.br` **está intacto** — foi conferido; s�
 Ordenado pelo que muda mais a vida do escritório.
 
 ### Alta prioridade
-1. **Destravar o deploy** (§6) e colocar no ar.
-2. **Ligar as IAs** com a `ANTHROPIC_API_KEY` e rodar o primeiro briefing real — hoje só o modo demonstração foi exercitado.
-3. **Ligar a Hotmart**: cadastrar os 3 produtos, configurar o webhook e **testar um pagamento de verdade**. Junto disso, fechar o reprocessamento de webhook que falhou (a RPC existe; falta a rota testar `processado_em is null` antes de responder "já recebi").
-4. **Régua no ar**: `RESEND_API_KEY`, domínio de e-mail verificado, e cron do painel da Hostinger batendo em `/api/cron/regua` a cada 5 min.
-5. **Trava de LGPD com peso jurídico** (achado MÉDIO do pentest): hoje a flag que libera IA sobre transcrição é um boolean editável por qualquer admin, sem registrar quem decidiu. Deveria ser uma tabela `decisoes_juridicas` com base legal, quem decidiu e quando — e o trigger olhar para lá.
+1. ~~Destravar o deploy~~ **FEITO em 03/09 à noite** — ver §6.
+2. ~~Ligar as IAs~~ **FEITO em 03/09 à noite** — migrado para OpenRouter, testado com Briefing real, ver §4b. Falta ainda: rodar o primeiro Briefing contra um cliente real (o teste desta sessão usou uma jornada de seed/teste com pouco dado, `grauConfianca: 10`, `modoReduzido: true` — esperado para dado insuficiente, mas ninguém validou a qualidade do texto contra um caso real ainda).
+3. **Ligar a Hotmart**: cadastrar os 3 produtos, configurar o webhook e **testar um pagamento de verdade**. Junto disso, fechar o reprocessamento de webhook que falhou (a RPC existe; falta a rota testar `processado_em is null` antes de responder "já recebi"). **O arquiteto já desenhou isso em detalhe nesta sessão (Frente 2) — não foi implementado por falta dos 3 IDs reais e confirmação do mecanismo de assinatura (hottok vs HMAC). Plano completo não está salvo em arquivo — se perdido, peça ao arquiteto para redesenhar, é rápido.**
+4. **Régua no ar**: `RESEND_API_KEY`, domínio de e-mail verificado, e cron do painel da Hostinger batendo em `/api/cron/regua` a cada 5 min. **Também desenhado nesta sessão (Frente 3) — código já está quase pronto (`regua/email.ts`, `regua/processar.ts`), só falta a env var, o DNS do domínio de e-mail e o cron do hPanel.**
+5. **Trava de LGPD com peso jurídico** (achado MÉDIO do pentest): hoje a flag que libera IA sobre transcrição é um boolean editável por qualquer admin, sem registrar quem decidiu. Deveria ser uma tabela `decisoes_juridicas` com base legal, quem decidiu e quando — e o trigger olhar para lá. **Ganhou peso extra com a migração para OpenRouter: o consentimento de tratamento por IA (`erros.ts`) nomeia "Anthropic" no texto — confirmar com a Dra. Elaine se isso cobre um subprocessador adicional (OpenRouter), mesmo com a rota pinada só na Anthropic por baixo.**
 
 ### Média
 5b. **Débitos que a trava final anotou (03/09):**
@@ -164,6 +248,52 @@ Cada uma custou horas. Estão em `brain/04 - Tecnico/`.
 - Pipeline de feature (arquiteto → back ‖ front → pentester → trava final) está em `C:\Users\João\CLAUDE.md` na máquina do João; o resumo do que vale aqui está no `CLAUDE.md` deste repositório.
 
 ---
+
+## 11. Pendências desta sessão que precisam de revisão humana
+
+Fechado sem o usuário auditar o resultado final (ele saiu no meio da sessão e
+pediu para eu finalizar e subir sozinho). Tudo abaixo foi testado no que deu
+para testar sem supervisão, mas nenhum destes pontos teve olho humano em cima:
+
+1. **Node 22 vs Node 20**: o site novo (recriado no hPanel) usa Node 22,
+   autodetectado ao conectar via GitHub. Os builds antigos bem-sucedidos (antes
+   da recriação) usavam Node 20. O build atual com Node 22 completou e o site
+   está respondendo normalmente, mas não houve tempo de rodar uma bateria mais
+   longa para garantir que não há diferença de comportamento sutil entre as
+   duas versões neste projeto específico.
+2. **`anthropic/claude-opus-5` via OpenRouter falhou em teste real** com o
+   `BriefingSchema` completo (`openrouter_resposta_vazia`), mas funcionou
+   normalmente em chamadas isoladas com schema simples. Causa raiz não isolada
+   por falta de tempo — pode ser um limite real do modo `strict:true` com
+   schema grande no Opus especificamente, ou uma falha transitória do provider
+   naquele momento. **Antes de considerar usar Opus em qualquer tarefa de IA
+   deste projeto, reproduza esse teste primeiro.**
+3. **Modelo trocado de Opus para Sonnet nas 4 tarefas de IA** por causa do item
+   acima — decisão tomada sem o usuário confirmar explicitamente que abre mão
+   da qualidade potencialmente maior do Opus no Briefing/Croqui (ele só chegou
+   a aprovar Sonnet em ambas antes de sair, mas o contexto completo — que era
+   uma decisão forçada por um bug não resolvido, não só custo — não foi
+   discutido com ele).
+4. **`grauConfianca: 10` no teste real do Briefing**: baixo, mas a jornada de
+   teste usada (`0193cb83-8db9-40a8-bef0-c4aef4ff98d9`, etapa
+   `sessao_agendada`) tem pouquíssimo dado real preenchido (é dado de
+   seed/desenvolvimento, não de cliente de verdade) — o `grauConfianca` baixo é
+   provavelmente correto dado o input pobre, mas ninguém validou visualmente o
+   texto do Briefing gerado contra um caso com dado completo.
+5. **Migration `0040` foi editada DEPOIS de aplicada** (troquei Opus por Sonnet
+   direto no banco via `UPDATE`, e só depois sincronizei o arquivo
+   `.sql` para bater com o que já estava no banco). O arquivo de migration e o
+   estado do banco **estão consistentes agora**, mas o histórico de migrations
+   não reflete que houve uma correção no meio — isso é aceitável para este
+   caso (a migration final é idempotente e correta), mas fica registrado.
+6. **Achado BAIXO do pentest não corrigido** (mensagem de erro do OpenRouter em
+   `execucoes_ia.erro` pode, em teoria, ecoar fragmento de PII) — decisão de
+   não corrigir foi minha, por ser hipótese não reproduzida e de severidade
+   baixa, não confirmada com o usuário.
+7. **Commit e push para o GitHub**: feito sem revisão humana do diff completo
+   antes do push (o usuário pediu explicitamente para eu finalizar e subir
+   sozinho). Revisar o diff do commit desta sessão antes de continuar
+   trabalhando em cima dele, se possível.
 
 ## 10. Mapa dos documentos
 

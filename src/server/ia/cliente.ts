@@ -1,33 +1,37 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type { ProvedorIa } from "./provedor/tipos";
+import { provedorOpenRouter } from "./provedor/openrouter";
+import { provedorAnthropic } from "./provedor/anthropic";
 
 /**
- * Camada de IA do SIC-HF. Nenhum componente de UI importa este arquivo nem o SDK
- * da Anthropic — só rotas de servidor (briefing, análise de croqui).
+ * Camada de IA do SIC-HF. Nenhum componente de UI importa este arquivo nem os
+ * adaptadores de provedor — só rotas/serviços de servidor (via `executar.ts`).
+ *
+ * `IA_PROVEDOR` escolhe o adaptador (default `openrouter`, rota pinada só na
+ * Anthropic — mesma cadeia de subprocessador de hoje). `IA_PROVEDOR=anthropic`
+ * é o caminho de reversão sem deploy, direto ao SDK, para incidente.
  */
 
-let clienteSingleton: Anthropic | null = null;
+const PROVEDORES: Record<string, ProvedorIa> = {
+  openrouter: provedorOpenRouter,
+  anthropic: provedorAnthropic,
+};
 
-/** True quando a env var está presente e não-vazia. Usar SEMPRE antes de chamar a IA. */
-export function anthropicConfigurado(): boolean {
-  return typeof process.env.ANTHROPIC_API_KEY === "string" && process.env.ANTHROPIC_API_KEY.trim().length > 0;
+function nomeProvedorConfigurado(): string {
+  const valor = process.env.IA_PROVEDOR?.trim().toLowerCase();
+  return valor && valor in PROVEDORES ? valor : "openrouter";
 }
 
-/**
- * Cliente Anthropic. Lança se a chave não estiver configurada — a rota chamadora
- * DEVE checar `anthropicConfigurado()` antes e responder 503 com mensagem clara.
- * Nunca gerar briefing/análise "de exemplo" quando a chave falta.
- */
-export function obterClienteAnthropic(): Anthropic {
-  if (!anthropicConfigurado()) {
-    throw new Error("ANTHROPIC_API_KEY ausente — camada de IA indisponível");
-  }
-  if (!clienteSingleton) {
-    clienteSingleton = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return clienteSingleton;
+/** Escolhe o adaptador conforme `IA_PROVEDOR` (default `openrouter`). */
+export function resolverProvedor(): ProvedorIa {
+  return PROVEDORES[nomeProvedorConfigurado()];
 }
 
-/** Modelos suportados pelo SIC-HF, conforme ARQUITETURA.md §4.1. */
+/** True quando o provedor resolvido está configurado. Usar SEMPRE antes de chamar a IA. */
+export function iaConfigurada(): boolean {
+  return resolverProvedor().configurado();
+}
+
+/** Modelos suportados pelo SIC-HF, conforme ARQUITETURA.md §4.1 (slug depende do provedor ativo). */
 export type ModeloIa = "claude-opus-5" | "claude-sonnet-5";
 
 export type EffortIa = "low" | "medium" | "high" | "xhigh" | "max";

@@ -1,11 +1,9 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { obterClienteAnthropic, type EffortIa } from "./cliente";
-import { calcularCustoUsd } from "./precos";
 import { erroServicoIndisponivel, erroNaoEncontrado, ErroIa } from "./erros";
 import { resolverModoIa } from "./demonstracao";
+import { executarComAuditoria } from "./executar";
 import { exigirPepper, gerarToken, hashToken } from "@/server/publico/pepper";
 import { APP_URL } from "@/lib/config-publica";
 import type { ConteudoMaterial, FonteDorMaterial, OrigemDadoMaterial } from "@/types/material";
@@ -13,8 +11,8 @@ import type { ConteudoMaterial, FonteDorMaterial, OrigemDadoMaterial } from "@/t
 /**
  * Material pós-sessão personalizado pela dor do cliente (ARQUITETURA-FASE-2.md
  * §4.4, CONFLITO C11/C12, BLOQUEIO B14). Mesmo padrão de `briefing.ts`/
- * `croqui-analise.ts`: modo demonstração (`resolverModoIa`) quando não há
- * `ANTHROPIC_API_KEY`, 503 honesto sem a flag. NÃO edita `demonstracao.ts`
+ * `croqui-analise.ts`: modo demonstração (`resolverModoIa`) quando a IA não
+ * está configurada, 503 honesto sem a flag. NÃO edita `demonstracao.ts`
  * (fora da minha fronteira) — o caminho de demonstração deste módulo é
  * self-contained mais abaixo, pelo mesmo motivo que aquele arquivo não pôde
  * antecipar um exemplo de material: a tabela só nasce nesta migration (0031).
@@ -167,7 +165,7 @@ export async function gerarMaterial(
 
   const modoIa = resolverModoIa();
   if (modoIa === "indisponivel") {
-    throw erroServicoIndisponivel("ANTHROPIC_API_KEY ausente — geração de material indisponível");
+    throw erroServicoIndisponivel("IA não configurada — geração de material indisponível");
   }
 
   if (!forcarRegeracao) {
@@ -236,165 +234,48 @@ export async function gerarMaterial(
     };
   }
 
-  const { data: prompt, error: erroPrompt } = await supabaseAdmin
-    .from("prompts_versoes")
-    .select("id, corpo_sistema, modelo_padrao, effort")
-    .eq("chave", CHAVE_PROMPT)
-    .eq("ativo", true)
-    .maybeSingle<{ id: string; corpo_sistema: string; modelo_padrao: string; effort: EffortIa }>();
-  if (erroPrompt || !prompt) {
-    throw erroNaoEncontrado(`prompt_ativo_nao_encontrado: ${CHAVE_PROMPT}`);
-  }
-
   const entrada = {
     primeiro_nome: primeiroNome,
     dor_principal: dorPrincipal,
     fonte_dor: fonteDor,
     modelo_base: modelo.conteudo,
   };
-  const entradaSerializada = JSON.stringify(entrada);
-  const hashEntrada = crypto.createHash("sha256").update(entradaSerializada).digest("hex");
 
-  const { data: execucao, error: erroExecucao } = await supabaseAdmin
-    .from("execucoes_ia")
-    .insert({
-      jornada_id: jornadaId,
-      prompt_versao_id: prompt.id,
-      modelo: prompt.modelo_padrao,
-      status: "executando",
-      hash_entrada: hashEntrada,
-      criado_por: criadoPor,
+  const { execucaoId, saida: material, custoUsd } = await executarComAuditoria(supabaseAdmin, {
+    chavePrompt: CHAVE_PROMPT,
+    jornadaId,
+    criadoPor,
+    entrada,
+    prefixoUsuario: "Dor/preocupação real do cliente e material-base a personalizar (JSON):",
+    schema: MaterialConteudoSchema,
+    nomeSchema: CHAVE_PROMPT,
+    maxTokens: 4000,
+  });
+
+  const { data: gravado, error: erroGravar } = await supabaseAdmin
+    .rpc("registrar_material_gerado", {
+      p_jornada_id: jornadaId,
+      p_execucao_id: execucaoId,
+      p_modelo_id: modelo.id,
+      p_dor_principal: dorPrincipal,
+      p_fonte_dor: fonteDor,
+      p_conteudo: material,
     })
-    .select("id")
     .single<{ id: string }>();
-  if (erroExecucao || !execucao) {
-    throw new Error(`falha_ao_registrar_execucao: ${erroExecucao?.message}`);
+  if (erroGravar || !gravado) {
+    throw new Error(`falha_ao_gravar_material: ${erroGravar?.message}`);
   }
 
-  const inicio = Date.now();
-
-  try {
-    const client = obterClienteAnthropic();
-    const stream = client.messages.stream({
-      model: prompt.modelo_padrao,
-      max_tokens: 4000,
-      thinking: { type: "adaptive" },
-      output_config: {
-        effort: prompt.effort,
-        format: zodOutputFormat(MaterialConteudoSchema),
-      },
-      system: [
-        {
-          type: "text",
-          text: prompt.corpo_sistema,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [
-        {
-          role: "user",
-          content:
-            "Dor/preocupação real do cliente e material-base a personalizar (JSON):\n\n" + entradaSerializada,
-        },
-      ],
-    });
-
-    const mensagemFinal = await stream.finalMessage();
-    const latenciaMs = Date.now() - inicio;
-
-    if (mensagemFinal.stop_reason === "refusal") {
-      await supabaseAdmin
-        .from("execucoes_ia")
-        .update({
-          status: "falhou",
-          erro: `refusal: ${mensagemFinal.stop_details?.category ?? "sem_categoria"}`,
-          latencia_ms: latenciaMs,
-          stop_reason: mensagemFinal.stop_reason,
-          request_id: (mensagemFinal as { _request_id?: string | null })._request_id ?? null,
-          concluido_em: new Date().toISOString(),
-        })
-        .eq("id", execucao.id);
-      throw new ErroIa("A IA recusou gerar o material para este conteúdo.", 502, "recusa_ia");
-    }
-
-    const material = mensagemFinal.parsed_output;
-    if (!material) {
-      await supabaseAdmin
-        .from("execucoes_ia")
-        .update({
-          status: "falhou",
-          erro: "saida_nao_validou_contra_o_schema",
-          latencia_ms: latenciaMs,
-          stop_reason: mensagemFinal.stop_reason,
-          request_id: (mensagemFinal as { _request_id?: string | null })._request_id ?? null,
-          concluido_em: new Date().toISOString(),
-        })
-        .eq("id", execucao.id);
-      throw new ErroIa("A saída da IA não validou contra o schema do material.", 502, "saida_invalida");
-    }
-
-    const uso = {
-      tokensEntrada: mensagemFinal.usage.input_tokens,
-      tokensSaida: mensagemFinal.usage.output_tokens,
-      tokensCacheEscrita: mensagemFinal.usage.cache_creation_input_tokens ?? 0,
-      tokensCacheLeitura: mensagemFinal.usage.cache_read_input_tokens ?? 0,
-    };
-    const custoUsd = await calcularCustoUsd(supabaseAdmin, prompt.modelo_padrao, uso);
-
-    await supabaseAdmin
-      .from("execucoes_ia")
-      .update({
-        status: "concluida",
-        tokens_entrada: uso.tokensEntrada,
-        tokens_saida: uso.tokensSaida,
-        tokens_cache_escrita: uso.tokensCacheEscrita,
-        tokens_cache_leitura: uso.tokensCacheLeitura,
-        custo_usd: custoUsd,
-        latencia_ms: latenciaMs,
-        stop_reason: mensagemFinal.stop_reason,
-        request_id: (mensagemFinal as { _request_id?: string | null })._request_id ?? null,
-        concluido_em: new Date().toISOString(),
-      })
-      .eq("id", execucao.id);
-
-    const { data: gravado, error: erroGravar } = await supabaseAdmin
-      .rpc("registrar_material_gerado", {
-        p_jornada_id: jornadaId,
-        p_execucao_id: execucao.id,
-        p_modelo_id: modelo.id,
-        p_dor_principal: dorPrincipal,
-        p_fonte_dor: fonteDor,
-        p_conteudo: material,
-      })
-      .single<{ id: string }>();
-    if (erroGravar || !gravado) {
-      throw new Error(`falha_ao_gravar_material: ${erroGravar?.message}`);
-    }
-
-    return {
-      execucaoId: execucao.id,
-      materialId: gravado.id,
-      material,
-      fonteDor,
-      dorPrincipal,
-      chaveModelo: modelo.chave,
-      origemDado: "real",
-      custoUsd,
-    };
-  } catch (erro) {
-    if (erro instanceof ErroIa) throw erro;
-    const mensagem = erro instanceof Error ? erro.message : String(erro);
-    await supabaseAdmin
-      .from("execucoes_ia")
-      .update({
-        status: "falhou",
-        erro: mensagem,
-        latencia_ms: Date.now() - inicio,
-        concluido_em: new Date().toISOString(),
-      })
-      .eq("id", execucao.id);
-    throw erro;
-  }
+  return {
+    execucaoId,
+    materialId: gravado.id,
+    material,
+    fonteDor,
+    dorPrincipal,
+    chaveModelo: modelo.chave,
+    origemDado: "real",
+    custoUsd,
+  };
 }
 
 /**
@@ -461,7 +342,7 @@ async function gerarMaterialDemonstracao(
         tipo: "paragrafo",
         texto:
           "Nenhuma informação real deste cliente foi analisada. Este texto é um exemplo fixo, usado " +
-          "só para mostrar o formato do material pós-sessão enquanto ANTHROPIC_API_KEY não está " +
+          "só para mostrar o formato do material pós-sessão enquanto a IA não está " +
           "configurada no servidor.",
       },
       {

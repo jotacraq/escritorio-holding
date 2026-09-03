@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { anthropicConfigurado } from "./cliente";
+import { iaConfigurada } from "./cliente";
 import { BriefingSchema, type Briefing } from "./schema-briefing";
 import {
   AfirmacaoSchema,
@@ -20,10 +20,10 @@ type Afirmacao = z.infer<typeof AfirmacaoSchema>;
 
 /**
  * Modo demonstração da IA (ARQUITETURA-FASE-2.md §3). Existe só para a vitrine
- * não nascer quebrada enquanto `ANTHROPIC_API_KEY` está vazia (BLOQUEIO B17) —
+ * não nascer quebrada enquanto a IA não está configurada (BLOQUEIO B17) —
  * nunca para parecer análise real. Nenhum componente de UI importa este
  * arquivo: só as rotas de servidor (briefing.ts, croqui-analise.ts), do mesmo
- * jeito que `cliente.ts` já documenta para o SDK da Anthropic.
+ * jeito que `cliente.ts` já documenta para os adaptadores de provedor.
  */
 
 const MARCADOR_EXEMPLO = "Cliente Exemplo da Silva Demonstração";
@@ -37,14 +37,15 @@ export type ModoIa = "real" | "demonstracao" | "indisponivel";
 
 /**
  * Regra de ativação (§3.1 — a ordem importa, não se negocia):
- * 1. `ANTHROPIC_API_KEY` presente  → sempre "real". Demonstração é IGNORADA,
- *    mesmo com a flag ligada. Nunca demo silencioso com chave configurada.
- * 2. chave ausente + flag ligada   → "demonstracao" (exemplo fixo, marcado).
- * 3. chave ausente + flag ausente/false → "indisponivel" (503 honesto — o
+ * 1. IA configurada (provedor resolvido por `IA_PROVEDOR` tem a chave presente)
+ *    → sempre "real". Demonstração é IGNORADA, mesmo com a flag ligada. Nunca
+ *    demo silencioso com chave configurada.
+ * 2. IA não configurada + flag ligada   → "demonstracao" (exemplo fixo, marcado).
+ * 3. IA não configurada + flag ausente/false → "indisponivel" (503 honesto — o
  *    comportamento de hoje, preservado).
  */
 export function resolverModoIa(): ModoIa {
-  if (anthropicConfigurado()) return "real";
+  if (iaConfigurada()) return "real";
   if (flagDemonstracaoLigada()) return "demonstracao";
   return "indisponivel";
 }
