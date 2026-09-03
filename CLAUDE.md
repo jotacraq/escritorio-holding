@@ -4,10 +4,16 @@
 
 ## Leia isto antes de tocar em qualquer coisa
 
-1. `C:\Users\João\sic-hf-brain\00 - Home.md` — cérebro do projeto. Use a tabela de descoberta rápida.
-2. `C:\Users\João\sic-hf-brain\03 - Dominio\Glossario.md` — **os nomes do negócio são os nomes do código.** Não invente sinônimo.
-3. `C:\Users\João\sic-hf-brain\03 - Dominio\Esteira do cliente.md` — a máquina de estados que o sistema inteiro serve.
-4. `docs/ARQUITETURA.md` — desenho técnico vigente.
+0. **`CONTINUAR-AQUI.md`** — estado, pendências, backlog e as armadilhas desta base. Se você está chegando agora, comece por ele.
+1. `brain/00 - Home.md` — cérebro do projeto, versionado aqui dentro. Use a tabela de descoberta rápida.
+2. `brain/03 - Dominio/Glossario.md` — **os nomes do negócio são os nomes do código.** Não invente sinônimo.
+3. `brain/03 - Dominio/Esteira do cliente.md` — a máquina de estados que o sistema inteiro serve.
+4. `docs/ARQUITETURA.md` (fase 1) e `docs/ARQUITETURA-FASE-2.md` (fase 2) — o desenho técnico vigente.
+
+> Na máquina do João o cérebro também existe como vault Obsidian em
+> `C:\Users\João\sic-hf-brain\` — é a mesma coisa. `brain/` aqui é a cópia
+> versionada, para o projeto viajar entre máquinas. **As 70 transcrições de
+> clientes NÃO sobem para o repositório** — ver `brain/06 - Materiais/Transcricoes/LEIA-ME.md`.
 
 Ler 1-2 notas do brain responde a maior parte das perguntas de fato e custa uma fração de um Grep no repo. **Brain → nota de domínio → código.** Só leia código para implementar, depurar runtime ou confirmar que o brain está atualizado.
 
@@ -34,7 +40,7 @@ Restrições que vêm do deploy na Hostinger: sem Edge runtime, sem cron da Verc
 
 ## Registro obrigatório
 
-Ao fechar qualquer trabalho substantivo, gravar entrada em `C:\Users\João\sic-hf-brain\Diário\YYYY-MM-DD.md` (append, nunca sobrescreve):
+Ao fechar qualquer trabalho substantivo, gravar entrada em `brain/Diário/AAAA-MM-DD.md` (e no vault do João, quando estiver na máquina dele) (append, nunca sobrescreve):
 
 ```markdown
 ## HH:MM — <título curto>

@@ -1,0 +1,58 @@
+# Segurança — SIC-HF
+
+Auditoria adversarial rodada em **03/09/2026**, contra o banco de verdade e o app rodando (não só leitura de código): PostgREST direto com JWT de cada papel, webhook chamado ao vivo, bundle do cliente conferido com grep.
+
+**Placar:** 0 crítico · 2 alto · 2 médio · 3 baixo.
+
+## O que já está provado que segura
+
+- **RLS de ponta a ponta.** `relacionamento` e um usuário autenticado **sem convite** não leem `patrimonio_itens`, `relatorios_sessao`, `croquis`, `croqui_analises`, `documentos`, `execucoes_ia` nem `webhooks_eventos` — testado com dado real plantado de propósito, não com tabela vazia. As views com `security_invoker` filtram igual à tabela base.
+- **Webhook Hotmart falha fechado.** Sem secret na env → **503**, nunca 200. Comparação em tempo constante. Idempotência por `unique(origem, transacao_externa_id)`. `nivel_pago` deriva de `produtos.tipo`, não do valor do payload — payload forjado com valor maior **não eleva o nível pago**.
+- **Documentos.** Path traversal impossível (o servidor monta o caminho, o cliente nunca escolhe). Mime validado por **assinatura de bytes**, não por `Content-Type`. Upload só por `service_role`. URL assinada de 300 s com registro em `documentos_acessos`.
+- **Escalonamento.** `relacionamento` tentando se promover a `admin` via PostgREST: 0 linhas afetadas. Usuário sem convite tentando se inserir em `perfis_equipe`: 42501.
+- **`service_role` não vaza para o cliente** — confirmado por grep no bundle real, não só no código-fonte.
+- `execucoes_ia` guarda só o `sha256` do contexto, nunca o prompt com PII.
+
+## Achados e o que eles ensinam
+
+### 1. Policy `for update` que só checa papel não é policy de negócio (ALTO)
+`mensagens_agendadas` tinha `using (app.eh_interno())`. A regra real — só WhatsApp, só de `pendente` para `enviada`, campos carimbados pelo servidor — vivia **só na rota**. Pelo PostgREST direto, um perfil de relacionamento trocou o destinatário de uma mensagem de **e-mail** para um endereço externo e marcou como "enviada" com data forjada.
+Dois estragos: vazamento do link da sala com o nome do cliente, e **cliente que nunca é avisado da própria sessão enquanto o sistema exibe "enviada" como prova**.
+**Lição:** se a regra de negócio está só na rota, ela não existe — o PostgREST é uma segunda porta para a mesma tabela. Regra que protege dinheiro ou comunicação vai para o banco: trigger ou RPC `security definer`, com `UPDATE` revogado de `authenticated`.
+
+### 2. A segunda IA não herda a trava da primeira (ALTO)
+O Briefing tem trava de consentimento `tratamento_ia`. O **Agente do Croqui**, escrito depois, mandava nome completo, nomes de familiares, valores absolutos de patrimônio e a transcrição inteira para a Anthropic **sem gate nenhum**.
+**Lição:** trava de LGPD é por **caminho de saída de dado**, não por feature. Toda rota nova que fala com IA precisa da mesma pergunta: *o que sai daqui, e quem autorizou?* Ver [[05 - Decisoes/2026-09-03 - Decisoes fundacionais do SIC-HF]] e o BLOQUEIO B3.
+
+### 3. Allowlist na chave de topo não é allowlist (MÉDIO)
+`contexto-briefing.ts` copiava o JSONB inteiro das respostas do formulário. A pergunta `p1` é literalmente *"Qual seu nome completo?"* — anulando o cuidado, logo acima, de truncar para o primeiro nome. E `p12`/`p13`/`p16` são texto livre onde o cliente pode ter escrito endereço ou CPF.
+**Lição:** allowlist tem que descer até o **conteúdo**, não parar no nome do campo.
+
+### 4. Termo de busca é entrada de usuário, inclusive para o PostgREST (MÉDIO)
+`/api/jornadas` sanitizava `%` e `_` (meta-caracteres de `LIKE`) e interpolava o termo dentro de `.or(...)`. Mas `,`, `(`, `)` e `.` são meta-caracteres da **gramática de filtro do PostgREST**. Um termo com `)*or(etapa.eq.holding_contratada` reescreveu a árvore lógica e devolveu todas as linhas.
+**Lição:** `.or()` montado por interpolação de string é injeção. Escapar o certo, ou RPC parametrizada.
+
+### 5. `CREATE FUNCTION` concede EXECUTE a PUBLIC por padrão (BAIXO)
+Só 6 das ~20 funções de `app.*` tinham `revoke`. Não é explorável hoje porque o PostgREST não expõe o schema `app` — mas isso é um **clique no painel** de distância, sem migration e sem revisão de código.
+**Lição:** não deixe a configuração de um painel ser a única linha de defesa.
+
+### 6. Rate limit por `X-Forwarded-For` não validado (BAIXO)
+Header forjável → o limite por IP nunca acumula. Não é bypass de auth (o hottok segura), mas o rate limit vira decorativo.
+
+### 7. Endpoint de IA sem cooldown (BAIXO)
+`forcar_regeracao: true` em laço custa dinheiro real (`claude-opus-5`, US$ 5/25 por MTok). Falta teto por jornada e por usuário.
+
+## Armadilha de configuração que derrubou tudo (e não apareceu no build)
+
+`grant usage on schema app to authenticated` **faltava**. Sem ele, toda policy que chama `app.eh_interno()` falha com `42501 permission denied for schema app` e **o sistema inteiro responde 500** — com `tsc` limpo, `eslint` limpo e `npm run build` verde.
+Só apareceu ao abrir a tela logado, no navegador. Grant de `EXECUTE` na função não basta: o papel precisa poder **entrar** no schema. Corrigido na migration `0018`.
+
+## Segue aberto (com gatilho, não "algum dia")
+
+| O que | Quando fechar |
+|---|---|
+| `pat_wr` e `rel_wr` ainda são `for all`, o que inclui **DELETE** por PostgREST direto para admin/advogada — mesma classe do ALTO 1. O molde da correção já existe na migration `0021`. | **Antes da primeira linha de patrimônio de cliente real entrar no banco.** |
+| Webhook não reprocessa evento que falhou: reentrega da Hotmart cai no caminho "já recebi, 200" sem olhar `processado_em`. Corolário: alguém que insira um `evento_externo_id` antes bloqueia o processamento do evento legítimo. E não existe tela de pendências — falha de pagamento hoje só aparece por SQL. | **Junto com as credenciais da Hotmart (BLOQUEIO B7).** |
+| Texto livre do formulário (`p12`/`p13`/`p16`) vai para a IA sem gate — o cliente pode ter escrito endereço, CPF ou nome de terceiro ali. Só a transcrição tem trava de consentimento. | **Com a decisão B3** (consentimento de tratamento por IA), da Dra. Elaine. |
+| Rate limit do webhook confia em `X-Forwarded-For` e é por processo. | Quando a Hotmart entrar em volume. |
+| Sem cooldown nos endpoints de IA: `forcar_regeracao` em laço custa dinheiro real. | Antes de abrir o sistema para mais gente da equipe. |
