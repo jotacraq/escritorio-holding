@@ -56,3 +56,37 @@ Só apareceu ao abrir a tela logado, no navegador. Grant de `EXECUTE` na funçã
 | Texto livre do formulário (`p12`/`p13`/`p16`) vai para a IA sem gate — o cliente pode ter escrito endereço, CPF ou nome de terceiro ali. Só a transcrição tem trava de consentimento. | **Com a decisão B3** (consentimento de tratamento por IA), da Dra. Elaine. |
 | Rate limit do webhook confia em `X-Forwarded-For` e é por processo. | Quando a Hotmart entrar em volume. |
 | Sem cooldown nos endpoints de IA: `forcar_regeracao` em laço custa dinheiro real. | Antes de abrir o sistema para mais gente da equipe. |
+
+---
+
+## Auditoria da Fase 2 (03/09/2026)
+
+Rodada contra o banco real e o app de pé, com PostgREST direto para cada papel.
+**Placar: 0 crítico · 2 alto · 3 médio · 2 baixo.** Os 2 altos e 2 médios corrigidos no mesmo dia.
+
+### O que a Fase 2 ensinou
+
+**1. Diagnóstico plausível não é diagnóstico.** O formulário público respondia 500 em toda tentativa — o fluxo mais usado da fase, quebrado. O pentest levantou falta de grant de `app.registrar_evento_timeline` para `anon`: plausível, porque essa classe de bug já mordeu o projeto três vezes, e honestamente marcada como "hipótese, não confirmada por log". Estava errada. O grant foi concedido e o 500 continuou. A causa real só apareceu no log do Postgres: `formularios_respostas.origem` tinha um `CHECK` escrito na 0006, antes de existir superfície pública, que não aceitava `'cliente_link'`. **Leia o erro real antes de corrigir.**
+
+**2. RLS que filtra não substitui privilégio que não existe.** `anon` tinha `GRANT SELECT` em 33 tabelas. Nenhuma linha vazou — a RLS segurou tudo, testada em 36 tabelas. Mas o grant é o cinto de segurança para o dia em que uma policy nascer errada, e isso **já aconteceu neste projeto uma vez**. Zerado, com `alter default privileges` para a próxima tabela não repetir.
+
+**3. `for all` em policy inclui DELETE.** Fechado nas tabelas com PII que sobraram da fase 1.
+
+### Verificado por ataque, não por leitura
+
+- `anon` leva `42501 permission denied` em `pessoas`, `jornadas`, `patrimonio_itens`, `documentos`, `transcricoes`, `links_publicos`, `formularios_respostas`, `configuracoes`.
+- Rate limit por token: 10 requisições passam, a 11ª leva 429. Variar `X-Forwarded-For` **não afrouxa** — o limite é por token, em tabela.
+- Token com um caractere trocado e token inexistente respondem **idêntico**, byte a byte.
+- Usuário autenticado **sem convite** leva 401 em toda API interna.
+- Sem `service_role`, upload e IA respondem **503 nomeando a variável que falta** — nunca 200 com promessa falsa.
+- Link de material sem material aprovado entrega "link não disponível", nunca conteúdo inventado.
+- `relacionamento` não lê uma linha das 70 transcrições reais.
+
+### Segue aberto — com gatilho
+
+| O que | Quando fechar |
+|---|---|
+| A flag `conhecimento.analise_ia_habilitada` é um boolean que qualquer admin liga, sem registrar quem decidiu nem a base legal. Deveria ser uma tabela de decisão jurídica, e o trigger olhar para lá. | **Antes de a `ANTHROPIC_API_KEY` entrar.** |
+| `app.registrar_evento_timeline` com grant para `anon` (0038) — desvio do desenho "só 4 funções públicas". Inerte enquanto o schema `app` não for exposto. | Quando alguém mexer nos grants de novo. |
+| Acessibilidade formal das telas novas: conhecimento, públicas e conduzir sessão. | Antes de cliente real usar. |
+| Emissão de link de material antes da aprovação: não vaza, mas a tela não avisa. | Junto com a próxima mexida na Ficha 360. |

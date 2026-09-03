@@ -118,6 +118,11 @@ Ordenado pelo que muda mais a vida do escritório.
 5. **Trava de LGPD com peso jurídico** (achado MÉDIO do pentest): hoje a flag que libera IA sobre transcrição é um boolean editável por qualquer admin, sem registrar quem decidiu. Deveria ser uma tabela `decisoes_juridicas` com base legal, quem decidiu e quando — e o trigger olhar para lá.
 
 ### Média
+5b. **Débitos que a trava final anotou (03/09):**
+   - **POP 03 ainda está codificado no front** enquanto o POP 03-B vem do banco (`LigacaoAba.tsx:105`) — dois caminhos para o mesmo conceito. Foi deliberado para não reescrever o que funcionava, mas é dívida: mover o POP 03 para `roteiros_versoes` elimina um dos caminhos.
+   - **A equipe consegue emitir link de material antes da aprovação** — não vaza nada (o cliente recebe "link não disponível"), mas a tela de emissão deveria avisar ou bloquear.
+   - **`app.registrar_evento_timeline` ficou com grant para `anon`** (migration 0038), desvio do desenho "só 4 funções públicas". Inerte enquanto o schema `app` não for exposto no PostgREST, mas está fora do padrão — reavaliar quando alguém mexer nos grants.
+
 6. **WhatsApp**: hoje é fila manual rotulada. Decidir provedor (API oficial da Meta? Z-API?) — número não oficial tem risco de banimento.
 7. **Croqui**: o editor dos 13 slides existe; falta a análise da segunda IA gerando o conteúdo de verdade e o croqui nascendo a partir dela.
 8. **POPs 04 a 08**: existem só como título no documento da Dra. Elaine. Vale sentar com ela e escrever.
