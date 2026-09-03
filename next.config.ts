@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Hostinger Node.js App: build standalone, sem Edge runtime.
-  output: "standalone",
+  // Hostinger Node.js App: o servidor builda o projeto e roda `next start`.
+  // NAO usar output:'standalone' aqui — o server.js do standalone nao carrega
+  // .env.production, e as variaveis do deploy chegam por esse arquivo.
+  // (medido em 03/09/2026: com standalone, todo request virava config_ausente)
   poweredByHeader: false,
   async headers() {
     return [
