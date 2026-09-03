@@ -4,19 +4,17 @@ import { listarProximosAgendamentos } from "@/lib/api";
 import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoIndisponivel, EstadoVazio } from "@/components/ui/Estado";
 import { LinhaAgendamento } from "@/components/agenda/LinhaAgendamento";
+import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
+import { PainelDisponibilidade } from "@/components/agenda/PainelDisponibilidade";
+import { PainelBloqueios } from "@/components/agenda/PainelBloqueios";
 
-export default function PaginaAgenda() {
+function AbaSessoes() {
   const { dados, carregando, recarregar } = useRecurso(listarProximosAgendamentos, []);
   const itens = dados?.itens;
   const indisponivel = dados === null;
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Agenda</h1>
-        <p className="text-sm text-tinta-suave">Próximas Sessões de Viabilidade. Criar e remarcar acontece na ficha de cada jornada.</p>
-      </div>
-
       {carregando && <EstadoCarregando rotulo="Carregando agenda…" />}
 
       {!carregando && indisponivel && <EstadoIndisponivel titulo="Lista global de agendamentos ainda não disponível" />}
@@ -32,6 +30,28 @@ export default function PaginaAgenda() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+export default function PaginaAgenda() {
+  const abas: DefinicaoAba[] = [
+    { id: "sessoes", rotulo: "Sessões", conteudo: <AbaSessoes /> },
+    { id: "disponibilidade", rotulo: "Disponibilidade", conteudo: <PainelDisponibilidade /> },
+    { id: "bloqueios", rotulo: "Bloqueios", conteudo: <PainelBloqueios /> },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="font-serif text-2xl font-semibold text-tinta">Agenda</h1>
+        <p className="text-sm text-tinta-suave">
+          Sessões marcadas, janelas de disponibilidade da advogada e bloqueios pontuais. É daqui que saem os horários
+          oferecidos no link de agendamento do cliente.
+        </p>
+      </div>
+
+      <Abas abas={abas} abaInicial="sessoes" />
     </div>
   );
 }
