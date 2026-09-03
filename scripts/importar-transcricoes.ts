@@ -441,20 +441,46 @@ function carregarEnvLocal(): void {
   }
 }
 
-function criarClienteAdmin(): SupabaseClient {
+async function criarClienteAdmin(): Promise<SupabaseClient> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const servico = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !chave) {
+  if (!url) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL ausente — defina em .env.local ou no ambiente.");
+  }
+
+  // Caminho preferido: service_role, quando existir.
+  if (servico) {
+    return createClient(url, servico, { auth: { autoRefreshToken: false, persistSession: false } });
+  }
+
+  // Caminho alternativo: LOGIN de um usuário com papel `admin`. A migration 0037
+  // deu a esse papel a escrita em transcricoes/casos_conhecimento — é o dono
+  // legítimo desse material, o mesmo recorte que já vale para prompts, templates
+  // e roteiros. Assim a base de conhecimento entra sem esperar a service_role,
+  // e a RLS continua valendo por inteiro (nada de bypass).
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const email = process.env.INGESTAO_EMAIL;
+  const senha = process.env.INGESTAO_SENHA;
+
+  if (!anon || !email || !senha) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY (ou NEXT_PUBLIC_SUPABASE_URL) ausente — " +
-        "defina em .env.local ou no ambiente. O script recusa cair para a " +
-        "chave publicável: a RLS de transcricoes/casos_conhecimento bloquearia " +
-        "toda escrita mesmo assim, e é melhor falhar cedo com mensagem clara.",
+      "Sem SUPABASE_SERVICE_ROLE_KEY. Para ingerir com login de admin, defina " +
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY, INGESTAO_EMAIL e INGESTAO_SENHA. " +
+        "O script não cai para a chave publicável anônima: a RLS bloquearia " +
+        "toda escrita e é melhor falhar cedo, com mensagem clara.",
     );
   }
 
-  return createClient(url, chave, { auth: { autoRefreshToken: false, persistSession: false } });
+  const cliente = createClient(url, anon, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await cliente.auth.signInWithPassword({ email, password: senha });
+  if (error || !data.session) {
+    throw new Error(`Login de ingestão falhou: ${error?.message ?? "sessão não retornada"}`);
+  }
+  console.log(`Autenticado como ${email} (escrita pela RLS de admin, sem service_role).`);
+  return cliente;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +537,7 @@ async function main(): Promise<void> {
   }
 
   carregarEnvLocal();
-  const supabase = criarClienteAdmin();
+  const supabase = await criarClienteAdmin();
 
   const contadorTranscricoes: ContadorTranscricoes = { inseridas: 0, jaExistiam: 0 };
   const idsPorSlug = new Map<string, string>();

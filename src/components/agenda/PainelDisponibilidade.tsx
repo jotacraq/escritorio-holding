@@ -5,9 +5,8 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { Botao } from "@/components/ui/Botao";
 import { Selo } from "@/components/ui/Selo";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { formatarData } from "@/lib/formatar";
 import { ApiError, atualizarDisponibilidade, listarDisponibilidades } from "./api";
-import { ROTULO_DIA_SEMANA, formatarHoraSql } from "./rotulos";
+import { ROTULO_DIA_SEMANA, formatarDataCalendario, formatarHoraSql } from "./rotulos";
 import { FormularioDisponibilidade } from "./FormularioDisponibilidade";
 import { SeletorAdvogada, useMembrosComAgenda } from "./SeletorAdvogada";
 import { PreviaSlots } from "./PreviaSlots";
@@ -36,8 +35,8 @@ function LinhaDisponibilidade({ disponibilidade, aoAtualizar }: { disponibilidad
           {ROTULO_DIA_SEMANA[disponibilidade.dia_semana]} · {formatarHoraSql(disponibilidade.hora_inicio)}–{formatarHoraSql(disponibilidade.hora_fim)}
         </p>
         <p className="text-xs text-tinta-suave">
-          Sessões de {disponibilidade.duracao_minutos} min · vale de {formatarData(disponibilidade.vale_de)}
-          {disponibilidade.vale_ate ? ` até ${formatarData(disponibilidade.vale_ate)}` : ", sem data de término"}
+          Sessões de {disponibilidade.duracao_minutos} min · vale de {formatarDataCalendario(disponibilidade.vale_de)}
+          {disponibilidade.vale_ate ? ` até ${formatarDataCalendario(disponibilidade.vale_ate)}` : ", sem data de término"}
         </p>
         {erro && <p role="alert" className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
       </div>
@@ -60,6 +59,17 @@ export function PainelDisponibilidade() {
   const buscar = useCallback(() => listarDisponibilidades({ advogada_id: efetiva || undefined }), [efetiva]);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, [efetiva]);
 
+  // A prévia de slots é um componente à parte, com seu próprio fetch — criar
+  // ou (des)ativar uma janela não muda as PROPS dela (mesma advogada, mesmo
+  // período), então sem isto ela ficaria mostrando um cálculo desatualizado
+  // até a página recarregar. `key` força remontar (= refazer o cálculo) só
+  // quando algo aqui embaixo de fato muda.
+  const [versaoSlots, setVersaoSlots] = useState(0);
+  function aoMudarJanelas() {
+    recarregar();
+    setVersaoSlots((v) => v + 1);
+  }
+
   if (membros === null) return <EstadoCarregando rotulo="Carregando equipe…" />;
   if (membros.length === 0) {
     return <EstadoVazio titulo="Nenhum membro de equipe cadastrado" descricao="Cadastre a advogada em Admin → Equipe antes de configurar a agenda." />;
@@ -71,7 +81,7 @@ export function PainelDisponibilidade() {
 
       {efetiva && (
         <>
-          <FormularioDisponibilidade advogadaId={efetiva} aoCriar={recarregar} />
+          <FormularioDisponibilidade advogadaId={efetiva} aoCriar={aoMudarJanelas} />
 
           {carregando && <EstadoCarregando rotulo="Carregando janelas…" />}
           {!carregando && erro && <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não deu para carregar as janelas" />}
@@ -81,12 +91,12 @@ export function PainelDisponibilidade() {
           {!carregando && !erro && dados && dados.disponibilidades.length > 0 && (
             <ul className="flex flex-col gap-2">
               {dados.disponibilidades.map((d) => (
-                <LinhaDisponibilidade key={d.id} disponibilidade={d} aoAtualizar={recarregar} />
+                <LinhaDisponibilidade key={d.id} disponibilidade={d} aoAtualizar={aoMudarJanelas} />
               ))}
             </ul>
           )}
 
-          <PreviaSlots advogadaId={efetiva} />
+          <PreviaSlots key={versaoSlots} advogadaId={efetiva} />
         </>
       )}
     </div>
