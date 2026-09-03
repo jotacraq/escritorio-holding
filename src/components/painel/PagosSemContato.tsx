@@ -30,10 +30,13 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
         return (
           <ul className="flex flex-col divide-y divide-linha">
             {ordenadas.map((item) => (
-              <li key={item.jornada_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
+              <li
+                key={item.jornada_id}
+                className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2"
+              >
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="min-w-0 flex-1 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline"
+                  className="min-w-0 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline sm:flex-1"
                 >
                   {item.nome}
                 </Link>
@@ -48,7 +51,7 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
 
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="ml-auto rounded-sm border border-[color:var(--vermelho)] bg-vermelho-fraco px-2.5 py-1 text-xs font-semibold text-[color:var(--vermelho)] hover:bg-transparent"
+                  className="self-start rounded-sm border border-[color:var(--vermelho)] bg-vermelho-fraco px-2.5 py-1 text-xs font-semibold text-[color:var(--vermelho)] hover:bg-transparent sm:ml-auto sm:self-auto"
                 >
                   Contatar agora
                 </Link>

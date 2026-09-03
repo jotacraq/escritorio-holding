@@ -23,10 +23,13 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
         return (
           <ul className="flex flex-col divide-y divide-linha">
             {ordenadas.map((item) => (
-              <li key={item.jornada_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
+              <li
+                key={item.jornada_id}
+                className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2"
+              >
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="min-w-0 flex-1 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline"
+                  className="min-w-0 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline sm:flex-1"
                 >
                   {item.nome}
                 </Link>
@@ -36,14 +39,14 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                 </span>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {item.falta_formulario && <Selo tom="ambar">Falta formulário</Selo>}
-                  {item.falta_ligacao && <Selo tom="ambar">Falta ligação</Selo>}
-                  {item.falta_briefing && <Selo tom="ambar">Falta briefing</Selo>}
+                  {item.falta_formulario && <Selo tom="neutro">Falta formulário</Selo>}
+                  {item.falta_ligacao && <Selo tom="neutro">Falta ligação</Selo>}
+                  {item.falta_briefing && <Selo tom="neutro">Falta briefing</Selo>}
                 </div>
 
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="ml-auto rounded-sm border border-linha-forte bg-papel px-2.5 py-1 text-xs font-medium text-tinta hover:border-latao"
+                  className="self-start rounded-sm border border-linha-forte bg-papel px-2.5 py-1 text-xs font-medium text-tinta hover:border-latao sm:ml-auto sm:self-auto"
                 >
                   Preparar
                 </Link>

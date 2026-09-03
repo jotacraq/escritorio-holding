@@ -23,19 +23,23 @@ export function SessoesHoje({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Se
         return (
           <ul className="flex flex-col divide-y divide-linha">
             {ordenadas.map((sessao) => (
-              <li key={sessao.jornada_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
-                <div className="w-20 shrink-0 font-mono text-sm tabular-nums text-tinta">
-                  {formatarHora(sessao.inicio_em)}–{formatarHora(sessao.fim_em)}
+              <li
+                key={sessao.jornada_id}
+                className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2"
+              >
+                <div className="flex items-baseline gap-3 sm:contents">
+                  <div className="shrink-0 font-mono text-sm tabular-nums text-tinta sm:w-20">
+                    {formatarHora(sessao.inicio_em)}–{formatarHora(sessao.fim_em)}
+                  </div>
+                  <Link
+                    href={`/jornadas/${sessao.jornada_id}`}
+                    className="min-w-0 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline sm:flex-1"
+                  >
+                    {sessao.nome}
+                  </Link>
                 </div>
 
-                <Link
-                  href={`/jornadas/${sessao.jornada_id}`}
-                  className="min-w-0 flex-1 truncate text-sm font-medium text-tinta underline-offset-2 hover:text-latao-forte hover:underline"
-                >
-                  {sessao.nome}
-                </Link>
-
-                <Selo tom={sessao.status === "confirmado" ? "verde" : "ambar"}>
+                <Selo tom={sessao.status === "confirmado" ? "verde" : "neutro"}>
                   {sessao.status === "confirmado" ? "Confirmou presença" : "Não confirmou"}
                 </Selo>
 

@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
-import { ApiError } from "@/lib/api";
 import { formatarDataHora } from "@/lib/formatar";
-import { usarPainelDia } from "./usarPainelDia";
+import { usePainelDia } from "./usePainelDia";
 import { SessoesHoje } from "./SessoesHoje";
 import { PreparoPendente } from "./PreparoPendente";
 import { PagosSemContato } from "./PagosSemContato";
@@ -26,16 +24,15 @@ const FORMATADOR_DATA_TITULO = new Intl.DateTimeFormat("pt-BR", {
  * Sem polling: uma busca ao montar, e uma sob clique em "Atualizar". O
  * egress do Supabase é da organização inteira e já custou caro num sistema
  * desta casa com aba parada fazendo polling.
+ *
+ * "Atualizado às" usa `gerado_em` — o instante que o servidor calculou o
+ * painel, não o relógio do navegador — para não afirmar uma frescura que
+ * ninguém mediu. Sem esse campo na resposta, o rótulo simplesmente não
+ * aparece (vazio nunca vira dado inventado).
  */
 export function PainelDia() {
-  const { estado, recarregar } = usarPainelDia();
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
-
-  // A cada carga bem-sucedida, registra o instante local da busca — não é
-  // dado de domínio, é só "quando esta tela foi buscada pela última vez".
-  useEffect(() => {
-    if (estado.fase === "pronto") setUltimaAtualizacao(new Date());
-  }, [estado]);
+  const { dados, carregando, erro, recarregar } = usePainelDia();
+  const semNenhumaCargaAinda = !dados;
 
   return (
     <div className="flex flex-col gap-5">
@@ -49,42 +46,32 @@ export function PainelDia() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {ultimaAtualizacao && estado.fase === "pronto" && (
-            <span className="text-xs text-tinta-fraca">Atualizado às {formatarDataHora(ultimaAtualizacao.toISOString())}</span>
-          )}
-          <Botao
-            variante="secundario"
-            onClick={() => {
-              setUltimaAtualizacao(null);
-              aoClicarAtualizar();
-            }}
-            carregando={estado.fase === "carregando"}
-          >
+          {dados?.geradoEm && <span className="text-xs text-tinta-fraca">Atualizado às {formatarDataHora(dados.geradoEm)}</span>}
+          <Botao variante="secundario" onClick={recarregar} carregando={carregando}>
             Atualizar
           </Botao>
         </div>
       </div>
 
-      {estado.fase === "carregando" && <EstadoCarregando rotulo="Carregando o painel do dia…" />}
+      {carregando && semNenhumaCargaAinda && <EstadoCarregando rotulo="Carregando o painel do dia…" />}
 
-      {estado.fase === "erro" && (
-        <EstadoErro
-          erro={new ApiError(estado.mensagem, 0)}
-          tentarNovamente={() => {
-            setUltimaAtualizacao(null);
-            recarregar();
-          }}
-          titulo="Não deu para carregar o painel"
-        />
+      {Boolean(erro) && semNenhumaCargaAinda && (
+        <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não deu para carregar o painel" />
       )}
 
-      {estado.fase === "pronto" && (
+      {Boolean(erro) && !semNenhumaCargaAinda && (
+        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+          Não foi possível atualizar agora — mostrando a última carga bem-sucedida.
+        </p>
+      )}
+
+      {dados && (
         <div className="flex flex-col gap-4">
-          <SessoesHoje estado={estado.dados.sessoesDoDia} aoTentarDeNovo={recarregar} />
-          <PreparoPendente estado={estado.dados.pendenciasPreparo} aoTentarDeNovo={recarregar} />
-          <PagosSemContato estado={estado.dados.pagosSemContato} aoTentarDeNovo={recarregar} />
-          <Travado estado={estado.dados.pendenciasSistema} aoTentarDeNovo={recarregar} />
-          <NumerosSemana estado={estado.dados.indicadoresSemana} aoTentarDeNovo={recarregar} />
+          <SessoesHoje estado={dados.sessoesDoDia} aoTentarDeNovo={recarregar} />
+          <PreparoPendente estado={dados.pendenciasPreparo} aoTentarDeNovo={recarregar} />
+          <PagosSemContato estado={dados.pagosSemContato} aoTentarDeNovo={recarregar} />
+          <Travado estado={dados.pendenciasSistema} aoTentarDeNovo={recarregar} />
+          <NumerosSemana estado={dados.indicadoresSemana} aoTentarDeNovo={recarregar} />
         </div>
       )}
     </div>

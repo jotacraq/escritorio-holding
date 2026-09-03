@@ -33,10 +33,10 @@ interface Props<T> {
   /** Realce visual para o bloco mais urgente da tela (bloco 3 — dinheiro pago sem contato). */
   urgente?: boolean;
   aoTentarDeNovo: () => void;
-  filhos: (itens: T[]) => ReactNode;
+  children: (itens: T[]) => ReactNode;
 }
 
-export function Bloco<T>({ id, titulo, legenda, mensagemNadaPendente, estado, urgente, aoTentarDeNovo, filhos }: Props<T>) {
+export function Bloco<T>({ id, titulo, legenda, mensagemNadaPendente, estado, urgente, aoTentarDeNovo, children }: Props<T>) {
   const contagem = estado.situacao === "ok" ? estado.itens.length : null;
 
   return (
@@ -88,7 +88,7 @@ export function Bloco<T>({ id, titulo, legenda, mensagemNadaPendente, estado, ur
           </p>
         )}
 
-        {estado.situacao === "ok" && estado.itens.length > 0 && filhos(estado.itens)}
+        {estado.situacao === "ok" && estado.itens.length > 0 && children(estado.itens)}
       </div>
     </section>
   );

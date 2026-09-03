@@ -57,7 +57,7 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
   }
 
   if (!resposta.ok) {
-    const corpo = await lerCorpo<Partial<ErroPublico>>(resposta).catch(() => ({}));
+    const corpo = await lerCorpo<Partial<ErroPublico>>(resposta).catch(() => ({}) as Partial<ErroPublico>);
     const codigo = corpo.erro;
     const codigosConhecidos: ErroPublico["erro"][] = [
       "link_invalido",

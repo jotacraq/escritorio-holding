@@ -29,12 +29,15 @@ export function Travado({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Penden
       {(itens) => (
         <ul className="flex flex-col divide-y divide-linha">
           {itens.map((item) => (
-            <li key={item.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
+            <li
+              key={item.id}
+              className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2"
+            >
               <Selo tom="vermelho">{ROTULO_TIPO[item.tipo]}</Selo>
 
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-tinta">{item.pessoa_nome ?? item.titulo}</p>
-                {item.descricao && <p className="truncate text-xs text-tinta-suave">{item.descricao}</p>}
+              <div className="min-w-0 sm:flex-1">
+                <p className="text-sm font-medium text-tinta sm:truncate">{item.pessoa_nome ?? item.titulo}</p>
+                {item.descricao && <p className="text-xs text-tinta-suave sm:truncate">{item.descricao}</p>}
               </div>
 
               {item.ocorrido_em && (
@@ -44,7 +47,7 @@ export function Travado({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Penden
               {item.jornada_id ? (
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="rounded-sm border border-linha-forte bg-papel px-2.5 py-1 text-xs font-medium text-tinta hover:border-latao"
+                  className="self-start rounded-sm border border-linha-forte bg-papel px-2.5 py-1 text-xs font-medium text-tinta hover:border-latao sm:self-auto"
                 >
                   Resolver
                 </Link>

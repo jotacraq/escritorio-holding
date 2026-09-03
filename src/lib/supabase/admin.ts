@@ -3,8 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 /**
  * Cliente Supabase com `service_role`. Ignora RLS por completo.
  *
- * Uso permitido SOMENTE em: webhook, cron, camada de IA e upload de documento —
- * nunca em rota que só lê/edita dado de sessão comum. Nunca importar em componente
+ * Uso permitido SOMENTE em: webhook, cron, camada de IA, upload de documento e
+ * convite de equipe (`auth.admin.inviteUserByEmail`, `src/server/admin/convite.ts`
+ * — CONFLITO C15 do plano de Fase 2: criar a linha em `perfis_equipe` não precisa
+ * disto, mas disparar o e-mail de convite via Supabase Auth exige) — nunca em
+ * rota que só lê/edita dado de sessão comum. Nunca importar em componente
  * client nem em Server Component que renderiza a página (só em route handler / job).
  *
  * NOTA: o pacote `server-only` não está nas deps do projeto — a barreira aqui é de
