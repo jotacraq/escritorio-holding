@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { exigirVePatrimonio } from "@/server/auth";
-import { erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
+import { erroNaoEncontrado, registrarErro, respostaErro , ErroApi } from "@/server/erros";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 
@@ -32,7 +32,25 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (error) throw error;
     if (!documento) throw erroNaoEncontrado("Documento não encontrado.");
 
-    const supabaseAdmin = criarClienteAdmin();
+    // Sem SUPABASE_SERVICE_ROLE_KEY isto e configuracao ausente, nao falha do
+
+    // sistema: responde 503 dizendo o que falta, em vez de 500 generico que
+
+    // polui o log de erro real e esconde a causa de quem for triar.
+
+    let supabaseAdmin: ReturnType<typeof criarClienteAdmin>;
+
+    try {
+
+      supabaseAdmin = criarClienteAdmin();
+
+    } catch (erroServiceRole) {
+
+      registrarErro("src/app/api/documentos/[id]/url/route.ts#service_role_ausente", erroServiceRole);
+
+      throw new ErroApi(503, "servico_indisponivel", "Acesso ao documento exige SUPABASE_SERVICE_ROLE_KEY — indisponivel agora.");
+
+    }
     const { data: assinada, error: erroAssinatura } = await supabaseAdmin.storage
       .from(documento.bucket)
       .createSignedUrl(documento.caminho, EXPIRA_EM_SEGUNDOS);

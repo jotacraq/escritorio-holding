@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { exigirVePatrimonio } from "@/server/auth";
-import { erroNaoEncontrado, respostaErro } from "@/server/erros";
+import { erroNaoEncontrado, respostaErro , ErroApi , registrarErro } from "@/server/erros";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { gerarAnaliseCroqui } from "@/server/ia/croqui-analise";
 import { ErroIa } from "@/server/ia/erros";
@@ -28,8 +28,25 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { id } = ParamsSchema.parse(await context.params);
     const corpo = CorpoSchema.parse(await request.json());
 
-    const supabaseAdmin = criarClienteAdmin();
+    // Sem SUPABASE_SERVICE_ROLE_KEY isto e configuracao ausente, nao falha do
 
+    // sistema: responde 503 dizendo o que falta, em vez de 500 generico que
+
+    // polui o log de erro real e esconde a causa de quem for triar.
+
+    let supabaseAdmin: ReturnType<typeof criarClienteAdmin>;
+
+    try {
+
+      supabaseAdmin = criarClienteAdmin();
+
+    } catch (erroServiceRole) {
+
+      registrarErro("src/app/api/croquis/[id]/analise/route.ts#service_role_ausente", erroServiceRole);
+
+      throw new ErroApi(503, "servico_indisponivel", "Análise do croqui exige SUPABASE_SERVICE_ROLE_KEY — indisponivel agora.");
+
+    }
     const { data: croqui, error: erroCroqui } = await supabaseAdmin
       .from("croquis")
       .select("id, jornada_id, jornadas(pessoa_id)")

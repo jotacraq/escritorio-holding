@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { exigirPapel } from "@/server/auth";
-import { respostaErro } from "@/server/erros";
+import { respostaErro , ErroApi , registrarErro } from "@/server/erros";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { gerarBriefing } from "@/server/ia/briefing";
 import { ErroIa } from "@/server/ia/erros";
@@ -25,7 +25,25 @@ export async function POST(request: NextRequest) {
     const usuario = await exigirPapel("admin", "advogada", "relacionamento");
     const corpo = CorpoSchema.parse(await request.json());
 
-    const supabaseAdmin = criarClienteAdmin();
+    // Sem SUPABASE_SERVICE_ROLE_KEY isto e configuracao ausente, nao falha do
+
+    // sistema: responde 503 dizendo o que falta, em vez de 500 generico que
+
+    // polui o log de erro real e esconde a causa de quem for triar.
+
+    let supabaseAdmin: ReturnType<typeof criarClienteAdmin>;
+
+    try {
+
+      supabaseAdmin = criarClienteAdmin();
+
+    } catch (erroServiceRole) {
+
+      registrarErro("src/app/api/briefings/gerar/route.ts#service_role_ausente", erroServiceRole);
+
+      throw new ErroApi(503, "servico_indisponivel", "Geração de briefing exige SUPABASE_SERVICE_ROLE_KEY — indisponivel agora.");
+
+    }
     const resultado = await gerarBriefing(supabaseAdmin, {
       jornadaId: corpo.jornada_id,
       criadoPor: usuario.id,
