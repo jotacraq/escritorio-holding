@@ -43,17 +43,30 @@ export const TomLinguagemSchema = z.enum([
  * não reproduzir a classe de falha de 03/09 (`maxItems`/`minLength` no JSON
  * Schema estrito). Ver `provedor/json-schema-estrito.ts`.
  */
-export const NivelSchema = z.enum(["alta", "media", "baixa", "indefinida"]);
-export const VelocidadeDecisoriaSchema = z.enum(["rapida", "media", "lenta", "indefinida"]);
-export const NivelAutoridadeSchema = z.enum([
-  "decide_sozinho",
-  "decide_com_conjuge",
-  "decide_com_socios",
-  "nao_decide",
-  "indefinido",
-]);
-export const SimNaoIndefinidoSchema = z.enum(["sim", "nao", "indefinido"]);
-export const RitmoSessaoSchema = z.enum(["lento", "moderado", "rapido"]);
+/**
+ * MEDIDO em producao (04/09/2026): os enums da v2 estouraram o compilador de
+ * gramatica da Anthropic — `invalid_request_error: The compiled grammar is too
+ * large, which would cause performance issues`. O briefing parou de sair
+ * INTEIRO, com `tsc`, `eslint` e `build` verdes, porque o schema so e
+ * compilado do outro lado da rede.
+ *
+ * A v1 tinha 4 enums e passava; a v2 subiu para 11 e nao passa. Enum em
+ * schema estrito nao e um campo: e uma alternacao na gramatica, e elas se
+ * multiplicam entre si.
+ *
+ * Por isso os campos abaixo sao `z.string()` e NAO `z.enum()`. A lista fechada
+ * continua existindo — ela esta escrita no texto do prompt (v2 da 0042, secao
+ * "CAMPOS ESTRUTURADOS"), que e onde ela custa zero gramatica. Quem consome
+ * normaliza. Os 4 enums originais ficam: sao os que a tela usa para decidir
+ * cor e rotulo, e cabem no orcamento de gramatica que ja se provou.
+ *
+ * Se for reintroduzir enum aqui, MEÇA contra a API antes de considerar pronto.
+ */
+export const NivelSchema = z.string();
+export const VelocidadeDecisoriaSchema = z.string();
+export const NivelAutoridadeSchema = z.string();
+export const SimNaoIndefinidoSchema = z.string();
+export const RitmoSessaoSchema = z.string();
 
 export const BriefingSchema = z.object({
   resumo_executivo: z.string().min(1),

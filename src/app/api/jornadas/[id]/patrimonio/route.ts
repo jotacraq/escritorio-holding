@@ -47,12 +47,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 const CorpoSchema = z.object({
   tipo: z.enum(["imovel", "veiculo", "investimento", "previdencia", "empresa", "outro"]),
   descricao: z.string().trim().min(1).max(500),
-  ano_aquisicao: z.number().int().min(1900).max(2100).optional(),
-  valor_historico: z.number().min(0).max(1_000_000_000).optional(),
-  valor_mercado: z.number().min(0).max(1_000_000_000).optional(),
-  destinacao: z.string().trim().max(200).optional(),
-  valor_locacao_mensal: z.number().min(0).max(10_000_000).optional(),
-  detalhes: z.record(z.string(), z.unknown()).optional(),
+  // `.nullish()`, nao `.optional()`: a tela manda `null` no campo que a
+  // pessoa deixou em branco — e `null` nao e ausencia para o Zod. Com
+  // `.optional()` toda criacao de item patrimonial respondia 422, o que
+  // derrubava a aba inteira de patrimonio (achado do agente G, 04/09/2026).
+  ano_aquisicao: z.number().int().min(1900).max(2100).nullish(),
+  valor_historico: z.number().min(0).max(1_000_000_000).nullish(),
+  valor_mercado: z.number().min(0).max(1_000_000_000).nullish(),
+  destinacao: z.string().trim().max(200).nullish(),
+  valor_locacao_mensal: z.number().min(0).max(10_000_000).nullish(),
+  detalhes: z.record(z.string(), z.unknown()).nullish(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

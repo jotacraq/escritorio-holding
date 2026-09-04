@@ -5,6 +5,17 @@ import { useCallback, useEffect, useState } from "react";
 type Tema = "claro" | "escuro";
 
 const CHAVE_ARMAZENAMENTO = "sic-hf-tema";
+/**
+ * Evento próprio (não é o `storage` do navegador, que só dispara em OUTRAS
+ * abas): `TemaToggle` e qualquer outro consumidor de `useTema()` montam
+ * instâncias de estado INDEPENDENTES entre si (não há Context) — sem isto,
+ * um componente que já estava montado (ex.: um gráfico SVG dentro da Ficha
+ * 360 aberto na aba Patrimônio) nunca saberia que o botão de tema, em outro
+ * lugar da árvore, mudou a classe `.dark` do `<html>`. Descoberto ao validar
+ * a Fase 3 §4 (`QuadroSocietario` ficava sempre no tema claro depois do
+ * toggle, sem recarregar a página).
+ */
+const EVENTO_MUDANCA = "sic-hf-tema-mudou";
 
 function lerTemaAtual(): Tema {
   if (typeof document === "undefined") return "claro";
@@ -28,6 +39,13 @@ export function useTema() {
     // como uso legítimo de efeito.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTema(lerTemaAtual());
+
+    function aoMudarEmOutroLugar(evento: Event) {
+      const detalhe = (evento as CustomEvent<Tema>).detail;
+      setTema(detalhe ?? lerTemaAtual());
+    }
+    window.addEventListener(EVENTO_MUDANCA, aoMudarEmOutroLugar);
+    return () => window.removeEventListener(EVENTO_MUDANCA, aoMudarEmOutroLugar);
   }, []);
 
   const alternar = useCallback(() => {
@@ -35,6 +53,7 @@ export function useTema() {
     document.documentElement.classList.toggle("dark", proximo === "escuro");
     window.localStorage.setItem(CHAVE_ARMAZENAMENTO, proximo);
     setTema(proximo);
+    window.dispatchEvent(new CustomEvent<Tema>(EVENTO_MUDANCA, { detail: proximo }));
   }, []);
 
   return { tema, alternar };
