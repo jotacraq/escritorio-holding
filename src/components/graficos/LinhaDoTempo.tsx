@@ -36,6 +36,7 @@ export function LinhaDoTempo({ eventos, titulo = "Linha do tempo", tema = "claro
     return (
       <GraficoIndisponivel
         titulo={titulo}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Ao menos um evento com data registrado", onde: "Linha do tempo / Análise da Sessão" }]}
@@ -61,7 +62,8 @@ export function LinhaDoTempo({ eventos, titulo = "Linha do tempo", tema = "claro
       tema={tema}
       fonte="Fonte: registro de eventos da jornada"
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -79,11 +81,12 @@ export function LinhaDoTempo({ eventos, titulo = "Linha do tempo", tema = "claro
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         <line x1={X_SPINE} y1={MARGEM_TOPO} x2={X_SPINE} y2={altura - MARGEM_TOPO} stroke={cores.linhaForte} strokeWidth={2} />
         {ordenados.map((evento, indice) => {
           const y = posicoesY[indice];

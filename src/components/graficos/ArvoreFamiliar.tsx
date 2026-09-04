@@ -56,6 +56,7 @@ export function ArvoreFamiliar({ instituidores, nucleos, titulo = "Fam√≠lia e n√
     return (
       <GraficoIndisponivel
         titulo={titulo}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Ao menos um familiar cadastrado (instituidor, c√¥njuge, filho ou neto)", onde: "Aba Fam√≠lia" }]}
@@ -104,7 +105,8 @@ export function ArvoreFamiliar({ instituidores, nucleos, titulo = "Fam√≠lia e n√
         <ItemLegenda key={papel} cor={corPapel[papel]} rotulo={ROTULO_PAPEL[papel]} tema={tema} />
       ))}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -140,11 +142,12 @@ export function ArvoreFamiliar({ instituidores, nucleos, titulo = "Fam√≠lia e n√
               )),
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {instituidores.map((pessoa, indice) => {
           const x = xInstituidores + indice * (CHIP_L + GAP_X);
           return <ChipPessoa key={pessoa.id} x={x} y={yInstituidores} pessoa={pessoa} cor={corPapel[pessoa.papel]} tema={tema} />;

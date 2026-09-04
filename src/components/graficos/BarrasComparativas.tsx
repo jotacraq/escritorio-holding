@@ -44,7 +44,7 @@ export function BarrasComparativas({
     const faltando: ItemFaltante[] = [];
     if (custoInventario == null) faltando.push({ campo: "Estimativa de custo do inventário", onde: "Relatório da Sessão" });
     if (custoEstrutura == null) faltando.push({ campo: "Custo projetado da estrutura (tributos)", onde: "Relatório da Sessão" });
-    return <GraficoIndisponivel titulo={titulo} itensFaltantes={faltando} modoApresentacao={modoApresentacao} className={className} />;
+    return <GraficoIndisponivel titulo={titulo} itensFaltantes={faltando} tema={tema} modoApresentacao={modoApresentacao} className={className} />;
   }
 
   const maior = Math.max(custoInventario, custoEstrutura, 1);
@@ -72,7 +72,8 @@ export function BarrasComparativas({
       tema={tema}
       fonte={fonte}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -90,11 +91,12 @@ export function BarrasComparativas({
               <td>{formatarMoeda(custoEstrutura)}</td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {linhas.map((linha, indice) => {
           const y = indice * (ALTURA_ROTULO + ALTURA_BARRA + ESPACO);
           const larguraBarra = Math.max(4, (linha.valor / maior) * LARGURA_PLOTAVEL);
@@ -103,11 +105,14 @@ export function BarrasComparativas({
               <text x={MARGEM_ESQUERDA} y={y + 16} fontSize="15" fontWeight={600} fill={cores.tinta}>
                 {linha.rotulo}
               </text>
-              <rect x={MARGEM_ESQUERDA} y={y + ALTURA_ROTULO} width={LARGURA_PLOTAVEL} height={ALTURA_BARRA} rx={5} fill={cores.grade} />
-              <rect x={MARGEM_ESQUERDA} y={y + ALTURA_ROTULO} width={larguraBarra} height={ALTURA_BARRA} rx={5} fill={linha.cor} />
-              <text x={MARGEM_ESQUERDA + larguraBarra + 10} y={y + ALTURA_ROTULO + ALTURA_BARRA / 2 + 5} fontSize="15" fontWeight={700} fill={linha.cor}>
+              {/* Valor sempre ancorado na margem direita fixa — nunca "persegue" a ponta
+                  da barra (isso é o que causava o rótulo estourar o viewBox quando a
+                  barra chegava perto do máximo). */}
+              <text x={MARGEM_ESQUERDA + LARGURA_PLOTAVEL} y={y + 16} fontSize="15" fontWeight={700} textAnchor="end" fill={linha.cor}>
                 {formatarMoeda(linha.valor)}
               </text>
+              <rect x={MARGEM_ESQUERDA} y={y + ALTURA_ROTULO} width={LARGURA_PLOTAVEL} height={ALTURA_BARRA} rx={5} fill={cores.grade} />
+              <rect x={MARGEM_ESQUERDA} y={y + ALTURA_ROTULO} width={larguraBarra} height={ALTURA_BARRA} rx={5} fill={linha.cor} />
             </g>
           );
         })}

@@ -29,15 +29,29 @@ export interface DiagramaCelulasProps extends GraficoBaseProps {
 
 const ROTULO_CELULA: Record<CelulaTipo, string> = {
   unica: "Estrutura única",
-  cofre: "Cofre — onde está o patrimônio",
-  veiculo: "Veículo — quem controla e administra",
-  destino: "Destino — para quem e em quais condições",
+  cofre: "Cofre",
+  veiculo: "Veículo",
+  destino: "Destino",
 };
+
+/** Cláusula do método — vive numa segunda linha do cabeçalho, não espremida
+ * na mesma linha do nome (é isso que estourava a largura da caixa). */
+const DESCRICAO_CELULA: Record<CelulaTipo, string> = {
+  unica: "Concentra patrimônio, controle e destino",
+  cofre: "Onde está o patrimônio",
+  veiculo: "Quem controla e administra",
+  destino: "Para quem e em quais condições",
+};
+
+function rotuloCompleto(celula: Pick<CelulaArquitetura, "tipo" | "rotulo">): string {
+  if (celula.rotulo) return celula.rotulo;
+  return `${ROTULO_CELULA[celula.tipo]} — ${DESCRICAO_CELULA[celula.tipo]}`;
+}
 
 const LARGURA = 640;
 const GAP_SETA = 56;
 const MARGEM = 16;
-const ALTURA_CABECALHO = 30;
+const ALTURA_CABECALHO = 46;
 const ALTURA_ITEM = 20;
 
 /**
@@ -55,6 +69,7 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
     return (
       <GraficoIndisponivel
         titulo={tituloFinal}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Alocação dos bens por célula (Cofre, Veículo, Destino)", onde: "Análise da Sessão" }]}
@@ -72,7 +87,7 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
   for (const c of celulas) for (const item of c.itens) if (item.categoria) categoriasPresentes.add(item.categoria);
 
   const rotuloAria = `Arquitetura de ${n} ${n === 1 ? "célula" : "células"}: ${celulas
-    .map((c) => `${c.rotulo ?? ROTULO_CELULA[c.tipo]} contém ${c.itens.length} ${c.itens.length === 1 ? "item" : "itens"}`)
+    .map((c) => `${rotuloCompleto(c)} contém ${c.itens.length} ${c.itens.length === 1 ? "item" : "itens"}`)
     .join("; ")}.`;
 
   return (
@@ -84,7 +99,8 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
         <ItemLegenda key={cat} cor={cores.categoriaAfirmacao[cat]} rotulo={ROTULO_CATEGORIA_AFIRMACAO[cat]} tema={tema} />
       ))}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -98,24 +114,25 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
               c.itens.length > 0
                 ? c.itens.map((item, indice) => (
                     <tr key={`${c.tipo}-${indice}`}>
-                      <td>{c.rotulo ?? ROTULO_CELULA[c.tipo]}</td>
+                      <td>{rotuloCompleto(c)}</td>
                       <td>{item.descricao}</td>
                       <td>{item.categoria ? ROTULO_CATEGORIA_AFIRMACAO[item.categoria] : "não informado"}</td>
                     </tr>
                   ))
                 : [
                     <tr key={c.tipo}>
-                      <td>{c.rotulo ?? ROTULO_CELULA[c.tipo]}</td>
+                      <td>{rotuloCompleto(c)}</td>
                       <td colSpan={2}>sem item alocado</td>
                     </tr>,
                   ],
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {celulas.map((celula, indice) => {
           const x = indice * (larguraCaixa + GAP_SETA);
           const y = MARGEM;
@@ -124,9 +141,20 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
               <rect x={x} y={y} width={larguraCaixa} height={alturaCaixa} rx={6} fill={cores.superficie} stroke={cores.latao} strokeWidth={2} />
               <rect x={x} y={y} width={larguraCaixa} height={ALTURA_CABECALHO} rx={6} fill={cores.latao} />
               <rect x={x} y={y + 8} width={larguraCaixa} height={ALTURA_CABECALHO - 8} fill={cores.latao} />
-              <text x={x + larguraCaixa / 2} y={y + ALTURA_CABECALHO / 2 + 5} fontSize="13" fontWeight={700} textAnchor="middle" fill={cores.superficie}>
-                {celula.rotulo ?? ROTULO_CELULA[celula.tipo]}
-              </text>
+              {celula.rotulo ? (
+                <text x={x + larguraCaixa / 2} y={y + ALTURA_CABECALHO / 2 + 5} fontSize="13" fontWeight={700} textAnchor="middle" fill={cores.superficie}>
+                  {truncar(celula.rotulo, Math.floor(larguraCaixa / 6.2))}
+                </text>
+              ) : (
+                <>
+                  <text x={x + larguraCaixa / 2} y={y + 20} fontSize="14" fontWeight={700} textAnchor="middle" fill={cores.superficie}>
+                    {ROTULO_CELULA[celula.tipo]}
+                  </text>
+                  <text x={x + larguraCaixa / 2} y={y + 36} fontSize="10.5" textAnchor="middle" fill={cores.superficie} opacity={0.9}>
+                    {truncar(DESCRICAO_CELULA[celula.tipo], Math.floor(larguraCaixa / 5.4))}
+                  </text>
+                </>
+              )}
 
               {celula.itens.length === 0 && (
                 <text x={x + larguraCaixa / 2} y={y + ALTURA_CABECALHO + 26} fontSize="12" textAnchor="middle" fill={cores.tintaFraca} fontStyle="italic">

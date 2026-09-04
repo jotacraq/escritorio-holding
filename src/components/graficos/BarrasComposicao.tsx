@@ -45,6 +45,7 @@ export function BarrasComposicao({ itens, titulo = "Composição patrimonial por
     return (
       <GraficoIndisponivel
         titulo={titulo}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Valor de mercado (ou histórico) de ao menos um bem patrimonial", onde: "Aba Patrimônio" }]}
@@ -69,7 +70,8 @@ export function BarrasComposicao({ itens, titulo = "Composição patrimonial por
         <ItemLegenda key={l.tipo} cor={cores.categorica[l.tipo]} rotulo={`${ROTULO_TIPO_BEM[l.tipo]} — ${formatarPercentual(l.valor / total)}`} tema={tema} />
       ))}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -92,11 +94,12 @@ export function BarrasComposicao({ itens, titulo = "Composição patrimonial por
               <td>100%</td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {linhas.map((linha, indice) => {
           const y = MARGEM.topo + indice * (ALTURA_TEXTO + ALTURA_LINHA + ESPACO_ENTRE_LINHAS);
           const larguraBarra = Math.max(4, (linha.valor / maiorValor) * LARGURA_PLOTAVEL);

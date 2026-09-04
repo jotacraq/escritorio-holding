@@ -57,6 +57,7 @@ export function QuadroSocietario({
     return (
       <GraficoIndisponivel
         titulo={titulo}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Quadro societário (QSA) desta empresa", onde: "Aba Patrimônio — consultar dados públicos por CNPJ" }]}
@@ -102,7 +103,8 @@ export function QuadroSocietario({
       tema={tema}
       fonte={consultadoEm ? `Fonte: BrasilAPI, consultado em ${formatarData(consultadoEm)}` : "Fonte: consulta de CNPJ (BrasilAPI)"}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -122,11 +124,12 @@ export function QuadroSocietario({
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${largura} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {ALTURA_CABECALHO > 0 && (
           <g>
             {razaoSocial && (

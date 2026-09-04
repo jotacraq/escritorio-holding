@@ -53,6 +53,7 @@ export function MatrizCriterios({ criterios, recomendacao, titulo = "Os 9 crité
     return (
       <GraficoIndisponivel
         titulo={titulo}
+        tema={tema}
         modoApresentacao={modoApresentacao}
         className={className}
         itensFaltantes={[{ campo: "Os 9 critérios de escolha entre 1, 2 e 3 células", onde: "Análise da Sessão" }]}
@@ -89,7 +90,8 @@ export function MatrizCriterios({ criterios, recomendacao, titulo = "Os 9 crité
         <ItemLegenda key={nivel} cor={corNivel[nivel]} rotulo={ROTULO_NIVEL[nivel]} tema={tema} />
       ))}
       tabela={
-        <table className="sr-only">
+        <div className="sr-only">
+          <table>
           <caption>{rotuloAria}</caption>
           <thead>
             <tr>
@@ -112,11 +114,12 @@ export function MatrizCriterios({ criterios, recomendacao, titulo = "Os 9 crité
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       }
       className={className}
     >
-      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" height="auto" style={{ display: "block" }}>
+      <svg role="img" aria-label={rotuloAria} viewBox={`0 0 ${LARGURA} ${altura}`} width="100%" style={{ display: "block", height: "auto" }}>
         {colunasCelula.map((coluna, indice) =>
           coluna.n === recomendacao ? (
             <rect
