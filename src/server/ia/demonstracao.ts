@@ -92,18 +92,13 @@ const RASCUNHO_EXEMPLO_BRIEFING: Briefing = {
   ],
   processo_decisorio: {
     velocidade: "indefinida",
-    velocidade_nota: "Exemplo fixo de demonstração — sem dado real por trás desta escolha.",
     necessidade_seguranca: "indefinida",
-    necessidade_seguranca_nota: "Exemplo fixo de demonstração.",
     necessidade_validacao: "indefinida",
-    necessidade_validacao_nota: "Exemplo fixo de demonstração.",
     necessidade_detalhe: "indefinida",
-    necessidade_detalhe_nota: "Exemplo fixo de demonstração.",
     nivel_autoridade: "indefinido",
-    nivel_autoridade_nota: "Exemplo fixo de demonstração.",
     decisores_presentes_na_sessao: "indefinido",
-    decisores_presentes_na_sessao_nota: "Exemplo fixo de demonstração.",
     decisores: [MARCADOR_EXEMPLO],
+    evidencias: ["Exemplo fixo de demonstração — sem dado real por trás destas escolhas."],
   },
   linguagem_recomendada: {
     tom: ["objetiva"],
@@ -126,7 +121,6 @@ const RASCUNHO_EXEMPLO_BRIEFING: Briefing = {
   ],
   estrategia_sessao: {
     ritmo: "moderado",
-    ritmo_nota: "Exemplo fixo de demonstração — sem dado real por trás desta escolha.",
     mais_tempo_em: ["Exemplo fixo de demonstração"],
     menos_tempo_em: ["Exemplo fixo de demonstração"],
     momento_croqui: "Exemplo fixo de demonstração",

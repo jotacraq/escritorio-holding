@@ -9,28 +9,18 @@ import { z } from "zod";
 
 export const DiscSchema = z.enum(["D", "I", "S", "C"]);
 
-export const ArquetipoPatrimonialSchema = z.enum([
-  "Construtor",
-  "Patriarca",
-  "Protetor",
-  "Empresario",
-  "Planejador",
-  "Investidor",
-  "Realizador",
-  "Nenhum_se_aplica",
-]);
+/**
+ * Era `z.enum` com 8 opções. Enum em gramática estrita é alternação, e
+ * alternações se multiplicam entre si — foi parte do estouro medido em
+ * 04/09/2026. A lista fechada continua no texto do prompt, onde custa zero
+ * gramática; aqui basta a string. Quem consome normaliza.
+ */
+export const ArquetipoPatrimonialSchema = z.string();
 
 export const ProbabilidadeSchema = z.enum(["alta", "media", "baixa"]);
 
-export const TomLinguagemSchema = z.enum([
-  "tecnica",
-  "emocional",
-  "objetiva",
-  "detalhada",
-  "acolhedora",
-  "firme",
-  "consultiva",
-]);
+/** Mesmo motivo de ArquetipoPatrimonialSchema: a lista vive no prompt. */
+export const TomLinguagemSchema = z.string();
 
 /**
  * Schema v2 (L3, ARQUITETURA-FASE-3.md §1.5): campos onde o próprio método já
@@ -97,22 +87,30 @@ export const BriefingSchema = z.object({
       justificativa: z.string(),
     }),
   ),
+  // MEDIDO contra o provedor (sonda de 04/09/2026): a gramática estrita da
+  // Anthropic aceitou 3.905 bytes de schema e recusou 4.428. Este bloco era o
+  // mais pesado de todos — 953 bytes sozinho — e foi o que estourou o teto e
+  // derrubou 100% dos briefings.
+  //
+  // Sete campos "_nota" viraram UMA lista de evidências. A informação é a
+  // mesma (a evidência que embasa cada categoria), o prompt continua pedindo
+  // uma evidência por categoria, e o schema custa um terço.
+  //
+  // `nivel_autoridade` e `decisores_presentes_na_sessao` ficam: são exigidos
+  // pelo POP 03 e estavam faltando — era método sendo perdido.
+  //
+  // Antes de acrescentar campo aqui, rode POST /api/admin/sonda-schema. Não
+  // dá para descobrir isso no build: o schema só compila do outro lado da rede.
   processo_decisorio: z.object({
     velocidade: VelocidadeDecisoriaSchema,
-    velocidade_nota: z.string(),
     necessidade_seguranca: NivelSchema,
-    necessidade_seguranca_nota: z.string(),
     necessidade_validacao: NivelSchema,
-    necessidade_validacao_nota: z.string(),
     necessidade_detalhe: NivelSchema,
-    necessidade_detalhe_nota: z.string(),
-    // Exigidos pelo POP 03 e ausentes do schema até aqui — o método estava
-    // sendo perdido (ARQUITETURA-FASE-3.md §1.5).
     nivel_autoridade: NivelAutoridadeSchema,
-    nivel_autoridade_nota: z.string(),
     decisores_presentes_na_sessao: SimNaoIndefinidoSchema,
-    decisores_presentes_na_sessao_nota: z.string(),
     decisores: z.array(z.string()),
+    /** Uma evidência observada por categoria acima — o que sustenta a escolha. */
+    evidencias: z.array(z.string()),
   }),
   linguagem_recomendada: z.object({
     tom: z.array(TomLinguagemSchema),
@@ -129,7 +127,6 @@ export const BriefingSchema = z.object({
   ),
   estrategia_sessao: z.object({
     ritmo: RitmoSessaoSchema,
-    ritmo_nota: z.string(),
     mais_tempo_em: z.array(z.string()),
     menos_tempo_em: z.array(z.string()),
     momento_croqui: z.string(),
