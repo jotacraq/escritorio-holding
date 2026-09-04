@@ -262,12 +262,29 @@ para testar sem supervisão, mas nenhum destes pontos teve olho humano em cima:
    longa para garantir que não há diferença de comportamento sutil entre as
    duas versões neste projeto específico.
 2. **`anthropic/claude-opus-5` via OpenRouter falhou em teste real** com o
-   `BriefingSchema` completo (`openrouter_resposta_vazia`), mas funcionou
-   normalmente em chamadas isoladas com schema simples. Causa raiz não isolada
-   por falta de tempo — pode ser um limite real do modo `strict:true` com
-   schema grande no Opus especificamente, ou uma falha transitória do provider
-   naquele momento. **Antes de considerar usar Opus em qualquer tarefa de IA
-   deste projeto, reproduza esse teste primeiro.**
+   `BriefingSchema` completo (`openrouter_resposta_vazia`).
+
+   **ATUALIZAÇÃO 04/09 — a evidência aponta para TEMPO, não para o schema.**
+   A execução que falhou registrou latência de **120,0s exatos**, que era
+   precisamente o `TIMEOUT_MS` do adaptador. E o Sonnet, que "funciona",
+   levou **100,8s** num briefing em **modo reduzido** (sem transcrição — só
+   formulário e faixa de patrimônio): 84% do teto, com o input mais pobre que
+   o sistema vai ver. Um briefing com transcrição da Ligação Estratégica gera
+   bem mais saída e passa disso com folga.
+
+   Ou seja: isto não era só um problema do Opus, era um teto apertado que ia
+   estourar no Sonnet também assim que entrasse cliente de verdade.
+
+   **O que foi feito:** teto passou para 300s (`IA_TIMEOUT_MS`, configurável
+   sem deploy), o mesmo valor no adaptador de rollback da Anthropic, e a
+   mensagem de erro passou a distinguir *estourou o tempo* de *corpo vazio de
+   verdade* — antes as duas coisas viravam `openrouter_resposta_vazia` e
+   mandavam quem investiga para o lado errado.
+
+   **O que continua não provado:** ninguém rodou Opus de novo com o teto novo.
+   A hipótese do tempo é forte (latência exata no teto), mas **é hipótese**.
+   Antes de trocar `prompts_versoes.modelo_padrao` para Opus, rode um teste
+   real e veja o resultado — não assuma que o timeout maior resolveu.
 3. **Modelo trocado de Opus para Sonnet nas 4 tarefas de IA** por causa do item
    acima — decisão tomada sem o usuário confirmar explicitamente que abre mão
    da qualidade potencialmente maior do Opus no Briefing/Croqui (ele só chegou

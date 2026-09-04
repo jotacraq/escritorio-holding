@@ -14,7 +14,11 @@ import type { ProvedorIa, PedidoIa, RespostaIa } from "./tipos";
 // 03/09/2026 (achado médio): sem isto, o path de rollback de incidente (usado
 // sob pressão, quando o OpenRouter falha) herdava o timeout default do SDK
 // (10 min) em vez do comportamento conhecido/documentado do projeto.
-const TIMEOUT_MS = 120_000;
+// Mesmo teto do adaptador OpenRouter, e pelo mesmo motivo: 120s se provou
+// apertado em producao (um briefing em modo reduzido levou 100,8s). Se este
+// caminho de rollback for acionado, ele nao pode herdar o problema que o
+// principal ja corrigiu. Lido da mesma env, para os dois andarem juntos.
+const TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS ?? 300_000);
 
 let clienteSingleton: Anthropic | null = null;
 

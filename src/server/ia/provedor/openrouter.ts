@@ -13,7 +13,25 @@ import type { EffortIa } from "../cliente";
  */
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-const TIMEOUT_MS = 120_000;
+
+/**
+ * Teto de espera por uma geração.
+ *
+ * Era 120s e isso se provou APERTADO em producao, com dado real: um Briefing
+ * Estrategico em modo reduzido (sem transcricao, so formulario e faixa de
+ * patrimonio) levou **100,8s** — 84% do teto. Um briefing com transcricao da
+ * Ligacao Estrategica gera bem mais saida e passa disso com folga.
+ *
+ * O sintoma quando estoura nao e obvio: a execucao que falhou com
+ * `openrouter_resposta_vazia` na migracao registrou latencia de **120,0s
+ * exatos**. Nao trate corpo vazio como "modelo nao respondeu" sem olhar a
+ * latencia primeiro.
+ *
+ * 300s cobre o pior caso observado com margem. O custo de esperar demais e um
+ * pedido pendurado; o custo de esperar de menos e um briefing perdido depois de
+ * ja ter pago os tokens.
+ */
+const TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS ?? 300_000);
 
 /** effort → reasoning.max_tokens (extended thinking, repassado pelo provider Anthropic). */
 const EFFORT_PARA_REASONING_MAX_TOKENS: Record<EffortIa, number> = {
@@ -60,6 +78,7 @@ interface MensagemChat {
 }
 
 async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeSchema: string, jsonSchema: Record<string, unknown>, effort: EffortIa, maxTokens: number): Promise<RespostaOpenRouter> {
+  const iniciadoEm = Date.now();
   const resposta = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
@@ -80,6 +99,17 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
       provider: { order: ["anthropic"], allow_fallbacks: false, require_parameters: true },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
+  }).catch((erroRede: unknown) => {
+    // AbortSignal.timeout lanca TimeoutError — que sem tratamento vira uma
+    // mensagem generica de rede e esconde a causa. Nomeia o que aconteceu.
+    const decorrido = Math.round((Date.now() - iniciadoEm) / 1000);
+    const nome = erroRede instanceof Error ? erroRede.name : "";
+    if (nome === "TimeoutError" || nome === "AbortError") {
+      throw new Error(
+        `openrouter_timeout: sem resposta em ${decorrido}s (teto IA_TIMEOUT_MS=${Math.round(TIMEOUT_MS / 1000)}s)`,
+      );
+    }
+    throw erroRede;
   });
 
   const corpo = (await resposta.json().catch(() => null)) as RespostaOpenRouter | null;
@@ -93,7 +123,17 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
     );
   }
   if (!corpo) {
-    throw new Error("openrouter_resposta_vazia");
+    // Distinguir os dois casos importa para quem for diagnosticar depois: corpo
+    // vazio perto do teto quase sempre e tempo, nao o modelo se recusando a
+    // responder. Sem isso, a mensagem manda o proximo investigador para o lado
+    // errado — foi o que aconteceu na migracao para o OpenRouter.
+    const decorrido = Date.now() - iniciadoEm;
+    const perto = decorrido >= TIMEOUT_MS * 0.9;
+    throw new Error(
+      perto
+        ? `openrouter_resposta_vazia_perto_do_timeout: ${Math.round(decorrido / 1000)}s de ${Math.round(TIMEOUT_MS / 1000)}s (aumente IA_TIMEOUT_MS ou reduza o effort)`
+        : `openrouter_resposta_vazia: corpo nao-JSON ou vazio apos ${Math.round(decorrido / 1000)}s (status ${resposta.status})`,
+    );
   }
   return corpo;
 }
