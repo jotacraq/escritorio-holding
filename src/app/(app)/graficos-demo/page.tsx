@@ -4,12 +4,14 @@ import { useState } from "react";
 import { SeloDemonstracao } from "@/components/ui/Selo";
 import {
   ArvoreFamiliar,
+  BarrasCenarios,
   BarrasComparativas,
   BarrasComposicao,
   DiagramaCelulas,
   LinhaDoTempo,
   MatrizCriterios,
   QuadroSocietario,
+  TabelaPatrimonial,
   type TemaGrafico,
 } from "@/components/graficos";
 
@@ -218,6 +220,41 @@ export default function PaginaGraficosDemo() {
 
         <Cartao numero="7c" slide="Mapa societário (CNPJ ainda não consultado)" nome="QuadroSocietario — sem dado">
           <QuadroSocietario tema={tema} modoApresentacao={modoApresentacao} socios={[]} />
+        </Cartao>
+
+        <Cartao numero={8} slide="Diagnóstico da SV (plano Fase C, não plugado ainda)" nome="TabelaPatrimonial">
+          <TabelaPatrimonial
+            tema={tema}
+            modoApresentacao={modoApresentacao}
+            itens={[
+              { descricao: "Apartamento — Jardins, SP", tipo: "imovel", custoOrigemPF: 620_000, valorMercado: 1_850_000, rendimentoMensal: 6_800, tributacao: "IPTU + IR sobre aluguel" },
+              { descricao: "Ferraz Participações Ltda — 60%", tipo: "empresa", custoOrigemPF: 400_000, valorMercado: 3_480_000, rendimentoMensal: null, tributacao: "IRPJ/CSLL na empresa" },
+              { descricao: "Carteira de ações (B3)", tipo: "investimento", custoOrigemPF: 210_000, valorMercado: null, rendimentoMensal: 1_150, tributacao: null },
+              { descricao: "Sítio — Atibaia", tipo: "imovel", custoOrigemPF: null, valorMercado: 980_000, rendimentoMensal: null, tributacao: "IPTU rural" },
+            ]}
+          />
+        </Cartao>
+
+        <Cartao numero="8b" slide="Diagnóstico da SV (nenhum bem cadastrado)" nome="TabelaPatrimonial — sem dado">
+          <TabelaPatrimonial tema={tema} modoApresentacao={modoApresentacao} itens={[]} />
+        </Cartao>
+
+        <Cartao numero={9} slide="Cenário Patrimonial (plano Fase C — motor Fase B ainda bloqueado)" nome="BarrasCenarios">
+          <BarrasCenarios
+            tema={tema}
+            modoApresentacao={modoApresentacao}
+            cenarios={[
+              { nome: "Inventário", custoTotal: 520_000, diferencaPercentual: null, ehReferencia: true },
+              { nome: "Doação", custoTotal: 210_000, diferencaPercentual: -0.596 },
+              { nome: "1 Célula", custoTotal: 138_000, diferencaPercentual: -0.735 },
+              { nome: "2 Células", custoTotal: null, diferencaPercentual: null },
+              { nome: "3 Células", custoTotal: null, diferencaPercentual: null },
+            ]}
+          />
+        </Cartao>
+
+        <Cartao numero="9b" slide="Cenário Patrimonial (nenhum cenário informado)" nome="BarrasCenarios — sem dado">
+          <BarrasCenarios tema={tema} modoApresentacao={modoApresentacao} cenarios={[]} />
         </Cartao>
       </div>
     </div>
