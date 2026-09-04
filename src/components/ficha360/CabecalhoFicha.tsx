@@ -17,7 +17,11 @@ const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" |
   congelada: { rotulo: "Congelada", tom: "neutro" },
 };
 
-const ROTULOS_NIVEL_PAGO = ["Nada pago", "Sessão paga", "Croqui pago", "Holding paga"];
+// "Sessão paga" aparecia aqui E como rótulo da etapa `sessao_contratada`:
+// dois selos idênticos lado a lado, dizendo coisas diferentes (um é etapa da
+// esteira, o outro é até onde a pessoa pagou). Prefixo "Pago:" desfaz a
+// colisão sem perder a informação.
+const ROTULOS_NIVEL_PAGO = ["Nada pago", "Pago: sessão", "Pago: croqui", "Pago: holding"];
 
 const ORDEM_PROBABILIDADE: Record<"alta" | "media" | "baixa", number> = { alta: 0, media: 1, baixa: 2 };
 
@@ -163,7 +167,9 @@ export function CabecalhoFicha({ ficha, aoAtualizar, pendencias }: { ficha: Fich
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Selo tom="azul">{rotuloEtapa}</Selo>
+          {/* A etapa vive na faixa vital, que é sticky e acompanha a rolagem.
+              Repetir aqui era a terceira vez que a mesma informação aparecia
+              na mesma dobra. */}
           <Selo tom={ROTULOS_DESFECHO[jornada.desfecho].tom}>{ROTULOS_DESFECHO[jornada.desfecho].rotulo}</Selo>
           <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
           <Link
