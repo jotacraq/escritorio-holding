@@ -305,6 +305,20 @@ Sem elas o sistema funciona, mas parte do método fica desligada. Estão detalha
 > Não usar mais esse arquivo como prova; usar `git ls-remote origin main` +
 > uma rota conhecida do commit mais recente, como acima.
 >
+> ### ⚠️ CUIDADO: existem DOIS repositórios GitHub com o mesmo nome
+>
+> A Hostinger está conectada em **`infra-grupo-participa/escritorio-holding`**
+> — **NÃO** `jotacraq/escritorio-holding` (o remote `origin` deste clone).
+> Empurrar só pro `origin` NÃO publica nada — descoberto em 04/09 à noite
+> depois de 3 push sem efeito. `infra-grupo-participa` estava parado num
+> "Initial commit" único, 10 migrations atrás (até 0039). Sincronizado por
+> `git push correto main --force-with-lease` (remote `correto` adicionado a
+> este clone). **Sempre confirmar com `git remote -v` que existe o remote
+> `correto` apontando pra `infra-grupo-participa`, e dar push nos DOIS**
+> (`origin` para histórico/backup pessoal, `correto` para publicar de
+> verdade) — ou reconfigurar `origin` para ser o repo certo, se fizer mais
+> sentido numa sessão futura.
+>
 > Se algum dia precisar publicar manualmente de novo (site desconectado do
 > GitHub), o ciclo por archive era:
 >
