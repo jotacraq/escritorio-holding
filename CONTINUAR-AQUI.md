@@ -277,16 +277,36 @@ Sem elas o sistema funciona, mas parte do método fica desligada. Estão detalha
 
 ---
 
-## 6. Deploy — RESOLVIDO em 03/09 à noite (histórico abaixo, para quem chegar depois)
+## 6. Deploy — auto-deploy por push CONFIRMADO em 04/09 à noite (histórico abaixo)
 
-> ### ⚠️ O deploy NÃO é automático por push
+> ### ✅ O deploy É automático por push agora (desde 04/09, ~19h38 UTC)
 >
-> Conferido em 04/09 pela API da Hostinger: os deploys existentes são
-> `source_type: archive` (envio manual de pacote) e `git`, mas **nenhum
-> disparou sozinho a partir de um push**. Commitar e empurrar para o GitHub
-> **não coloca nada no ar**.
+> Marcio reconfigurou o site na Hostinger para conectar direto no GitHub.
+> Confirmado por 2 fontes independentes, não só a palavra dele:
+> 1. `hosting_listJsDeployments` mostrou um deployment novo,
+>    `source_type: "git"`, `created_at: 2026-09-04T19:38:04Z`,
+>    `state: completed` — a lista de histórico zerou (site reconectado).
+> 2. Prova funcional: `curl https://escritorio.grupoparticipa.app.br/gaveta-demo`
+>    devolveu `307` (redirect de login = rota existe), não `404`. Essa rota só
+>    existe a partir do commit `4d0b8df` (04/09) — prova que o build novo
+>    está mesmo no ar, não só que "algum" deploy rodou.
 >
-> Para publicar, o ciclo é:
+> **Antes disso (histórico, não descartar):** o deploy NÃO era automático.
+> Os 14 deploys anteriores eram 11 `archive` (manuais) + 2 `git` (só na
+> criação do site em 03/09 de madrugada, não repetidos depois). Um push às
+> 19h13 UTC de 04/09 não gerou deployment nenhum — confirmado 2x antes da
+> reconfiguração. **Isso pode voltar a acontecer** se o site for
+> desconectado/reconectado de novo — sempre reconferir por
+> `hosting_listJsDeployments` + uma rota nova conhecida antes de confiar, não
+> assumir de cabeça.
+>
+> `/versao.txt` (marcador do fluxo manual antigo) ficou **órfão** — o deploy
+> git não passa por esse passo, então ele não reflete mais o commit real.
+> Não usar mais esse arquivo como prova; usar `git ls-remote origin main` +
+> uma rota conhecida do commit mais recente, como acima.
+>
+> Se algum dia precisar publicar manualmente de novo (site desconectado do
+> GitHub), o ciclo por archive era:
 >
 > ```bash
 > npm run build                       # tem que passar antes de empacotar
