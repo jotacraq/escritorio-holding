@@ -2,7 +2,7 @@
 
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import type { EstadoItemPasta, ItemPasta } from "@/lib/pasta/derivar";
-import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA } from "@/lib/pasta/rotas";
+import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
 import { SeloIA } from "@/components/ui/Selo";
 
 /**
@@ -63,10 +63,11 @@ const ROTULO_ESTADO: Record<EstadoItemPasta, string> = {
   ainda_nao: "Ainda não é hora",
 };
 
-function CartaoItem({ item }: { item: ItemPasta }) {
+function CartaoItem({ item, aoAbrirGaveta }: { item: ItemPasta; aoAbrirGaveta: (chave: ChaveItemPasta) => void }) {
   const cores = CORES_ESTADO[item.estado];
   const clicavel = item.estado !== "ainda_nao";
-  const href = clicavel ? `#${ABA_POR_ITEM_PASTA[item.chave]}` : undefined;
+  const emGaveta = ITENS_EM_GAVETA.has(item.chave);
+  const href = clicavel && !emGaveta ? `#${ABA_POR_ITEM_PASTA[item.chave]}` : undefined;
   const acao = ACAO_POR_ITEM_PASTA[item.chave];
 
   const conteudo = (
@@ -99,6 +100,23 @@ function CartaoItem({ item }: { item: ItemPasta }) {
     return <div className={`${classeBase} ${cores.borda} cursor-default opacity-90`}>{conteudo}</div>;
   }
 
+  if (emGaveta) {
+    // Camada 2 (Gaveta): item de uma das 5 chaves migradas — abre o painel
+    // lateral em vez de navegar por hash. `<button>`, não `<a href="#...">`,
+    // porque não há navegação real: o estado da gaveta vive no componente
+    // pai (`page.tsx`), que decide o `<Gaveta>` a renderizar por
+    // `item.chave`.
+    return (
+      <button
+        type="button"
+        onClick={() => aoAbrirGaveta(item.chave)}
+        className={`${classeBase} ${cores.borda} hover:border-[color:var(--latao)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--latao)]`}
+      >
+        {conteudo}
+      </button>
+    );
+  }
+
   return (
     <a
       href={href!}
@@ -123,7 +141,7 @@ function CartaoItem({ item }: { item: ItemPasta }) {
   );
 }
 
-export function PastaDoCliente({ itens }: { itens: ItemPasta[] }) {
+export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; aoAbrirGaveta: (chave: ChaveItemPasta) => void }) {
   // Contador honesto: o denominador é só o que já é "hora de fazer"
   // (pronto + em_revisao + falta) — `ainda_nao` fica de fora do total tanto
   // quanto do numerador. Contar "3 de 14" para um cliente que acabou de
@@ -160,7 +178,7 @@ export function PastaDoCliente({ itens }: { itens: ItemPasta[] }) {
             </h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {itensDoMomento.map((item) => (
-                <CartaoItem key={item.chave} item={item} />
+                <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} />
               ))}
             </div>
           </section>

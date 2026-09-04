@@ -52,3 +52,26 @@ export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   familiares: "Mapear os Familiares",
   documentos: "Anexar documentos (IR, contrato social)",
 };
+
+/**
+ * Camada 2 (Gaveta) x Camada 3 (aba/hash) — arquitetura de informação, Fase 3
+ * (`brain/Diário/2026-09-04.md`, "a regra das três camadas"). Primeira leva de
+ * migração: 5 dos itens candidatos (Formulário, Ligação, Links, Documentos,
+ * Patrimônio) — os mais simples e de menor risco. `familiares` NÃO entra: não
+ * tem aba/componente próprio hoje (`ABA_POR_ITEM_PASTA.familiares` já aponta
+ * para `patrimonio`, que é quem lista os familiares na prática); Relatório,
+ * Briefing, Análise da Sessão e Material ficam de fora nesta rodada por
+ * decisão de escopo, não por limitação técnica.
+ *
+ * `ConteudoPastaOuAbas` consulta este set para decidir, por chave de hash, se
+ * abre a Gaveta (item migrado) ou mantém o comportamento antigo de `Abas`
+ * (item não migrado) — um único lugar decide, em vez de duas listas que podem
+ * divergir.
+ */
+export const ITENS_EM_GAVETA: ReadonlySet<ChaveItemPasta> = new Set([
+  "formulario",
+  "ligacao",
+  "links",
+  "documentos",
+  "patrimonio",
+]);

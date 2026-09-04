@@ -9,7 +9,10 @@ import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { PastaDoCliente } from "@/components/pasta/PastaDoCliente";
+import { Gaveta } from "@/components/ui/Gaveta";
 import { derivarPasta } from "@/lib/pasta/derivar";
+import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
+import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import { FormularioAba } from "@/components/ficha360/FormularioAba";
 import { LigacaoAba } from "@/components/ficha360/LigacaoAba";
 import { LinksAba } from "@/components/ficha360/LinksAba";
@@ -24,6 +27,15 @@ import { CroquiAba } from "@/components/ficha360/CroquiAba";
 import { AnaliseSessaoAba } from "@/components/ficha360/AnaliseSessaoAba";
 import { TimelineAba } from "@/components/ficha360/TimelineAba";
 import type { Ficha360 } from "@/lib/api";
+
+/** Rótulo de cada Gaveta migrada (Camada 2) — mesmo nome de negócio da aba original. */
+const TITULO_GAVETA: Partial<Record<ChaveItemPasta, string>> = {
+  formulario: "Formulário",
+  ligacao: "Ligação",
+  links: "Links",
+  documentos: "Documentos",
+  patrimonio: "Patrimônio",
+};
 
 export default function PaginaFicha360({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -70,18 +82,18 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // saber que existe.
   const temAnaliseSessao = podeVerPatrimonio && ficha.timeline.some((e) => e.tipo === "analise_sessao");
 
-  // Fase 2 — a Pasta do Cliente substitui os grupos (Preparação · Sessão ·
-  // Patrimônio · Registro) como forma de organizar a tela. `Abas` continua
-  // recebendo lista PLANA (sem `grupo`) — a segmentação em grupo escondia 9
-  // dos 14 artefatos fora do grupo ativo; a Pasta mostra todos de uma vez e
-  // as abas viram só o destino do clique/hash. Nenhuma regra de acesso
+  // Fase 3 — Formulário, Ligação, Links, Documentos e Patrimônio migraram
+  // para a Gaveta (Camada 2, ver `ITENS_EM_GAVETA` em `lib/pasta/rotas.ts`) e
+  // SAEM do array `abas` — quem os renderiza agora é o bloco de `<Gaveta>`
+  // abaixo, com os MESMOS componentes e props (nenhuma lógica duplicada).
+  // `Abas` continua existindo para os itens não migrados desta rodada
+  // (Relatório, Briefing, Análise da Sessão, Material) e os que não fazem
+  // parte da Pasta (Sessão, Pesquisa pública, Croqui, Linha do tempo) — lista
+  // PLANA (sem `grupo`), como já era desde a Fase 2. Nenhuma regra de acesso
   // muda: o mesmo `podeVerPatrimonio` que já gateava
-  // Patrimônio/Documentos/Relatório/Croqui continua gateando exatamente as
-  // mesmas quatro abas.
+  // Patrimônio/Documentos/Relatório/Croqui continua gateando os mesmos itens
+  // (agora Patrimônio/Documentos como Gaveta, Relatório/Croqui como aba).
   const abas: DefinicaoAba[] = [
-    { id: "formulario", rotulo: "Formulário", conteudo: <FormularioAba jornadaId={id} /> },
-    { id: "ligacao", rotulo: "Ligação", conteudo: <LigacaoAba jornadaId={id} ligacaoInicial={ficha.ligacao} trilha={ficha.jornada.trilha} aoAtualizar={recarregar} /> },
-    { id: "links", rotulo: "Links", conteudo: <LinksAba jornadaId={id} /> },
     {
       id: "briefing",
       rotulo: "Briefing",
@@ -123,21 +135,47 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   abas.push({ id: "pesquisa", rotulo: "Pesquisa pública", conteudo: <PesquisaPublicaAba /> });
 
   if (podeVerPatrimonio) {
-    abas.push({ id: "patrimonio", rotulo: "Patrimônio", conteudo: <PatrimonioAba jornadaId={id} /> });
-    abas.push({
-      id: "documentos",
-      rotulo: "Documentos",
-      conteudo: <DocumentosAba jornadaId={id} pessoaId={ficha.pessoa.id} documentosIniciais={ficha.documentos} aoAtualizar={recarregar} />,
-    });
     abas.push({ id: "croqui", rotulo: "Croqui", conteudo: <CroquiAba jornadaId={id} estadoCroqui={estadoCroqui} /> });
   }
 
   abas.push({ id: "timeline", rotulo: "Linha do tempo", conteudo: <TimelineAba eventos={ficha.timeline} /> });
 
+  // Estado único da Camada 2 (Gaveta) para as 5 chaves migradas — `null` é
+  // "nenhuma gaveta aberta". Elevado para este componente (não para dentro
+  // de `PastaDoCliente`) porque tanto o cartão da Pasta quanto o chip
+  // "Próxima ação" de `CabecalhoFicha` precisam poder abrir a mesma gaveta.
+  const [gavetaAberta, setGavetaAberta] = useState<ChaveItemPasta | null>(null);
+
   return (
     <div className="flex flex-col gap-6">
-      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} briefing={briefing} croquiAtalho={croquiAtalho} />
-      <ConteudoPastaOuAbas pasta={pasta} abas={abas} />
+      <CabecalhoFicha
+        ficha={ficha}
+        aoAtualizar={recarregar}
+        briefing={briefing}
+        croquiAtalho={croquiAtalho}
+        aoAbrirGaveta={(chave) => setGavetaAberta(chave)}
+      />
+      <ConteudoPastaOuAbas pasta={pasta} abas={abas} aoMudarGaveta={setGavetaAberta} />
+
+      <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.formulario!}>
+        <FormularioAba jornadaId={id} />
+      </Gaveta>
+      <Gaveta aberta={gavetaAberta === "ligacao"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.ligacao!}>
+        <LigacaoAba jornadaId={id} ligacaoInicial={ficha.ligacao} trilha={ficha.jornada.trilha} aoAtualizar={recarregar} />
+      </Gaveta>
+      <Gaveta aberta={gavetaAberta === "links"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.links!}>
+        <LinksAba jornadaId={id} />
+      </Gaveta>
+      {podeVerPatrimonio && (
+        <>
+          <Gaveta aberta={gavetaAberta === "patrimonio"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.patrimonio!}>
+            <PatrimonioAba jornadaId={id} />
+          </Gaveta>
+          <Gaveta aberta={gavetaAberta === "documentos"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.documentos!}>
+            <DocumentosAba jornadaId={id} pessoaId={ficha.pessoa.id} documentosIniciais={ficha.documentos} aoAtualizar={recarregar} />
+          </Gaveta>
+        </>
+      )}
     </div>
   );
 }
@@ -150,24 +188,49 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
  * Leitura de `window.location.hash` fica neste componente, não em `Abas`
  * (que não deveria saber da existência da Pasta) — mesmo padrão de "ler
  * sistema externo uma vez após montar" de `useTema.ts`.
+ *
+ * Fase 3 — deep-link dos 5 itens migrados para Gaveta: escolhida a opção (a)
+ * do plano (`brain/Diário/2026-09-04.md`) — este componente também decide
+ * abrir a Gaveta quando o hash bate com um item de `ITENS_EM_GAVETA`, em vez
+ * de tratá-lo como "aba válida". Resultado: acessar `#documentos` direto
+ * continua funcionando — abre a Gaveta de Documentos por cima da Pasta —
+ * sem precisar de link morto nem de duplicar a Gaveta como aba de `Abas`.
  */
-function ConteudoPastaOuAbas({ pasta, abas }: { pasta: ReturnType<typeof derivarPasta>; abas: DefinicaoAba[] }) {
+function ConteudoPastaOuAbas({
+  pasta,
+  abas,
+  aoMudarGaveta,
+}: {
+  pasta: ReturnType<typeof derivarPasta>;
+  abas: DefinicaoAba[];
+  aoMudarGaveta: (chave: ChaveItemPasta | null) => void;
+}) {
   const [hash, setHash] = useState<string | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHash(window.location.hash || null);
+    function aplicarHash(valor: string | null) {
+      setHash(valor);
+      const chave = valor?.slice(1) as ChaveItemPasta | undefined;
+      if (chave && ITENS_EM_GAVETA.has(chave)) aoMudarGaveta(chave);
+    }
+    aplicarHash(window.location.hash || null);
     function aoMudarHash() {
-      setHash(window.location.hash || null);
+      aplicarHash(window.location.hash || null);
     }
     window.addEventListener("hashchange", aoMudarHash);
     return () => window.removeEventListener("hashchange", aoMudarHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Item migrado (`#formulario`, `#documentos`, ...) não conta como "aba
+  // válida" — a Gaveta é quem mostra o conteúdo, a Pasta continua por trás.
+  const chaveDoHash = hash?.slice(1) as ChaveItemPasta | undefined;
+  const hashEhItemEmGaveta = !!chaveDoHash && ITENS_EM_GAVETA.has(chaveDoHash);
 
   // Antes de montar (SSR/primeira passada), `hash` é `null` — mesmo estado
   // de "sem hash", então mostramos a Pasta sem flash: ela é o conteúdo
   // padrão real, não um placeholder de carregamento.
-  const temHashValido = hash !== null && abas.some((a) => `#${a.id}` === hash);
+  const temHashValido = !hashEhItemEmGaveta && hash !== null && abas.some((a) => `#${a.id}` === hash);
 
   function voltarParaPasta() {
     // Mesmo motivo do `onClick` em `PastaDoCliente`: só reescrever o hash
@@ -180,7 +243,7 @@ function ConteudoPastaOuAbas({ pasta, abas }: { pasta: ReturnType<typeof derivar
   return (
     <>
       <div hidden={temHashValido}>
-        <PastaDoCliente itens={pasta} />
+        <PastaDoCliente itens={pasta} aoAbrirGaveta={aoMudarGaveta} />
       </div>
       <div hidden={!temHashValido}>
         <button

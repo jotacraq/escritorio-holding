@@ -10,7 +10,8 @@ import { Botao } from "@/components/ui/Botao";
 import { objecaoPrincipal } from "@/components/briefing/atomos";
 import { rotularDisc } from "@/components/briefing/tipos";
 import { derivarPasta } from "@/lib/pasta/derivar";
-import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA } from "@/lib/pasta/rotas";
+import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
+import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
   aberta: { rotulo: "Aberta", tom: "azul" },
@@ -30,6 +31,9 @@ interface ItemFaixa {
   rotulo: string;
   valor: string;
   href?: string;
+  /** Fase 3 — quando o item aponta para uma das 5 chaves migradas para Gaveta
+   * (Camada 2), o clique abre o painel lateral em vez de navegar por hash. */
+  onClick?: () => void;
 }
 
 /**
@@ -41,7 +45,24 @@ interface ItemFaixa {
  * só deste cabeçalho).
  */
 
-function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean }) {
+function FaixaVital({
+  ficha,
+  rotuloEtapa,
+  briefing,
+  podeVerPatrimonio,
+  aoAbrirGaveta,
+}: {
+  ficha: Ficha360;
+  rotuloEtapa: string;
+  briefing: Briefing | null;
+  podeVerPatrimonio: boolean;
+  /** Fase 3 — mesmo estado de Gaveta elevado a `ConteudoFicha`
+   * (`jornadas/[id]/page.tsx`), para o chip "Próxima ação" poder abrir a
+   * Gaveta quando o item em destaque é um dos 5 migrados. Familiares
+   * continua apontando por hash: não tem Gaveta própria (não é aba isolada,
+   * ver `rotas.ts`) — só o cartão "Patrimônio" foi migrado. */
+  aoAbrirGaveta: (chave: ChaveItemPasta) => void;
+}) {
   const { jornada, familiares } = ficha;
   const objecao = objecaoPrincipal(briefing?.conteudo.objecoes_provaveis);
   const disc = briefing?.conteudo.perfil_disc;
@@ -56,9 +77,15 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha
   const itens: ItemFaixa[] = [{ rotulo: "Etapa", valor: rotuloEtapa }];
 
   if (jornada.faixa_patrimonio_declarada) {
-    itens.push({ rotulo: "Patrimônio", valor: jornada.faixa_patrimonio_declarada, href: podeVerPatrimonio ? "#patrimonio" : undefined });
+    itens.push({
+      rotulo: "Patrimônio",
+      valor: jornada.faixa_patrimonio_declarada,
+      onClick: podeVerPatrimonio ? () => aoAbrirGaveta("patrimonio") : undefined,
+    });
   }
   if (familiares && familiares.length > 0) {
+    // "Familiares mapeados" continua por hash — não migrado (é o próprio
+    // Patrimônio que lista os familiares hoje, ver nota em `rotas.ts`).
     itens.push({ rotulo: "Familiares mapeados", valor: String(familiares.length), href: "#patrimonio" });
   }
   if (disc) {
@@ -74,7 +101,9 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha
   itens.push({
     rotulo: "Próxima ação",
     valor: proximaAcaoPasta ? ACAO_POR_ITEM_PASTA[proximaAcaoPasta.chave] : "Nenhuma pendência",
-    href: proximaAcaoPasta ? `#${ABA_POR_ITEM_PASTA[proximaAcaoPasta.chave]}` : undefined,
+    ...(proximaAcaoPasta && ITENS_EM_GAVETA.has(proximaAcaoPasta.chave)
+      ? { onClick: () => aoAbrirGaveta(proximaAcaoPasta.chave) }
+      : { href: proximaAcaoPasta ? `#${ABA_POR_ITEM_PASTA[proximaAcaoPasta.chave]}` : undefined }),
   });
 
   return (
@@ -83,7 +112,15 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha
         <div key={item.rotulo} className="flex items-baseline gap-1.5">
           <dt className="text-tinta-fraca">{item.rotulo}</dt>
           <dd>
-            {item.href ? (
+            {item.onClick ? (
+              <button
+                type="button"
+                onClick={item.onClick}
+                className="rounded-sm font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
+              >
+                {item.valor}
+              </button>
+            ) : item.href ? (
               <a
                 href={item.href}
                 className="rounded-sm font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
@@ -105,6 +142,7 @@ export function CabecalhoFicha({
   aoAtualizar,
   briefing,
   croquiAtalho,
+  aoAbrirGaveta,
 }: {
   ficha: Ficha360;
   aoAtualizar: () => void;
@@ -119,6 +157,11 @@ export function CabecalhoFicha({
    * como `null` quando não há croqui na timeline ou o papel não vê patrimônio.
    * `null` não renderiza nada (nunca aparece desabilitado). */
   croquiAtalho: { croquiId: string; pendentes: number } | null;
+  /** Fase 3 ("A Pasta do Cliente", Camada 2) — abre a Gaveta correspondente
+   * quando o chip "Próxima ação"/"Patrimônio" da faixa vital aponta para um
+   * dos 5 itens migrados. Estado vive no pai (`ConteudoFicha`), o mesmo que
+   * a Pasta usa — um único "dono" da Gaveta na tela inteira. */
+  aoAbrirGaveta: (chave: ChaveItemPasta) => void;
 }) {
   const { etapas } = useEtapasOrdem();
   const { jornada, pessoa } = ficha;
@@ -151,7 +194,7 @@ export function CabecalhoFicha({
 
   return (
     <>
-      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} />
+      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} aoAbrirGaveta={aoAbrirGaveta} />
       <header className="flex flex-col gap-3 border-b border-linha-forte pb-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
