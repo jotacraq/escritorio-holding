@@ -670,6 +670,27 @@ export function acharCroquiIdNaTimeline(timeline: EventoTimeline[]): string | nu
 export function buscarCroquiPorId(id: string) {
   return chamar<{ croqui: Croqui }>(`/api/croquis/${id}`);
 }
+
+/**
+ * Versão para o Modo Apresentação — a tela que o cliente vê.
+ *
+ * Traz o croqui SEM as análises e só o recorte que os gráficos consomem. Não
+ * é a mesma coisa que `buscarCroquiPorId` filtrada no cliente: filtrar depois
+ * de receber não adianta nada, o payload já chegou ao navegador que está na
+ * frente da família. Não renderizar não é não enviar.
+ */
+/** O que a matriz de critérios desenha — sem categoria nem peso na decisão. */
+export interface CriterioParaMatriz {
+  criterio: string;
+  resposta: { texto: string };
+}
+
+export function buscarCroquiParaApresentar(id: string) {
+  return chamar<{
+    croqui: Croqui;
+    graficos: { criterios: CriterioParaMatriz[] | null; recomendacao_arquitetura: string | null };
+  }>(`/api/croquis/${id}?modo=apresentacao`);
+}
 export function criarCroqui(jornadaId: string, payload: { titulo: string; conteudo?: { slides: CroquiSlide[] } }) {
   return chamar<{ croqui: Croqui }>(`/api/croquis`, { method: "POST", body: JSON.stringify({ jornada_id: jornadaId, ...payload }) });
 }

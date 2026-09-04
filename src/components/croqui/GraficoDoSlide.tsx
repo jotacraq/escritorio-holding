@@ -29,7 +29,10 @@ export interface DadosGraficosCroqui {
   pessoa: Pick<Pessoa, "id" | "nome"> | null;
   familiares: Familiar[] | null;
   patrimonio: PatrimonioItem[] | null;
-  criterios: CriterioArquitetura[] | null;
+  /** Forma ENXUTA: so o que a matriz desenha. O Modo Apresentacao manda
+   *  exatamente isto — categoria e peso_na_decisao sao leitura interna do
+   *  metodo e nunca chegam ao navegador que esta na frente da familia. */
+  criterios: Array<{ criterio: string; resposta: { texto: string } }> | null;
   recomendacaoArquitetura: string | null;
 }
 

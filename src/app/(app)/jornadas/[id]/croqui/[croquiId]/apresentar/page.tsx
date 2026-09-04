@@ -1,12 +1,11 @@
 "use client";
 
 import { use, useCallback, useMemo } from "react";
-import { buscarCroquiPorId, buscarFicha360 } from "@/lib/api";
+import { buscarCroquiParaApresentar, buscarFicha360, type CriterioParaMatriz } from "@/lib/api";
 import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { ModoApresentacao } from "@/components/croqui/ModoApresentacao";
 import type { DadosGraficosCroqui } from "@/components/croqui/GraficoDoSlide";
-import type { AnaliseSessao, CroquiComAnalises } from "@/components/ficha360/api-analise";
 
 /**
  * A tela que o cliente vê (ARQUITETURA-FASE-3.md §3, U6). Fora de
@@ -20,28 +19,20 @@ import type { AnaliseSessao, CroquiComAnalises } from "@/components/ficha360/api
 export default function PaginaApresentacaoCroqui({ params }: { params: Promise<{ id: string; croquiId: string }> }) {
   const { id: jornadaId, croquiId } = use(params);
 
-  const buscarCroqui = useCallback(() => buscarCroquiPorId(croquiId).then((r) => r.croqui as CroquiComAnalises), [croquiId]);
-  const { dados: croqui, carregando: carregandoCroqui, erro: erroCroqui, recarregar } = useRecurso(buscarCroqui, [croquiId]);
+  const buscarCroqui = useCallback(() => buscarCroquiParaApresentar(croquiId), [croquiId]);
+  const { dados: resposta, carregando: carregandoCroqui, erro: erroCroqui, recarregar } = useRecurso(buscarCroqui, [croquiId]);
+  const croqui = resposta?.croqui ?? null;
 
   const buscarFicha = useCallback(() => buscarFicha360(jornadaId), [jornadaId]);
   const { dados: ficha, carregando: carregandoFicha } = useRecurso(buscarFicha, [jornadaId]);
 
-  const analiseMaisRecente = useMemo(() => {
-    const lista = croqui?.croqui_analises ?? [];
-    if (lista.length === 0) return null;
-    return [...lista].sort((a, b) => b.versao - a.versao)[0];
-  }, [croqui]);
-
-  const dadosGraficos: DadosGraficosCroqui = useMemo(() => {
-    const analise = (analiseMaisRecente?.conteudo as AnaliseSessao | undefined) ?? null;
-    return {
-      pessoa: ficha ? { id: ficha.pessoa.id, nome: ficha.pessoa.nome } : null,
-      familiares: ficha?.familiares ?? null,
-      patrimonio: ficha?.patrimonio ?? null,
-      criterios: analise?.arquitetura.criterios ?? null,
-      recomendacaoArquitetura: analise?.arquitetura.recomendacao ?? null,
-    };
-  }, [ficha, analiseMaisRecente]);
+  const dadosGraficos: DadosGraficosCroqui = useMemo(() => ({
+    pessoa: ficha ? { id: ficha.pessoa.id, nome: ficha.pessoa.nome } : null,
+    familiares: ficha?.familiares ?? null,
+    patrimonio: ficha?.patrimonio ?? null,
+    criterios: (resposta?.graficos.criterios ?? null) as CriterioParaMatriz[] | null,
+    recomendacaoArquitetura: resposta?.graficos.recomendacao_arquitetura ?? null,
+  }), [ficha, resposta]);
 
   // A ficha é auxiliar (gráficos) — não bloqueia a apresentação se falhar
   // (ex.: papel sem `ve_patrimonio` chegando aqui por outro caminho): o

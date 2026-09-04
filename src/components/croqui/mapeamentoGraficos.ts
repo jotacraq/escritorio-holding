@@ -2,7 +2,6 @@ import { CroquiAnaliseV2Schema, type CroquiAnaliseV2 } from "@/server/croqui/sch
 import { gerarSlidesDaAnalise } from "@/server/croqui/gerar-slides";
 import type { CroquiConteudo } from "@/server/ia/schema-croqui-slides";
 import type { Familiar, PatrimonioItem, Pessoa } from "@/lib/api";
-import type { CriterioArquitetura } from "@/components/ficha360/api-analise";
 import type { CriterioMatriz, ItemComposicaoPatrimonial, NivelAtendimento, NucleoFamiliar, PapelFamiliar, PessoaArvore } from "@/components/graficos";
 import { rotularCriterio } from "./rotulos";
 
@@ -126,7 +125,7 @@ export function calcularConcentracaoPatrimonial(itens: PatrimonioItem[] | null):
 // Já existe no schema v1 (`analise.arquitetura.criterios`, `.length(9)`).
 // ---------------------------------------------------------------------------
 
-function nivelDeResposta(criterio: CriterioArquitetura): NivelAtendimento {
+function nivelDeResposta(criterio: unknown): NivelAtendimento {
   // O schema não carimba "atende/não atende" por célula — carimba uma
   // afirmação livre por critério (`resposta.texto`) e a recomendação GERAL
   // (1/2/3 células) fica em `arquitetura.recomendacao`, fora do array. Não
@@ -138,7 +137,15 @@ function nivelDeResposta(criterio: CriterioArquitetura): NivelAtendimento {
   return "nao_se_aplica";
 }
 
-export function mapearCriteriosParaMatriz(criterios: CriterioArquitetura[]): CriterioMatriz[] {
+/**
+ * Aceita a forma ENXUTA (`criterio` + texto da resposta) porque é só o que
+ * esta função lê — `categoria` e `peso_na_decisao` nunca foram usados aqui. O
+ * Modo Apresentação manda exatamente essa forma, para não colocar leitura
+ * interna do método no navegador que está na frente da família.
+ */
+export function mapearCriteriosParaMatriz(
+  criterios: Array<{ criterio: string; resposta: { texto: string } }>,
+): CriterioMatriz[] {
   return criterios.map((c) => {
     const nivel = nivelDeResposta(c);
     const resposta = { nivel, nota: c.resposta.texto };

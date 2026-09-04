@@ -30,7 +30,12 @@ comment on column briefings.verificacao is
   'cobertura de evidência. IA que inventa citação aparece aqui.';
 
 -- ------------------------------------------------------------------ views
-create or replace view vw_custo_ia_por_prompt as
+-- ATENCAO: `security_invoker = true` e obrigatorio. Sem ele a RLS de
+-- execucoes_ia (restrita a app.ve_patrimonio()) e avaliada como o DONO da
+-- view, e custo de IA vaza para relacionamento/assistente pelo PostgREST.
+-- Isto ficou de fora quando esta migration foi reconstruida por introspeccao:
+-- pg_get_viewdef() devolve so o SELECT, nao as reloptions.
+create or replace view vw_custo_ia_por_prompt with (security_invoker = true) as
  SELECT e.prompt_versao_id,
     p.chave,
     p.versao,
@@ -52,7 +57,7 @@ create or replace view vw_custo_ia_por_prompt as
   GROUP BY e.prompt_versao_id, p.chave, p.versao, p.ativo, e.modo
   ORDER BY p.chave, p.versao DESC, e.modo;
 
-create or replace view vw_custo_ia_por_variante as
+create or replace view vw_custo_ia_por_variante with (security_invoker = true) as
  SELECT p.chave,
     e.modelo,
     COALESCE(e.variante, 'producao'::text) AS variante,
