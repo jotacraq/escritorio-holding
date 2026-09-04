@@ -1,11 +1,10 @@
 "use client";
 
 import { useTema } from "@/hooks/useTema";
-import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
+import type { EstadoCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
 import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
 import { EditorCroqui } from "@/components/croqui/EditorCroqui";
-import type { EventoTimeline, Ficha360 } from "@/lib/api";
 
 /**
  * A Ficha 360 · Croqui (ARQUITETURA-FASE-3.md §2/§3, onda 3 — agente H).
@@ -14,11 +13,16 @@ import type { EventoTimeline, Ficha360 } from "@/lib/api";
  * consumindo o mesmo estado via `useCroquiDaJornada`. Dívida documentada aqui
  * antes ("mover Análise da Sessão para o grupo Sessão quando `page.tsx` for
  * tocado de novo") — paga nesta mudança.
+ *
+ * Estado recebido por prop (mesma cirurgia já feita com `BriefingAba`): o
+ * pai (`ConteudoFicha`) chama `useCroquiDaJornada` UMA vez e compartilha com
+ * `CroquiAba`, `AnaliseSessaoAba` e `CabecalhoFicha` (atalho fixo), em vez de
+ * cada aba buscar o croqui por conta própria.
  */
-export function CroquiAba({ jornadaId, ficha, timeline }: { jornadaId: string; ficha: Ficha360; timeline: EventoTimeline[] }) {
+export function CroquiAba({ jornadaId, estadoCroqui }: { jornadaId: string; estadoCroqui: EstadoCroquiDaJornada }) {
   const { tema } = useTema();
   const { croqui, croquiAtual, carregandoCroqui, erroCroqui, croquiInexistente, recarregarCroqui, criando, erroCriar, iniciarCroqui, dadosGraficos } =
-    useCroquiDaJornada({ jornadaId, ficha, timeline });
+    estadoCroqui;
 
   const conteudoEditor = (() => {
     if (croqui === undefined) {

@@ -269,6 +269,21 @@ export interface Ficha360 {
   familiares: Familiar[] | null;
 }
 
+/** Espelha `server/ia/completude.ts#ResultadoCompletude` — vem em `ApiError.detalhe`
+ * quando `POST /api/briefings/gerar` responde 409 `dados_insuficientes`. */
+export interface ItemChecklistCompletude {
+  sinal: string;
+  peso: number;
+  atendido: boolean;
+  rotulo: string;
+}
+export interface ResultadoCompletude {
+  score: number;
+  minimo: number;
+  atingiu: boolean;
+  checklist: ItemChecklistCompletude[];
+}
+
 export interface Briefing {
   id: string;
   jornada_id: string;
@@ -395,11 +410,14 @@ export interface MensagemAgendada {
 export class ApiError extends Error {
   status: number;
   codigo?: string;
-  constructor(mensagem: string, status: number, codigo?: string) {
+  /** Payload estruturado do erro (ex.: checklist da porta de completude do Briefing, `erro.detalhe` em `server/ia/erros.ts`). */
+  detalhe?: unknown;
+  constructor(mensagem: string, status: number, codigo?: string, detalhe?: unknown) {
     super(mensagem);
     this.name = "ApiError";
     this.status = status;
     this.codigo = codigo;
+    this.detalhe = detalhe;
   }
 }
 
@@ -435,10 +453,12 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
     // `respostaErro` (server/erros.ts) devolve { erro: <código técnico>, mensagem: <texto humano> }.
     // A mensagem humana tem que vencer — senão a tela mostra o código cru
     // ("nao_encontrado") em vez do texto pensado para o usuário. `objeto.erro`
-    // vira o campo `codigo` da ApiError, não o texto exibido.
-    const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string; codigo?: string };
+    // vira o campo `codigo` da ApiError, não o texto exibido. `detalhe` (singular,
+    // `POST /api/briefings/gerar`) carrega o checklist da porta de completude —
+    // `detalhes` (plural, `respostaErro` genérico) fica de fora de propósito.
+    const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string; codigo?: string; detalhe?: unknown };
     const mensagem = objeto.mensagem || `Falha na requisição (${resposta.status})`;
-    throw new ApiError(mensagem, resposta.status, objeto.codigo ?? objeto.erro);
+    throw new ApiError(mensagem, resposta.status, objeto.codigo ?? objeto.erro, objeto.detalhe);
   }
 
   return corpo as T;
@@ -547,10 +567,14 @@ export function excluirPatrimonio(itemId: string) {
 // Briefing Estratégico
 // ---------------------------------------------------------------------------
 
-export function gerarBriefing(jornadaId: string, forcarRegeracao = false) {
+export function gerarBriefing(jornadaId: string, forcarRegeracao = false, forcarMesmoAssim = false) {
   return chamar<{ execucao_id: string; briefing_id: string }>(`/api/briefings/gerar`, {
     method: "POST",
-    body: JSON.stringify({ jornada_id: jornadaId, forcar_regeracao: forcarRegeracao }),
+    body: JSON.stringify({
+      jornada_id: jornadaId,
+      forcar_regeracao: forcarRegeracao,
+      forcar_mesmo_assim: forcarMesmoAssim,
+    }),
   });
 }
 

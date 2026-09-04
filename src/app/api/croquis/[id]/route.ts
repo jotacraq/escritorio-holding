@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { exigirVePatrimonio } from "@/server/auth";
-import { erroNaoEncontrado, erroValidacao, respostaErro } from "@/server/erros";
+import { erroConflito, erroNaoEncontrado, erroValidacao, registrarErro, respostaErro } from "@/server/erros";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { CroquiConteudoSchema } from "@/server/ia/schema-croqui-slides";
 
@@ -103,7 +103,27 @@ async function atualizar(request: NextRequest, context: { params: Promise<{ id: 
       .select("id, jornada_id, versao, titulo, status, conteudo, atualizado_em")
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      // 23514 — trigger app.trava_croqui_pronto_exige_revisao() (0043/0049):
+      // status pronto/apresentado exigindo os 13 slides revisados, quando a
+      // chave `croqui.exige_revisao_para_pronto` está ligada em `configuracoes`.
+      if (error.code === "23514") {
+        throw erroConflito(
+          "croqui_pronto_exige_13_slides_revisados",
+          "Este croqui não pode virar pronto: faltam slides revisados.",
+        );
+      }
+      // 23505 — índice único parcial uniq_croqui_pronto (0010): só um croqui
+      // pronto/apresentado por jornada.
+      if (error.code === "23505") {
+        throw erroConflito(
+          "croqui_pronto_ja_existe_na_jornada",
+          "Já existe um croqui pronto nesta jornada.",
+        );
+      }
+      registrarErro("PATCH /api/croquis/[id]", error, { croqui_id: id });
+      throw error;
+    }
     if (!croqui) throw erroNaoEncontrado("Croqui não encontrado.");
 
     return NextResponse.json({ croqui });

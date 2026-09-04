@@ -3,6 +3,8 @@
 import { use } from "react";
 import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
+import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
+import { contarRevisaoSlides } from "@/lib/croqui";
 import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
@@ -43,6 +45,17 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // O backend não manda uma flag "pode ver patrimônio" — manda `null` no lugar
   // do array quando o papel não permite. É esse null que decide a UI aqui.
   const podeVerPatrimonio = ficha.patrimonio !== null;
+
+  // Estado do Croqui elevado para cá (mesma cirurgia de `useBriefingAtual`) —
+  // antes `CroquiAba` e `AnaliseSessaoAba` chamavam `useCroquiDaJornada` cada
+  // uma por conta própria. O hook é SEMPRE chamado (regra dos hooks do
+  // React); `croquiId` já nasce `null` quando não há croqui na timeline, e a
+  // prop `croquiAtalho` do cabeçalho é que fica `null` quando o papel não vê
+  // patrimônio — não a chamada do hook.
+  const estadoCroqui = useCroquiDaJornada({ jornadaId: id, ficha, timeline: ficha.timeline });
+  const croquiAtalho = podeVerPatrimonio && estadoCroqui.croquiAtual
+    ? { croquiId: estadoCroqui.croquiAtual.id, pendentes: contarRevisaoSlides(estadoCroqui.croquiAtual.conteudo.slides).pendentes }
+    : null;
   // Calculado uma vez e compartilhado entre a faixa vital (CabecalhoFicha,
   // chip "Próxima ação") e o ChecklistPendencias — mesma lista, um cálculo só.
   const pendencias = calcularPendencias(ficha, podeVerPatrimonio);
@@ -94,7 +107,7 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       id: "analise-sessao",
       rotulo: "Análise da Sessão",
       grupo: "Sessão",
-      conteudo: <AnaliseSessaoAba jornadaId={id} ficha={ficha} timeline={ficha.timeline} />,
+      conteudo: <AnaliseSessaoAba jornadaId={id} ficha={ficha} estadoCroqui={estadoCroqui} />,
     });
   }
 
@@ -116,14 +129,14 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       grupo: "Patrimônio",
       conteudo: <DocumentosAba jornadaId={id} pessoaId={ficha.pessoa.id} documentosIniciais={ficha.documentos} aoAtualizar={recarregar} />,
     });
-    abas.push({ id: "croqui", rotulo: "Croqui", grupo: "Patrimônio", conteudo: <CroquiAba jornadaId={id} ficha={ficha} timeline={ficha.timeline} /> });
+    abas.push({ id: "croqui", rotulo: "Croqui", grupo: "Patrimônio", conteudo: <CroquiAba jornadaId={id} estadoCroqui={estadoCroqui} /> });
   }
 
   abas.push({ id: "timeline", rotulo: "Linha do tempo", grupo: "Registro", conteudo: <TimelineAba eventos={ficha.timeline} /> });
 
   return (
     <div className="flex flex-col gap-6">
-      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} pendencias={pendencias} briefing={briefing} />
+      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} pendencias={pendencias} briefing={briefing} croquiAtalho={croquiAtalho} />
       <ChecklistPendencias itens={pendencias} />
       <Abas abas={abas} deepLinkHash />
     </div>

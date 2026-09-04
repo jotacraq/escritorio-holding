@@ -547,6 +547,20 @@ O croqui é **prescrição técnica**, não saída de modelo. Resposta:
 Isso transforma "IA gerou" em "advogada validou", que é o que o método exige e
 o que a OAB espera.
 
+> **Revisto em 04/09/2026 por decisão do dono do produto (Marcio).** A trava
+> deixou de ser obrigatória por padrão — migration `0049_croqui_revisao_
+> configuravel.sql`. O trigger da 0043 continua existindo e funcionando
+> exatamente como descrito acima, mas agora lê a chave
+> `configuracoes['croqui.exige_revisao_para_pronto']` como primeira instrução
+> do corpo, e sai cedo (`return new`, sem checar slide algum) quando ela é
+> `false` — que é o novo valor padrão, para **todos os 13 slides, sem
+> exceção**. Trade-off assumido: a garantia "advogada revisou antes de
+> assinar" deixa de ser estrutural/bloqueante de banco e vira só **sinal
+> visual** no Editor do Croqui (marcação proposta/revisado continua lá, só
+> não impede mais `status='pronto'`). Quem quiser restaurar a garantia
+> original volta a bloquear sem deploy: `UPDATE configuracoes SET
+> valor='true'::jsonb WHERE chave='croqui.exige_revisao_para_pronto'`.
+
 ---
 
 ## 4. Dossiê público — consulta de CNPJ
@@ -842,7 +856,7 @@ Os conflitos C1–C15 dos planos anteriores seguem valendo. Novos:
 | **C16** | **"Análise da sessão" é o Agente do Croqui com outro nome.** Mesma entrada, mesmo momento, mesma saída. | Implementar como IA nova seria pagar duas vezes pela mesma leitura e criar dois vocabulários para o mesmo conceito — o Glossário proíbe. | **Não duplico.** Dou tela à IA que já existe, persisto a transcrição e reancoro o caminho de entrada na Sessão. Nenhum prompt novo, nenhuma tabela nova. |
 | **C17** | **Cortar `reasoning` parece contradizer a decisão de 03/09** de aumentar o timeout de 120s → 300s. | Quem ler os dois documentos vai desfazer um dos dois. | São eixos diferentes: teto de **espera** × orçamento de **raciocínio**. Cortar o segundo alivia o primeiro. Registrado aqui e no `corpo_sistema` da v2. |
 | **C18** | **"Gráficos que o cliente entenda" × "nenhum cálculo automático de imposto"** (`0008`). O slide 11 (Economia) é justamente custo de inventário × custo da estrutura. | O gráfico mais persuasivo do croqui é o único que o sistema **não pode calcular sozinho**. | O gráfico lê **exclusivamente** `relatorios_sessao.tributos` — números digitados pela advogada — e não desenha se faltar qualquer um deles. A legenda carimba a fonte. **Não calculo ITCMD. Ponto.** |
-| **C19** | **Croqui gerado por IA × croqui é prescrição técnica assinada pela advogada.** | Se a IA preenche os 13 slides, a autoria fica ambígua — e isso é problema de OAB, não de produto. | Slide de origem `ia` nasce **proposta**, `revisado=false`. `status='pronto'` exige 13 revisados, **garantido por trigger no banco**. O modo apresentação recusa croqui não revisado. |
+| **C19** | **Croqui gerado por IA × croqui é prescrição técnica assinada pela advogada.** | Se a IA preenche os 13 slides, a autoria fica ambígua — e isso é problema de OAB, não de produto. | Slide de origem `ia` nasce **proposta**, `revisado=false`. `status='pronto'` exigia 13 revisados por trigger no banco (0043); **revisto em 04/09/2026 por decisão do Marcio (0049)** — hoje é configurável via `configuracoes['croqui.exige_revisao_para_pronto']`, default `false` (trava desligada), ver §3.6. O modo apresentação continua recusando croqui não revisado quando a trava está ligada. |
 | **C20** | **CNPJ é dado público de empresa, mas o `qsa` nomeia pessoa física.** Encosta no B4 sem ser o B4. | Coletar nome de sócio automaticamente pode ser lido como pesquisa sobre pessoa. | Só consulto CNPJ **que o cliente declarou**; **nunca** busco por nome; `qsa` sob `ve_patrimonio`; nunca em superfície pública; só vai para IA sob o gate `tratamento_ia` que já existe. |
 | **C21** | **"Fácil de operar" × 13 abas na Ficha 360**, e este plano acrescenta conteúdo. | Uma 14ª aba plana pioraria exatamente o que o João pediu para melhorar. | Agrupo em 4, sem remover nenhuma, e ponho o que a advogada precisa em reunião **no Modo Conduzir Sessão** (U1), não em mais uma aba. |
 | **C22** | **A meta "abaixo de US$ 0,04" foi fixada antes de sabermos quanto do custo é raciocínio.** | Prometer 62% de corte sem medir seria inventar número — o que este projeto proíbe em tela e vale igual em documento. | Entrego as alavancas com **teto calculado**, a bancada que mede, e o gate de promoção. Se L1+L2+L3 pararem em US$ 0,045, digo o número medido e aponto L6 como o que falta — não maquio. |

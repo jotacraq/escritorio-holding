@@ -3,8 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { atualizarCroqui, ApiError, type Croqui, type StatusCroqui } from "@/lib/api";
+import { contarRevisaoSlides } from "@/lib/croqui";
 import { Botao } from "@/components/ui/Botao";
 import { Selo } from "@/components/ui/Selo";
+import { ConfirmarAcao } from "@/components/admin/ConfirmarAcao";
 import { Chip, type TomChip } from "@/components/briefing/atomos";
 import { ROTULO_CATEGORIA_AFIRMACAO, type TemaGrafico } from "@/components/graficos";
 import { rotularOrigemSlide } from "./rotulos";
@@ -27,9 +29,10 @@ const TOM_CATEGORIA: Record<string, TomChip> = {
 /**
  * Editor dos 13 slides (ARQUITETURA-FASE-3.md §3.6, C19). Todo slide de
  * origem `ia` nasce `revisado: false` — a advogada lê, corrige se quiser e
- * assina marcando "revisado". A trava DURA de "pronto só com os 13
- * revisados" é o trigger no banco (0043); esta tela só explica e desabilita
- * o botão para não deixar a advogada descobrir a trava só pelo erro 23514.
+ * assina marcando "revisado". A revisão dos 13 slides NÃO é mais trava
+ * obrigatória para marcar como "pronto": é sinal de atenção. A advogada pode
+ * assinar mesmo com pendências — quando há pendência, esta tela pede
+ * confirmação explícita antes de salvar (`ConfirmarAcao`), mas não bloqueia.
  */
 export function EditorCroqui({
   jornadaId,
@@ -50,10 +53,10 @@ export function EditorCroqui({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvo, setSalvo] = useState(false);
+  const [confirmandoPronto, setConfirmandoPronto] = useState(false);
 
   const slideAtivo = slides[indiceAtivo];
-  const naoRevisados = slides.filter((s) => !s.revisado).length;
-  const podeFicarPronto = naoRevisados === 0;
+  const { pendentes } = contarRevisaoSlides(slides);
 
   function atualizarSlide(campo: "titulo" | "conteudo" | "objetivo" | "pergunta_ao_cliente", valor: string) {
     setSlides((atual) =>
@@ -80,7 +83,6 @@ export function EditorCroqui({
   }
 
   async function salvar(novoStatus?: StatusCroqui) {
-    if ((novoStatus === "pronto" || novoStatus === "apresentado") && !podeFicarPronto) return;
     setSalvando(true);
     setErro(null);
     try {
@@ -88,19 +90,31 @@ export function EditorCroqui({
       setSalvo(true);
       aoAtualizar();
     } catch (e) {
-      // A trava dura é o trigger do banco (0043) — a rota hoje devolve um
-      // 500 genérico para essa violação (não traduz o código 23514 em erro
-      // de negócio), então esta tela não finge saber a causa exata: mostra
-      // a mensagem do servidor e lembra da regra mais provável.
-      const base = e instanceof ApiError ? e.message : "Não foi possível salvar o croqui.";
-      setErro(
-        (novoStatus === "pronto" || novoStatus === "apresentado")
-          ? `${base} Se o erro persistir: confira se os 13 slides estão marcados "Revisado" — o banco recusa "pronto" sem isso.`
-          : base,
-      );
+      // A trava por slides não revisados nasce DESLIGADA (migration 0049) —
+      // se ela for religada manualmente no banco, a rota devolve 409 com este
+      // código específico. Tratamento dedicado em vez de mensagem genérica,
+      // porque sem isso a advogada veria um erro sem explicação nenhuma.
+      if (e instanceof ApiError && e.codigo === "croqui_pronto_exige_13_slides_revisados") {
+        setErro('O banco recusou marcar como "pronto": a trava de revisão dos 13 slides foi religada manualmente. Revise os slides pendentes ou peça para desligar a trava.');
+      } else {
+        setErro(e instanceof ApiError ? e.message : "Não foi possível salvar o croqui.");
+      }
     } finally {
       setSalvando(false);
     }
+  }
+
+  function aoClicarMarcarComoPronto() {
+    if (pendentes > 0) {
+      setConfirmandoPronto(true);
+      return;
+    }
+    salvar("pronto");
+  }
+
+  function confirmarMarcarComoPronto() {
+    setConfirmandoPronto(false);
+    salvar("pronto");
   }
 
   return (
@@ -116,15 +130,11 @@ export function EditorCroqui({
           <Selo tom={ROTULOS_STATUS[croqui.status].tom}>{ROTULOS_STATUS[croqui.status].rotulo}</Selo>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-tinta-fraca">{13 - naoRevisados} de 13 slides revisados</span>
+          <span aria-live="polite" className="text-xs text-tinta-fraca">
+            {slides.length - pendentes} de {slides.length} slides revisados
+          </span>
           <Botao variante="secundario" carregando={salvando} onClick={() => salvar()}>Salvar rascunho</Botao>
-          <Botao
-            variante="primario"
-            carregando={salvando}
-            disabled={!podeFicarPronto}
-            onClick={() => salvar("pronto")}
-            title={!podeFicarPronto ? `Faltam ${naoRevisados} slide(s) revisar antes de marcar como pronto.` : undefined}
-          >
+          <Botao variante="primario" carregando={salvando} onClick={aoClicarMarcarComoPronto}>
             Marcar como pronto
           </Botao>
           <Link href={`/jornadas/${jornadaId}/croqui/${croqui.id}/apresentar`}>
@@ -133,15 +143,25 @@ export function EditorCroqui({
         </div>
       </div>
 
-      {!podeFicarPronto && (
+      {pendentes > 0 && (
         <p className="rounded-sm border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
-          Faltam {naoRevisados} de 13 slides revisar. O croqui só pode virar &ldquo;pronto&rdquo; (e ser apresentado ao cliente) com todos
-          revisados — trava do banco, não desta tela.
+          {pendentes} de {slides.length} slides ainda sem revisão da advogada. O croqui pode ser marcado como pronto assim mesmo — a
+          assinatura é sua.
         </p>
       )}
 
       {erro && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>}
       {salvo && !erro && <p role="status" className="text-sm text-[color:var(--verde)]">Salvo.</p>}
+
+      <ConfirmarAcao
+        aberto={confirmandoPronto}
+        titulo="Marcar como pronto com slides sem revisão?"
+        efeito={`${pendentes} de ${slides.length} slides ainda não foram revisados. Marcar como "pronto" mesmo assim assina o croqui como está — a responsabilidade pelo conteúdo não revisado passa a ser sua. Continuar?`}
+        rotuloConfirmar="Marcar como pronto mesmo assim"
+        confirmando={salvando}
+        aoConfirmar={confirmarMarcarComoPronto}
+        aoCancelar={() => setConfirmandoPronto(false)}
+      />
 
       <div className="flex gap-4">
         <ol className="flex w-52 shrink-0 flex-col gap-0.5">

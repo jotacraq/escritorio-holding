@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buscarBriefing, gerarBriefing, listarBriefingsDaJornada, ApiError, type Briefing } from "@/lib/api";
+import { buscarBriefing, gerarBriefing, listarBriefingsDaJornada, ApiError, type Briefing, type ResultadoCompletude } from "@/lib/api";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoVazio } from "@/components/ui/Estado";
+import { ConfirmarAcao } from "@/components/admin/ConfirmarAcao";
 import { BadgeConfianca, Chip, ConteudoCompacto, FraseComFidelidade, Hipotese, ListaEvidencias } from "@/components/briefing/atomos";
 import { SeloIA } from "@/components/ui/Selo";
 import {
@@ -186,6 +187,40 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
   );
 }
 
+/**
+ * Checklist da porta de completude (`server/ia/completude.ts`, ARQUITETURA-
+ * FASE-3.md §1.7) — só aparece depois de uma tentativa real de gerar o
+ * briefing esbarrar no 409 `dados_insuficientes` (`erro.detalhe`, ver
+ * `lib/api.ts#ApiError`). Nunca especulativo: sem tentativa, sem checklist.
+ */
+function ChecklistCompletude({ resultado }: { resultado: ResultadoCompletude }) {
+  return (
+    <div className="rounded-sm border border-linha bg-papel-elevado">
+      <p className="border-b border-linha px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">
+        Dado insuficiente para um briefing confiável
+        <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--vermelho)]">
+          {resultado.score} de {resultado.minimo} pontos necessários
+        </span>
+      </p>
+      <ul className="flex flex-col divide-y divide-linha">
+        {resultado.checklist.map((item) => (
+          <li key={item.sinal} className="flex items-center gap-2.5 px-3.5 py-2 text-sm">
+            {item.atendido ? (
+              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-[color:var(--verde)]">
+                <path d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.8 6.8-6.8a1 1 0 0 1 1.4 0Z" />
+              </svg>
+            ) : (
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--ambar)]" />
+            )}
+            <span className={`flex-1 ${item.atendido ? "text-tinta-suave" : "text-tinta"}`}>{item.rotulo}</span>
+            <span className="text-xs text-tinta-fraca">{item.peso} pts</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function BriefingAba({
   jornadaId,
   briefing,
@@ -213,24 +248,35 @@ export function BriefingAba({
   const [erroGerar, setErroGerar] = useState<ApiError | null>(null);
   const [historico, setHistorico] = useState<Pick<Briefing, "id" | "versao" | "grau_confianca" | "criado_em">[] | null | undefined>(undefined);
   const [trocandoVersao, setTrocandoVersao] = useState(false);
+  /** Confirmação de "gerar mesmo assim" pendente — só existe depois do 409
+   * `dados_insuficientes` (porta de completude, §1.7). Fecha por escolha do
+   * usuário, nunca sozinha. */
+  const [confirmandoForcar, setConfirmandoForcar] = useState(false);
 
   useEffect(() => {
     listarBriefingsDaJornada(jornadaId).then((res) => setHistorico(res?.itens ?? null));
   }, [jornadaId]);
 
-  async function gerar(forcar: boolean) {
+  async function gerar(forcar: boolean, forcarMesmoAssim = false) {
     setGerando(true);
     setErroGerar(null);
     try {
-      const res = await gerarBriefing(jornadaId, forcar);
+      const res = await gerarBriefing(jornadaId, forcar, forcarMesmoAssim);
       const gerado = await buscarBriefing(res.briefing_id);
       setBriefing(gerado);
+      setConfirmandoForcar(false);
     } catch (e) {
       setErroGerar(e instanceof ApiError ? e : new ApiError("Não foi possível gerar o briefing.", 500));
+      setConfirmandoForcar(false);
     } finally {
       setGerando(false);
     }
   }
+
+  /** Checklist da porta de completude — só existe depois de um 409
+   * `dados_insuficientes` real; nunca especulativo (regra do plano). */
+  const completudeInsuficiente: ResultadoCompletude | null =
+    erroGerar?.codigo === "dados_insuficientes" && erroGerar.detalhe ? (erroGerar.detalhe as ResultadoCompletude) : null;
 
   async function trocarVersao(id: string) {
     setTrocandoVersao(true);
@@ -276,13 +322,35 @@ export function BriefingAba({
         )}
       </div>
 
-      {erroGerar && (
+      {erroGerar && !completudeInsuficiente && (
         <p role="alert" className="rounded-sm border border-vermelho bg-vermelho-fraco px-3 py-2 text-sm text-[color:var(--vermelho)]">
           {erroGerar.status === 503
             ? "O briefing não pôde ser gerado: sem chave de IA configurada ou sem consentimento de tratamento por IA registrado. Nenhum briefing de mentira é mostrado nesta tela."
             : erroGerar.message}
         </p>
       )}
+
+      {completudeInsuficiente && (
+        <div className="flex flex-col gap-2.5">
+          <ChecklistCompletude resultado={completudeInsuficiente} />
+          <div>
+            <Botao variante="fantasma" onClick={() => setConfirmandoForcar(true)} disabled={gerando}>
+              Gerar mesmo assim
+            </Botao>
+          </div>
+        </div>
+      )}
+
+      <ConfirmarAcao
+        aberto={confirmandoForcar}
+        titulo="Gerar briefing com dado insuficiente"
+        efeito="A confiança deste briefing provavelmente será baixa — faltam itens do checklist de completude acima. O briefing será gerado e marcado com o grau de confiança real da análise, não prometido antes."
+        rotuloConfirmar="Gerar mesmo assim"
+        confirmando={gerando}
+        perigo
+        aoConfirmar={() => gerar(!briefing, true)}
+        aoCancelar={() => setConfirmandoForcar(false)}
+      />
 
       {carregando && <EstadoCarregando rotulo="Carregando briefing…" />}
 

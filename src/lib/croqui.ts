@@ -44,3 +44,16 @@ export const ROTULO_TIPO_SLIDE: Record<CroquiSlide["tipo"], string> = Object.fro
   CroquiSlide["tipo"],
   string
 >;
+
+/**
+ * Contagem única de revisão dos slides — antes duplicada com lógica levemente
+ * diferente em `EditorCroqui`, `ModoApresentacao` e `CabecalhoFicha`. A
+ * revisão dos 13 slides deixou de ser trava obrigatória para virar sinal de
+ * atenção (o croqui pode virar "pronto" com pendências — a assinatura é da
+ * advogada, não do sistema); esta função só conta, não decide nada.
+ */
+export function contarRevisaoSlides(slides: CroquiSlide[]): { revisados: number; total: number; pendentes: number } {
+  const total = slides.length;
+  const revisados = slides.filter((s) => s.revisado).length;
+  return { revisados, total, pendentes: total - revisados };
+}

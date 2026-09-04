@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { registrarApresentacaoCroqui } from "@/lib/api";
 import type { Croqui, CroquiSlide } from "@/lib/api";
+import { contarRevisaoSlides } from "@/lib/croqui";
 import { GraficoDoSlide, slideTemGrafico, type DadosGraficosCroqui } from "./GraficoDoSlide";
 
 /**
@@ -12,17 +12,24 @@ import { GraficoDoSlide, slideTemGrafico, type DadosGraficosCroqui } from "./Gra
  * da decisão. Regras que não se negociam aqui (CLAUDE.md + §3.6/C19):
  * nenhum custo, grau de confiança, hipótese da IA, ou dado de outro cliente
  * pode vazar; nenhum gráfico sem dado aparece (nem o estado explicativo —
- * `GraficoIndisponivel` já retorna `null` com `modoApresentacao`); e um
- * croqui em rascunho com slide não revisado NÃO abre aqui — é a advogada
- * quem assina, não a IA.
+ * `GraficoIndisponivel` já retorna `null` com `modoApresentacao`).
+ *
+ * A revisão dos 13 slides deixou de bloquear a apresentação — a advogada
+ * decide se apresenta assim mesmo, não o sistema. Quando há pendência, uma
+ * faixa discreta (`.nao-imprimir`, visível só para quem opera o notebook,
+ * nunca no projetor/impressão) avisa sem interromper.
  */
 export function ModoApresentacao({
   croqui,
-  jornadaId,
   dadosGraficos,
 }: {
   croqui: Croqui;
-  jornadaId: string;
+  /** Não usada nesta tela hoje (a "parede" de bloqueio por revisão que a
+   * consumia foi removida — F3). Mantida na assinatura porque a página que
+   * monta este componente (`jornadas/[id]/croqui/[croquiId]/apresentar/page.tsx`)
+   * já a repassa e pode voltar a ser útil (ex.: link de volta); remover e já
+   * adicionar de novo seria só ruído de diff. */
+  jornadaId?: string;
   dadosGraficos: DadosGraficosCroqui;
 }) {
   const router = useRouter();
@@ -31,25 +38,18 @@ export function ModoApresentacao({
   const slides = croqui.conteudo.slides;
   const slide = slides[indice];
 
-  const naoRevisados = slides.filter((s) => !s.revisado).length;
-  // C19: croqui `pronto`/`apresentado` já garante os 13 revisados (trigger
-  // 0043) — só um `rascunho` pode ter slide não revisado, e é exatamente
-  // esse o caso que não pode ir para a frente do cliente.
-  const bloqueadoPorRevisao = croqui.status === "rascunho" && naoRevisados > 0;
+  const { pendentes } = contarRevisaoSlides(slides);
 
   const encerrar = useCallback(() => {
-    if (!bloqueadoPorRevisao) {
-      registrarApresentacaoCroqui(croqui.id, { acao: "encerrar", slides_vistos: indice + 1 }).catch(() => {
-        /* encerramento é best-effort — não trava a navegação de volta */
-      });
-    }
+    registrarApresentacaoCroqui(croqui.id, { acao: "encerrar", slides_vistos: indice + 1 }).catch(() => {
+      /* encerramento é best-effort — não trava a navegação de volta */
+    });
     router.back();
-  }, [croqui.id, indice, router, bloqueadoPorRevisao]);
+  }, [croqui.id, indice, router]);
 
   useEffect(() => {
-    if (bloqueadoPorRevisao) return;
     registrarApresentacaoCroqui(croqui.id, { acao: "iniciar" }).catch(() => {});
-  }, [croqui.id, bloqueadoPorRevisao]);
+  }, [croqui.id]);
 
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
@@ -57,7 +57,6 @@ export function ModoApresentacao({
         encerrar();
         return;
       }
-      if (bloqueadoPorRevisao) return;
       if (e.key === "ArrowRight" || e.key === " ") {
         e.preventDefault();
         setIndice((i) => Math.min(i + 1, slides.length - 1));
@@ -69,29 +68,7 @@ export function ModoApresentacao({
     }
     document.addEventListener("keydown", aoTeclar);
     return () => document.removeEventListener("keydown", aoTeclar);
-  }, [slides.length, encerrar, bloqueadoPorRevisao]);
-
-  if (bloqueadoPorRevisao) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1012] p-8 text-[#ece9df]">
-        <div className="flex max-w-lg flex-col items-start gap-3 rounded-sm border border-[#3c3e44] bg-[#16171a] p-6">
-          <p className="font-serif text-xl font-semibold">Este croqui ainda não pode ser apresentado</p>
-          <p className="text-sm text-[#c9c6bc]">
-            {naoRevisados} de 13 slides ainda não foram revisados pela advogada. A apresentação ao cliente exige que todos os 13
-            estejam marcados como revisados — é a advogada quem assina a prescrição técnica, não a IA.
-          </p>
-          <div className="mt-1 flex gap-2">
-            <Link href={`/jornadas/${jornadaId}#croqui`}>
-              <span className="rounded-sm border border-[#3c3e44] px-3 py-1.5 text-sm hover:border-[#7a7a72]">Revisar no editor</span>
-            </Link>
-            <button type="button" onClick={() => router.back()} className="rounded-sm border border-[#3c3e44] px-3 py-1.5 text-sm hover:border-[#7a7a72]">
-              Voltar
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [slides.length, encerrar]);
 
   if (!slide) {
     return (
@@ -106,7 +83,14 @@ export function ModoApresentacao({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0f1012] text-[#ece9df] print:static print:h-auto print:bg-white print:text-black" role="dialog" aria-label={`Apresentação — ${slide.titulo}`}>
       <div className="nao-imprimir flex items-center justify-between px-8 py-4 text-xs uppercase tracking-widest text-[#7a7a72]">
-        <span>{croqui.titulo}</span>
+        <span className="flex items-center gap-2">
+          {croqui.titulo}
+          {pendentes > 0 && (
+            <span className="rounded-sm border border-[color:var(--ambar)] px-1.5 py-0.5 normal-case tracking-normal text-[color:var(--ambar)]">
+              {pendentes} slide{pendentes > 1 ? "s" : ""} sem revisão
+            </span>
+          )}
+        </span>
         <div className="flex items-center gap-3">
           <BarraProgresso total={slides.length} atual={indice} />
           <button type="button" onClick={encerrar} className="rounded-sm border border-[#3c3e44] px-2.5 py-1 hover:border-[#7a7a72] hover:text-[#ece9df]">

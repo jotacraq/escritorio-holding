@@ -48,7 +48,27 @@ que o servidor rodava build antigo.
 **5. Migrations aplicadas nesta rodada:** 0041b (reconstruída), 0042, 0043,
 0045, 0046, 0047. A `0043` criou uma trava: croqui só vira `pronto` com os 13
 slides marcados `revisado: true` — a tela que satisfaz isso existe (Editor do
-Croqui).
+Croqui). **Esta trava foi DESLIGADA por padrão em 04/09 — ver item 7 abaixo,
+não trate mais como vigente.**
+
+**7. A trava de revisão dos 13 slides (item 5 acima) foi desligada por
+decisão do dono do produto (Marcio), 04/09/2026 — não é bug.** Migration
+`supabase/migrations/0049_croqui_revisao_configuravel.sql`: o mesmo trigger
+da 0043 (`trg_croquis_pronto_exige_revisao`/
+`app.trava_croqui_pronto_exige_revisao()`) agora lê
+`configuracoes['croqui.exige_revisao_para_pronto']` (default `false`) como
+primeira instrução, e sai sem checar slide algum quando desligada. Vale para
+**todos os 13 slides, sem exceção**. A garantia "advogada revisou antes de
+assinar" deixa de ser bloqueante de banco e vira só sinal visual no Editor.
+**Religar sem deploy:** `UPDATE configuracoes SET valor='true'::jsonb WHERE
+chave='croqui.exige_revisao_para_pronto'`. **APLICADA e VERIFICADA em
+04/09** (via MCP do Supabase, subagente não tinha acesso): os 4 passos do
+roteiro rodados de verdade contra `fcfsnqqaphtamhrpuyoh` — 0/13 vira `pronto`
+com a trava desligada, falha com `23514` religada, volta a passar desligada
+de novo, 13/13 passa nos dois estados. `explain (analyze, buffers)`:
+`Index Scan using croquis_pkey`, `Trigger trg_croquis_pronto_exige_revisao:
+time=0.697ms` — dentro do esperado (~1ms), sem `Seq Scan`. Estado final em
+produção: chave `false` (trava desligada, como pedido).
 
 **6. Não confie em `pg_get_viewdef()` para reconstruir migration de view** — ele
 devolve só o SELECT, sem as `reloptions`. Foi assim que `security_invoker` sumiu

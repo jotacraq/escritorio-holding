@@ -91,6 +91,7 @@ export function CabecalhoFicha({
   aoAtualizar,
   pendencias,
   briefing,
+  croquiAtalho,
 }: {
   ficha: Ficha360;
   aoAtualizar: () => void;
@@ -101,6 +102,11 @@ export function CabecalhoFicha({
    * DISC e objeção provável; `null` mostra a faixa vital sem esses dois itens,
    * nunca inventa. */
   briefing: Briefing | null;
+  /** Atalho fixo para o Modo Apresentação do Croqui, ao lado de "Conduzir
+   * sessão" — mesmo estado elevado do pai (`useCroquiDaJornada`, F5), montado
+   * como `null` quando não há croqui na timeline ou o papel não vê patrimônio.
+   * `null` não renderiza nada (nunca aparece desabilitado). */
+  croquiAtalho: { croquiId: string; pendentes: number } | null;
 }) {
   const { etapas } = useEtapasOrdem();
   const { jornada, pessoa } = ficha;
@@ -158,6 +164,17 @@ export function CabecalhoFicha({
           >
             Conduzir sessão
           </Link>
+          {croquiAtalho && (
+            <Link
+              href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/apresentar`}
+              className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-sm border border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:border-[color:var(--latao)]"
+            >
+              Abrir apresentação do Croqui
+              {croquiAtalho.pendentes > 0 && (
+                <span className="text-xs text-[color:var(--ambar)]">· {croquiAtalho.pendentes} sem revisão</span>
+              )}
+            </Link>
+          )}
         </div>
       </div>
 

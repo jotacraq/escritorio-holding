@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 const CorpoSchema = z.object({
   jornada_id: z.string().uuid(),
   forcar_regeracao: z.boolean().optional(),
+  /** Gera mesmo com completude abaixo do limiar (porta §1.7) — a tela exige
+   * confirmação explícita antes de mandar isto (`BriefingAba.tsx`). */
+  forcar_mesmo_assim: z.boolean().optional(),
 });
 
 /**
@@ -48,6 +51,7 @@ export async function POST(request: NextRequest) {
       jornadaId: corpo.jornada_id,
       criadoPor: usuario.id,
       forcarRegeracao: corpo.forcar_regeracao,
+      forcarMesmoAssim: corpo.forcar_mesmo_assim,
     });
 
     return NextResponse.json(
