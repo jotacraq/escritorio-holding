@@ -7,7 +7,7 @@ import { atualizarEtapa, buscarBriefing, ApiError, type Briefing, type DesfechoJ
 import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
 import { Selo, SeloDadoExemplo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
-import { calcularPendencias } from "@/components/ui/pendencias";
+import type { ItemPendencia } from "@/components/ui/pendencias";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
   aberta: { rotulo: "Aberta", tom: "azul" },
@@ -43,9 +43,8 @@ interface ItemFaixa {
  * — por isso a faixa continua fixa durante a rolagem da ficha inteira, não
  * só deste cabeçalho).
  */
-function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean }) {
+function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencias }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean; pendencias: ItemPendencia[] }) {
   const { jornada, familiares } = ficha;
-  const pendencias = calcularPendencias(ficha, podeVerPatrimonio);
   const objecao = objecaoPrincipal(briefing);
   const disc = briefing?.conteudo.perfil_disc;
 
@@ -92,7 +91,7 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha
   );
 }
 
-export function CabecalhoFicha({ ficha, aoAtualizar }: { ficha: Ficha360; aoAtualizar: () => void }) {
+export function CabecalhoFicha({ ficha, aoAtualizar, pendencias }: { ficha: Ficha360; aoAtualizar: () => void; pendencias: ItemPendencia[] }) {
   const { etapas } = useEtapasOrdem();
   const { jornada, pessoa } = ficha;
   const podeVerPatrimonio = ficha.patrimonio !== null;
@@ -111,6 +110,9 @@ export function CabecalhoFicha({ ficha, aoAtualizar }: { ficha: Ficha360; aoAtua
   useEffect(() => {
     const id = ficha.briefingAtual?.id;
     if (!id) {
+      // Reseta o estado local quando o briefing atual desaparece (troca de
+      // jornada, ou versão desativada) — não há requisição para cancelar.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBriefing(null);
       return;
     }
@@ -147,7 +149,7 @@ export function CabecalhoFicha({ ficha, aoAtualizar }: { ficha: Ficha360; aoAtua
 
   return (
     <>
-      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} />
+      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} pendencias={pendencias} />
       <header className="flex flex-col gap-3 border-b border-linha-forte pb-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

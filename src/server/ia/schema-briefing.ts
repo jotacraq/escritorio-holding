@@ -32,6 +32,29 @@ export const TomLinguagemSchema = z.enum([
   "consultiva",
 ]);
 
+/**
+ * Schema v2 (L3, ARQUITETURA-FASE-3.md §1.5): campos onde o próprio método já
+ * enumera as opções viram enum + `nota` — menos tokens escritos e uma tela
+ * legível (chip, não parágrafo). Nada é removido: a `nota` carrega a evidência
+ * que embasa a escolha, então nenhuma informação do Protocolo 01 se perde.
+ *
+ * ARMADILHA: nenhum destes ganha `.max()`/`.min()` — cardinalidade e limite de
+ * caractere são regra de PROMPT (`orcamento-escrita.ts`), nunca de Zod, para
+ * não reproduzir a classe de falha de 03/09 (`maxItems`/`minLength` no JSON
+ * Schema estrito). Ver `provedor/json-schema-estrito.ts`.
+ */
+export const NivelSchema = z.enum(["alta", "media", "baixa", "indefinida"]);
+export const VelocidadeDecisoriaSchema = z.enum(["rapida", "media", "lenta", "indefinida"]);
+export const NivelAutoridadeSchema = z.enum([
+  "decide_sozinho",
+  "decide_com_conjuge",
+  "decide_com_socios",
+  "nao_decide",
+  "indefinido",
+]);
+export const SimNaoIndefinidoSchema = z.enum(["sim", "nao", "indefinido"]);
+export const RitmoSessaoSchema = z.enum(["lento", "moderado", "rapido"]);
+
 export const BriefingSchema = z.object({
   resumo_executivo: z.string().min(1),
   perfil_disc: z.object({
@@ -62,10 +85,20 @@ export const BriefingSchema = z.object({
     }),
   ),
   processo_decisorio: z.object({
-    velocidade: z.string(),
-    necessidade_seguranca: z.string(),
-    necessidade_validacao: z.string(),
-    necessidade_detalhe: z.string(),
+    velocidade: VelocidadeDecisoriaSchema,
+    velocidade_nota: z.string(),
+    necessidade_seguranca: NivelSchema,
+    necessidade_seguranca_nota: z.string(),
+    necessidade_validacao: NivelSchema,
+    necessidade_validacao_nota: z.string(),
+    necessidade_detalhe: NivelSchema,
+    necessidade_detalhe_nota: z.string(),
+    // Exigidos pelo POP 03 e ausentes do schema até aqui — o método estava
+    // sendo perdido (ARQUITETURA-FASE-3.md §1.5).
+    nivel_autoridade: NivelAutoridadeSchema,
+    nivel_autoridade_nota: z.string(),
+    decisores_presentes_na_sessao: SimNaoIndefinidoSchema,
+    decisores_presentes_na_sessao_nota: z.string(),
     decisores: z.array(z.string()),
   }),
   linguagem_recomendada: z.object({
@@ -82,7 +115,8 @@ export const BriefingSchema = z.object({
     z.object({ frase_literal: z.string(), como_usar: z.string() }),
   ),
   estrategia_sessao: z.object({
-    ritmo: z.string(),
+    ritmo: RitmoSessaoSchema,
+    ritmo_nota: z.string(),
     mais_tempo_em: z.array(z.string()),
     menos_tempo_em: z.array(z.string()),
     momento_croqui: z.string(),

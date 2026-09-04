@@ -1,5 +1,4 @@
-import type { Ficha360 } from "@/lib/api";
-import { calcularPendencias } from "./pendencias";
+import type { ItemPendencia } from "./pendencias";
 
 /**
  * U5 — a tradução, por jornada, do que o painel do dia faz por escritório:
@@ -8,10 +7,14 @@ import { calcularPendencias } from "./pendencias";
  *
  * Vazio aqui é uma vitória, não um estado degradado — jornada sem pendência
  * mostra confirmação, não uma lista fantasma.
+ *
+ * Recebe `itens` já calculados (`calcularPendencias`, chamado uma vez em
+ * `jornadas/[id]/page.tsx`) em vez de recalcular a partir de `Ficha360` —
+ * a `FaixaVital` de `CabecalhoFicha` precisa do mesmo resultado para o chip
+ * "Próxima ação", então o cálculo é feito uma única vez por render e
+ * compartilhado, não duplicado por componente.
  */
-export function ChecklistPendencias({ ficha, podeVerPatrimonio }: { ficha: Ficha360; podeVerPatrimonio: boolean }) {
-  const itens = calcularPendencias(ficha, podeVerPatrimonio);
-
+export function ChecklistPendencias({ itens }: { itens: ItemPendencia[] }) {
   if (itens.length === 0) {
     return (
       <div

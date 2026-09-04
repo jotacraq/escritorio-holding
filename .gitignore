@@ -43,3 +43,16 @@ next-env.d.ts
 
 .env*.local
 .env
+
+# bancada de IA (scripts/bancada-ia.ts) — fixtures citam jornada_id de clientes
+# reais e o resultado pode conter métrica derivada de PII; nunca versionar
+# (ARQUITETURA-FASE-3.md §1.9).
+/tmp/
+
+# capturas de tela geradas por script de validacao contem PII de cliente
+# (nome, patrimonio). Nunca versionar, nem quando caem em pasta de caminho
+# quebrado dentro do repo.
+*.png
+!public/**/*.png
+!brain/**/*.png
+Users*AppData*scratchpad/

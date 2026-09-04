@@ -58,9 +58,12 @@ export function Abas({ abas, abaInicial, deepLinkHash = false }: { abas: Definic
 
   // Aplica o hash da URL só depois de montar — no servidor `window` não
   // existe, e aplicar de cara no render causaria descompasso de hidratação.
+  // Leitura de um sistema externo (a URL) uma vez após montar, o mesmo caso
+  // legítimo já documentado em `useTema.ts`.
   useEffect(() => {
     if (!deepLinkHash || typeof window === "undefined") return;
     const doHash = window.location.hash.slice(1);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (doHash && abas.some((a) => a.id === doHash)) setAtiva(doHash);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkHash]);

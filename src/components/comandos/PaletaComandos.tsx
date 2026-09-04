@@ -61,10 +61,14 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
   useEffect(() => {
     if (!aberta) return;
     focoAnteriorRef.current = document.activeElement as HTMLElement | null;
+    // Reseta o estado da busca sempre que a paleta abre — cada abertura é
+    // uma nova sessão de busca, não uma continuação da anterior.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setConsulta("");
     setResultadosJornada([]);
     setErroBusca(null);
     setIndiceAtivo(0);
+    /* eslint-enable react-hooks/set-state-in-effect */
     const documentoOriginal = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const id = window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -79,9 +83,13 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
     if (!aberta) return;
     const termo = consulta.trim();
     if (termo.length < MIN_CARACTERES_BUSCA_JORNADA) {
+      // Consulta curta demais para buscar — limpa o resultado anterior em
+      // vez de deixar uma lista de outra busca na tela.
+      /* eslint-disable react-hooks/set-state-in-effect */
       setResultadosJornada([]);
       setBuscando(false);
       setErroBusca(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     let vivo = true;
@@ -92,6 +100,7 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
           if (!vivo) return;
           setResultadosJornada(res.itens.slice(0, 8).map(jornadaParaOpcao));
           setErroBusca(null);
+          setIndiceAtivo(0);
         })
         .catch((e) => {
           if (!vivo) return;
@@ -110,10 +119,6 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
 
   const opcoesPagina = useMemo(() => paginasFiltradas(consulta), [consulta]);
   const opcoes = useMemo(() => [...opcoesPagina, ...resultadosJornada], [opcoesPagina, resultadosJornada]);
-
-  useEffect(() => {
-    setIndiceAtivo(0);
-  }, [opcoes.length]);
 
   const ativar = useCallback(
     (opcao: Opcao) => {
@@ -178,7 +183,10 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
             aria-autocomplete="list"
             aria-label="Buscar pessoa, jornada ou tela"
             value={consulta}
-            onChange={(e) => setConsulta(e.target.value)}
+            onChange={(e) => {
+              setConsulta(e.target.value);
+              setIndiceAtivo(0);
+            }}
             onKeyDown={aoTeclarInput}
             placeholder="Buscar pessoa ou pular para uma tela…"
             className="w-full bg-transparent text-sm text-tinta outline-none placeholder:text-tinta-fraca"

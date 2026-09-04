@@ -7,7 +7,7 @@ import { Nav } from "./Nav";
 import { TemaToggle } from "./TemaToggle";
 import { PaletaComandos } from "@/components/comandos/PaletaComandos";
 
-function BotaoBuscar({ className = "", comTexto = true }: { className?: string; comTexto?: boolean }) {
+function BotaoBuscar({ comTexto = true }: { comTexto?: boolean }) {
   return (
     <>
       <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-current opacity-80">

@@ -33,13 +33,27 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
  */
 const TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS ?? 300_000);
 
-/** effort → reasoning.max_tokens (extended thinking, repassado pelo provider Anthropic). */
-const EFFORT_PARA_REASONING_MAX_TOKENS: Record<EffortIa, number> = {
-  low: 1024,
-  medium: 2048,
-  high: 4096,
-  xhigh: 8192,
-  max: 16384,
+/**
+ * effort -> reasoning.effort do OpenRouter.
+ *
+ * NAO volte para `reasoning: { max_tokens: N }`. Na Anthropic esse campo vira
+ * `thinking.budget_tokens`, removido da geracao atual do Claude: o pedido NAO
+ * falha, o teto simplesmente nao vale. Foi assim que um briefing com teto de
+ * 4.096 gastou 6.416 tokens de raciocinio em producao (03/09/2026) — e o
+ * raciocinio e ~55% do custo de saida, ou seja, a alavanca de economia inteira
+ * estava desligada sem ninguem ver. O caminho de rollback (`anthropic.ts`)
+ * sempre falou a API nova: `thinking:{type:"adaptive"}` + `output_config:{effort}`.
+ *
+ * A escala do OpenRouter tem tres degraus; os dois efforts acima de `high` do
+ * SIC-HF colapsam em `high`. O teto absoluto de saida continua sendo
+ * `max_tokens`, que e outro campo e segue valendo.
+ */
+const EFFORT_PARA_OPENROUTER: Record<EffortIa, "low" | "medium" | "high"> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "high",
+  max: "high",
 };
 
 export function openrouterConfigurado(): boolean {
@@ -95,7 +109,7 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
         type: "json_schema",
         json_schema: { name: nomeSchema, strict: true, schema: jsonSchema },
       },
-      reasoning: { max_tokens: EFFORT_PARA_REASONING_MAX_TOKENS[effort] },
+      reasoning: { effort: EFFORT_PARA_OPENROUTER[effort] },
       provider: { order: ["anthropic"], allow_fallbacks: false, require_parameters: true },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),

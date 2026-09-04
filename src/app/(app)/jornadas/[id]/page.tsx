@@ -6,6 +6,7 @@ import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { ChecklistPendencias } from "@/components/ui/ChecklistPendencias";
+import { calcularPendencias } from "@/components/ui/pendencias";
 import { FormularioAba } from "@/components/ficha360/FormularioAba";
 import { LigacaoAba } from "@/components/ficha360/LigacaoAba";
 import { LinksAba } from "@/components/ficha360/LinksAba";
@@ -30,6 +31,9 @@ export default function PaginaFicha360({ params }: { params: Promise<{ id: strin
   // O backend não manda uma flag "pode ver patrimônio" — manda `null` no lugar
   // do array quando o papel não permite. É esse null que decide a UI aqui.
   const podeVerPatrimonio = ficha.patrimonio !== null;
+  // Calculado uma vez e compartilhado entre a faixa vital (CabecalhoFicha,
+  // chip "Próxima ação") e o ChecklistPendencias — mesma lista, um cálculo só.
+  const pendencias = calcularPendencias(ficha, podeVerPatrimonio);
 
   // U3 — 13 abas viram 4 grupos (Preparação · Sessão · Patrimônio · Registro).
   // Nenhuma aba é removida, nenhuma regra de acesso muda: o mesmo
@@ -70,8 +74,8 @@ export default function PaginaFicha360({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="flex flex-col gap-6">
-      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} />
-      <ChecklistPendencias ficha={ficha} podeVerPatrimonio={podeVerPatrimonio} />
+      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} pendencias={pendencias} />
+      <ChecklistPendencias itens={pendencias} />
       <Abas abas={abas} deepLinkHash />
     </div>
   );

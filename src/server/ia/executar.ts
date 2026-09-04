@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { resolverProvedor, type EffortIa } from "./cliente";
 import { calcularCustoUsd } from "./precos";
-import { erroNaoEncontrado, ErroIa } from "./erros";
+import { erroLimiteIaAtingido, erroNaoEncontrado, ErroIa } from "./erros";
 
 /**
  * Ponto central de execução de IA do SIC-HF (B1-8). Todo chamador real
@@ -11,15 +11,22 @@ import { erroNaoEncontrado, ErroIa } from "./erros";
  * passa por aqui — nenhum fala com `resolverProvedor()`/adaptador direto.
  *
  * Ordem de execução, fixa:
- * 1. busca prompt ativo por `chavePrompt` (404 se não houver)
- * 2. serializa entrada + hash sha256
- * 3. INSERT execucoes_ia status 'executando'
- * 4. resolve provedor via `resolverProvedor()`
- * 5. chama `executar()`
+ * 1. busca prompt por `chavePrompt` (ativo, ou uma `versaoPrompt` específica —
+ *    só a bancada usa isto, para medir uma versão ainda não promovida; 404 se
+ *    não houver)
+ * 2. checa cooldown/teto diário via `verificar_cooldown_ia` (RPC, wrapper de
+ *    `app.pode_executar_ia`, banco desde a 0027) — ANTES de qualquer INSERT,
+ *    para não sujar `execucoes_ia` com uma linha que nunca ia rodar. Pulado só
+ *    com `isentoCooldown: true` (script de bancada — nunca alcançável por rota
+ *    HTTP; a rota nunca passa esse parâmetro).
+ * 3. serializa entrada + hash sha256
+ * 4. INSERT execucoes_ia status 'executando' (grava `effort`/`variante` já aqui)
+ * 5. resolve provedor via `resolverProvedor()`
+ * 6. chama `executar()`
  *    - recusa → UPDATE falhou + lança ErroIa(502, 'recusa_ia')
  *    - saída inválida (após o re-prompt do adaptador) → UPDATE falhou + lança ErroIa(502, 'saida_invalida')
  *    - sucesso → UPDATE concluida com tokens/custo/latência/stop_reason/request_id
- * 6. retorna { execucaoId, saida, custoUsd }
+ * 7. retorna { execucaoId, saida, custoUsd }
  *
  * Cada chamador mantém a lógica específica dele (montagem de contexto, checagem
  * de consentimento, RPC de gravação do conteúdo) — este módulo não sabe nada
@@ -28,7 +35,8 @@ import { erroNaoEncontrado, ErroIa } from "./erros";
  * Modelo: fonte da verdade é `prompts_versoes.modelo_padrao` (o SEED/migration
  * decide o slug). `IA_MODELO_PADRAO`, se presente, VENCE — é só para rollback
  * rápido de incidente (ex.: modelo com problema no provedor), nunca a
- * configuração normal de operação.
+ * configuração normal de operação. Trocar de modelo por custo é BLOQUEIO B23
+ * — não é este módulo que decide isso.
  */
 
 interface PromptAtivo {
@@ -40,15 +48,39 @@ interface PromptAtivo {
 
 export interface ParamsExecutarComAuditoria<T> {
   chavePrompt: string;
+  /**
+   * Só a bancada (`scripts/bancada-ia.ts`) usa isto — mede uma versão de
+   * prompt específica (ex.: v2 ainda não promovida) em vez da versão `ativo`.
+   * Nunca reachable por rota HTTP: nenhuma rota aceita este campo do cliente.
+   */
+  versaoPrompt?: number;
   jornadaId: string | null;
   criadoPor: string | null;
   /** Conteúdo serializável enviado como mensagem `user` (após o prefixo, se houver). */
   entrada: unknown;
   /** Texto fixo que precede a entrada serializada na mensagem `user` (ex.: "Contexto da família (JSON):"). */
   prefixoUsuario: string;
+  /**
+   * Texto anexado ao final de `corpo_sistema` antes de chamar o provedor (ex.:
+   * o bloco de orçamento de escrita, L2 — ARQUITETURA-FASE-3.md §1.4).
+   * Condicionado por quem chama (normalmente por uma chave de `configuracoes`
+   * lida no chamador) — este módulo só concatena, não decide.
+   */
+  extraSistema?: string;
   schema: z.ZodType<T>;
   nomeSchema: string;
   maxTokens: number;
+  /** Só a bancada — mede `effort` diferente do gravado em `prompts_versoes` sem criar prompt novo. */
+  effortOverride?: EffortIa;
+  /** Rótulo da variante medida pela bancada (ex.: 'baseline', 'effort_low'). NULL em produção — nunca setável por rota pública. */
+  variante?: string | null;
+  /**
+   * Pula a checagem de cooldown/teto diário (§1.10). Só para o script de
+   * bancada, que roda IA em laço de propósito — NUNCA setado a partir de uma
+   * rota HTTP (o pentest da Onda 4 audita isto: `variante`/`isentoCooldown`
+   * não podem ser alcançáveis pela API pública).
+   */
+  isentoCooldown?: boolean;
 }
 
 export interface ResultadoExecucaoAuditada<T> {
@@ -61,21 +93,59 @@ export async function executarComAuditoria<T>(
   supabaseAdmin: SupabaseClient,
   params: ParamsExecutarComAuditoria<T>,
 ): Promise<ResultadoExecucaoAuditada<T>> {
-  const { chavePrompt, jornadaId, criadoPor, entrada, prefixoUsuario, schema, nomeSchema, maxTokens } = params;
+  const {
+    chavePrompt,
+    versaoPrompt,
+    jornadaId,
+    criadoPor,
+    entrada,
+    prefixoUsuario,
+    extraSistema,
+    schema,
+    nomeSchema,
+    maxTokens,
+    effortOverride,
+    variante,
+    isentoCooldown,
+  } = params;
 
-  const { data: prompt, error: erroPrompt } = await supabaseAdmin
+  let consultaPrompt = supabaseAdmin
     .from("prompts_versoes")
     .select("id, corpo_sistema, modelo_padrao, effort")
-    .eq("chave", chavePrompt)
-    .eq("ativo", true)
-    .maybeSingle<PromptAtivo>();
+    .eq("chave", chavePrompt);
+  consultaPrompt =
+    versaoPrompt != null ? consultaPrompt.eq("versao", versaoPrompt) : consultaPrompt.eq("ativo", true);
+  const { data: prompt, error: erroPrompt } = await consultaPrompt.maybeSingle<PromptAtivo>();
 
   if (erroPrompt || !prompt) {
-    throw erroNaoEncontrado(`prompt_ativo_nao_encontrado: ${chavePrompt}`);
+    throw erroNaoEncontrado(`prompt_ativo_nao_encontrado: ${chavePrompt}${versaoPrompt ? ` v${versaoPrompt}` : ""}`);
+  }
+
+  // Cooldown de IA (0027) e teto diário por usuário — ligados em runtime pela
+  // primeira vez nesta onda (ARQUITETURA-FASE-3.md §1.10). Este plano cria um
+  // botão que gasta dinheiro de propósito (`forcar_mesmo_assim` na porta de
+  // completude) — sem enforcement aqui, o achado BAIXO 7 do pentest de 03/09
+  // vira MÉDIO. `verificar_cooldown_ia` é SECURITY DEFINER (0029): dá a
+  // resposta certa independente do papel de quem pergunta.
+  if (!isentoCooldown) {
+    const { data: podeExecutar, error: erroCooldown } = await supabaseAdmin.rpc("verificar_cooldown_ia", {
+      p_jornada_id: jornadaId,
+      p_perfil_id: criadoPor,
+    });
+    if (erroCooldown) {
+      throw new Error(`falha_ao_checar_cooldown_ia: ${erroCooldown.message}`);
+    }
+    if (podeExecutar !== true) {
+      throw erroLimiteIaAtingido(
+        "Cooldown de IA ou teto diário de execuções atingido — tente novamente mais tarde.",
+      );
+    }
   }
 
   const modeloOverride = process.env.IA_MODELO_PADRAO?.trim();
   const modelo = modeloOverride ? modeloOverride : prompt.modelo_padrao;
+  const effort = effortOverride ?? prompt.effort;
+  const sistema = extraSistema ? `${prompt.corpo_sistema}\n\n${extraSistema}` : prompt.corpo_sistema;
 
   const entradaSerializada = JSON.stringify(entrada);
   const hashEntrada = crypto.createHash("sha256").update(entradaSerializada).digest("hex");
@@ -89,6 +159,8 @@ export async function executarComAuditoria<T>(
       status: "executando",
       hash_entrada: hashEntrada,
       criado_por: criadoPor,
+      effort,
+      variante: variante ?? null,
     })
     .select("id")
     .single<{ id: string }>();
@@ -103,12 +175,12 @@ export async function executarComAuditoria<T>(
     const provedor = resolverProvedor();
     const resposta = await provedor.executar({
       modelo,
-      sistema: prompt.corpo_sistema,
+      sistema,
       usuario: `${prefixoUsuario}\n\n${entradaSerializada}`,
       schema,
       nomeSchema,
       maxTokens,
-      effort: prompt.effort,
+      effort,
     });
 
     const latenciaMs = Date.now() - inicio;

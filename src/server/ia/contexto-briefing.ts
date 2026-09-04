@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { temConsentimento } from "./consentimento";
+import type { SinaisCompletude } from "./completude";
 
 /**
  * Contexto que entra no prompt do Briefing Estratégico — ARQUITETURA.md §4.3.
@@ -55,6 +56,12 @@ export interface MontagemContexto {
   contexto: ContextoBriefing;
   fontesUsadas: string[];
   modoReduzido: boolean;
+  /**
+   * Sinais para a porta de completude (L4, ARQUITETURA-FASE-3.md §1.7) — dos
+   * MESMOS dados já buscados acima, zero query nova. `calcularCompletude()`
+   * (completude.ts) aplica os pesos de `configuracoes.ia.completude_pesos`.
+   */
+  sinaisCompletude: SinaisCompletude;
 }
 
 /**
@@ -230,5 +237,17 @@ export async function montarContextoBriefing(
     transcricao,
   };
 
-  return { contexto, fontesUsadas, modoReduzido };
+  const sinaisCompletude: SinaisCompletude = {
+    formulario: Boolean(formularioRes.data),
+    ligacao: Boolean(ligacao),
+    patrimonio: Boolean(jornada.faixa_patrimonio_declarada) || patrimonioItens.length > 0,
+    frases: (ligacao?.frases_marcantes?.length ?? 0) > 0,
+    decisorio: Boolean(ligacao?.processo_decisorio),
+    familia: familiares.length > 0,
+    // Mesma condição que já controla `transcricao`/`modoReduzido` acima —
+    // presente E consentida (`tem_consentimento`), nunca só presente.
+    transcricao: transcricao !== null,
+  };
+
+  return { contexto, fontesUsadas, modoReduzido, sinaisCompletude };
 }
