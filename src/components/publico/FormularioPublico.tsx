@@ -130,6 +130,14 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+       * `h1` de navegação por leitor de tela: a saudação abaixo já cumpre esse
+       * papel visualmente, mas herdaria `font-family`/tamanho de heading do
+       * `globals.css` (regra global `h1,h2,h3,h4`) e mudaria o layout se virasse
+       * `<h1>` visível. Este heading fica só na árvore de acessibilidade —
+       * mesmo texto, sem duplicar o que a pessoa vidente já lê no parágrafo.
+       */}
+      <h1 className="sr-only">Formulário Estratégico — Olá, {abertura.primeiro_nome}</h1>
       <div className="flex flex-col gap-1">
         <p className="text-sm text-tinta-suave">Olá, {abertura.primeiro_nome}. Leva cerca de 3 minutos.</p>
       </div>

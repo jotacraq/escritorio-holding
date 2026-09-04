@@ -68,8 +68,9 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Roteiro ativo (0030) — só POP 03-B é responsabilidade desta entrega; POP 03
-// segue com o roteiro fixo já existente em LigacaoAba (regressão zero).
+// Roteiro ativo (0030) — POP 03 e POP 03-B, mesma porta. As duas chaves já
+// nasceram semeadas na 0030 (`pop_03` e `pop_03b`); LigacaoAba passou a
+// buscar as duas por aqui em vez de manter o POP 03 hardcoded no componente.
 // ---------------------------------------------------------------------------
 
 export function buscarRoteiroAtivo(chave: ChaveRoteiro): Promise<RoteiroVersao> {

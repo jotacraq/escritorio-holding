@@ -9,7 +9,14 @@ export function BarraProgresso({ atual, total, rotulo }: { atual: number; total:
         </span>
         <span className="font-medium text-tinta">{rotulo}</span>
       </div>
-      <div role="progressbar" aria-valuenow={percentual} aria-valuemin={0} aria-valuemax={100} className="h-2 w-full overflow-hidden rounded-full bg-linha">
+      <div
+        role="progressbar"
+        aria-valuenow={percentual}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Progresso do formulário: ${rotulo}`}
+        className="h-2 w-full overflow-hidden rounded-full bg-linha"
+      >
         <div className="h-full rounded-full bg-[color:var(--latao)] transition-[width]" style={{ width: `${percentual}%` }} />
       </div>
     </div>

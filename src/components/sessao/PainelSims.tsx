@@ -108,7 +108,11 @@ function LinhaSim({
         )}
       </div>
 
-      {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
+      {erro && (
+        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+          {erro}
+        </p>
+      )}
 
       {expandido && fala && (
         <blockquote className="rounded-sm border border-linha bg-papel px-3 py-2 font-serif text-[15px] italic leading-snug text-tinta-suave">
@@ -262,7 +266,11 @@ function LinhaSimGravacao({
         )}
       </div>
 
-      {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
+      {erro && (
+        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+          {erro}
+        </p>
+      )}
 
       {expandido && (
         <blockquote className="rounded-sm border border-linha bg-papel px-3 py-2 font-serif text-[15px] italic leading-snug text-tinta-suave">

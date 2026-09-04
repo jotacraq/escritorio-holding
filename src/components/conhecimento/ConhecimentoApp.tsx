@@ -211,44 +211,53 @@ export function ConhecimentoApp() {
           </button>
         </form>
 
-        {erroBusca ? (
-          <EstadoErro erro={erroBusca} titulo="Não deu para buscar" />
-        ) : resultados === null ? null : resultados.length === 0 ? (
-          <EstadoVazio
-            titulo="Nenhuma reunião menciona esse termo"
-            descricao="Tente outra palavra, ou tire os filtros de tipo e desfecho."
-          />
-        ) : (
-          <ul className="space-y-3">
-            <li className="text-xs text-tinta-fraca">
-              {resultados.length} reunião(ões) com esse termo
-            </li>
-            {resultados.map((r) => (
-              <li
-                key={r.transcricao_id}
-                className="rounded-lg border border-linha bg-papel p-4"
-              >
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/conhecimento/transcricoes/${r.transcricao_id}`}
-                    className="font-medium underline decoration-[color:var(--linha-forte)] underline-offset-4"
-                  >
-                    {r.rotulo}
-                  </Link>
-                  <Selo tom={r.tipo === "apresentacao_croqui" ? "azul" : "neutro"}>
-                    {ROTULO_TIPO[r.tipo]}
-                  </Selo>
-                  {r.data_reuniao ? (
-                    <span className="text-xs text-tinta-fraca">
-                      {formatarData(r.data_reuniao)}
-                    </span>
-                  ) : null}
-                </div>
-                <Trecho texto={r.trecho} />
+        {/*
+         * `aria-live="polite"`: quem usa leitor de tela dispara a busca e o foco
+         * continua no formulário — sem isto, o resultado (vazio, erro ou N
+         * reuniões encontradas) nunca é anunciado. `erroBusca` já tem
+         * `role="alert"` dentro de `EstadoErro`, que é assertivo por natureza
+         * e não depende deste `aria-live` para ser lido.
+         */}
+        <div aria-live="polite" aria-atomic="true">
+          {erroBusca ? (
+            <EstadoErro erro={erroBusca} titulo="Não deu para buscar" />
+          ) : resultados === null ? null : resultados.length === 0 ? (
+            <EstadoVazio
+              titulo="Nenhuma reunião menciona esse termo"
+              descricao="Tente outra palavra, ou tire os filtros de tipo e desfecho."
+            />
+          ) : (
+            <ul className="space-y-3">
+              <li className="text-xs text-tinta-fraca">
+                {resultados.length} reunião(ões) com esse termo
               </li>
-            ))}
-          </ul>
-        )}
+              {resultados.map((r) => (
+                <li
+                  key={r.transcricao_id}
+                  className="rounded-lg border border-linha bg-papel p-4"
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/conhecimento/transcricoes/${r.transcricao_id}`}
+                      className="font-medium underline decoration-[color:var(--linha-forte)] underline-offset-4"
+                    >
+                      {r.rotulo}
+                    </Link>
+                    <Selo tom={r.tipo === "apresentacao_croqui" ? "azul" : "neutro"}>
+                      {ROTULO_TIPO[r.tipo]}
+                    </Selo>
+                    {r.data_reuniao ? (
+                      <span className="text-xs text-tinta-fraca">
+                        {formatarData(r.data_reuniao)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Trecho texto={r.trecho} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       {/* ------------------------------------------------------------------ casos */}

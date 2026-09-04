@@ -70,7 +70,11 @@ function LinhaOferta({
           <Selo tom="vermelho">Não aceitou</Selo>
         )}
       </div>
-      {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
+      {erro && (
+        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+          {erro}
+        </p>
+      )}
       <p className="text-[11px] text-tinta-fraca">
         Ofertada em {formatarDataHora(oferta.ofertada_em)}
         {oferta.valida_ate && ` · válida até ${formatarDataHora(oferta.valida_ate)}`}
@@ -172,7 +176,11 @@ export function PainelOferta({
             />
           </label>
 
-          {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
+          {erro && (
+            <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+              {erro}
+            </p>
+          )}
 
           <div className="flex items-center gap-2">
             <Botao variante="primario" carregando={registrando} onClick={registrar}>

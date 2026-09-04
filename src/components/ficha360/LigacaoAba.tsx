@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { atualizarLigacao, criarLigacao, ApiError, type EstiloResposta, type Ficha360, type LigacaoEstrategica, type ProcessoDecisorio, type Ritmo } from "@/lib/api";
 import { buscarRoteiroAtivo, ErroFicha360Api } from "@/components/ficha360/api";
-import type { RoteiroBloco } from "@/types/roteiro";
+import type { ChaveRoteiro, RoteiroBloco } from "@/types/roteiro";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando } from "@/components/ui/Estado";
 import { formatarDataHora } from "@/lib/formatar";
@@ -29,14 +29,6 @@ const ROTULOS_SINAIS: Record<string, string> = {
   evita_assunto: "Evita assunto",
   demonstra_cautela: "Demonstra cautela",
 };
-
-const PERGUNTAS_ROTEIRO = [
-  { id: "p1", texto: "Qual resposta espera encontrar na Sessão de Viabilidade?" },
-  { id: "p2", texto: "Que assunto do seminário comentou com a família?" },
-  { id: "p3", texto: "Prefere detalhe técnico primeiro ou aplicação prática primeiro?" },
-  { id: "p4", texto: "A família decide na hora ou conversa antes?" },
-  { id: "p5", texto: "Que assunto merece atenção especial da Dra. Elaine?" },
-];
 
 /** Trilha "preliminar" (sem seminário) roda o POP 03-B; "seminario" roda o POP 03 — mesmo mapeamento do trigger `ligacoes_estrategicas_roteiro` (0030). */
 function vazio(jornadaId: string, trilha: Ficha360["jornada"]["trilha"]): LigacaoEstrategica {
@@ -102,15 +94,14 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
 }
 
 /**
- * Roteiro do POP 03-B vem do banco (`roteiros_versoes`, chave `pop_03b`) — ao
- * contrário do POP 03, que segue com as 5 perguntas fixas de `PERGUNTAS_ROTEIRO`
- * (histórico, sem risco de regressão). Um único bloco na definição (ver seed
- * 0030): os `campos` viram as perguntas do formulário, `observar`/`proibido`
- * viram os dois avisos abaixo — mesmo vocabulário de `BlocoRoteiro` (modo
- * conduzir), simplificado aqui porque isto é registro pós-ligação, não leitura
- * ao vivo.
+ * Roteiro do POP 03 e do POP 03-B vêm do banco (`roteiros_versoes`, chaves
+ * `pop_03` e `pop_03b` — ambos semeados na 0030, ver `POPs.md`). Único bloco
+ * relevante na definição de cada chave (o primeiro do array): os `campos`
+ * viram as perguntas do formulário, `observar`/`proibido` viram os dois
+ * avisos abaixo — mesmo vocabulário de `BlocoRoteiro` (modo conduzir),
+ * simplificado aqui porque isto é registro pós-ligação, não leitura ao vivo.
  */
-function RoteiroPop03B({ respostas, aoMudarResposta }: { respostas: Record<string, string>; aoMudarResposta: (id: string, valor: string) => void }) {
+function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chave: ChaveRoteiro; rotuloPop: string; respostas: Record<string, string>; aoMudarResposta: (id: string, valor: string) => void }) {
   const [bloco, setBloco] = useState<RoteiroBloco | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -119,13 +110,13 @@ function RoteiroPop03B({ respostas, aoMudarResposta }: { respostas: Record<strin
     let vivo = true;
     setCarregando(true);
     setErro(null);
-    buscarRoteiroAtivo("pop_03b")
+    buscarRoteiroAtivo(chave)
       .then((roteiro) => {
         if (!vivo) return;
         setBloco(roteiro.definicao.blocos[0] ?? null);
       })
       .catch((e) => {
-        if (vivo) setErro(e instanceof ErroFicha360Api ? e.message : "Não foi possível carregar o roteiro do POP 03-B.");
+        if (vivo) setErro(e instanceof ErroFicha360Api ? e.message : `Não foi possível carregar o roteiro do ${rotuloPop}.`);
       })
       .finally(() => {
         if (vivo) setCarregando(false);
@@ -133,11 +124,11 @@ function RoteiroPop03B({ respostas, aoMudarResposta }: { respostas: Record<strin
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [chave, rotuloPop]);
 
-  if (carregando) return <EstadoCarregando rotulo="Carregando roteiro do POP 03-B…" />;
+  if (carregando) return <EstadoCarregando rotulo={`Carregando roteiro do ${rotuloPop}…`} />;
   if (erro) return <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>;
-  if (!bloco) return <p className="text-sm text-tinta-suave">Nenhuma versão ativa de roteiro para o POP 03-B.</p>;
+  if (!bloco) return <p className="text-sm text-tinta-suave">Nenhuma versão ativa de roteiro para o {rotuloPop}.</p>;
 
   return (
     <>
@@ -210,29 +201,14 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
         <legend className="font-serif text-base font-semibold text-tinta">
-          {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro (5 perguntas)"}
+          {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro do POP 03"}
         </legend>
-        {pop03b ? (
-          <RoteiroPop03B
-            respostas={ligacao.respostas}
-            aoMudarResposta={(id, valor) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [id]: valor } }))}
-          />
-        ) : (
-          PERGUNTAS_ROTEIRO.map((p) => (
-            <div key={p.id} className="flex flex-col gap-1">
-              <label htmlFor={`ligacao-${p.id}`} className="text-sm font-medium text-tinta">
-                {p.texto}
-              </label>
-              <textarea
-                id={`ligacao-${p.id}`}
-                rows={2}
-                value={ligacao.respostas[p.id] ?? ""}
-                onChange={(e) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [p.id]: e.target.value } }))}
-                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
-              />
-            </div>
-          ))
-        )}
+        <RoteiroDeBanco
+          chave={pop03b ? "pop_03b" : "pop_03"}
+          rotuloPop={pop03b ? "POP 03-B" : "POP 03"}
+          respostas={ligacao.respostas}
+          aoMudarResposta={(id, valor) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [id]: valor } }))}
+        />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">

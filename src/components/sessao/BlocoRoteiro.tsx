@@ -19,9 +19,9 @@ export function BlocoRoteiro({ sessaoId, bloco, indice, total }: { sessaoId: str
         <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">
           Parte {indice + 1} de {total}
         </p>
-        <h1 id="titulo-parte-atual" className="font-serif text-xl font-semibold leading-tight text-tinta sm:text-2xl">
+        <h2 id="titulo-parte-atual" className="font-serif text-xl font-semibold leading-tight text-tinta sm:text-2xl">
           {bloco.titulo}
-        </h1>
+        </h2>
         {bloco.objetivo && <p className="text-sm text-tinta-suave">{bloco.objetivo}</p>}
       </header>
 

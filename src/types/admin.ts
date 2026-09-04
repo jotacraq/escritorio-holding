@@ -204,6 +204,28 @@ export interface PendenciasResposta {
 }
 
 // ---------------------------------------------------------------------------
+// Decisões jurídicas (0048) — substitui o boolean solto de
+// configuracoes['conhecimento.analise_ia_habilitada']. Só um escopo hoje;
+// escopo novo é migration (mesmo raciocínio de ConfiguracaoChave acima).
+// ---------------------------------------------------------------------------
+
+export type EscopoDecisaoJuridica = "conhecimento.analise_ia_transcricoes";
+
+export interface DecisaoJuridicaAdmin {
+  id: string;
+  escopo: EscopoDecisaoJuridica;
+  descricao: string;
+  base_legal: string;
+  subprocessador: string;
+  decidido_por: string;
+  decidido_em: string;
+  revogada_em: string | null;
+  revogada_por: string | null;
+  motivo_revogacao: string | null;
+  criado_em: string;
+}
+
+// ---------------------------------------------------------------------------
 // Reexport de conveniência
 // ---------------------------------------------------------------------------
 

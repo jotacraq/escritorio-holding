@@ -163,7 +163,14 @@ function CartaoTipoDocumento({
               {envio.erro}
             </p>
           ) : (
-            <div role="progressbar" aria-valuenow={envio.percentual} aria-valuemin={0} aria-valuemax={100} className="h-2 w-full overflow-hidden rounded-full bg-linha">
+            <div
+              role="progressbar"
+              aria-valuenow={envio.percentual}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Enviando ${envio.nome}`}
+              className="h-2 w-full overflow-hidden rounded-full bg-linha"
+            >
               <div className="h-full rounded-full bg-[color:var(--latao)] transition-[width]" style={{ width: `${envio.percentual}%` }} />
             </div>
           )}

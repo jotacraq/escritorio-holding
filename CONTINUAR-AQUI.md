@@ -4,7 +4,17 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
-> **Sessão de 04/09 de madrugada (a mais recente):** o briefing esteve **100%
+> **Sessão de 04/09 à tarde (fan-out de 5 agentes + bancada de IA):** rodada de
+> paralelização real — POP 03 unificado com POP 03-B, trava de LGPD com peso
+> jurídico aplicada e verificada, aviso antes de emitir link de material sem
+> aprovação, auditoria de acessibilidade (5 correções reais + 1 achado
+> sistêmico de contraste reportado), e cooldown/rate limit confirmados já
+> resolvidos. **Bancada de IA rodou de verdade** (27 execuções, US$ 0,99,
+> 3 jornadas reais) e promoveu `effort` de `medium` para **`low`** — mais
+> barato E corrige ancoragem zerada (0.00) que o `medium` tinha na jornada
+> mais rica testada. Ver §0b.
+
+> **Sessão de 04/09 de madrugada:** o briefing esteve **100%
 > quebrado em produção** por algumas horas e voltou. Custo caiu de US$ 0,128
 > para **US$ 0,055** por briefing. As features da fase 3 estão no ar. Leia o
 > §0 logo abaixo antes de qualquer coisa.
@@ -23,9 +33,11 @@ o cliente recebe e a pilha inteira. É o que permitiu achar a causa acima em vez
 de continuar chutando. Consulte por lá antes de formular hipótese.
 
 **3. O custo da IA é controlado pela coluna `effort` de `prompts_versoes`** —
-`UPDATE`, sem deploy. Medido no mesmo cliente: `high` US$ 0,1241 · **`medium`
-US$ 0,0549 (ativo)** · `low` US$ 0,0397. O `medium` entrega um briefing do
-mesmo tamanho que o `high`. Detalhe e ressalvas em `brain/04 - Tecnico/Custo da IA.md`.
+`UPDATE`, sem deploy. Medido no mesmo cliente (04/09 madrugada): `high`
+US$ 0,1241 · `medium` US$ 0,0549 · `low` US$ 0,0397. **Promovido para `low`
+em 04/09 à tarde** — a bancada de 3 jornadas (§0b) mediu que `low` não só é
+mais barato como corrige uma ancoragem zerada que `medium` tinha na jornada
+com mais dado. Detalhe e ressalvas em `brain/04 - Tecnico/Custo da IA.md`.
 
 **4. O deploy é por arquivo, e dá para fazer por API.** `git archive --format=zip
 -o sichf.zip HEAD` e a ferramenta de deploy da Hostinger; leva de 4 a 10 min.
@@ -41,6 +53,44 @@ Croqui).
 **6. Não confie em `pg_get_viewdef()` para reconstruir migration de view** — ele
 devolve só o SELECT, sem as `reloptions`. Foi assim que `security_invoker` sumiu
 do arquivo da `0041b` (achado ALTO do pentest, corrigido na `0047`).
+
+---
+
+## 0b. Fan-out de 5 agentes em paralelo (04/09 à tarde) — o que aprendemos
+
+Primeira vez rodando vários agentes simultâneos no mesmo checkout, sem
+isolamento de worktree. Funcionou porque a fronteira de arquivo foi desenhada
+antes de disparar — zero conflito real de merge. Duas coisas para quem repetir
+isto:
+
+1. **`.next` é ponto de disputa real.** Dois agentes rodando `npm run build`
+   ao mesmo tempo colidem em lock/manifest (`ENOENT .next/build-manifest.json`,
+   "Another next build process is already running"). Não é bug de código —
+   confirmado reproduzindo o mesmo erro com `git stash` (sem diff nenhum
+   aplicado). Rode `rm -rf .next` antes de testar depois de um fan-out.
+2. **Bom sinal, não achado**: 2 dos 5 agentes (POP 03, cooldown/rate limit)
+   investigaram antes de codar e descobriram que o trabalho **já estava
+   feito** por uma sessão anterior — evitaram duplicar e só corrigiram a
+   documentação desatualizada. Vale manter essa instrução explícita
+   ("confirme que não está feito antes de implementar") em tarefas futuras.
+
+**Migration `0048_decisoes_juridicas.sql`** foi a única desta rodada que
+mexeu em enforcement de banco — aplicada e testada com o roteiro de
+verificação que o próprio arquivo da migration deixou pronto (bloqueia →
+libera → revoga → volta a bloquear, os 4 passos rodados de verdade contra
+`fcfsnqqaphtamhrpuyoh`).
+
+**Bancada de IA — decisão tomada com dado, não achismo:** fixtures reais (3
+jornadas de faixas pobre/média/rica — todas dado de seed "(exemplo)", não
+cliente real; não há jornada rica de cliente de verdade no banco hoje) contra
+`gerarBriefingSemGravar` (o mesmo caminho de produção). O baseline (`medium`)
+zerou a ancoragem (0.00, 3 frases de fechamento não localizadas) justamente na
+jornada mais rica — o efeito é: quanto mais dado o cliente traz, pior o
+baseline ancorava as próprias palavras dele no briefing. `effort_low` corrigiu
+isso nas 3 faixas (ancoragem 1.00) e ainda saiu ~35% mais barato. Promovido via
+`UPDATE prompts_versoes SET effort = 'low'`. **Reversão**: `UPDATE
+prompts_versoes SET effort = 'medium' WHERE chave = 'protocolo_01_briefing' AND
+ativo` — sem deploy.
 
 ---
 
@@ -278,25 +328,28 @@ Ordenado pelo que muda mais a vida do escritório.
 2. ~~Ligar as IAs~~ **FEITO em 03/09 à noite** — migrado para OpenRouter, testado com Briefing real, ver §4b. Falta ainda: rodar o primeiro Briefing contra um cliente real (o teste desta sessão usou uma jornada de seed/teste com pouco dado, `grauConfianca: 10`, `modoReduzido: true` — esperado para dado insuficiente, mas ninguém validou a qualidade do texto contra um caso real ainda).
 3. **Ligar a Hotmart**: cadastrar os 3 produtos, configurar o webhook e **testar um pagamento de verdade**. Junto disso, fechar o reprocessamento de webhook que falhou (a RPC existe; falta a rota testar `processado_em is null` antes de responder "já recebi"). **O arquiteto já desenhou isso em detalhe nesta sessão (Frente 2) — não foi implementado por falta dos 3 IDs reais e confirmação do mecanismo de assinatura (hottok vs HMAC). Plano completo não está salvo em arquivo — se perdido, peça ao arquiteto para redesenhar, é rápido.**
 4. **Régua no ar**: `RESEND_API_KEY`, domínio de e-mail verificado, e cron do painel da Hostinger batendo em `/api/cron/regua` a cada 5 min. **Também desenhado nesta sessão (Frente 3) — código já está quase pronto (`regua/email.ts`, `regua/processar.ts`), só falta a env var, o DNS do domínio de e-mail e o cron do hPanel.**
-5. **Trava de LGPD com peso jurídico** (achado MÉDIO do pentest): hoje a flag que libera IA sobre transcrição é um boolean editável por qualquer admin, sem registrar quem decidiu. Deveria ser uma tabela `decisoes_juridicas` com base legal, quem decidiu e quando — e o trigger olhar para lá. **Ganhou peso extra com a migração para OpenRouter: o consentimento de tratamento por IA (`erros.ts`) nomeia "Anthropic" no texto — confirmar com a Dra. Elaine se isso cobre um subprocessador adicional (OpenRouter), mesmo com a rota pinada só na Anthropic por baixo.**
+5. ~~**Trava de LGPD com peso jurídico**~~ **ESTRUTURA PRONTA em 04/09, texto pendente com a Dra. Elaine.** Migration `0048_decisoes_juridicas.sql` aplicada e verificada em produção (ciclo completo testado: bloqueia sem decisão → libera com decisão ativa → volta a bloquear após revogar). O boolean solto de `configuracoes` foi substituído por uma tabela com quem decidiu, quando, base legal e subprocessador — nunca sobrescrita, só revogável (linha nova = decisão nova). **O que a migration NÃO faz, de propósito**: não escreve texto de base legal nem presume que o consentimento `tratamento_ia` cobre o OpenRouter como subprocessador novo — isso é decisão de mérito da Dra. Elaine, a registrar via `POST /api/admin/decisoes-juridicas` quando ela decidir. Sem essa decisão registrada, `INSERT` em `analises_transcricao` continua bloqueado (fail-closed, confirmado por teste real no banco).
 
 ### Média
 5b. **Débitos que a trava final anotou (03/09):**
-   - **POP 03 ainda está codificado no front** enquanto o POP 03-B vem do banco (`LigacaoAba.tsx:105`) — dois caminhos para o mesmo conceito. Foi deliberado para não reescrever o que funcionava, mas é dívida: mover o POP 03 para `roteiros_versoes` elimina um dos caminhos.
-   - **A equipe consegue emitir link de material antes da aprovação** — não vaza nada (o cliente recebe "link não disponível"), mas a tela de emissão deveria avisar ou bloquear.
+   - ~~**POP 03 ainda está codificado no front**~~ **FEITO em 04/09** — o texto do POP 03 já estava semeado em `roteiros_versoes` desde a migration `0030` (chave `pop_03`), mas `LigacaoAba.tsx` continuava com `PERGUNTAS_ROTEIRO` hardcoded, ignorando o dado disponível. Componente generalizado (`RoteiroPop03B` → `RoteiroDeBanco`, parametrizado por `chave`), um único caminho de código para POP 03 e POP 03-B. Nenhuma migration nova foi necessária.
+   - ~~**A equipe consegue emitir link de material antes da aprovação**~~ **FEITO em 04/09** — `LinksAba.tsx` agora avisa (`AvisoInline`) e passa por `ConfirmarAcao` antes de emitir link de Material quando o material está ausente ou não aprovado; emissão direta continua igual quando já está aprovado.
    - **`app.registrar_evento_timeline` ficou com grant para `anon`** (migration 0038), desvio do desenho "só 4 funções públicas". Inerte enquanto o schema `app` não for exposto no PostgREST, mas está fora do padrão — reavaliar quando alguém mexer nos grants.
+   - ~~**Rate limit do webhook + cooldown de IA sem enforcement**~~ **JÁ ESTAVAM RESOLVIDOS**, confirmado em 04/09 — cooldown (`verificar_cooldown_ia`) roda em toda execução de IA desde a sessão da madrugada de 04/09; rate limit por IP (60 req/min em memória) já existia desde o MVP em `webhooks/hotmart/route.ts:9-26`. O item do backlog estava desatualizado, não o código.
 
 6. **WhatsApp**: hoje é fila manual rotulada. Decidir provedor (API oficial da Meta? Z-API?) — número não oficial tem risco de banimento.
 7. **Croqui**: o editor dos 13 slides existe; falta a análise da segunda IA gerando o conteúdo de verdade e o croqui nascendo a partir dela.
 8. **POPs 04 a 08**: existem só como título no documento da Dra. Elaine. Vale sentar com ela e escrever.
-9. **Acessibilidade formal** das telas novas (públicas, conhecimento, conduzir sessão).
+9. ~~**Acessibilidade formal** das telas novas~~ **AUDITADA em 04/09** — 5 correções reais aplicadas (heading duplicado em Conduzir Sessão, `role="alert"` faltando em erro de SIM/oferta, `aria-label` faltando em barra de progresso × 2, `<h1>` ausente no Formulário Público — a tela pública mais usada, resultado da busca no Conhecimento sem `aria-live`). **Achado sistêmico não corrigido, exige decisão de design**: o token `--tinta-fraca` do design system fica em 3.22-3.46:1 de contraste no tema claro — abaixo do AA (4.5:1) para texto pequeno, usado em dezenas de lugares dentro e fora das 3 áreas auditadas. Mudar o valor do token afeta a aplicação inteira; recomendação registrada (escurecer para ~`#6e6c62`) mas não aplicada — decisão do design system, não ajuste pontual.
 10. **Retenção e expurgo** (B19) — IR e contrato social guardados por prazo indeterminado é passivo, não patrimônio.
 
 ### Baixa / quando fizer sentido
 11. Portal do cliente (hoje ele interage só por link público — o que é uma decisão boa, não uma limitação).
 12. Módulo 4 com IA: padrões, frases que aumentam e reduzem conversão. **Depende do B13.**
 13. Trilha `preliminar` (POP 03-B) ligada de ponta a ponta — o roteiro já está no banco.
-14. Rate limit do webhook por IP confiável, cooldown de IA com enforcement em runtime (a função existe no banco, não é chamada).
+14. ~~Rate limit do webhook por IP confiável, cooldown de IA com enforcement em runtime~~ **JÁ RESOLVIDO, confirmado em 04/09 (sessão de checagem de backlog) — item estava desatualizado:**
+    - **Cooldown de IA:** `verificar_cooldown_ia` (RPC da 0029, wrapper de `app.pode_executar_ia`) roda em runtime dentro de `executarComAuditoria()` (`src/server/ia/executar.ts:130-143`), antes de qualquer INSERT em `execucoes_ia`. Só é pulável com `isentoCooldown: true`, restrito ao script de bancada — nenhuma rota HTTP passa esse parâmetro. Feito na sessão de 04/09 de madrugada (Fase 3).
+    - **Rate limit do webhook:** já existe desde o MVP (commit `3833eca`) em `src/app/api/webhooks/hotmart/route.ts:9-26` — contador em memória por IP (`x-forwarded-for`), 60 req/min, checado antes até da validação de secret. Não usa "IP confiável" (lista da Hotmart) porque a Hotmart não documenta uma faixa fixa de IP de origem para webhook — decisão correta de não inventar essa lista. Avaliado em 04/09 se valia trocar por tabela no banco (`webhook_rate_limit`): **não vale** — a Hostinger roda processo Node único (sem `standalone`, sem Edge, sem multi-instância, ver §6 e `next.config.*`), então em-memória já cobre o cenário real sem gastar egress do Supabase por requisição de webhook. Manter como está.
 
 ---
 
