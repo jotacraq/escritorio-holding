@@ -40,7 +40,7 @@ function TelaConfirmado({ horario, podeRemarcar, aoRemarcar }: { horario: Horari
         <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
       </svg>
       <div className="flex flex-col gap-1">
-        <h1 className="font-serif text-xl font-semibold text-tinta">Sessão confirmada</h1>
+        <h1 className="font-serif text-xl font-bold text-tinta">Sessão confirmada</h1>
         <p className="text-lg font-medium text-tinta">
           {formatarDiaPorExtenso(horario.inicio_em)} às {formatarHoraSimples(horario.inicio_em)}
         </p>
@@ -103,7 +103,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
       <div className="flex flex-col gap-5">
         {diasAtuais.map((dia) => (
           <div key={dia.chave} className="flex flex-col gap-2.5">
-            <h2 className="font-serif text-base font-semibold text-tinta">{dia.rotulo}</h2>
+            <h2 className="font-serif text-base font-bold text-tinta">{dia.rotulo}</h2>
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
               {dia.slots.map((slot) => (
                 <button
@@ -113,7 +113,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
                   aria-pressed={selecionado?.inicio_em === slot.inicio_em}
                   className={`rounded-md border py-3 text-base font-medium ${
                     selecionado?.inicio_em === slot.inicio_em
-                      ? "border-[color:var(--latao)] bg-latao-fraco text-[color:var(--latao-forte)]"
+                      ? "border-[color:var(--latao)] bg-latao-fraco text-tinta"
                       : "border-linha-forte bg-papel-elevado text-tinta hover:bg-papel"
                   }`}
                 >
@@ -137,7 +137,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
         onClick={confirmar}
         disabled={!selecionado || confirmando}
         aria-busy={confirmando}
-        className="rounded-md bg-[color:var(--latao)] py-3 text-base font-semibold text-papel-elevado disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded-md bg-[color:var(--latao)] py-3 text-base font-bold text-tinta disabled:cursor-not-allowed disabled:opacity-40"
       >
         {confirmando ? "Confirmando…" : selecionado ? `Confirmar ${formatarDiaPorExtenso(selecionado.inicio_em)} às ${formatarHoraSimples(selecionado.inicio_em)}` : "Escolha um horário acima"}
       </button>
@@ -165,7 +165,7 @@ export function AgendamentoPublico({ token }: { token: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-serif text-xl font-semibold text-tinta">Olá, {abertura.primeiro_nome}</h1>
+        <h1 className="font-serif text-xl font-bold text-tinta">Olá, {abertura.primeiro_nome}</h1>
         <p className="mt-1 text-tinta-suave">Escolha o melhor horário para sua Sessão de Viabilidade.</p>
       </div>
       <SeletorDeHorario token={token} slots={abertura.payload.slots} aoConfirmar={setConfirmadoLocal} />

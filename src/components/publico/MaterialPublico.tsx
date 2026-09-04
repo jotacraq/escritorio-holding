@@ -12,7 +12,7 @@ function BlocoConteudo({ bloco, indice }: { bloco: BlocoMaterialPublico; indice:
   switch (bloco.tipo) {
     case "titulo":
       return (
-        <h2 key={indice} className="font-serif text-lg font-semibold text-tinta">
+        <h2 key={indice} className="font-serif text-lg font-bold text-tinta">
           {bloco.texto}
         </h2>
       );
@@ -59,7 +59,7 @@ function Conteudo({ abertura }: { abertura: AberturaMaterialPublico }) {
       </div>
 
       <article className="flex flex-col gap-4 rounded-md border border-linha bg-papel px-5 py-6 sm:px-8 sm:py-8">
-        <h1 className="font-serif text-2xl font-semibold text-tinta">{abertura.payload.titulo}</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">{abertura.payload.titulo}</h1>
         {abertura.payload.blocos.map((bloco, i) => (
           <BlocoConteudo key={i} bloco={bloco} indice={i} />
         ))}

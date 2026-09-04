@@ -33,7 +33,7 @@ function TelaConcluida({ abertura }: { abertura: AberturaFormularioPublico }) {
         <svg aria-hidden="true" viewBox="0 0 24 24" className="h-11 w-11 fill-none stroke-[color:var(--verde)] stroke-2">
           <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
         </svg>
-        <h1 className="font-serif text-xl font-semibold text-tinta">
+        <h1 className="font-serif text-xl font-bold text-tinta">
           Recebemos suas respostas{abertura.payload.respondido_em ? ` em ${formatarData(abertura.payload.respondido_em)}` : ""}
         </h1>
         <p className="max-w-sm text-tinta-suave">
@@ -48,7 +48,7 @@ function TelaConcluida({ abertura }: { abertura: AberturaFormularioPublico }) {
           if (visiveis.length === 0) return null;
           return (
             <div key={bloco} className="flex flex-col gap-2.5">
-              <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-tinta-suave">{bloco}</h2>
+              <h2 className="font-serif text-sm font-bold uppercase tracking-wide text-tinta-suave">{bloco}</h2>
               {visiveis.map((pergunta) => {
                 const valor = respostas[pergunta.id];
                 const texto = Array.isArray(valor) ? valor.join(", ") : String(valor);
@@ -172,7 +172,7 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
 
       {!blocoAtual && (
         <fieldset className="flex flex-col gap-4">
-          <legend className="font-serif text-base font-semibold text-tinta">Antes de enviar</legend>
+          <legend className="font-serif text-base font-bold text-tinta">Antes de enviar</legend>
           {abertura.payload.consentimentos.map((consentimento) => (
             <label key={consentimento.chave} className="flex items-start gap-3 rounded-md border border-linha-forte bg-papel-elevado px-4 py-3">
               <input
@@ -219,7 +219,7 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
             type="button"
             onClick={() => setPasso((p) => p + 1)}
             disabled={!blocoCompleto}
-            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-semibold text-papel-elevado disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-bold text-tinta disabled:cursor-not-allowed disabled:opacity-40"
           >
             Continuar
           </button>
@@ -229,7 +229,7 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
             onClick={enviar}
             disabled={!podeEnviar || enviando}
             aria-busy={enviando}
-            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-semibold text-papel-elevado disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-bold text-tinta disabled:cursor-not-allowed disabled:opacity-40"
           >
             {enviando ? "Enviando…" : "Enviar respostas"}
           </button>

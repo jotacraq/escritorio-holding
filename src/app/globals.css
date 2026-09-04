@@ -158,11 +158,50 @@ h1, h2, h3, h4 {
 /* Área pública — `src/app/(publico)/layout.tsx` (Fase 2, §2.5).           */
 /* Quem responde aqui é o cliente, no celular, muitas vezes sem ajuda por  */
 /* perto. Tipografia maior que o padrão interno e alvo de toque >= 44px.   */
+/*                                                                          */
+/* Identidade visual do seminário de vendas (guardioesdolegado.com.br/ak1) */
+/* — Fase 1 do plano do arquiteto (04/09/2026): continuidade visual entre  */
+/* "vi o seminário" e "recebi o link do formulário". Tokens redefinidos    */
+/* SÓ neste escopo — não tocam `:root`/`.dark` (fora de escopo: Fase 2 é   */
+/* o app interno, com a paleta dourado/papel/tinta, deliberada à parte).   */
+/*                                                                          */
+/* Correção de acessibilidade OBRIGATÓRIA em relação ao site do seminário: */
+/* lá o CTA usa texto claro sobre laranja (~2,6:1, reprova WCAG). Aqui o   */
+/* texto sobre elementos laranja é sempre ESCURO (`--tinta`, mapeado do    */
+/* `--ink` do seminário), medido em 6,41:1 (#141b22 sobre #ff7400) — passa */
+/* AA e AAA para qualquer tamanho de texto.                                */
 /* ---------------------------------------------------------------------- */
 .area-publica {
+  /* Tema sempre claro, independente de `.dark`/`prefers-color-scheme`     */
+  /* herdado do <html> — o cliente final não tem toggle de tema.           */
+  color-scheme: light;
+
+  --papel-fundo: #f1f1f0;
+  --papel: #f1f1f0;
+  --papel-elevado: #ffffff;
+  --tinta: #141b22;
+  --tinta-suave: #43454f;
+  --tinta-fraca: #6b6d76;
+  --linha: #e2e0da;
+  --linha-forte: #cfccc3;
+
+  --latao: #ff7400;
+  --latao-forte: #d46203;
+  --latao-fraco: #ffc290;
+
+  --sombra-cartao: 0 0.625rem 1.5rem rgba(97, 44, 0, 0.08), 0 1px 2px rgba(97, 44, 0, 0.07);
+
   font-size: 1.0625rem;
   line-height: 1.65;
+  background: var(--papel-fundo);
+  color: var(--tinta);
 }
+/* Pesos do seminário: só 400/500/700, nunca 600/800. `font-semibold`     */
+/* padrão do Tailwind é 600 — por isso os componentes públicos usam       */
+/* `font-bold` (700) em vez de `font-semibold`, direto na classe JSX,     */
+/* não redefinido aqui (evita depender de especificidade CSS frágil       */
+/* contra a camada de utilities do Tailwind). */
+
 .area-publica h1 {
   font-size: 1.5rem;
   line-height: 1.25;
@@ -179,6 +218,46 @@ h1, h2, h3, h4 {
   .area-publica h1 {
     font-size: 1.75rem;
   }
+}
+
+/* Cartão público: raio e sombra do seminário — marrom difuso, não cinza. */
+/* Raio vale para todo `rounded-md` (inputs, opções, botões, cartões —    */
+/* mesmo raio dominante do seminário em qualquer elemento retangular).    */
+.area-publica .rounded-md {
+  border-radius: 1.25rem;
+}
+/* Sombra só nos cartões-container reais (`border-linha` + `bg-papel`,    */
+/* o padrão dos 4 blocos de conteúdo público) — não em cada opção de      */
+/* rádio/checkbox ou botão secundário, que também usam `rounded-md` mas   */
+/* usam `border-linha-forte`/`bg-papel-elevado` e não devem ganhar sombra */
+/* própria (ruído visual: uma sombra por linha de formulário). */
+.area-publica .rounded-md.border-linha.bg-papel {
+  box-shadow: var(--sombra-cartao);
+}
+
+/* CTA/botão principal público: laranja chapado, pílula, aresta inferior  */
+/* sólida de 4px + halo — sem gradiente. Cor do texto (escura, a11y) é    */
+/* responsabilidade de cada componente (`text-tinta` na classe JSX) — só  */
+/* forma aqui, não cor, para não duplicar fonte de verdade. */
+.area-publica button[class*="bg-[color:var(--latao)]"],
+.area-publica a[class*="bg-[color:var(--latao)]"] {
+  border-radius: 2.625rem;
+  box-shadow:
+    0 4px 0 0 var(--latao-forte),
+    0 0.625rem 1.5rem rgba(255, 116, 0, 0.28);
+}
+.area-publica button[class*="bg-[color:var(--latao)]"]:disabled {
+  box-shadow: none;
+}
+
+/* Foco visível: halo translúcido + contorno sólido — WCAG 2.4.11 exige   */
+/* indicador que não desapareça sobre qualquer fundo; o halo sozinho não  */
+/* basta. */
+.area-publica :focus-visible {
+  outline: 2px solid var(--latao-forte);
+  outline-offset: 2px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 0.25rem rgba(255, 116, 0, 0.14);
 }
 
 @media (prefers-reduced-motion: reduce) {

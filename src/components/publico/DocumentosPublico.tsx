@@ -88,7 +88,7 @@ function CartaoTipoDocumento({
   return (
     <div className="flex flex-col gap-3 rounded-md border border-linha bg-papel px-4 py-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-base font-semibold text-tinta">
+        <p className="text-base font-bold text-tinta">
           {rotulo}
           {obrigatorio && (
             <span aria-hidden="true" className="text-[color:var(--vermelho)]">
@@ -210,7 +210,7 @@ export function DocumentosPublico({ token }: { token: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-serif text-xl font-semibold text-tinta">Envio de documentos</h1>
+        <h1 className="font-serif text-xl font-bold text-tinta">Envio de documentos</h1>
         <p className="mt-1 text-tinta-suave">Olá, {abertura.primeiro_nome}. Estes são os documentos que a equipe precisa para dar andamento.</p>
       </div>
 

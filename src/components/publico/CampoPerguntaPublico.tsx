@@ -79,7 +79,7 @@ export function CampoPerguntaPublico({
             <label
               key={opcao}
               className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-4 py-3 text-base font-medium ${
-                valor === opcao ? "border-[color:var(--latao)] bg-latao-fraco text-[color:var(--latao-forte)]" : "border-linha-forte bg-papel-elevado text-tinta"
+                valor === opcao ? "border-[color:var(--latao)] bg-latao-fraco text-tinta" : "border-linha-forte bg-papel-elevado text-tinta"
               }`}
             >
               <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 accent-[color:var(--latao)]" />

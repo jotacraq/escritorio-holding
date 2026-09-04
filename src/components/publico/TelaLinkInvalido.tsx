@@ -22,7 +22,7 @@ export function TelaLinkInvalido() {
       </svg>
 
       <div className="flex flex-col gap-2">
-        <h1 className="font-serif text-xl font-semibold text-tinta sm:text-2xl">Este link não está mais disponível</h1>
+        <h1 className="font-serif text-xl font-bold text-tinta sm:text-2xl">Este link não está mais disponível</h1>
         <p className="max-w-sm text-tinta-suave">
           Ele pode ter vencido, já ter sido usado ou não existir mais. Isso é normal — não significa que algo deu errado
           do seu lado.

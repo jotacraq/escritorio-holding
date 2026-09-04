@@ -27,7 +27,7 @@ export default function LayoutPublico({ children }: { children: ReactNode }) {
   return (
     <div className="area-publica flex min-h-screen flex-col bg-papel-fundo">
       <header className="border-b border-linha bg-papel px-5 py-5 text-center sm:px-8">
-        <p className="font-serif text-lg font-semibold leading-tight text-tinta sm:text-xl">Time Holding Brasil</p>
+        <p className="font-serif text-lg font-bold leading-tight text-tinta sm:text-xl">Time Holding Brasil</p>
         <p className="mt-1 text-sm text-tinta-suave">Planejamento Patrimonial · Dra. Elaine Montenegro</p>
       </header>
 
