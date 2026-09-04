@@ -34,27 +34,28 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS ?? 300_000);
 
 /**
- * effort -> reasoning.effort do OpenRouter.
+ * Controle de raciocinio no caminho OpenRouter -> Anthropic: MEDIDO, nao deduzido.
  *
- * NAO volte para `reasoning: { max_tokens: N }`. Na Anthropic esse campo vira
- * `thinking.budget_tokens`, removido da geracao atual do Claude: o pedido NAO
- * falha, o teto simplesmente nao vale. Foi assim que um briefing com teto de
- * 4.096 gastou 6.416 tokens de raciocinio em producao (03/09/2026) — e o
- * raciocinio e ~55% do custo de saida, ou seja, a alavanca de economia inteira
- * estava desligada sem ninguem ver. O caminho de rollback (`anthropic.ts`)
- * sempre falou a API nova: `thinking:{type:"adaptive"}` + `output_config:{effort}`.
+ * Duas tentativas, duas falhas, ambas em producao (04/09/2026):
  *
- * A escala do OpenRouter tem tres degraus; os dois efforts acima de `high` do
- * SIC-HF colapsam em `high`. O teto absoluto de saida continua sendo
- * `max_tokens`, que e outro campo e segue valendo.
- */
-const EFFORT_PARA_OPENROUTER: Record<EffortIa, "low" | "medium" | "high"> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  xhigh: "high",
-  max: "high",
-};
+ * 1. `reasoning: { max_tokens: 4096 }` — NAO da erro e NAO limita. Na Anthropic
+ *    esse campo vira `thinking.budget_tokens`, removido da geracao atual do
+ *    Claude. O pedido passa, o teto nao vale: um briefing "limitado" a 4.096
+ *    gastou 6.416 tokens de raciocinio sem nenhum aviso.
+ * 2. `reasoning: { effort: "high" }` — da `openrouter_400: Provider returned
+ *    error`. O provider rejeita; o briefing nao sai.
+ *
+ * Por isso NAO mandamos campo de raciocinio nenhum: o Claude atual decide
+ * sozinho quanto pensar (thinking adaptativo). O que efetivamente limita o
+ * gasto por aqui e `max_tokens`, que e outro campo, e o bloco de orcamento de
+ * escrita anexado ao prompt (src/server/ia/orcamento-escrita.ts).
+ *
+ * O `effort` continua sendo gravado em `execucoes_ia.effort` — e o que o
+ * caminho de rollback (`anthropic.ts`, API direta) usa de verdade, via
+ * `output_config.effort`. Se algum dia o OpenRouter expuser `output_config`
+ * para a Anthropic, e aqui que se liga — e so depois de medir contra o
+ * baseline registrado em brain/04 - Tecnico/Custo da IA.md.
+ */
 
 export function openrouterConfigurado(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
@@ -83,7 +84,7 @@ interface RespostaOpenRouter {
     prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
     completion_tokens_details?: { reasoning_tokens?: number };
   };
-  error?: { message?: string; code?: string | number };
+  error?: { message?: string; code?: string | number; metadata?: unknown };
 }
 
 interface MensagemChat {
@@ -109,7 +110,6 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
         type: "json_schema",
         json_schema: { name: nomeSchema, strict: true, schema: jsonSchema },
       },
-      reasoning: { effort: EFFORT_PARA_OPENROUTER[effort] },
       provider: { order: ["anthropic"], allow_fallbacks: false, require_parameters: true },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -132,8 +132,16 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
     // finish_reason === "error" ou corpo com campo `error`: lança — cai no catch
     // do chamador (`executar.ts`), que já marca `falhou`. Detalhe interno (mensagem
     // crua do provedor) fica só no log de erro, nunca é o que o cliente HTTP recebe.
+    // "Provider returned error" sozinho nao diz nada — a mensagem util do
+    // provedor vem em `error.metadata`. Sem ela, um 400 vira adivinhacao (foi
+    // exatamente o que aconteceu com o campo de raciocinio acima).
+    const metadados = corpo?.error?.metadata;
+    const detalhe =
+      metadados == null
+        ? ""
+        : ` | provedor: ${typeof metadados === "string" ? metadados : JSON.stringify(metadados).slice(0, 600)}`;
     throw new Error(
-      `openrouter_${resposta.status}: ${corpo?.error?.message ?? "erro desconhecido"}`,
+      `openrouter_${resposta.status}: ${corpo?.error?.message ?? "erro desconhecido"}${detalhe}`,
     );
   }
   if (!corpo) {

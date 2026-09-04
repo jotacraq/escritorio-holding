@@ -56,7 +56,13 @@ export async function POST(request: NextRequest) {
     );
   } catch (erro) {
     if (erro instanceof ErroIa) {
-      return NextResponse.json({ erro: erro.codigo, mensagem: erro.message }, { status: erro.status });
+      // `detalhe` carrega o checklist da porta de completude (409): o que falta
+      // para o briefing valer o preco. Sem repassar, a tela so pode dizer
+      // "dados insuficientes" e a advogada nao sabe o que ir buscar.
+      return NextResponse.json(
+        { erro: erro.codigo, mensagem: erro.message, detalhe: erro.detalhe ?? null },
+        { status: erro.status },
+      );
     }
     return respostaErro("POST /api/briefings/gerar", erro);
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CategoriaAfirmacaoSchema } from "./schema-croqui-analise";
 
 /**
  * Os 13 slides tipados do croqui (Agente do Croqui, §42 do Contexto-Mestre;
@@ -30,6 +31,21 @@ export type TipoSlideCroqui = z.infer<typeof TipoSlideCroquiSchema>;
 // `pergunta_cliente`. Lá `objetivo`/`pergunta_ao_cliente` são opcionais (o front
 // pode enviar um slide editado sem repeti-los); aqui ficam opcionais no schema
 // pelo mesmo motivo, mas `construirSlidesBase()` sempre os preenche na origem.
+//
+// `OrigemSlideCroqui`/`revisado`/`categoria`/`fontes`/`pontos`/`grafico`
+// (ARQUITETURA-FASE-3.md §3.3, onda 2 — agente E/backend-analise): campos
+// ADITIVOS que `gerarSlidesDaAnalise()` (src/server/croqui/gerar-slides.ts)
+// preenche ao transformar a Análise da Sessão em slides. Croquis gravados
+// antes desta mudança continuam validando (chaves ausentes, não `undefined`
+// obrigatório). `revisado` ausente conta como `false` no trigger de banco
+// (0043, `app.trava_croqui_pronto_exige_revisao`) — nunca `true` por omissão,
+// é a trava de C19 ("se a IA preenche os 13 slides, quem assina?").
+// `grafico` só reserva o campo: qual `src/components/graficos/**` este slide
+// usa é decisão de quem monta a apresentação (fora desta fronteira) — não é
+// preenchido por `gerarSlidesDaAnalise()`.
+export const OrigemSlideCroquiSchema = z.enum(["metodo", "ia", "humano"]);
+export type OrigemSlideCroqui = z.infer<typeof OrigemSlideCroquiSchema>;
+
 export const SlideCroquiSchema = z.object({
   id: z.string(), // slug estável = o próprio tipo, ex.: 'legado'
   ordem: z.number().int().min(1).max(13).optional(), // extra aditivo — ordenação
@@ -38,6 +54,13 @@ export const SlideCroquiSchema = z.object({
   objetivo: z.string().optional(),
   pergunta_ao_cliente: z.string().optional(),
   conteudo: z.string(), // EDITÁVEL pela advogada, por jornada — nasce vazio
+  origem: OrigemSlideCroquiSchema.optional(),
+  revisado: z.boolean().optional(),
+  como_apresentar: z.string().optional(), // nota do apresentador (§3.2 — migrou da `narrativa` solta da v1 para dentro do slide)
+  categoria: CategoriaAfirmacaoSchema.optional(),
+  fontes: z.array(z.string()).optional(),
+  pontos: z.array(z.string()).optional(),
+  grafico: z.string().optional(),
 });
 export type SlideCroqui = z.infer<typeof SlideCroquiSchema>;
 
@@ -165,6 +188,8 @@ export function construirSlidesBase(): CroquiConteudo {
       objetivo: definicao.objetivo,
       pergunta_ao_cliente: definicao.pergunta_ao_cliente,
       conteudo: definicao.mensagem_padrao,
+      origem: "metodo",
+      revisado: false,
     })),
   };
 }

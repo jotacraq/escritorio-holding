@@ -18,6 +18,7 @@ import { PainelSims } from "@/components/sessao/PainelSims";
 import { PainelOferta } from "@/components/sessao/PainelOferta";
 import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
 import { Botao } from "@/components/ui/Botao";
+import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
 
 /** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
 function chaveIndice(sessaoId: string) {
@@ -173,28 +174,43 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 
       <AvisoVersaoRoteiro roteiro={estado.roteiro} />
 
-      <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
+      {/*
+       * U1 (ARQUITETURA-FASE-3.md §5.3): o roteiro nunca pode ir para baixo da
+       * dobra por causa do briefing. Em telas largas (notebook 1366×768
+       * incluído — o breakpoint `lg` é 1024px) o briefing vira uma COLUNA ao
+       * lado do roteiro, então ele não ocupa altura nenhuma da coluna
+       * principal. Só em telas estreitas os dois empilham, e aí o briefing
+       * vem DEPOIS do roteiro — a Dra. Elaine já está com o roteiro na tela
+       * antes de rolar até o briefing.
+       */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex flex-col gap-4">
+          <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
 
-      <PainelSims
-        roteiro={estado.roteiro}
-        sessaoId={sessaoId}
-        estado={estado.sims}
-        aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
-      />
+          <PainelSims
+            roteiro={estado.roteiro}
+            sessaoId={sessaoId}
+            estado={estado.sims}
+            aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
+          />
 
-      <div className="rounded-sm border border-linha bg-papel-elevado px-4 py-5 shadow-[var(--sombra-cartao)] sm:px-6 sm:py-7">
-        <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
+          <div className="rounded-sm border border-linha bg-papel-elevado px-4 py-5 shadow-[var(--sombra-cartao)] sm:px-6 sm:py-7">
+            <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
+          </div>
+
+          {mostrarOferta && (
+            <PainelOferta
+              jornadaId={jornadaId}
+              ofertas={estado.ofertas}
+              aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
+            />
+          )}
+
+          <AtalhosTeclado />
+        </div>
+
+        <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
       </div>
-
-      {mostrarOferta && (
-        <PainelOferta
-          jornadaId={jornadaId}
-          ofertas={estado.ofertas}
-          aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
-        />
-      )}
-
-      <AtalhosTeclado />
 
       <nav aria-label="Navegar entre partes" className="nao-imprimir fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-linha bg-papel-elevado px-4 py-2.5 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:px-6">
         <Botao variante="secundario" onClick={() => irPara(indice - 1)} disabled={indice === 0}>

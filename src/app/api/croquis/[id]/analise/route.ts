@@ -5,6 +5,8 @@ import { erroNaoEncontrado, respostaErro , ErroApi , registrarErro } from "@/ser
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { gerarAnaliseCroqui } from "@/server/ia/croqui-analise";
 import { ErroIa } from "@/server/ia/erros";
+import { resolverModoIa } from "@/server/ia/demonstracao";
+import { resolverTranscricaoSessao } from "@/server/croqui/transcricao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,14 +15,24 @@ const ParamsSchema = z.object({ id: z.string().uuid() });
 const CorpoSchema = z.object({
   // Transcrição bruta da Sessão de Viabilidade. Mínimo alto de propósito: a
   // Agente do Croqui não deve rodar sobre um trecho curto e "alucinar" o resto.
-  transcricao_sessao: z.string().min(200, "transcricao_sessao muito curta para uma análise responsável"),
+  //
+  // ARQUITETURA-FASE-3.md §2.2 — agora OPCIONAL, compatível: o chamador antigo
+  // (hoje nenhum, §0 item 3) que mandava a transcrição inteira no corpo
+  // continua funcionando sem alteração. Ausente → lê a última transcrição
+  // persistida da jornada (`POST /api/sessoes/[id]/transcricao`). Nenhuma das
+  // duas → 409 `transcricao_ausente`.
+  transcricao_sessao: z
+    .string()
+    .min(200, "transcricao_sessao muito curta para uma análise responsável")
+    .optional(),
 });
 
 /**
  * POST /api/croquis/[id]/analise — a SEGUNDA IA (Agente do Croqui), pós-SV.
- * Recebe a transcrição no corpo (nunca lida do banco) + dados de ficha já
- * registrados, devolve as 14 seções carimbadas por categoria. Só admin/advogada
- * — mesmo recorte de quem vê patrimônio, porque esta IA processa valor real.
+ * Recebe a transcrição no corpo OU lê a persistida da jornada + dados de
+ * ficha já registrados, devolve as 14 seções carimbadas por categoria. Só
+ * admin/advogada — mesmo recorte de quem vê patrimônio, porque esta IA
+ * processa valor real.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -59,11 +71,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const jornadaRelacionada = Array.isArray(croqui.jornadas) ? croqui.jornadas[0] : croqui.jornadas;
     if (!jornadaRelacionada) throw erroNaoEncontrado("Jornada da ficha não encontrada.");
 
+    // Mesma ramificação de `gerarAnaliseCroqui` (resolverModoIa) — duplicada
+    // aqui de propósito, para não editar `src/server/ia/croqui-analise.ts`
+    // (fora da fronteira deste agente, ver relatório da onda): em modo
+    // demonstração/indisponível a transcrição real não é necessária —
+    // `gerarAnaliseCroqui` decide isso antes de sequer olhar para o parâmetro,
+    // então resolver/exigir transcrição aqui só se aplica ao modo real.
+    const modoIa = resolverModoIa();
+    const transcricaoSessao =
+      modoIa === "real"
+        ? await resolverTranscricaoSessao(supabaseAdmin, croqui.jornada_id, corpo.transcricao_sessao)
+        : (corpo.transcricao_sessao ?? "");
+
     const resultado = await gerarAnaliseCroqui(supabaseAdmin, {
       croquiId: croqui.id,
       jornadaId: croqui.jornada_id,
       pessoaId: jornadaRelacionada.pessoa_id,
-      transcricaoSessao: corpo.transcricao_sessao,
+      transcricaoSessao,
       criadoPor: usuario.id,
     });
 

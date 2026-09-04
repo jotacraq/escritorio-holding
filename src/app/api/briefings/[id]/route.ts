@@ -24,6 +24,10 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       .from("briefings")
       .select(
         "id, jornada_id, versao, conteudo, grau_confianca, fontes_usadas, modo_reduzido, atual, criado_em, " +
+          // completude_entrada/verificacao (0041b/0042): sem eles a tela nunca
+          // acende a marca de "frase nao localizada no material" — o componente
+          // sabe renderizar, faltava o dado sair do banco.
+          "completude_entrada, verificacao, " +
           "execucoes_ia(custo_usd, modelo, tokens_entrada, tokens_saida, prompt_versao_id, " +
           "prompts_versoes(chave, versao, titulo))",
       )

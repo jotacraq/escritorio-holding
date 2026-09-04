@@ -65,3 +65,15 @@ export function erroDadosInsuficientes(motivo: string, detalhe: unknown): ErroIa
 export function erroLimiteIaAtingido(motivo: string): ErroIa {
   return new ErroIa(motivo, 429, "limite_ia_atingido");
 }
+
+/**
+ * Análise da Sessão (ARQUITETURA-FASE-3.md §2.2, onda 2 — agente E/backend-
+ * analise): quando `transcricao_sessao` não vem no corpo da requisição, a
+ * rota tenta ler a última transcrição persistida da jornada (`transcricoes`,
+ * tipo='sessao_viabilidade'). Sem nenhuma das duas, a análise não tem
+ * material — 409 nomeando os dois caminhos possíveis, nunca uma análise
+ * fabricada sobre contexto vazio.
+ */
+export function erroTranscricaoAusente(motivo: string): ErroIa {
+  return new ErroIa(motivo, 409, "transcricao_ausente");
+}

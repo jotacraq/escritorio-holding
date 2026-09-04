@@ -6,6 +6,19 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoVazio } from "@/components/ui/Estado";
+import { BadgeConfianca, Chip, FraseComFidelidade, Hipotese, ListaEvidencias } from "@/components/briefing/atomos";
+import {
+  rotularArquetipo,
+  rotularDisc,
+  rotularNivel,
+  rotularNivelAutoridade,
+  rotularProbabilidade,
+  rotularRitmo,
+  rotularSimNao,
+  rotularTom,
+  tomProbabilidade,
+  type BriefingConteudoV2,
+} from "@/components/briefing/tipos";
 
 const ROTULOS_FONTE: Record<string, string> = {
   formulario: "Formulário estratégico",
@@ -13,36 +26,6 @@ const ROTULOS_FONTE: Record<string, string> = {
   transcricao: "Transcrição da ligação",
   patrimonio_faixa: "Faixa de patrimônio",
 };
-
-function BadgeConfianca({ valor }: { valor: number | null }) {
-  if (valor === null) return null;
-  const tom = valor >= 70 ? "var(--verde)" : valor >= 40 ? "var(--ambar)" : "var(--vermelho)";
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-sm font-medium" style={{ borderColor: tom, color: tom }}>
-      Confiança: {valor}%
-    </span>
-  );
-}
-
-function Hipotese({ evidencias }: { evidencias?: string[] }) {
-  if (evidencias && evidencias.length > 0) return null;
-  return (
-    <span className="ml-2 rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ambar)]">
-      Hipótese — sem evidência direta
-    </span>
-  );
-}
-
-function ListaEvidencias({ evidencias }: { evidencias?: string[] }) {
-  if (!evidencias || evidencias.length === 0) return null;
-  return (
-    <ul className="mt-1.5 flex flex-col gap-0.5 border-l-2 border-linha pl-2.5 text-xs text-tinta-fraca">
-      {evidencias.map((ev, i) => (
-        <li key={i}>&ldquo;{ev}&rdquo;</li>
-      ))}
-    </ul>
-  );
-}
 
 function Secao({ numero, titulo, hipotese, children }: { numero: number; titulo: string; hipotese?: string[]; children: React.ReactNode }) {
   return (
@@ -58,7 +41,9 @@ function Secao({ numero, titulo, hipotese, children }: { numero: number; titulo:
 }
 
 function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
-  const c = briefing.conteudo;
+  // `Briefing.conteudo` (lib/api.ts) ainda reflete o schema v1 — o dado real
+  // que chega do servidor é v2 (ver tipos.ts). Cast documentado, não fantasia.
+  const c = briefing.conteudo as unknown as BriefingConteudoV2;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-linha bg-papel-fundo px-3.5 py-2.5">
@@ -93,12 +78,16 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       <Secao numero={1} titulo="Resumo executivo">{c.resumo_executivo}</Secao>
 
       <Secao numero={2} titulo="Perfil DISC" hipotese={c.perfil_disc.evidencias}>
-        <p><strong>{c.perfil_disc.predominante}</strong>{c.perfil_disc.secundario && ` (secundário: ${c.perfil_disc.secundario})`} — confiança {c.perfil_disc.confianca}%</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Chip tom="azul">{rotularDisc(c.perfil_disc.predominante)}</Chip>
+          {c.perfil_disc.secundario && <Chip>secundário: {rotularDisc(c.perfil_disc.secundario)}</Chip>}
+          <span className="text-xs text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
+        </div>
         <ListaEvidencias evidencias={c.perfil_disc.evidencias} />
       </Secao>
 
       <Secao numero={3} titulo="Arquétipo patrimonial" hipotese={c.arquetipo_patrimonial.evidencias}>
-        <p><strong>{c.arquetipo_patrimonial.escolhido}</strong> — {c.arquetipo_patrimonial.justificativa}</p>
+        <p><strong>{rotularArquetipo(c.arquetipo_patrimonial.escolhido)}</strong> — {c.arquetipo_patrimonial.justificativa}</p>
         <ListaEvidencias evidencias={c.arquetipo_patrimonial.evidencias} />
       </Secao>
 
@@ -113,7 +102,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         <ol className="flex flex-col gap-2">
           {c.objecoes_provaveis.map((o, i) => (
             <li key={i}>
-              <strong>{o.objecao}</strong> <span className="text-xs uppercase text-tinta-fraca">({o.probabilidade})</span>
+              <strong>{o.objecao}</strong> <Chip tom={tomProbabilidade(o.probabilidade)}>{rotularProbabilidade(o.probabilidade)}</Chip>
               <p className="text-tinta-suave">{o.justificativa}</p>
             </li>
           ))}
@@ -121,8 +110,10 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       </Secao>
 
       <Secao numero={6} titulo="Linguagem recomendada">
-        <p>{c.linguagem_recomendada.tom.join(" · ")}</p>
-        <p className="text-tinta-suave">{c.linguagem_recomendada.justificativa}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {c.linguagem_recomendada.tom.map((t) => <Chip key={t}>{rotularTom(t)}</Chip>)}
+        </div>
+        <p className="mt-1.5 text-tinta-suave">{c.linguagem_recomendada.justificativa}</p>
       </Secao>
 
       <Secao numero={7} titulo="Pontos de atenção — o que não fazer">
@@ -141,7 +132,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         <ul className="flex flex-col gap-1.5">
           {c.frases_para_o_fechamento.map((f, i) => (
             <li key={i}>
-              <span className="italic">&ldquo;{f.frase_literal}&rdquo;</span>
+              <FraseComFidelidade frase={f.frase_literal} />
               <p className="text-tinta-suave">Como usar: {f.como_usar}</p>
             </li>
           ))}
@@ -149,8 +140,8 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       </Secao>
 
       <Secao numero={10} titulo="Estratégia da sessão">
-        <p><strong>Ritmo:</strong> {c.estrategia_sessao.ritmo}</p>
-        <p><strong>Mais tempo em:</strong> {c.estrategia_sessao.mais_tempo_em.join(", ") || "—"}</p>
+        <p><strong>Ritmo:</strong> <Chip>{rotularRitmo(c.estrategia_sessao.ritmo)}</Chip>{c.estrategia_sessao.ritmo_nota && <span className="ml-1.5 text-tinta-suave">— {c.estrategia_sessao.ritmo_nota}</span>}</p>
+        <p className="mt-1"><strong>Mais tempo em:</strong> {c.estrategia_sessao.mais_tempo_em.join(", ") || "—"}</p>
         <p><strong>Menos tempo em:</strong> {c.estrategia_sessao.menos_tempo_em.join(", ") || "—"}</p>
         <p><strong>Momento de apresentar o croqui:</strong> {c.estrategia_sessao.momento_croqui}</p>
         <p><strong>Momento de apresentar o investimento:</strong> {c.estrategia_sessao.momento_investimento}</p>
@@ -165,10 +156,16 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 
       <section className="flex flex-col gap-1.5 border-t border-linha pt-4">
         <h3 className="font-serif text-base font-semibold text-tinta">Processo decisório (POP 03)</h3>
-        <p><strong>Velocidade:</strong> {c.processo_decisorio.velocidade}</p>
-        <p><strong>Necessidade de segurança:</strong> {c.processo_decisorio.necessidade_seguranca}</p>
-        <p><strong>Necessidade de validação:</strong> {c.processo_decisorio.necessidade_validacao}</p>
-        <p><strong>Necessidade de detalhe:</strong> {c.processo_decisorio.necessidade_detalhe}</p>
+        <p><strong>Velocidade:</strong> <Chip>{rotularNivel(c.processo_decisorio.velocidade)}</Chip>{c.processo_decisorio.velocidade_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.velocidade_nota}</span>}</p>
+        <p><strong>Necessidade de segurança:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_seguranca)}</Chip>{c.processo_decisorio.necessidade_seguranca_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_seguranca_nota}</span>}</p>
+        <p><strong>Necessidade de validação:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_validacao)}</Chip>{c.processo_decisorio.necessidade_validacao_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_validacao_nota}</span>}</p>
+        <p><strong>Necessidade de detalhe:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_detalhe)}</Chip>{c.processo_decisorio.necessidade_detalhe_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_detalhe_nota}</span>}</p>
+        {c.processo_decisorio.nivel_autoridade && (
+          <p><strong>Nível de autoridade:</strong> <Chip>{rotularNivelAutoridade(c.processo_decisorio.nivel_autoridade)}</Chip>{c.processo_decisorio.nivel_autoridade_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.nivel_autoridade_nota}</span>}</p>
+        )}
+        {c.processo_decisorio.decisores_presentes_na_sessao && (
+          <p><strong>Decisores presentes na sessão:</strong> <Chip>{rotularSimNao(c.processo_decisorio.decisores_presentes_na_sessao)}</Chip>{c.processo_decisorio.decisores_presentes_na_sessao_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.decisores_presentes_na_sessao_nota}</span>}</p>
+        )}
         <p><strong>Decisores:</strong> {c.processo_decisorio.decisores.join(", ") || "—"}</p>
       </section>
 
