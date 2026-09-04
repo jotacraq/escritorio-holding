@@ -179,14 +179,19 @@ export function AnaliseSessaoPainel({
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         {!ehDemo && <SeloIA />}
-        {briefingAtualId && (
-          <a
-            href={`/jornadas/${jornadaId}#briefing`}
-            className="rounded-sm text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
-          >
-            Briefing Estratégico gerado antes desta sessão
-          </a>
-        )}
+        <div className="nao-imprimir flex items-center gap-3">
+          {briefingAtualId && (
+            <a
+              href={`/jornadas/${jornadaId}#briefing`}
+              className="rounded-sm text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+            >
+              Briefing Estratégico gerado antes desta sessão
+            </a>
+          )}
+          {analiseAtual && (
+            <Botao variante="secundario" className="text-xs" onClick={() => window.print()}>Salvar em PDF</Botao>
+          )}
+        </div>
       </div>
 
       <section className="flex flex-col gap-2">

@@ -15,6 +15,7 @@ import type {
   RelatorioSessao,
   SessaoViabilidade,
 } from "@/types/banco";
+import type { MaterialGeradoResumo } from "@/types/material";
 
 /**
  * Espelha `etapas_jornada_ordem` e `transicoes_permitidas` (migration 0004).
@@ -158,6 +159,15 @@ export interface Ficha360 {
   /** Só populado quando `podeVerPatrimonio` é true. */
   patrimonio: PatrimonioItem[] | null;
   familiares: Familiar[] | null;
+  /**
+   * Material pós-sessão atual da jornada, sem o `conteudo` (payload leve —
+   * quem precisa do conteúdo completo busca via `GET
+   * /api/jornadas/[id]/material`, como `MaterialAba.tsx` já faz). `null`
+   * quando a jornada nunca gerou material. Trazido para `derivarPasta()`
+   * (`src/lib/pasta/derivar.ts`) não precisar de fetch lazy — Fase 1 da
+   * "Pasta do Cliente", Diário 2026-09-04.
+   */
+  materialAtual: Omit<MaterialGeradoResumo, "chave_modelo"> | null;
 }
 
 /**
@@ -202,6 +212,7 @@ export async function montarFicha360(
     { data: sessao },
     { data: documentos },
     { data: timeline },
+    { data: materialAtual },
   ] = await Promise.all([
     supabase.from("formularios_respostas").select("*").eq("jornada_id", jornadaId).maybeSingle(),
     supabase
@@ -220,6 +231,21 @@ export async function montarFicha360(
       .eq("jornada_id", jornadaId)
       .order("ocorrido_em", { ascending: false })
       .limit(100),
+    // `.eq("jornada_id", id).eq("atual", true)`, nesta ordem exata, para casar
+    // com o índice parcial `uniq_material_atual on materiais_gerados
+    // (jornada_id) where atual` (0031_material_pos_sessao.sql) — Pasta do
+    // Cliente, Fase 1 (Diário 2026-09-04). O predicado do PostgREST
+    // (`jornada_id = $1 and atual = true`) casa estruturalmente com o
+    // índice parcial. `explain (analyze, buffers)` NÃO foi rodado nesta
+    // sessão (sem MCP do Supabase/psql disponíveis aqui, mesma limitação já
+    // registrada no diário para outras migrations) — pendente antes de
+    // considerar o protocolo de sustentabilidade satisfeito.
+    supabase
+      .from("materiais_gerados")
+      .select("id, versao, fonte_dor, dor_principal, origem_dado, atual, aprovado_por, aprovado_em, criado_em")
+      .eq("jornada_id", jornadaId)
+      .eq("atual", true)
+      .maybeSingle(),
   ]);
 
   let relatorio: RelatorioSessao | null = null;
@@ -262,6 +288,7 @@ export async function montarFicha360(
     timeline: (timeline as EventoTimeline[] | null) ?? [],
     patrimonio,
     familiares,
+    materialAtual: (materialAtual as Omit<MaterialGeradoResumo, "chave_modelo"> | null) ?? null,
   };
 }
 

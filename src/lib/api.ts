@@ -12,6 +12,8 @@
  * Falha desses (404/501) é tratada como "recurso indisponível", nunca mock.
  */
 
+import type { MaterialGeradoResumo } from "@/types/material";
+
 // ---------------------------------------------------------------------------
 // Tipos de domínio (espelham docs/ARQUITETURA.md §1–§2 — nomes do Glossário)
 // ---------------------------------------------------------------------------
@@ -267,6 +269,9 @@ export interface Ficha360 {
   /** null quando o papel do usuário não permite ver patrimônio — nunca "escondido depois". */
   patrimonio: PatrimonioItem[] | null;
   familiares: Familiar[] | null;
+  /** Material pós-sessão atual, sem `conteudo` (payload leve). `null` = jornada
+   * nunca gerou material. Usado por `derivarPasta()` (`lib/pasta/derivar.ts`). */
+  materialAtual: Omit<MaterialGeradoResumo, "chave_modelo"> | null;
 }
 
 /** Espelha `server/ia/completude.ts#ResultadoCompletude` — vem em `ApiError.detalhe`

@@ -9,7 +9,8 @@ import { Selo, SeloDadoExemplo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { objecaoPrincipal } from "@/components/briefing/atomos";
 import { rotularDisc } from "@/components/briefing/tipos";
-import type { ItemPendencia } from "@/components/ui/pendencias";
+import { derivarPasta } from "@/lib/pasta/derivar";
+import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA } from "@/lib/pasta/rotas";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
   aberta: { rotulo: "Aberta", tom: "azul" },
@@ -39,10 +40,18 @@ interface ItemFaixa {
  * — por isso a faixa continua fixa durante a rolagem da ficha inteira, não
  * só deste cabeçalho).
  */
-function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencias }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean; pendencias: ItemPendencia[] }) {
+
+function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean }) {
   const { jornada, familiares } = ficha;
   const objecao = objecaoPrincipal(briefing?.conteudo.objecoes_provaveis);
   const disc = briefing?.conteudo.perfil_disc;
+  // Chip "Próxima ação" lê da Pasta do Cliente (14 itens, 4 estados) em vez
+  // de `calcularPendencias` (5 itens fixos) — primeiro item com estado
+  // `falta`. `ChecklistPendencias` (fora deste componente, em
+  // `jornadas/[id]/page.tsx`) continua na fonte antiga — migração dele é
+  // Fase 2 do plano ("A Pasta do Cliente").
+  const pasta = derivarPasta(ficha, podeVerPatrimonio);
+  const proximaAcaoPasta = pasta.find((item) => item.estado === "falta") ?? null;
 
   const itens: ItemFaixa[] = [{ rotulo: "Etapa", valor: rotuloEtapa }];
 
@@ -64,8 +73,8 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencia
   }
   itens.push({
     rotulo: "Próxima ação",
-    valor: pendencias[0]?.rotulo ?? "Nenhuma pendência",
-    href: pendencias[0] ? `#${pendencias[0].abaId}` : undefined,
+    valor: proximaAcaoPasta ? ACAO_POR_ITEM_PASTA[proximaAcaoPasta.chave] : "Nenhuma pendência",
+    href: proximaAcaoPasta ? `#${ABA_POR_ITEM_PASTA[proximaAcaoPasta.chave]}` : undefined,
   });
 
   return (
@@ -94,13 +103,11 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencia
 export function CabecalhoFicha({
   ficha,
   aoAtualizar,
-  pendencias,
   briefing,
   croquiAtalho,
 }: {
   ficha: Ficha360;
   aoAtualizar: () => void;
-  pendencias: ItemPendencia[];
   /** Briefing completo atual da jornada, buscado UMA vez pelo pai
    * (`useBriefingAtual`, Tarefa 5) e compartilhado com `BriefingAba` —
    * antes, este componente buscava o mesmo dado por conta própria. Só usa
@@ -144,7 +151,7 @@ export function CabecalhoFicha({
 
   return (
     <>
-      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} pendencias={pendencias} />
+      <FaixaVital ficha={ficha} rotuloEtapa={rotuloEtapa} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} />
       <header className="flex flex-col gap-3 border-b border-linha-forte pb-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -170,15 +177,30 @@ export function CabecalhoFicha({
             Conduzir sessão
           </Link>
           {croquiAtalho && (
-            <Link
-              href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/apresentar`}
-              className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-sm border border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:border-[color:var(--latao)]"
-            >
-              Abrir apresentação do Croqui
-              {croquiAtalho.pendentes > 0 && (
-                <span className="text-xs text-[color:var(--ambar)]">· {croquiAtalho.pendentes} sem revisão</span>
-              )}
-            </Link>
+            // Dois atalhos do Croqui, agrupados lado a lado (mesmo par
+            // visual, borda compartilhada no meio) em vez de um 3º botão
+            // solto no cabeçalho — F4 ("A Pasta do Cliente"): "Apresentar"
+            // é a tela isolada para o cliente (projetor, notas escondidas);
+            // "Ver e explicar" é a leitura contínua com notas visíveis,
+            // dentro do shell normal, para a advogada estudar o croqui
+            // sozinha ou explicar num formato de documento.
+            <div className="nao-imprimir inline-flex overflow-hidden rounded-sm border border-linha-forte">
+              <Link
+                href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/apresentar`}
+                className="inline-flex items-center justify-center gap-1.5 bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
+              >
+                Apresentar
+                {croquiAtalho.pendentes > 0 && (
+                  <span className="text-xs text-[color:var(--ambar)]">· {croquiAtalho.pendentes} sem revisão</span>
+                )}
+              </Link>
+              <Link
+                href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/ver`}
+                className="inline-flex items-center justify-center gap-1.5 border-l border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
+              >
+                Ver e explicar
+              </Link>
+            </div>
           )}
         </div>
       </div>

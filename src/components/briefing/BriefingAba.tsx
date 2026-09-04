@@ -298,13 +298,19 @@ export function BriefingAba({
         </a>
       )}
 
+      {/* `SeloIA` fora do bloco `.nao-imprimir` de propósito — é a garantia
+          impressa de que ninguém confunde este PDF com parecer assinado
+          (F4, "A Pasta do Cliente"). Antes ficava preso ao mesmo `<div>` do
+          botão "Gerar briefing" e nunca saía no papel. */}
+      {briefing && <SeloIA />}
+
       <div className="nao-imprimir flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <SeloIA />
             <Botao variante="primario" carregando={gerando} onClick={() => gerar(Boolean(briefing))}>
               {briefing ? "Regerar briefing" : "Gerar briefing"}
             </Botao>
+            {briefing && <Botao variante="secundario" onClick={() => window.print()}>Salvar em PDF</Botao>}
           </div>
           {gerando && (
             <p role="status" className="text-xs text-tinta-suave">

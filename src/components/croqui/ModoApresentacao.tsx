@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { registrarApresentacaoCroqui } from "@/lib/api";
-import type { Croqui, CroquiSlide } from "@/lib/api";
+import type { Croqui } from "@/lib/api";
 import { contarRevisaoSlides } from "@/lib/croqui";
 import { GraficoDoSlide, slideTemGrafico, type DadosGraficosCroqui } from "./GraficoDoSlide";
+import { DeckImpressao } from "./DeckImpressao";
 
 /**
  * U6 (ARQUITETURA-FASE-3.md §3/§5.3) — a tela que a família vê no momento
@@ -184,42 +185,6 @@ function BarraProgresso({ total, atual }: { total: number; atual: number }) {
           aria-hidden="true"
           className={`h-1 w-4 rounded-full ${i <= atual ? "bg-[#d3ac4c]" : "bg-[#3c3e44]"}`}
         />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Impressão: um slide por página (§5.3, U6), sempre em papel/tinta claro —
- * cor hexadecimal explícita, nunca `var(--tinta)`: se a advogada estiver com
- * o tema escuro ligado no navegador ao imprimir, `.dark` continua presente
- * no `<html>` durante o preview de impressão do Chromium, e uma variável CSS
- * resolveria escuro sobre escuro. Mesma razão de `src/components/graficos/
- * paleta.ts` não usar variável.
- */
-function DeckImpressao({ slides, dadosGraficos }: { slides: CroquiSlide[]; dadosGraficos: DadosGraficosCroqui }) {
-  return (
-    <div className="hidden print:block" style={{ background: "#fffdf8", color: "#1b1c1f" }}>
-      {slides.map((slide, i) => (
-        <section key={slide.id} className="imprimir-quebra flex min-h-[90vh] flex-col gap-4 px-10 py-10">
-          <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: "#7c5e26" }}>
-            {String(i + 1).padStart(2, "0")} · Croqui Estrutural
-          </p>
-          <h1 className="font-serif text-3xl font-semibold">{slide.titulo}</h1>
-          <p className="max-w-2xl whitespace-pre-wrap text-base leading-relaxed" style={{ color: "#52514c" }}>
-            {slide.conteudo || "Sem conteúdo definido para este slide."}
-          </p>
-          {slide.pontos && slide.pontos.length > 0 && (
-            <ul className="flex flex-col gap-1 text-sm" style={{ color: "#52514c" }}>
-              {slide.pontos.map((p, j) => <li key={j}>· {p}</li>)}
-            </ul>
-          )}
-          {slideTemGrafico(slide.tipo) && (
-            <div className="max-w-2xl">
-              <GraficoDoSlide tipo={slide.tipo} dados={dadosGraficos} tema="claro" />
-            </div>
-          )}
-        </section>
       ))}
     </div>
   );
