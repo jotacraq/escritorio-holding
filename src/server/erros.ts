@@ -60,7 +60,66 @@ export function registrarErro(contexto: string, erro: unknown, extra?: Record<st
     }),
   );
 
+  persistirErro(id, contexto, detalhe, extra);
+
   return id;
+}
+
+/**
+ * Grava o mesmo erro em `erros_servidor` (0046), com o MESMO id que a resposta
+ * HTTP devolve ao cliente.
+ *
+ * Existe porque o stdout do Node App da Hostinger não é consultável de fora do
+ * painel: dois 500 desta base já custaram horas de adivinhação por isso. Quem
+ * recebe "Contate o suporte, id X" agora vira uma linha localizável.
+ *
+ * Regras que este caminho NUNCA pode quebrar:
+ * - **Não bloqueia.** É fire-and-forget: quem falhou já está falhando, não pode
+ *   esperar por um INSERT nem falhar de novo por causa dele.
+ * - **Não lança.** Todo erro daqui morre aqui. Chamar `registrarErro` de dentro
+ *   deste catch criaria recursão infinita — por isso o `console.error` cru.
+ * - **Não trava sem service_role.** Sem a chave, só o stdout registra, como antes.
+ */
+function persistirErro(
+  id: string,
+  contexto: string,
+  detalhe: Record<string, unknown>,
+  extra?: Record<string, unknown>,
+) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) return;
+
+  void (async () => {
+    try {
+      const { criarClienteAdmin } = await import("@/lib/supabase/admin");
+      const { perfil_id: perfilId, ...restoExtra } = (extra ?? {}) as Record<string, unknown>;
+      await criarClienteAdmin()
+        .from("erros_servidor")
+        .insert({
+          id,
+          contexto,
+          nome: typeof detalhe.nome === "string" ? detalhe.nome : null,
+          mensagem:
+            typeof detalhe.mensagem === "string"
+              ? detalhe.mensagem
+              : detalhe.valor === undefined
+                ? null
+                : String(detalhe.valor),
+          pilha: typeof detalhe.stack === "string" ? detalhe.stack : null,
+          extra: Object.keys(restoExtra).length > 0 ? restoExtra : null,
+          perfil_id: typeof perfilId === "string" ? perfilId : null,
+        });
+    } catch (falhaAoGravar) {
+      // Deliberadamente cru: registrarErro() aqui dentro seria recursão.
+      console.error(
+        JSON.stringify({
+          nivel: "error",
+          contexto: "server/erros.persistirErro",
+          id_erro_original: id,
+          mensagem: falhaAoGravar instanceof Error ? falhaAoGravar.message : String(falhaAoGravar),
+        }),
+      );
+    }
+  })();
 }
 
 /**
