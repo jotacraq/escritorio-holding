@@ -34,28 +34,36 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS ?? 300_000);
 
 /**
- * Controle de raciocinio no caminho OpenRouter -> Anthropic: MEDIDO, nao deduzido.
+ * Controle de raciocinio no caminho OpenRouter -> Anthropic. Tudo aqui foi
+ * MEDIDO contra a API (sonda em /api/admin/sonda-schema), nao deduzido.
  *
- * Duas tentativas, duas falhas, ambas em producao (04/09/2026):
+ * A historia importa porque quase levou a conclusao errada duas vezes:
  *
- * 1. `reasoning: { max_tokens: 4096 }` — NAO da erro e NAO limita. Na Anthropic
- *    esse campo vira `thinking.budget_tokens`, removido da geracao atual do
- *    Claude. O pedido passa, o teto nao vale: um briefing "limitado" a 4.096
- *    gastou 6.416 tokens de raciocinio sem nenhum aviso.
- * 2. `reasoning: { effort: "high" }` — da `openrouter_400: Provider returned
- *    error`. O provider rejeita; o briefing nao sai.
+ * 1. `reasoning: { max_tokens: N }` — o provedor ACEITA e o teto NAO VALE. Na
+ *    Anthropic vira `thinking.budget_tokens`, removido da geracao atual do
+ *    Claude. Um briefing "limitado" a 4.096 gastou 6.416 tokens de raciocinio
+ *    sem erro nem aviso. `provider.require_parameters: true` nao protege: ele
+ *    checa capacidade grossa do provider, nao se o campo ainda existe.
+ * 2. `reasoning: { effort }` levou a culpa de um `openrouter_400` que era do
+ *    SCHEMA ("compiled grammar is too large"). A sonda depois confirmou que
+ *    todos os campos de raciocinio sao aceitos — `effort` low/high,
+ *    `max_tokens` e `enabled:false`.
  *
- * Por isso NAO mandamos campo de raciocinio nenhum: o Claude atual decide
- * sozinho quanto pensar (thinking adaptativo). O que efetivamente limita o
- * gasto por aqui e `max_tokens`, que e outro campo, e o bloco de orcamento de
- * escrita anexado ao prompt (src/server/ia/orcamento-escrita.ts).
+ * Entao mandamos `effort`, que e o unico com semantica viva do lado da
+ * Anthropic (equivale a `output_config.effort`, o mesmo que `anthropic.ts` usa
+ * no caminho direto). A escala do OpenRouter tem tres degraus: os dois efforts
+ * acima de `high` colapsam em `high`.
  *
- * O `effort` continua sendo gravado em `execucoes_ia.effort` — e o que o
- * caminho de rollback (`anthropic.ts`, API direta) usa de verdade, via
- * `output_config.effort`. Se algum dia o OpenRouter expuser `output_config`
- * para a Anthropic, e aqui que se liga — e so depois de medir contra o
- * baseline registrado em brain/04 - Tecnico/Custo da IA.md.
- */
+ * Se for trocar isto, MECA: gere um briefing e compare
+ * `execucoes_ia.tokens_raciocinio` com o baseline de brain/04 - Tecnico/Custo da IA.md.
+ */
+const EFFORT_PARA_OPENROUTER: Record<EffortIa, "low" | "medium" | "high"> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "high",
+  max: "high",
+};
 
 export function openrouterConfigurado(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
@@ -106,6 +114,7 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
       model: modelo,
       messages: mensagens,
       max_tokens: maxTokens,
+      reasoning: { effort: EFFORT_PARA_OPENROUTER[effort] },
       response_format: {
         type: "json_schema",
         json_schema: { name: nomeSchema, strict: true, schema: jsonSchema },

@@ -331,6 +331,19 @@ export interface CroquiSlide {
   conteudo: string;
   objetivo?: string;
   pergunta_ao_cliente?: string;
+  /** Campos ADITIVOS (ARQUITETURA-FASE-3.md §3.3, `SlideCroquiSchema` em
+   * `src/server/ia/schema-croqui-slides.ts`, onda 2/agente E — pedido
+   * explícito para o agente H editar aqui). Croquis gravados antes desta
+   * mudança continuam válidos: chaves ausentes, nunca `undefined`
+   * obrigatório. `revisado` ausente conta como `false` no trigger de banco
+   * (0043) — nunca `true` por omissão. */
+  origem?: "metodo" | "ia" | "humano";
+  revisado?: boolean;
+  como_apresentar?: string;
+  categoria?: "fato_declarado" | "dado_documental" | "inferencia" | "ponto_a_validar";
+  fontes?: string[];
+  pontos?: string[];
+  grafico?: string;
 }
 
 export interface Croqui {

@@ -1,69 +1,77 @@
 # Custo da IA
 
-Onde o dinheiro do SIC-HF é queimado, o que já foi medido e qual alavanca funciona
-de verdade. Nota de domínio — o diário registra o dia, aqui fica o que vale sempre.
+Onde o dinheiro do SIC-HF é queimado, o que já foi **medido** e qual alavanca
+funciona de verdade. O diário registra o dia; aqui fica o que vale sempre.
 
-## A conta de um briefing (medido em produção, 03/09/2026)
+## A conta de um briefing
 
-| Parte | Tokens | Fatia do custo |
-|---|---|---|
-| Entrada (contexto montado) | 4.697 | ~9% |
-| Saída (briefing + raciocínio) | 9.377–11.651 | ~91% |
-| — dentro da saída: **raciocínio** | 6.416 | **55% da saída** |
+| Quando | Entrada | Saída | Raciocínio | Custo |
+|---|---|---|---|---|
+| Baseline 04/09 04:25 | 4.697 | 11.651 | 6.416 (55% da saída) | **US$ 0,1281** |
+| Depois do enxugamento 06:07 | 5.153 | 8.822 | 5.385 (61% da saída) | **US$ 0,1009** |
 
-**Otimizar entrada é ruído. O custo é a saída, e mais da metade da saída é o
-modelo pensando.** Cortar seção do contexto para "economizar" mexe em 9% do
-custo e degrada o briefing — é o pior negócio disponível.
+**−21% de custo, −24% de saída.** Veio do schema menor e do bloco de orçamento
+de escrita anexado ao prompt — **não** de mexer no parâmetro de raciocínio, que
+nunca funcionou (abaixo).
 
-## A armadilha do teto de raciocínio
+Otimizar a entrada é ruído: ela é ~9% da conta. O custo é a saída, e mais da
+metade da saída é o modelo pensando.
 
-O adaptador do OpenRouter mandava `reasoning: { max_tokens: N }`. Na Anthropic
-esse campo vira `thinking.budget_tokens`, **removido da geração atual do Claude**.
-O pedido **não falha** — o teto simplesmente não vale. Por isso um briefing
-configurado com teto de 4.096 gastou 6.416 tokens de raciocínio sem nenhum erro,
-nenhum aviso e nenhum log estranho.
+## O teto de gramática — o que derrubou tudo
 
-Consequência: **a alavanca de economia inteira estava desligada e ninguém via.**
-Baixar o effort não economizava nada, porque o parâmetro que carregava o effort
-era ignorado.
+A Anthropic compila o JSON Schema estrito **do lado dela**. Se ficar grande
+demais, responde 400 com *"The compiled grammar is too large"*. Medido pela
+sonda em 04/09/2026:
 
-O caminho de rollback (`src/server/ia/provedor/anthropic.ts`) sempre falou a API
-nova — `thinking: { type: "adaptive" }` + `output_config: { effort }`. Só o
-adaptador do OpenRouter tinha ficado para trás. Corrigido em 04/09/2026 para
-`reasoning: { effort }` em `src/server/ia/provedor/openrouter.ts`.
+| Schema | Resultado |
+|---|---|
+| 4.428 bytes | **recusado** |
+| 3.905 bytes | compilou |
+| 3.813 bytes (atual) | compilou |
 
-> `provider.require_parameters: true` **não protegeu** contra isso. Ele checa a
-> capacidade grossa do provider, não se o campo ainda existe na API do modelo.
-> Não confie nele como validação de parâmetro.
+**Isso não aparece em `tsc`, `eslint` nem `build`.** O schema v2 do briefing
+subiu para produção com tudo verde e deixou **100% dos briefings quebrados** —
+o sintoma era um 500 genérico.
 
-A escala do OpenRouter tem três degraus (`low`/`medium`/`high`); `xhigh` e `max`
-do SIC-HF colapsam em `high`. O `max_tokens` do topo do corpo é outro campo,
-continua valendo, e é o teto absoluto da saída.
+Enum em gramática estrita não é um campo: é uma alternação, e alternações se
+multiplicam entre si. Sete campos `_nota` viraram uma lista `evidencias`, e os
+enums de arquétipo (8 opções) e de tom (7) viraram string, com a lista fechada
+morando no texto do prompt, onde custa zero gramática.
+
+> **Antes de acrescentar campo ao schema, rode `POST /api/admin/sonda-schema`.**
+> Um 400 do provedor não custa token; um deploy às cegas custa 5 minutos e pode
+> derrubar a geração inteira.
+
+## O parâmetro de raciocínio nunca funcionou
+
+`reasoning: { max_tokens: N }` — **não dá erro e não limita.** Na Anthropic vira
+`thinking.budget_tokens`, removido da geração atual do Claude. Um briefing com
+"teto" de 4.096 gastou 6.416. A alavanca inteira estava desligada sem ninguém
+ver, e `provider.require_parameters: true` **não protegeu**: ele checa
+capacidade grossa do provider, não se o campo ainda existe na API do modelo.
+
+Trocar para `reasoning: { effort }` deu 400 — mas **esse 400 era do schema**, e
+eu creditei ao parâmetro errado. Lição repetida: hipótese plausível não é
+diagnóstico. Hoje o adaptador não manda campo de raciocínio nenhum; o Claude
+decide sozinho quanto pensar.
 
 ## Onde o effort é decidido
 
-Coluna `effort` da linha ativa em `prompts_versoes` — **não é variável de
-ambiente e não é constante no código**. Trocar o effort de um agente é `UPDATE`
-nessa tabela, e passa a valer na próxima execução, sem deploy.
+Coluna `effort` da linha ativa em `prompts_versoes` — não é variável de ambiente
+nem constante no código. Trocar é `UPDATE`, vale na próxima execução, sem
+deploy. Hoje só tem efeito real no caminho direto da Anthropic
+(`anthropic.ts`), que fala `output_config.effort`.
 
-Hoje: `protocolo_01_briefing` e `agente_croqui_analise` em `high`,
-`material_pos_sessao` em `medium`, `ordenar_horarios_agenda` em `low`.
+## O que ainda não foi medido
 
-## Como decidir se vale baixar o effort
+- Se o OpenRouter aceita **algum** campo de raciocínio para a Anthropic — a
+  sonda em `/api/admin/sonda-schema` responde isso.
+- Se baixar o effort mantém a qualidade: é o que `scripts/bancada-ia.ts` mede,
+  com gate objetivo. Precisa de `SUPABASE_SERVICE_ROLE_KEY`.
+- Quanto a porta de completude poupa: está no ar, mas ainda não há execução
+  suficiente para dizer.
 
-Não no olho. `scripts/bancada-ia.ts` roda baseline e variantes contra jornadas
-reais e só promove se o gate objetivo passar: custo cai **e** cobertura,
-ancoragem em evidência e grau de confiança ficam dentro da variância do
-baseline. Precisa de `SUPABASE_SERVICE_ROLE_KEY`.
-
-**Enquanto a medição pós-correção não rodar, nenhum número de economia aqui é
-promessa.** O que está medido é a conta acima e a causa da fuga — não a
-economia obtida.
-
-## Medição que ficou pendente
-
-Repetir o mesmo briefing em `high` e em `medium` com o adaptador já corrigido e
-comparar `execucoes_ia.tokens_raciocinio`. Se o número não se mover entre os
-dois, a correção não pegou e a causa é outra — **medir antes de comemorar.**
+**Nenhum número de economia aqui é promessa** — só o que está na tabela acima
+foi medido de verdade.
 
 Ver [[Stack e deploy]], [[Schema]].
