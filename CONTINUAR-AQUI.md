@@ -4,6 +4,46 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
+> **Sessão de 04/09 de madrugada (a mais recente):** o briefing esteve **100%
+> quebrado em produção** por algumas horas e voltou. Custo caiu de US$ 0,128
+> para **US$ 0,055** por briefing. As features da fase 3 estão no ar. Leia o
+> §0 logo abaixo antes de qualquer coisa.
+
+## 0. O que você precisa saber antes de tocar em qualquer coisa (04/09)
+
+**1. O schema estrito da IA tem um teto de tamanho, e ele não aparece em lugar
+nenhum do build.** A Anthropic compila o JSON Schema do lado dela e recusa com
+`400 The compiled grammar is too large`. Medido: **3.905 bytes compila, 4.428
+não.** O schema v2 do briefing subiu com `tsc`, `eslint` e `build` verdes e
+deixou toda a geração em 500. Antes de acrescentar campo ao schema, rode
+`POST /api/admin/sonda-schema` — um 400 do provedor não custa token.
+
+**2. Todo 500 agora vira linha em `erros_servidor`**, com o mesmo `id_erro` que
+o cliente recebe e a pilha inteira. É o que permitiu achar a causa acima em vez
+de continuar chutando. Consulte por lá antes de formular hipótese.
+
+**3. O custo da IA é controlado pela coluna `effort` de `prompts_versoes`** —
+`UPDATE`, sem deploy. Medido no mesmo cliente: `high` US$ 0,1241 · **`medium`
+US$ 0,0549 (ativo)** · `low` US$ 0,0397. O `medium` entrega um briefing do
+mesmo tamanho que o `high`. Detalhe e ressalvas em `brain/04 - Tecnico/Custo da IA.md`.
+
+**4. O deploy é por arquivo, e dá para fazer por API.** `git archive --format=zip
+-o sichf.zip HEAD` e a ferramenta de deploy da Hostinger; leva de 4 a 10 min.
+**Carimbe `public/versao.txt` com o commit antes de empacotar** e confira
+comparando com `/versao.txt` da produção — foi assim que se descobriu, uma vez,
+que o servidor rodava build antigo.
+
+**5. Migrations aplicadas nesta rodada:** 0041b (reconstruída), 0042, 0043,
+0045, 0046, 0047. A `0043` criou uma trava: croqui só vira `pronto` com os 13
+slides marcados `revisado: true` — a tela que satisfaz isso existe (Editor do
+Croqui).
+
+**6. Não confie em `pg_get_viewdef()` para reconstruir migration de view** — ele
+devolve só o SELECT, sem as `reloptions`. Foi assim que `security_invoker` sumiu
+do arquivo da `0041b` (achado ALTO do pentest, corrigido na `0047`).
+
+---
+
 > **Sessão de 03/09 à noite (esta atualização):** deploy destravado (site estava
 > respondendo por um processo Node órfão — resolvido recriando o site do zero no
 > hPanel, não por API) e camada de IA migrada de Anthropic direta para
