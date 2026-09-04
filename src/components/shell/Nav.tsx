@@ -31,7 +31,7 @@ const ICONES: Record<string, ReactNode> = {
   ),
 };
 
-const ITENS = [
+export const ITENS_NAVEGACAO = [
   { href: "/painel", rotulo: "Painel", icone: "painel" },
   { href: "/esteira", rotulo: "Esteira", icone: "esteira" },
   { href: "/agenda", rotulo: "Agenda", icone: "agenda" },
@@ -46,7 +46,7 @@ export function Nav({ aoNavegar }: { aoNavegar?: () => void }) {
   const rota = usePathname();
   return (
     <nav aria-label="Navegação principal" className="flex flex-col gap-0.5">
-      {ITENS.map((item) => {
+      {ITENS_NAVEGACAO.map((item) => {
         const ativo = rota === item.href || rota?.startsWith(`${item.href}/`);
         return (
           <Link

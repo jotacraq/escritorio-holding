@@ -155,6 +155,31 @@ Sem elas o sistema funciona, mas parte do método fica desligada. Estão detalha
 
 ## 6. Deploy — RESOLVIDO em 03/09 à noite (histórico abaixo, para quem chegar depois)
 
+> ### ⚠️ O deploy NÃO é automático por push
+>
+> Conferido em 04/09 pela API da Hostinger: os deploys existentes são
+> `source_type: archive` (envio manual de pacote) e `git`, mas **nenhum
+> disparou sozinho a partir de um push**. Commitar e empurrar para o GitHub
+> **não coloca nada no ar**.
+>
+> Para publicar, o ciclo é:
+>
+> ```bash
+> npm run build                       # tem que passar antes de empacotar
+> # empacotar só o versionado, sem .gitignore (o deploy o respeita e comeria o .env.production)
+> git archive HEAD | tar -x -C pkg && rm -f pkg/.gitignore
+> git rev-parse --short HEAD > pkg/public/versao.txt   # marcador da versão publicada
+> # zipar com NOME ÚNICO (nome repetido parece ser reaproveitado) e enviar pelo MCP da Hostinger
+> ```
+>
+> Depois, confirme o que está no ar comparando `/versao.txt` com o commit —
+> foi assim que descobri, em 03/09, que o servidor rodava um build antigo
+> enquanto os deploys "davam sucesso". **Não confie no build ter subido;
+> verifique.**
+>
+> O build em produção leva de 3 a 6 minutos entre o envio e o site responder
+> a versão nova.
+
 **Domínio:** `escritorio.grupoparticipa.app.br` (DNS na Cloudflare, hospedagem Hostinger). **No ar.**
 
 **O que estava acontecendo:** qualquer rota respondia `{"erro":"config_ausente"}` —
