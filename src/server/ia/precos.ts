@@ -16,6 +16,16 @@ export interface TokensUso {
   tokensSaida: number;
   tokensCacheEscrita: number;
   tokensCacheLeitura: number;
+  /**
+   * Tokens gastos em raciocínio (extended thinking). **Fazem parte de
+   * `tokensSaida` e são faturados como saída** — não somam por fora.
+   *
+   * Existe para uma decisão concreta: 91% do custo de um briefing está na
+   * saída, e `reasoning.max_tokens` é o único parâmetro que dá para ajustar
+   * sem mexer no método. Sem medir quanto o modelo realmente usa, calibrar
+   * esse teto é chute.
+   */
+  tokensRaciocinio: number;
 }
 
 interface PrecoModelo {

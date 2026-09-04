@@ -154,6 +154,9 @@ export async function executarComAuditoria<T>(
         tokens_saida: resposta.uso.tokensSaida,
         tokens_cache_escrita: resposta.uso.tokensCacheEscrita,
         tokens_cache_leitura: resposta.uso.tokensCacheLeitura,
+        // Ja contido em tokens_saida — grava separado so para saber quanto da
+        // saida foi raciocinio, que e o que da para calibrar sem mexer no metodo.
+        tokens_raciocinio: resposta.uso.tokensRaciocinio || null,
         custo_usd: custoUsd,
         latencia_ms: latenciaMs,
         stop_reason: stopReasonGravado,

@@ -68,6 +68,11 @@ export const provedorAnthropic: ProvedorIa = {
       tokensSaida: mensagemFinal.usage.output_tokens,
       tokensCacheEscrita: mensagemFinal.usage.cache_creation_input_tokens ?? 0,
       tokensCacheLeitura: mensagemFinal.usage.cache_read_input_tokens ?? 0,
+      // A API da Anthropic nao devolve os tokens de raciocinio separados no
+      // usage (eles ja estao dentro de output_tokens). Zero aqui significa
+      // "nao informado por este provedor", nao "nao houve raciocinio" — a
+      // medicao de reasoning so existe pelo caminho do OpenRouter.
+      tokensRaciocinio: 0,
     };
 
     if (mensagemFinal.stop_reason === "refusal") {

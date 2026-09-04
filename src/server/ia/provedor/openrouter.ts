@@ -145,6 +145,7 @@ function extrairUso(corpo: RespostaOpenRouter) {
     tokensSaida: usage?.completion_tokens ?? 0,
     tokensCacheEscrita: usage?.prompt_tokens_details?.cache_write_tokens ?? 0,
     tokensCacheLeitura: usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    tokensRaciocinio: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
   };
 }
 
