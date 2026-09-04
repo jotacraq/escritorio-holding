@@ -5,17 +5,34 @@ funciona de verdade. O diário registra o dia; aqui fica o que vale sempre.
 
 ## A conta de um briefing
 
-| Quando | Entrada | Saída | Raciocínio | Custo |
-|---|---|---|---|---|
-| Baseline 04/09 04:25 | 4.697 | 11.651 | 6.416 (55% da saída) | **US$ 0,1281** |
-| Depois do enxugamento 06:07 | 5.153 | 8.822 | 5.385 (61% da saída) | **US$ 0,1009** |
+Mesma jornada, mesma entrada, medido em producao em 04/09/2026. So muda o
+`effort` da linha ativa de `prompts_versoes` — nenhum deploy entre as tres.
 
-**−21% de custo, −24% de saída.** Veio do schema menor e do bloco de orçamento
-de escrita anexado ao prompt — **não** de mexer no parâmetro de raciocínio, que
-nunca funcionou (abaixo).
+| effort | raciocinio | saida | custo | latencia | briefing entregue |
+|---|---|---|---|---|---|
+| high | 7.611 | 11.137 | **US$ 0,1241** | 105s | 8.742 chars |
+| **medium** | 933 | 4.218 | **US$ 0,0549** | 49s | 8.198 chars |
+| low | 0 | 2.697 | **US$ 0,0397** | 31s | 6.703 chars |
 
-Otimizar a entrada é ruído: ela é ~9% da conta. O custo é a saída, e mais da
-metade da saída é o modelo pensando.
+**`medium` e o ponto de operacao, e e o que esta ativo.** Custa 56% menos que
+`high` e entrega um documento praticamente do mesmo tamanho — o `high` queima
+7.611 tokens pensando para produzir um briefing MENOR. Estrutura preservada nos
+tres: mesmo numero de objecoes, de evidencias de DISC e de lacunas.
+
+`low` corta mais um terco do preco, mas encurta o texto de verdade (resumo
+executivo de 810 para 511 caracteres). Fica como opcao para entrada pobre, nao
+como padrao.
+
+Ressalva honesta: **n=1 por degrau, numa jornada de exemplo com completude 40**
+(entrada fraca). Em cliente real com formulario e ligacao completos o `high`
+pode justificar o preco. Quem confirma isso e `scripts/bancada-ia.ts`, com
+varias jornadas e gate objetivo.
+
+O `agente_croqui_analise` **continua em `high` e nao foi medido** — nao mudei
+por analogia. Medir antes de mexer.
+
+Historico: o baseline de 04/09 04:25 custava US$ 0,1281 com 6.416 de raciocinio.
+Otimizar a entrada e ruido: ela e ~9% da conta.
 
 ## O teto de gramática — o que derrubou tudo
 
