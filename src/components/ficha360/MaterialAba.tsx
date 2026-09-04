@@ -6,7 +6,7 @@ import type { BlocoMaterial, FonteDorMaterial } from "@/types/material";
 import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
-import { Selo, SeloDemonstracao } from "@/components/ui/Selo";
+import { Selo, SeloDemonstracao, SeloIA } from "@/components/ui/Selo";
 import { formatarDataHora } from "@/lib/formatar";
 
 const ROTULOS_FONTE: Record<FonteDorMaterial, string> = {
@@ -89,6 +89,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
+      {atual?.origem_dado !== "exemplo" && <SeloIA />}
       <p role="note" className="rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-xs text-tinta-suave">
         Material pós-sessão. A régua de mensagens <strong>não envia</strong> sem aprovação humana — enquanto não houver <code>aprovado_em</code>, este material fica pendente e não sai para o cliente.
       </p>

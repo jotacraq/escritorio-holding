@@ -432,9 +432,13 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
   }
 
   if (!resposta.ok) {
+    // `respostaErro` (server/erros.ts) devolve { erro: <código técnico>, mensagem: <texto humano> }.
+    // A mensagem humana tem que vencer — senão a tela mostra o código cru
+    // ("nao_encontrado") em vez do texto pensado para o usuário. `objeto.erro`
+    // vira o campo `codigo` da ApiError, não o texto exibido.
     const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string; codigo?: string };
-    const mensagem = objeto.erro || objeto.mensagem || `Falha na requisição (${resposta.status})`;
-    throw new ApiError(mensagem, resposta.status, objeto.codigo);
+    const mensagem = objeto.mensagem || `Falha na requisição (${resposta.status})`;
+    throw new ApiError(mensagem, resposta.status, objeto.codigo ?? objeto.erro);
   }
 
   return corpo as T;

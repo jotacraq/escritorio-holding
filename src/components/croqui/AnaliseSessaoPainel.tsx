@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando } from "@/components/ui/Estado";
-import { SeloDemonstracao } from "@/components/ui/Selo";
+import { SeloDemonstracao, SeloIA } from "@/components/ui/Selo";
 import { Chip, BadgeConfianca, type TomChip } from "@/components/briefing/atomos";
 import { rotularDisc } from "@/components/briefing/tipos";
 import { ROTULO_CATEGORIA_AFIRMACAO, type TemaGrafico } from "@/components/graficos";
@@ -73,6 +74,7 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
 export function AnaliseSessaoPainel({
   jornadaId,
   sessaoId,
+  briefingAtualId,
   ultimaAnaliseSalva,
   dadosGraficos,
   tema,
@@ -81,6 +83,11 @@ export function AnaliseSessaoPainel({
 }: {
   jornadaId: string;
   sessaoId: string | null;
+  /** Id do Briefing atual da jornada (`ficha.briefingAtual?.id`), se houver —
+   * só liga o link cruzado "Briefing Estratégico gerado antes desta sessão"
+   * quando o dado já carregado no pai confirma que ele existe de verdade.
+   * Nunca dispara requisição nova para checar isso (regra do plano). */
+  briefingAtualId?: string | null;
   /** A análise mais recente já persistida para o croqui atual (embed de
    * `GET /api/croquis/[id]`), se houver — para reabrir a aba e continuar
    * vendo o resultado sem gastar uma nova execução de IA. */
@@ -170,6 +177,18 @@ export function AnaliseSessaoPainel({
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {!ehDemo && <SeloIA />}
+        {briefingAtualId && (
+          <a
+            href={`/jornadas/${jornadaId}#briefing`}
+            className="rounded-sm text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+          >
+            Briefing Estratégico gerado antes desta sessão
+          </a>
+        )}
+      </div>
+
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-tinta">Transcrição da Sessão de Viabilidade</h3>
@@ -377,6 +396,11 @@ function ConteudoAnalise({
           </span>
         )}
         {aplicado && <span role="status" className="text-xs text-[color:var(--verde)]">Aplicado ao croqui.</span>}
+        {aplicado && (
+          <Link href="#croqui" className="text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta">
+            Ver no Editor do Croqui
+          </Link>
+        )}
         {erroAplicar && <span role="alert" className="text-xs text-[color:var(--vermelho)]">{erroAplicar}</span>}
       </div>
     </div>

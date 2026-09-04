@@ -65,6 +65,25 @@ export function SeloDemonstracao({ children, className = "" }: { children?: Reac
   );
 }
 
+/**
+ * Rótulo neutro para toda tela cujo conteúdo principal é gerado por IA
+ * (Briefing, Análise da Sessão, Material) — distingue de análise humana sem
+ * competir visualmente com `SeloDemonstracao` (âmbar/alarme, dado fictício)
+ * nem com `--latao` (ação primária). É rótulo, não anúncio: sem `role="alert"`
+ * nem `role="status"`. Nunca usar junto de `SeloDemonstracao` na mesma peça —
+ * quando o conteúdo é de demonstração, o alarme de demonstração substitui
+ * este selo, nunca os dois somados.
+ */
+export function SeloIA({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm border border-linha-forte bg-papel-elevado px-1.5 py-0.5 text-[11px] font-medium leading-none text-tinta-suave ${className}`}
+    >
+      Gerado por IA — insumo do advogado, não parecer
+    </span>
+  );
+}
+
 export function Selo({ tom, children }: { tom: "verde" | "vermelho" | "azul" | "neutro"; children: ReactNode }) {
   const tons: Record<typeof tom, string> = {
     verde: "bg-verde-fraco text-[color:var(--verde)] border-transparent",

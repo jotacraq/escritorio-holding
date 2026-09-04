@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useEtapasOrdem } from "@/hooks/useJornadas";
-import { atualizarEtapa, buscarBriefing, ApiError, type Briefing, type DesfechoJornada, type Ficha360 } from "@/lib/api";
+import { atualizarEtapa, ApiError, type Briefing, type DesfechoJornada, type Ficha360 } from "@/lib/api";
 import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
 import { Selo, SeloDadoExemplo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
+import { objecaoPrincipal } from "@/components/briefing/atomos";
 import type { ItemPendencia } from "@/components/ui/pendencias";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
@@ -22,16 +23,6 @@ const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" |
 // esteira, o outro é até onde a pessoa pagou). Prefixo "Pago:" desfaz a
 // colisão sem perder a informação.
 const ROTULOS_NIVEL_PAGO = ["Nada pago", "Pago: sessão", "Pago: croqui", "Pago: holding"];
-
-const ORDEM_PROBABILIDADE: Record<"alta" | "media" | "baixa", number> = { alta: 0, media: 1, baixa: 2 };
-
-/** A objeção mais provável do Briefing — a de maior probabilidade primeiro. */
-function objecaoPrincipal(briefing: Briefing | null): string | null {
-  const lista = briefing?.conteudo.objecoes_provaveis;
-  if (!lista || lista.length === 0) return null;
-  const ordenada = [...lista].sort((a, b) => ORDEM_PROBABILIDADE[a.probabilidade] - ORDEM_PROBABILIDADE[b.probabilidade]);
-  return ordenada[0].objecao;
-}
 
 interface ItemFaixa {
   rotulo: string;
@@ -49,7 +40,7 @@ interface ItemFaixa {
  */
 function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencias }: { ficha: Ficha360; rotuloEtapa: string; briefing: Briefing | null; podeVerPatrimonio: boolean; pendencias: ItemPendencia[] }) {
   const { jornada, familiares } = ficha;
-  const objecao = objecaoPrincipal(briefing);
+  const objecao = objecaoPrincipal(briefing?.conteudo.objecoes_provaveis);
   const disc = briefing?.conteudo.perfil_disc;
 
   const itens: ItemFaixa[] = [{ rotulo: "Etapa", valor: rotuloEtapa }];
@@ -64,7 +55,7 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencia
     itens.push({ rotulo: "DISC", valor: disc.secundario ? `${disc.predominante} / ${disc.secundario}` : disc.predominante, href: "#briefing" });
   }
   if (objecao) {
-    itens.push({ rotulo: "Objeção provável", valor: objecao, href: "#briefing" });
+    itens.push({ rotulo: "Objeção provável", valor: objecao.objecao, href: "#briefing" });
   }
   itens.push({
     rotulo: "Próxima ação",
@@ -95,7 +86,22 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencia
   );
 }
 
-export function CabecalhoFicha({ ficha, aoAtualizar, pendencias }: { ficha: Ficha360; aoAtualizar: () => void; pendencias: ItemPendencia[] }) {
+export function CabecalhoFicha({
+  ficha,
+  aoAtualizar,
+  pendencias,
+  briefing,
+}: {
+  ficha: Ficha360;
+  aoAtualizar: () => void;
+  pendencias: ItemPendencia[];
+  /** Briefing completo atual da jornada, buscado UMA vez pelo pai
+   * (`useBriefingAtual`, Tarefa 5) e compartilhado com `BriefingAba` —
+   * antes, este componente buscava o mesmo dado por conta própria. Só usa
+   * DISC e objeção provável; `null` mostra a faixa vital sem esses dois itens,
+   * nunca inventa. */
+  briefing: Briefing | null;
+}) {
   const { etapas } = useEtapasOrdem();
   const { jornada, pessoa } = ficha;
   const podeVerPatrimonio = ficha.patrimonio !== null;
@@ -104,34 +110,8 @@ export function CabecalhoFicha({ ficha, aoAtualizar, pendencias }: { ficha: Fich
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
 
   const rotuloEtapa = etapas?.find((e) => e.etapa === jornada.etapa)?.rotulo ?? jornada.etapa;
-
-  // Só para DISC e objeção provável na faixa vital — a aba Briefing já carrega
-  // o próprio conteúdo completo de forma independente. Sem polling: busca uma
-  // vez quando o id do briefing atual muda.
-  useEffect(() => {
-    const id = ficha.briefingAtual?.id;
-    if (!id) {
-      // Reseta o estado local quando o briefing atual desaparece (troca de
-      // jornada, ou versão desativada) — não há requisição para cancelar.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setBriefing(null);
-      return;
-    }
-    let vivo = true;
-    buscarBriefing(id)
-      .then((b) => {
-        if (vivo) setBriefing(b);
-      })
-      .catch(() => {
-        if (vivo) setBriefing(null);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [ficha.briefingAtual?.id]);
 
   async function salvarDesfecho() {
     if (novoDesfecho !== "aberta" && !motivo.trim()) {

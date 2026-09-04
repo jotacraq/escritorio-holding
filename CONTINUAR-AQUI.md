@@ -344,6 +344,10 @@ Ordenado pelo que muda mais a vida do escritório.
 10. **Retenção e expurgo** (B19) — IR e contrato social guardados por prazo indeterminado é passivo, não patrimônio.
 
 ### Baixa / quando fizer sentido
+0. **Secretário via n8n + Chatwoot para agendar a Sessão de Viabilidade** (decisão do Marcio, 04/09) — a ligação pós-pagamento (item 4 do backlog Alta) NÃO deve ser construída como telefonia dentro do SIC-HF. O Marcio já tem um agente de IA rodando em n8n + Chatwoot fazendo esse papel de secretário em outros fluxos da casa. A arquitetura certa é INTEGRAÇÃO, não feature nova de voz:
+   - **Saída** (SIC-HF → n8n): quando uma jornada entra em `sessao_agendada` — ou, mais cedo, quando o pagamento da Sessão de Viabilidade é aprovado — disparar um webhook para o n8n com os dados do lead e a agenda disponível do advogado (`GET /api/agenda/slots` já existe e devolve isso).
+   - **Entrada** (n8n → SIC-HF): quando o agente do Chatwoot confirma um horário com o lead, precisa de uma rota nova tipo `POST /api/webhooks/n8n/agendamento` (mesmo padrão fail-closed de secret do webhook Hotmart) que grava o agendamento e avança a etapa da jornada.
+   - Não desenhar isso ainda — só registrado aqui para não se perder. Quando entrar em pauta, é tarefa de `arquiteto` (webhook de entrada + saída, autenticação do n8n, mapeamento de campos).
 11. Portal do cliente (hoje ele interage só por link público — o que é uma decisão boa, não uma limitação).
 12. Módulo 4 com IA: padrões, frases que aumentam e reduzem conversão. **Depende do B13.**
 13. Trilha `preliminar` (POP 03-B) ligada de ponta a ponta — o roteiro já está no banco.

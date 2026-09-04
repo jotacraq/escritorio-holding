@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { buscarBriefing, gerarBriefing, listarBriefingsDaJornada, ApiError, type Briefing } from "@/lib/api";
-import { useRecurso } from "@/hooks/useRecurso";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoVazio } from "@/components/ui/Estado";
-import { BadgeConfianca, Chip, FraseComFidelidade, Hipotese, ListaEvidencias } from "@/components/briefing/atomos";
+import { BadgeConfianca, Chip, ConteudoCompacto, FraseComFidelidade, Hipotese, ListaEvidencias } from "@/components/briefing/atomos";
+import { SeloIA } from "@/components/ui/Selo";
 import {
   rotularArquetipo,
   rotularDisc,
@@ -46,6 +46,12 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
   const c = briefing.conteudo as unknown as BriefingConteudoV2;
   return (
     <div className="flex flex-col gap-6">
+      {/* Resumo compacto (Tarefa 3) — mesma peça do Modo Conduzir Sessão
+          (`PainelBriefingSessao.tsx`), promovida para o topo da versão
+          completa. Sem sticky/localStorage/recolher aqui: sem `sessaoId`
+          não há chave de persistência sensata para recolher/expandir. */}
+      <ConteudoCompacto briefing={briefing} c={c} />
+
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-linha bg-papel-fundo px-3.5 py-2.5">
         <BadgeConfianca valor={briefing.grau_confianca} />
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-tinta-suave">
@@ -59,6 +65,8 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
           )}
         </div>
       </div>
+
+      <p className="border-t border-linha pt-4 text-xs font-bold uppercase tracking-wide text-tinta-fraca">Análise completa — 13 seções</p>
 
       {(briefing.modo_reduzido ?? !briefing.fontes_usadas.includes("transcricao")) && (
         <p role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-[color:var(--ambar)]">
@@ -178,9 +186,27 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
   );
 }
 
-export function BriefingAba({ jornadaId, briefingAtualId }: { jornadaId: string; briefingAtualId: string | null }) {
-  const buscar = useCallback(() => (briefingAtualId ? buscarBriefing(briefingAtualId) : Promise.resolve(null)), [briefingAtualId]);
-  const { dados: briefing, carregando, erro: erroCarregarBruto, setDados: setBriefing } = useRecurso(buscar, [briefingAtualId]);
+export function BriefingAba({
+  jornadaId,
+  briefing,
+  setBriefing,
+  carregando = false,
+  erro: erroCarregarBruto = null,
+  temAnaliseSessao,
+}: {
+  jornadaId: string;
+  /** Briefing atual, já buscado pelo pai (`useBriefingAtual`, Tarefa 5) —
+   * compartilhado com `CabecalhoFicha`, uma única requisição por jornada
+   * aberta em vez de duas. */
+  briefing: Briefing | null;
+  setBriefing: (b: Briefing | null) => void;
+  carregando?: boolean;
+  erro?: unknown;
+  /** `true` quando `ficha.timeline` (já carregada no pai) tem um evento
+   * `analise_sessao` — liga a barra "Sessão já realizada" sem fetch novo.
+   * Nunca aparece sem essa evidência (regra do plano: sem link morto). */
+  temAnaliseSessao?: boolean;
+}) {
   const erroCarregar = erroCarregarBruto instanceof ApiError ? erroCarregarBruto : erroCarregarBruto ? new ApiError("Erro ao carregar briefing", 500) : null;
 
   const [gerando, setGerando] = useState(false);
@@ -217,8 +243,18 @@ export function BriefingAba({ jornadaId, briefingAtualId }: { jornadaId: string;
 
   return (
     <div className="flex flex-col gap-5">
+      {temAnaliseSessao && (
+        <a
+          href={`#analise-sessao`}
+          className="nao-imprimir rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-sm text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+        >
+          Sessão já realizada — ver a Análise da Sessão
+        </a>
+      )}
+
       <div className="nao-imprimir flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <SeloIA />
           <Botao variante="primario" carregando={gerando} onClick={() => gerar(!briefing)}>
             {briefing ? "Regerar briefing" : "Gerar briefing"}
           </Botao>

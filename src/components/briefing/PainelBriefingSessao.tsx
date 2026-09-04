@@ -6,14 +6,8 @@ import { buscarBriefing, gerarBriefing, ApiError, type BriefingResumo } from "@/
 import { useRecurso } from "@/hooks/useRecurso";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando } from "@/components/ui/Estado";
-import { BadgeConfianca, Chip, FraseComFidelidade } from "@/components/briefing/atomos";
-import {
-  rotularDisc,
-  rotularProbabilidade,
-  rotularTom,
-  tomProbabilidade,
-  type BriefingConteudoV2,
-} from "@/components/briefing/tipos";
+import { ConteudoCompacto } from "@/components/briefing/atomos";
+import type { BriefingConteudoV2 } from "@/components/briefing/tipos";
 
 /** Chave de localStorage: aberto/fechado é decisão do usuário, sobrevive a F5. */
 function chaveAberto(sessaoId: string) {
@@ -55,6 +49,9 @@ export function PainelBriefingSessao({
   useEffect(() => {
     try {
       const salvo = window.localStorage.getItem(chaveAberto(sessaoId));
+      // Leitura de um sistema externo (localStorage) após montar — mesmo caso
+      // legítimo documentado em `useTema.ts`.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (salvo !== null) setAberto(salvo === "1");
     } catch {
       /* localStorage indisponível — mantém aberto por padrão */
@@ -169,113 +166,3 @@ function mensagemErroGerar(erro: ApiError): string {
   return erro.message;
 }
 
-function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: number | null; modo_reduzido?: boolean }; c: BriefingConteudoV2 }) {
-  const objecaoPrincipal =
-    c.objecoes_provaveis.find((o) => o.probabilidade === "alta") ?? c.objecoes_provaveis[0] ?? null;
-  const naoFazer = c.pontos_de_atencao.slice(0, 3);
-
-  return (
-    <div className="flex flex-col gap-4 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <BadgeConfianca valor={briefing.grau_confianca} />
-        {briefing.modo_reduzido && (
-          <span className="rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ambar)]">
-            Sem transcrição
-          </span>
-        )}
-      </div>
-
-      <BlocoCompacto titulo="Objeção mais provável e como tratar">
-        {objecaoPrincipal ? (
-          <>
-            <p>
-              <strong>{objecaoPrincipal.objecao}</strong>{" "}
-              <Chip tom={tomProbabilidade(objecaoPrincipal.probabilidade)}>{rotularProbabilidade(objecaoPrincipal.probabilidade)}</Chip>
-            </p>
-            <p className="mt-1 text-tinta-suave">{objecaoPrincipal.justificativa}</p>
-          </>
-        ) : (
-          <p className="text-tinta-fraca">Nenhuma objeção identificada.</p>
-        )}
-        {c.estrategia_sessao.tratamento_objecoes && (
-          <p className="mt-2 border-t border-linha pt-2 text-tinta-suave">
-            <strong className="text-tinta">Como tratar:</strong> {c.estrategia_sessao.tratamento_objecoes}
-          </p>
-        )}
-      </BlocoCompacto>
-
-      <BlocoCompacto titulo="Perfil e linguagem">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Chip tom="azul">{rotularDisc(c.perfil_disc.predominante)}</Chip>
-          {c.perfil_disc.secundario && <Chip>secundário: {rotularDisc(c.perfil_disc.secundario)}</Chip>}
-          <span className="text-xs text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
-        </div>
-        {c.linguagem_recomendada.tom.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {c.linguagem_recomendada.tom.map((t) => (
-              <Chip key={t}>{rotularTom(t)}</Chip>
-            ))}
-          </div>
-        )}
-        {c.motivadores.principal && (
-          <p className="mt-2 text-tinta-suave">
-            <strong className="text-tinta">Motivador principal:</strong> {c.motivadores.principal}
-          </p>
-        )}
-      </BlocoCompacto>
-
-      {naoFazer.length > 0 && (
-        <BlocoCompacto titulo="O que não fazer" tom="vermelho">
-          <ul className="flex flex-col gap-1.5">
-            {naoFazer.map((p, i) => (
-              <li key={i}>
-                <strong>{p.nao_fazer}</strong>
-                <span className="text-tinta-suave"> — {p.motivo}</span>
-              </li>
-            ))}
-          </ul>
-        </BlocoCompacto>
-      )}
-
-      {c.frases_para_o_fechamento.length > 0 && (
-        <BlocoCompacto titulo="Frases do cliente para o fechamento">
-          <ul className="flex flex-col gap-2">
-            {c.frases_para_o_fechamento.map((f, i) => (
-              <li key={i}>
-                <FraseComFidelidade frase={f.frase_literal} />
-                <p className="mt-0.5 text-tinta-suave">Como usar: {f.como_usar}</p>
-              </li>
-            ))}
-          </ul>
-        </BlocoCompacto>
-      )}
-
-      {(c.estrategia_sessao.momento_croqui || c.estrategia_sessao.momento_investimento) && (
-        <BlocoCompacto titulo="Croqui e investimento — quando apresentar">
-          {c.estrategia_sessao.momento_croqui && (
-            <p><strong>Croqui:</strong> {c.estrategia_sessao.momento_croqui}</p>
-          )}
-          {c.estrategia_sessao.momento_investimento && (
-            <p className="mt-1"><strong>Investimento:</strong> {c.estrategia_sessao.momento_investimento}</p>
-          )}
-        </BlocoCompacto>
-      )}
-
-      {c.lacunas.length > 0 && (
-        <p role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
-          Lacunas nesta análise: {c.lacunas.join(" · ")}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function BlocoCompacto({ titulo, tom = "neutro", children }: { titulo: string; tom?: "neutro" | "vermelho"; children: React.ReactNode }) {
-  const bordas = tom === "vermelho" ? "border-vermelho/40" : "border-linha";
-  return (
-    <section className={`rounded-sm border ${bordas} px-3 py-2.5`}>
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
-      <div className="text-tinta">{children}</div>
-    </section>
-  );
-}
