@@ -40,7 +40,11 @@ function recortar(base: Record<string, unknown>, manter: string[]): Record<strin
   return { ...base, properties: novasProps, required: manter.filter((c) => c in props) };
 }
 
-async function testar(nome: string, esquema: Record<string, unknown>): Promise<ResultadoSonda> {
+async function testar(
+  nome: string,
+  esquema: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+): Promise<ResultadoSonda> {
   const texto = JSON.stringify(esquema);
   const resposta = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -55,6 +59,7 @@ async function testar(nome: string, esquema: Record<string, unknown>): Promise<R
       max_tokens: 16,
       response_format: { type: "json_schema", json_schema: { name: "sonda", strict: true, schema: esquema } },
       provider: { order: ["anthropic"], allow_fallbacks: false, require_parameters: true },
+      ...extra,
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -98,7 +103,20 @@ export async function POST() {
       resultados.push(await testar(nome, recortar(cheio, manter)));
     }
 
-    return NextResponse.json({ resultados });
+    // Segunda pergunta: o provedor aceita campo de raciocinio? O 400 que
+    // levou a culpa disso em 04/09/2026 era do schema — entao a pergunta
+    // continua aberta, e so a API responde. Schema minimo de proposito: aqui
+    // se testa o campo de raciocinio, nao o tamanho da gramatica.
+    const minimo = recortar(cheio, ["resumo_executivo", "grau_confianca"]);
+    const raciocinio: ResultadoSonda[] = [
+      await testar("raciocinio: nenhum", minimo),
+      await testar("raciocinio: effort low", minimo, { reasoning: { effort: "low" } }),
+      await testar("raciocinio: effort high", minimo, { reasoning: { effort: "high" } }),
+      await testar("raciocinio: max_tokens 1024", minimo, { reasoning: { max_tokens: 1024 } }),
+      await testar("raciocinio: enabled false", minimo, { reasoning: { enabled: false } }),
+    ];
+
+    return NextResponse.json({ resultados, raciocinio });
   } catch (erro) {
     return respostaErro("POST /api/admin/sonda-schema", erro);
   }
