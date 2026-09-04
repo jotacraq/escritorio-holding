@@ -87,7 +87,8 @@ Três frases que mudam o produto inteiro, e vêm do documento institucional da p
 ```bash
 git clone https://github.com/jotacraq/escritorio-holding.git
 cd escritorio-holding
-npm install                 # cuidado: npm install no Windows poda deps opcionais de Linux do lockfile
+npm ci                      # `ci`, não `install`: no Windows o install PODA as deps
+                            # opcionais de Linux do lockfile e quebra o build da Hostinger
 cp .env.example .env.local  # preencher, ver §4
 npm run dev                 # http://localhost:3000
 ```
@@ -101,6 +102,19 @@ npm run dev                 # http://localhost:3000
 Outras contas: `relacionamento@exemplo.com.br` (papel restrito) e `intruso@exemplo.com.br` (autenticado **sem** convite — usado para provar que a RLS nega tudo).
 
 O banco é compartilhado: **a máquina nova já vê todo o dado**, não precisa recriar nada.
+
+**Publicar de lá:** o deploy não é automático por push. Carimbe a versão, empacote
+só o que está versionado e mande pela API da Hostinger:
+
+```bash
+git rev-parse --short HEAD > public/versao.txt   # e commite este carimbo
+git archive --format=zip -o sichf.zip HEAD       # sem node_modules, sem .next
+# → ferramenta de deploy da Hostinger, domínio escritorio.grupoparticipa.app.br
+```
+
+Leva de 4 a 10 minutos. **Confirme comparando `/versao.txt` da produção com o
+commit** — já houve dia de o servidor seguir rodando build antigo depois de seis
+deploys, e sem essa conferência não dá para saber.
 
 ---
 
