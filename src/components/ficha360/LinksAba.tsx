@@ -53,6 +53,7 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
   const [linkRecemEmitido, setLinkRecemEmitido] = useState<{ tipo: TipoLinkPublico; url: string; aviso: string | null; horariosOfertados: number | null } | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [confirmandoMaterial, setConfirmandoMaterial] = useState(false);
+  const [linkParaRevogar, setLinkParaRevogar] = useState<LinkPublicoResumo | null>(null);
 
   if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar os links" />;
   if (carregando) return <EstadoCarregando rotulo="Carregando links…" />;
@@ -102,6 +103,13 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
     } finally {
       setRevogando(null);
     }
+  }
+
+  function confirmarRevogacao() {
+    if (!linkParaRevogar) return;
+    const id = linkParaRevogar.id;
+    setLinkParaRevogar(null);
+    revogar(id);
   }
 
   async function copiar(url: string) {
@@ -173,6 +181,21 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
         aoCancelar={() => setConfirmandoMaterial(false)}
       />
 
+      <ConfirmarAcao
+        aberto={linkParaRevogar !== null}
+        titulo="Revogar este link?"
+        efeito={
+          linkParaRevogar
+            ? `O cliente não conseguirá mais acessar o link de ${ROTULOS_TIPO[linkParaRevogar.tipo]} (${linkParaRevogar.token_prefixo}…). Essa ação não pode ser desfeita — para o cliente acessar de novo, será preciso emitir um link novo.`
+            : ""
+        }
+        rotuloConfirmar="Revogar"
+        confirmando={revogando !== null}
+        perigo
+        aoConfirmar={confirmarRevogacao}
+        aoCancelar={() => setLinkParaRevogar(null)}
+      />
+
       {!links || links.length === 0 ? (
         <EstadoVazio titulo="Nenhum link emitido para esta jornada" />
       ) : (
@@ -191,7 +214,7 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
               <div className="flex items-center gap-2">
                 <Selo tom={tomEstado(link.estado)}>{ROTULOS_ESTADO[link.estado]}</Selo>
                 {link.estado === "ativo" && (
-                  <Botao variante="perigo" className="text-xs" carregando={revogando === link.id} onClick={() => revogar(link.id)}>
+                  <Botao variante="perigo" className="text-xs" carregando={revogando === link.id} onClick={() => setLinkParaRevogar(link)}>
                     Revogar
                   </Botao>
                 )}

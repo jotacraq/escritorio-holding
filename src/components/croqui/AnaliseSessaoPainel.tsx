@@ -225,6 +225,11 @@ export function AnaliseSessaoPainel({
           {!sessaoId && <span className="text-xs text-tinta-fraca">Sem Sessão de Viabilidade registrada — o texto acima é usado direto, sem ficar salvo.</span>}
           {salvo && !erroSalvar && <span role="status" className="text-xs text-[color:var(--verde)]">Transcrição salva.</span>}
         </div>
+        {gerando && (
+          <p role="status" className="text-xs text-tinta-suave">
+            Gerando com IA — isso pode levar até 1 minuto. A tela não travou, aguarde.
+          </p>
+        )}
         {erroSalvar && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{mensagemErroAnalise(erroSalvar)}</p>}
         {erroGerar && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{mensagemErroAnalise(erroGerar)}</p>}
       </section>

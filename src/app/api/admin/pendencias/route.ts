@@ -38,9 +38,7 @@ export async function GET() {
       sistema: (data as PendenciaSistema[] | null) ?? [],
       materiais_aguardando_aprovacao: {
         disponivel: false,
-        motivo:
-          "Tabela 'materiais_pos_sessao' ainda não existe (migration 0031, ONDA 3, não escrita nesta noite). " +
-          "Quando existir, esta aba passa a listar o material pendente de aprovação humana (BLOQUEIO B14).",
+        motivo: "Este recurso ainda não está disponível.",
       },
     };
 

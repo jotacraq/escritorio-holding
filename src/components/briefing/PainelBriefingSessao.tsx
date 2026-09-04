@@ -144,6 +144,11 @@ function SemBriefing({ gerando, erro, aoGerar }: { gerando: boolean; erro: ApiEr
       <Botao variante="primario" carregando={gerando} onClick={aoGerar} className="mt-1">
         Gerar briefing agora
       </Botao>
+      {gerando && (
+        <p role="status" className="text-xs text-tinta-suave">
+          Gerando com IA — isso costuma levar de 30 segundos a 1 minuto. A tela não travou, aguarde.
+        </p>
+      )}
       {erro && (
         <p role="alert" className="w-full rounded-sm border border-vermelho bg-vermelho-fraco px-2.5 py-2 text-xs text-[color:var(--vermelho)]">
           {mensagemErroGerar(erro)}

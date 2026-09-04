@@ -96,14 +96,21 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
 
       {erroAcao && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erroAcao}</p>}
 
-      <div className="nao-imprimir flex flex-wrap gap-2">
-        <Botao variante="secundario" carregando={gerando} onClick={() => gerar(false)}>
-          {atual ? "Gerar nova versão" : "Gerar material"}
-        </Botao>
-        {atual && (
-          <Botao variante="fantasma" className="text-xs" carregando={gerando} onClick={() => gerar(true)}>
-            Forçar regeração
+      <div className="flex flex-col gap-1.5">
+        <div className="nao-imprimir flex flex-wrap gap-2">
+          <Botao variante="secundario" carregando={gerando} onClick={() => gerar(false)}>
+            {atual ? "Gerar nova versão" : "Gerar material"}
           </Botao>
+          {atual && (
+            <Botao variante="fantasma" className="text-xs" carregando={gerando} onClick={() => gerar(true)}>
+              Forçar regeração
+            </Botao>
+          )}
+        </div>
+        {gerando && (
+          <p role="status" className="text-xs text-tinta-suave">
+            Gerando com IA — isso pode levar até 1 minuto. A tela não travou, aguarde.
+          </p>
         )}
       </div>
 

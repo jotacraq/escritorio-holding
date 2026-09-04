@@ -148,7 +148,11 @@ export async function gerarBriefing(
       .eq("atual", true)
       .maybeSingle();
     if (existente) {
-      throw new ErroIa("briefing_atual_ja_existe: use forcar_regeracao=true para regerar", 409, "conflito");
+      throw new ErroIa(
+        "Já existe um Briefing gerado para esta jornada. Use o botão \"Regerar briefing\" para criar uma nova versão.",
+        409,
+        "conflito",
+      );
     }
   }
 

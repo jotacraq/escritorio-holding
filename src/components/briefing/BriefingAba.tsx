@@ -299,11 +299,18 @@ export function BriefingAba({
       )}
 
       <div className="nao-imprimir flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <SeloIA />
-          <Botao variante="primario" carregando={gerando} onClick={() => gerar(!briefing)}>
-            {briefing ? "Regerar briefing" : "Gerar briefing"}
-          </Botao>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <SeloIA />
+            <Botao variante="primario" carregando={gerando} onClick={() => gerar(Boolean(briefing))}>
+              {briefing ? "Regerar briefing" : "Gerar briefing"}
+            </Botao>
+          </div>
+          {gerando && (
+            <p role="status" className="text-xs text-tinta-suave">
+              Gerando com IA — isso costuma levar de 30 segundos a 1 minuto. A tela não travou, aguarde.
+            </p>
+          )}
         </div>
         {historico && historico.length > 1 && (
           <label className="flex items-center gap-2 text-sm">
@@ -348,7 +355,7 @@ export function BriefingAba({
         rotuloConfirmar="Gerar mesmo assim"
         confirmando={gerando}
         perigo
-        aoConfirmar={() => gerar(!briefing, true)}
+        aoConfirmar={() => gerar(Boolean(briefing), true)}
         aoCancelar={() => setConfirmandoForcar(false)}
       />
 

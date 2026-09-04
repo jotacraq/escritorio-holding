@@ -8,6 +8,7 @@ import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
 import { Selo, SeloDadoExemplo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { objecaoPrincipal } from "@/components/briefing/atomos";
+import { rotularDisc } from "@/components/briefing/tipos";
 import type { ItemPendencia } from "@/components/ui/pendencias";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
@@ -52,7 +53,11 @@ function FaixaVital({ ficha, rotuloEtapa, briefing, podeVerPatrimonio, pendencia
     itens.push({ rotulo: "Familiares mapeados", valor: String(familiares.length), href: "#patrimonio" });
   }
   if (disc) {
-    itens.push({ rotulo: "DISC", valor: disc.secundario ? `${disc.predominante} / ${disc.secundario}` : disc.predominante, href: "#briefing" });
+    itens.push({
+      rotulo: "Perfil comportamental (DISC)",
+      valor: disc.secundario ? `${rotularDisc(disc.predominante)} / ${rotularDisc(disc.secundario)}` : rotularDisc(disc.predominante),
+      href: "#briefing",
+    });
   }
   if (objecao) {
     itens.push({ rotulo: "Objeção provável", valor: objecao.objecao, href: "#briefing" });
