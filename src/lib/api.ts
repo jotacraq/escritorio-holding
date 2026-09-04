@@ -570,7 +570,8 @@ export async function buscarBriefing(id: string): Promise<Briefing> {
   };
 }
 
-/** ASSUMIDO — histórico de versões (F5 pede). Sem rota documentada em §3. */
+/** Histórico de versões do Briefing. A rota existe desde 04/09/2026 — antes
+ * disso `chamarOpcional` engolia o 404 e o histórico sumia em silêncio. */
 export function listarBriefingsDaJornada(jornadaId: string) {
   return chamarOpcional<{ itens: Pick<Briefing, "id" | "versao" | "grau_confianca" | "criado_em">[] }>(`/api/jornadas/${jornadaId}/briefings`);
 }
