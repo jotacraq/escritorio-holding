@@ -42,21 +42,21 @@ export function CustoIaAba() {
             </p>
           ) : (
             <>
-              <p className="font-serif text-3xl font-semibold text-tinta">{formatarMoeda(resumo.custo_real_total_usd)}</p>
+              <p className="font-serif text-3xl font-bold text-tinta">{formatarMoeda(resumo.custo_real_total_usd)}</p>
               <p className="text-xs text-tinta-suave">{resumo.execucoes_reais} execução(ões) real(is)</p>
             </>
           )}
         </div>
         <div className="rounded-sm border border-linha border-dashed bg-papel p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">Demonstração (não soma no real)</p>
-          <p className="font-serif text-3xl font-semibold text-tinta-suave">{formatarMoeda(resumo.custo_demonstracao_total_usd)}</p>
+          <p className="font-serif text-3xl font-bold text-tinta-suave">{formatarMoeda(resumo.custo_demonstracao_total_usd)}</p>
           <p className="text-xs text-tinta-suave">{resumo.execucoes_demonstracao} execução(ões) de demonstração</p>
         </div>
       </div>
 
       {por_mes.length > 0 && (
         <div>
-          <h3 className="mb-1.5 font-serif text-base font-semibold text-tinta">Por mês</h3>
+          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por mês</h3>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-collapse text-sm">
               <thead>
@@ -92,7 +92,7 @@ export function CustoIaAba() {
 
       {por_prompt.length > 0 && (
         <div>
-          <h3 className="mb-1.5 font-serif text-base font-semibold text-tinta">Por versão de prompt</h3>
+          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por versão de prompt</h3>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
@@ -129,7 +129,7 @@ export function CustoIaAba() {
 
       {por_jornada.length > 0 && (
         <div>
-          <h3 className="mb-1.5 font-serif text-base font-semibold text-tinta">Por jornada (top 50)</h3>
+          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por jornada (top 50)</h3>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>

@@ -54,7 +54,7 @@ function ListaAfirmacoes({ itens }: { itens: Afirmacao[] }) {
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="rounded-sm border border-linha px-3.5 py-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
+      <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       {children}
     </section>
   );
@@ -196,7 +196,7 @@ export function AnaliseSessaoPainel({
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-tinta">Transcrição da Sessão de Viabilidade</h3>
+          <h3 className="text-sm font-bold text-tinta">Transcrição da Sessão de Viabilidade</h3>
           {carregandoTranscricao && <span className="text-xs text-tinta-fraca">Carregando…</span>}
           {transcricaoResp?.transcricao && (
             <span className="text-xs text-tinta-fraca">

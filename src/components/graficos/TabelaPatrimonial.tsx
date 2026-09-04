@@ -134,7 +134,7 @@ type Cores = (typeof PALETA_GRAFICO)["claro"];
 
 function Th({ children, align = "left", cores }: { children: React.ReactNode; align?: "left" | "right"; cores: Cores }) {
   return (
-    <th scope="col" className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide ${align === "right" ? "text-right" : "text-left"}`} style={{ color: cores.tintaSuave }}>
+    <th scope="col" className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${align === "right" ? "text-right" : "text-left"}`} style={{ color: cores.tintaSuave }}>
       {children}
     </th>
   );

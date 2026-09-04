@@ -107,7 +107,7 @@ export default function PaginaComunicacao() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Comunicação</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">Comunicação</h1>
         <p className="text-sm text-tinta-suave">Fila da régua automática de e-mail e a fila manual de WhatsApp.</p>
       </div>
 

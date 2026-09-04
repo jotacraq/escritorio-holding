@@ -68,17 +68,17 @@ export function SelecionarSessaoApp() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="font-serif text-xl font-semibold text-tinta">Conduzir sessão</h1>
+        <h1 className="font-serif text-xl font-bold text-tinta">Conduzir sessão</h1>
         <p className="text-sm text-tinta-suave">Escolha a jornada para abrir o roteiro da Sessão de Viabilidade em tela cheia.</p>
       </header>
 
       <section>
-        <h2 className="mb-2 font-serif text-base font-semibold text-tinta">A conduzir</h2>
+        <h2 className="mb-2 font-serif text-base font-bold text-tinta">A conduzir</h2>
         <ListaJornadas itens={agendadas ?? []} vazioTitulo="Nenhuma sessão agendada aguardando condução" />
       </section>
 
       <section>
-        <h2 className="mb-2 font-serif text-base font-semibold text-tinta">Já realizadas</h2>
+        <h2 className="mb-2 font-serif text-base font-bold text-tinta">Já realizadas</h2>
         <ListaJornadas itens={realizadas ?? []} vazioTitulo="Nenhuma sessão realizada ainda" />
       </section>
     </div>

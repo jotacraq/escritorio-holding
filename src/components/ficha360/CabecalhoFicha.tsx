@@ -199,7 +199,7 @@ export function CabecalhoFicha({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-serif text-2xl font-semibold text-tinta">{pessoa.nome}</h1>
+            <h1 className="font-serif text-2xl font-bold text-tinta">{pessoa.nome}</h1>
             {jornada.origem_dado === "exemplo" && <SeloDadoExemplo />}
           </div>
           <p className="text-sm text-tinta-suave">
@@ -215,7 +215,7 @@ export function CabecalhoFicha({
           <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
           <Link
             href={`/sessoes/${jornada.id}/conduzir`}
-            className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-sm border border-transparent bg-[color:var(--latao)] px-3.5 py-2 text-sm font-medium text-papel-elevado transition-colors hover:bg-[color:var(--latao-forte)]"
+            className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-full border border-transparent bg-[color:var(--latao-cta)] px-3.5 py-2 text-sm font-medium text-[color:var(--latao-cta-texto)] shadow-[0_3px_0_0_var(--latao-cta-forte)] transition-colors hover:bg-[color:var(--latao-cta-forte)] hover:shadow-none active:translate-y-[1px] active:shadow-none"
           >
             Conduzir sessão
           </Link>

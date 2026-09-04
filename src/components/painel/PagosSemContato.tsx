@@ -45,13 +45,13 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                   pago em {formatarData(item.pago_em)}
                 </span>
 
-                <span className="whitespace-nowrap text-sm font-semibold text-[color:var(--vermelho)]">
+                <span className="whitespace-nowrap text-sm font-bold text-[color:var(--vermelho)]">
                   {rotuloDias(item.dias_desde_pagamento)}
                 </span>
 
                 <Link
                   href={`/jornadas/${item.jornada_id}`}
-                  className="self-start rounded-sm border border-[color:var(--vermelho)] bg-vermelho-fraco px-2.5 py-1 text-xs font-semibold text-[color:var(--vermelho)] hover:bg-transparent sm:ml-auto sm:self-auto"
+                  className="self-start rounded-sm border border-[color:var(--vermelho)] bg-vermelho-fraco px-2.5 py-1 text-xs font-bold text-[color:var(--vermelho)] hover:bg-transparent sm:ml-auto sm:self-auto"
                 >
                   Contatar agora
                 </Link>

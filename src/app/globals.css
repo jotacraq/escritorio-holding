@@ -17,9 +17,31 @@
   --tinta-fraca: #85837a;
   --linha: #ded9c9;
   --linha-forte: #c7c0aa;
-  --latao: #7c5e26;
-  --latao-forte: #5f4718;
-  --latao-fraco: #efe4c9;
+
+  /* Cor de marca — fidelidade total ao seminário (guardioesdolegado.com.br/ak1,
+     decisão do Marcio em 04/09/2026): mesmo matiz de `#ff7400` (H 27,29°) em
+     todo o sistema, claro e escuro. `--latao` (nome do token preservado —
+     era o "selo de latão" do design system original; agora carrega o laranja
+     da marca) é usado majoritariamente como TEXTO/borda/outline/accent sobre
+     fundo claro (ver Nav, Abas, links de Ficha 360, radio/checkbox) — por
+     isso aqui é a variante ESCURECIDA do laranja (mesmo H/S, V=0,72):
+     `#b85400` mede 4,80:1 sobre `--papel-elevado` (WCAG AA, fórmula oficial,
+     folga de +0,30 acima do mínimo 4,5). O laranja PURO do seminário
+     (`#ff7400`) mede só 2,66:1 aqui — reprovaria como texto/borda.
+     `--latao-cta` é token SEPARADO para fundo de botão/CTA (ver `Botao.tsx`),
+     mantido no laranja puro nos dois temas — ver comentário no bloco `.dark`. */
+  --latao: #b85400;
+  --latao-forte: #944300;
+  --latao-fraco: #ffc290;
+  --latao-cta: #ff7400;
+  --latao-cta-forte: #d46203;
+  /* Texto sobre fundo `--latao-cta`: FIXO e escuro nos dois temas — nunca
+     `--tinta` (que se inverte no dark e mede só 2,23:1 sobre o laranja).
+     `#141b22` é o `--ink` do seminário: 6,41:1 sobre `#ff7400` (AA/AAA).
+     Mesma regra de acessibilidade da Fase 1 (área pública): o site do
+     seminário usa texto CLARO sobre laranja (~2,6:1, reprova) — aqui não se
+     replica isso, só a forma. Ver `CONTINUAR-AQUI.md` / diário 04/09/2026. */
+  --latao-cta-texto: #141b22;
   --verde: #2f6b4f;
   --verde-fraco: #e4efe8;
   --vermelho: #9c3b2e;
@@ -51,9 +73,19 @@
   --tinta-fraca: #837f72;
   --linha: #2d2f34;
   --linha-forte: #3c3e44;
-  --latao: #d3ac4c;
-  --latao-forte: #e9c765;
+  /* Mesmo matiz de `#ff7400`; no escuro o laranja puro já bate AA como
+     texto/borda: 6,09:1 sobre `--papel-elevado` escuro (`#1d1f23`) — não
+     precisa escurecer como no claro. `--latao-forte` sobe um pouco mais
+     claro (S=0,80) para hover continuar distinguível: 7,30:1. */
+  --latao: #ff7400;
+  --latao-forte: #ff9033;
   --latao-fraco: #362c14;
+  /* CTA no escuro reusa o mesmo `--latao` (já é o puro do seminário) — só
+     redeclarado aqui para o token existir nos dois temas sem depender de
+     herança do `:root`. */
+  --latao-cta: #ff7400;
+  --latao-cta-forte: #ff9033;
+  --latao-cta-texto: #141b22;
   --verde: #5fa683;
   --verde-fraco: #163024;
   --vermelho: #e08979;
@@ -79,6 +111,9 @@
   --color-latao: var(--latao);
   --color-latao-forte: var(--latao-forte);
   --color-latao-fraco: var(--latao-fraco);
+  --color-latao-cta: var(--latao-cta);
+  --color-latao-cta-forte: var(--latao-cta-forte);
+  --color-latao-cta-texto: var(--latao-cta-texto);
   --color-verde: var(--verde);
   --color-verde-fraco: var(--verde-fraco);
   --color-vermelho: var(--vermelho);
@@ -89,9 +124,41 @@
   --color-azul: var(--azul);
   --color-azul-fraco: var(--azul-fraco);
 
-  --font-serif: var(--font-plex-serif), "Iowan Old Style", Georgia, serif;
-  --font-sans: var(--font-plex-sans), "Segoe UI", Helvetica, Arial, sans-serif;
+  /* Fidelidade total ao seminário (decisão do Marcio, 04/09/2026): fonte
+     Neuetra em todo o sistema (corpo e títulos), pesos 400/500/700, fallback
+     de sistema. Substitui IBM Plex Serif/Sans — `--font-plex-*` continuam
+     carregados via `next/font` em `layout.tsx` só para não quebrar nada que
+     referencie a variável, mas não são mais a fonte ativa (ver comentário
+     no `@font-face` abaixo). */
+  --font-serif: "Neuetra", var(--font-plex-serif), "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Neuetra", var(--font-plex-sans), "Segoe UI", system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), "SFMono-Regular", Consolas, monospace;
+}
+
+/* Fonte Neuetra — mesmos arquivos do seminário (guardioesdolegado.com.br/ak1),
+   baixados para `public/fonts/`. Pesos 400/500/700 (a única variação que o
+   seminário usa — nunca 600/800). `font-display: swap` evita FOIT; fallback
+   de sistema no `--font-sans`/`--font-serif` acima cobre falha de rede. */
+@font-face {
+  font-family: "Neuetra";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/TBJNeuetra-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Neuetra";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/TBJNeuetra-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Neuetra";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/TBJNeuetra-Bold.woff2") format("woff2");
 }
 
 * {
@@ -109,6 +176,12 @@ body {
   background: var(--papel-fundo);
   color: var(--tinta);
   font-family: var(--font-sans);
+  /* Neuetra só declara os pesos 400/500/700 (@font-face acima) — sem isso,
+     qualquer peso não declarado (ex.: 600 de `font-semibold`, se reaparecer)
+     faz o navegador sintetizar um bold artificial que destoa visualmente do
+     resto da fonte (traços engrossados de forma desigual). Preferível cair
+     no peso real mais próximo do que inventar um. */
+  font-synthesis: none;
 }
 
 h1, h2, h3, h4 {
@@ -161,15 +234,27 @@ h1, h2, h3, h4 {
 /*                                                                          */
 /* Identidade visual do seminário de vendas (guardioesdolegado.com.br/ak1) */
 /* — Fase 1 do plano do arquiteto (04/09/2026): continuidade visual entre  */
-/* "vi o seminário" e "recebi o link do formulário". Tokens redefinidos    */
-/* SÓ neste escopo — não tocam `:root`/`.dark` (fora de escopo: Fase 2 é   */
-/* o app interno, com a paleta dourado/papel/tinta, deliberada à parte).   */
+/* "vi o seminário" e "recebi o link do formulário".                       */
 /*                                                                          */
 /* Correção de acessibilidade OBRIGATÓRIA em relação ao site do seminário: */
 /* lá o CTA usa texto claro sobre laranja (~2,6:1, reprova WCAG). Aqui o   */
 /* texto sobre elementos laranja é sempre ESCURO (`--tinta`, mapeado do    */
 /* `--ink` do seminário), medido em 6,41:1 (#141b22 sobre #ff7400) — passa */
 /* AA e AAA para qualquer tamanho de texto.                                */
+/*                                                                          */
+/* NÃO duplica os tokens globais (Fase 2, 04/09/2026 — fidelidade total    */
+/* também no interno): os valores aqui continuam DIFERENTES de propósito.  */
+/* `--papel-elevado` público é `#ffffff` puro (não `#fffdf8`), e `--latao` */
+/* público é o laranja PURO `#ff7400` (não `#b85400`) porque, neste        */
+/* escopo, `--latao` só é usado como FUNDO de CTA com `text-tinta` fixo    */
+/* escuro por cima — nunca como texto/borda sobre fundo claro. O interno   */
+/* usa `--latao` também como texto/borda/outline em dezenas de lugares     */
+/* (`Nav`, `Abas`, links de Ficha 360), o que exige o tom mais escuro para */
+/* bater 4,5:1 — por isso lá o fundo de CTA tem token PRÓPRIO,             */
+/* `--latao-cta` (ver `:root`/`.dark`), separado de `--latao`. Manter os   */
+/* dois blocos de tokens é a correção certa, não redundância.              */
+/* `color-scheme: light` continua forçado abaixo — regra à parte ("sempre  */
+/* claro", não "cor de marca") que não muda com nada disto.                */
 /* ---------------------------------------------------------------------- */
 .area-publica {
   /* Tema sempre claro, independente de `.dark`/`prefers-color-scheme`     */

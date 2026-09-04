@@ -132,7 +132,7 @@ export function AssistenteImportacao({ aoCriada }: { aoCriada: (importacao: Impo
       {amostra && (etapa === "mapear" || etapa === "enviando") && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-serif text-lg font-semibold text-tinta">Casar coluna do arquivo com campo do sistema</h2>
+            <h2 className="font-serif text-lg font-bold text-tinta">Casar coluna do arquivo com campo do sistema</h2>
             {mapasAnteriores.length > 0 && (
               <label className="flex items-center gap-2 text-xs text-tinta-suave" htmlFor="reusar-mapa">
                 Reusar mapa de:

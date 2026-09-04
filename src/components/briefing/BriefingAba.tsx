@@ -31,7 +31,7 @@ const ROTULOS_FONTE: Record<string, string> = {
 function Secao({ numero, titulo, hipotese, children }: { numero: number; titulo: string; hipotese?: string[]; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5 border-t border-linha pt-4 first:border-t-0 first:pt-0">
-      <h3 className="font-serif text-base font-semibold text-tinta">
+      <h3 className="font-serif text-base font-bold text-tinta">
         <span className="mr-2 font-mono text-sm text-tinta-fraca">{String(numero).padStart(2, "0")}</span>
         {titulo}
         <Hipotese evidencias={hipotese} />
@@ -77,7 +77,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 
       {c.lacunas.length > 0 && (
         <div role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5">
-          <p className="text-sm font-semibold text-[color:var(--ambar)]">Lacunas — o que faltou para uma análise mais firme</p>
+          <p className="text-sm font-bold text-[color:var(--ambar)]">Lacunas — o que faltou para uma análise mais firme</p>
           <ul className="mt-1 list-inside list-disc text-sm text-[color:var(--ambar)]">
             {c.lacunas.map((l, i) => <li key={i}>{l}</li>)}
           </ul>
@@ -164,7 +164,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       </Secao>
 
       <section className="flex flex-col gap-1.5 border-t border-linha pt-4">
-        <h3 className="font-serif text-base font-semibold text-tinta">Processo decisório (POP 03)</h3>
+        <h3 className="font-serif text-base font-bold text-tinta">Processo decisório (POP 03)</h3>
         <p><strong>Velocidade:</strong> <Chip>{rotularNivel(c.processo_decisorio.velocidade)}</Chip>{c.processo_decisorio.velocidade_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.velocidade_nota}</span>}</p>
         <p><strong>Necessidade de segurança:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_seguranca)}</Chip>{c.processo_decisorio.necessidade_seguranca_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_seguranca_nota}</span>}</p>
         <p><strong>Necessidade de validação:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_validacao)}</Chip>{c.processo_decisorio.necessidade_validacao_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_validacao_nota}</span>}</p>
@@ -196,9 +196,9 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 function ChecklistCompletude({ resultado }: { resultado: ResultadoCompletude }) {
   return (
     <div className="rounded-sm border border-linha bg-papel-elevado">
-      <p className="border-b border-linha px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">
+      <p className="border-b border-linha px-3.5 py-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">
         Dado insuficiente para um briefing confiável
-        <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--vermelho)]">
+        <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--vermelho)]">
           {resultado.score} de {resultado.minimo} pontos necessários
         </span>
       </p>

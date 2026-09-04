@@ -69,7 +69,7 @@ export function BadgeConfianca({ valor }: { valor: number | null }) {
 export function Hipotese({ evidencias }: { evidencias?: string[] }) {
   if (evidencias && evidencias.length > 0) return null;
   return (
-    <span className="ml-2 rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ambar)]">
+    <span className="ml-2 rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--ambar)]">
       Hipótese — sem evidência direta
     </span>
   );
@@ -99,7 +99,7 @@ export function FraseComFidelidade({ frase, status }: { frase: string; status?: 
       {status === "nao_localizada" && (
         <span
           title="Esta frase não foi localizada no material de origem (formulário, ligação ou transcrição) usado para gerar o briefing."
-          className="rounded-sm bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--vermelho)]"
+          className="rounded-sm bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--vermelho)]"
         >
           Não localizada na fonte
         </span>
@@ -112,7 +112,7 @@ function BlocoCompacto({ titulo, tom = "neutro", children }: { titulo: string; t
   const bordas = tom === "vermelho" ? "border-vermelho/40" : "border-linha";
   return (
     <section className={`rounded-sm border ${bordas} px-3 py-2.5`}>
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
+      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       <div className="text-tinta">{children}</div>
     </section>
   );
@@ -135,7 +135,7 @@ export function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: 
       <div className="flex flex-wrap items-center gap-2">
         <BadgeConfianca valor={briefing.grau_confianca} />
         {briefing.modo_reduzido && (
-          <span className="rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--ambar)]">
+          <span className="rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--ambar)]">
             Sem transcrição
           </span>
         )}

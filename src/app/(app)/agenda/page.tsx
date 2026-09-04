@@ -44,7 +44,7 @@ export default function PaginaAgenda() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Agenda</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">Agenda</h1>
         <p className="text-sm text-tinta-suave">
           Sessões marcadas, janelas de disponibilidade da advogada e bloqueios pontuais. É daqui que saem os horários
           oferecidos no link de agendamento do cliente.

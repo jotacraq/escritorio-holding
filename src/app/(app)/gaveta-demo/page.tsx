@@ -16,7 +16,7 @@ export default function PaginaGavetaDemo() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
-      <h1 className="font-serif text-2xl font-semibold text-tinta">Demonstração — Gaveta</h1>
+      <h1 className="font-serif text-2xl font-bold text-tinta">Demonstração — Gaveta</h1>
       <p className="text-sm text-tinta-suave">
         Painel lateral (Camada 2): abre sem tirar a tela de origem de vista, prende o foco enquanto aberta, fecha com
         Esc ou com o botão &ldquo;Fechar&rdquo;, e devolve o foco a este botão ao fechar.

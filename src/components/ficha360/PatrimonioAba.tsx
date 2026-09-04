@@ -529,7 +529,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
 
       <section className="flex flex-col gap-3 border-t border-linha pt-4" aria-labelledby="empresas-titulo">
         <div>
-          <h3 id="empresas-titulo" className="text-sm font-semibold text-tinta">Empresas — dados públicos (CNPJ)</h3>
+          <h3 id="empresas-titulo" className="text-sm font-bold text-tinta">Empresas — dados públicos (CNPJ)</h3>
           <p className="text-xs text-tinta-fraca">Objeto, composição societária, capital e situação cadastral, direto da Receita Federal (BrasilAPI) — sempre sob clique, nunca consultado sozinho.</p>
         </div>
         {empresas.length === 0 ? (

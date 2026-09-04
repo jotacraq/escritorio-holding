@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <path d="M2.5 5h15a1 1 0 1 0 0-2h-15a1 1 0 0 0 0 2Zm0 6h15a1 1 0 1 0 0-2h-15a1 1 0 0 0 0 2Zm0 6h15a1 1 0 1 0 0-2h-15a1 1 0 0 0 0 2Z" />
           </svg>
         </button>
-        <span className="font-serif text-base font-semibold">SIC-HF</span>
+        <span className="font-serif text-base font-bold">SIC-HF</span>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <div className="hidden px-2 lg:block">
           <Link href="/esteira" className="block">
-            <span className="font-serif text-xl font-semibold leading-tight text-tinta">SIC-HF</span>
+            <span className="font-serif text-xl font-bold leading-tight text-tinta">SIC-HF</span>
           </Link>
           <p className="mt-0.5 text-[11px] leading-snug text-tinta-fraca">Dra. Elaine Montenegro · Time Holding Brasil</p>
         </div>

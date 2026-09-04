@@ -95,7 +95,7 @@ export function PendenciasAba() {
       )}
 
       <div>
-        <h3 className="mb-1.5 font-serif text-base font-semibold text-tinta">Materiais aguardando aprovação</h3>
+        <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Materiais aguardando aprovação</h3>
         {dados.materiais_aguardando_aprovacao.disponivel === false ? (
           <SeloStub texto={dados.materiais_aguardando_aprovacao.motivo} />
         ) : (
@@ -135,8 +135,8 @@ function BlocoPendencia({
   return (
     <section className="rounded-sm border border-linha bg-papel-elevado">
       <header className="flex items-center justify-between gap-2 border-b border-linha px-4 py-2.5">
-        <h3 className="font-serif text-base font-semibold text-tinta">{titulo}</h3>
-        <span className="rounded-full bg-latao-fraco px-2 py-0.5 text-xs font-semibold tabular-nums text-[color:var(--latao-forte)]">
+        <h3 className="font-serif text-base font-bold text-tinta">{titulo}</h3>
+        <span className="rounded-full bg-latao-fraco px-2 py-0.5 text-xs font-bold tabular-nums text-[color:var(--latao-forte)]">
           {itens.length}
         </span>
       </header>

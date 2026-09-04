@@ -50,14 +50,14 @@ export function Bloco<T>({ id, titulo, legenda, mensagemNadaPendente, estado, ur
     >
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-linha px-4 py-3 sm:px-5">
         <div>
-          <h2 id={`${id}-titulo`} className="font-serif text-lg font-semibold text-tinta">
+          <h2 id={`${id}-titulo`} className="font-serif text-lg font-bold text-tinta">
             {titulo}
           </h2>
           <p className="text-xs text-tinta-suave">{legenda}</p>
         </div>
         {contagem !== null && contagem > 0 && (
           <span
-            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
               urgente ? "bg-vermelho-fraco text-[color:var(--vermelho)]" : "bg-latao-fraco text-[color:var(--latao-forte)]"
             }`}
           >

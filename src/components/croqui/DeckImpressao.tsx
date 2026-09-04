@@ -35,10 +35,15 @@ export function DeckImpressao({
     <div className={modoTela ? "block" : "hidden print:block"} style={{ background: "#fffdf8", color: "#1b1c1f" }}>
       {slides.map((slide, i) => (
         <section key={slide.id} className="imprimir-quebra flex min-h-[90vh] flex-col gap-4 px-10 py-10">
-          <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: "#7c5e26" }}>
+          {/* `#b85400`: mesmo laranja de marca do tema claro (`--latao`,
+              globals.css, 04/09/2026) — hex fixo, não `var()`, pela mesma
+              razão do resto do arquivo (folha impressa sempre clara). Antes
+              era `#7c5e26` (dourado, latão original). 4,80:1 sobre o papel
+              fixo `#fffdf8` — WCAG AA. */}
+          <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: "#b85400" }}>
             {String(i + 1).padStart(2, "0")} · Croqui Estrutural
           </p>
-          <h1 className="font-serif text-3xl font-semibold">{slide.titulo}</h1>
+          <h1 className="font-serif text-3xl font-bold">{slide.titulo}</h1>
           <p className="max-w-2xl whitespace-pre-wrap text-base leading-relaxed" style={{ color: "#52514c" }}>
             {slide.conteudo || "Sem conteúdo definido para este slide."}
           </p>

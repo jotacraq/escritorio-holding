@@ -50,7 +50,7 @@ function LinhaOferta({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-tinta">{ROTULO_CONDICAO[oferta.condicao]}</span>
-          <span className="font-serif text-base font-semibold text-tinta">{formatarMoeda(oferta.valor_ofertado)}</span>
+          <span className="font-serif text-base font-bold text-tinta">{formatarMoeda(oferta.valor_ofertado)}</span>
           {oferta.condicao === "incentivo_resolvedor" && (
             <span className="text-xs text-tinta-fraca line-through">{formatarMoeda(oferta.valor_padrao)}</span>
           )}
@@ -124,7 +124,7 @@ export function PainelOferta({
   return (
     <section aria-labelledby="titulo-oferta" className="flex flex-col gap-2 rounded-sm border border-linha bg-papel px-3 py-3 sm:px-4">
       <div className="flex items-center justify-between">
-        <h2 id="titulo-oferta" className="font-serif text-sm font-semibold text-tinta">
+        <h2 id="titulo-oferta" className="font-serif text-sm font-bold text-tinta">
           Oferta do Croqui Estrutural — PARTE 11/12
         </h2>
         {ofertas.length > 0 && !mostrarFormulario && (

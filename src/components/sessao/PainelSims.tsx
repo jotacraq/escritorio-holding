@@ -61,7 +61,7 @@ function LinhaSim({
         >
           <span
             aria-hidden="true"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-semibold text-tinta-suave"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-bold text-tinta-suave"
           >
             {NUMERO_SIM[sim]}
           </span>
@@ -155,7 +155,7 @@ export function PainelSims({
   return (
     <section aria-labelledby="titulo-sims" className="flex flex-col gap-2 rounded-sm border border-linha bg-papel px-3 py-3 sm:px-4">
       <div className="flex items-center justify-between">
-        <h2 id="titulo-sims" className="font-serif text-sm font-semibold text-tinta">
+        <h2 id="titulo-sims" className="font-serif text-sm font-bold text-tinta">
           Os 4 SIMs — PARTE 01
         </h2>
         <span className="text-xs text-tinta-fraca">{totalRegistrados} de 4 registrados</span>
@@ -236,7 +236,7 @@ function LinhaSimGravacao({
         >
           <span
             aria-hidden="true"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-semibold text-tinta-suave"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-bold text-tinta-suave"
           >
             1
           </span>

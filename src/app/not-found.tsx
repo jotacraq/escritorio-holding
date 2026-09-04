@@ -36,7 +36,7 @@ export default function NaoEncontrado() {
 
   const conteudo = (
     <div className="flex max-w-prose flex-col items-start gap-3 rounded-sm border border-linha bg-papel-elevado p-6">
-      <h1 className="font-serif text-xl font-semibold text-tinta">
+      <h1 className="font-serif text-xl font-bold text-tinta">
         {rotulo ? `${rotulo} está em construção` : "Página não encontrada"}
       </h1>
       <p className="text-sm leading-relaxed text-tinta-suave">

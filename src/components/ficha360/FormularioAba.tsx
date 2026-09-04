@@ -122,7 +122,7 @@ function FormularioConteudo({ jornadaId, dados }: { jornadaId: string; dados: Fo
 
       {Array.from(blocos.entries()).map(([bloco, perguntas]) => (
         <fieldset key={bloco} className="flex flex-col gap-4 border-t border-linha pt-4 first:border-t-0 first:pt-0">
-          <legend className="font-serif text-base font-semibold text-tinta">{bloco}</legend>
+          <legend className="font-serif text-base font-bold text-tinta">{bloco}</legend>
           {perguntas.map((pergunta) => (
             <div key={pergunta.id} className="flex flex-col gap-1.5">
               <label id={`pergunta-${pergunta.id}-rotulo`} htmlFor={`pergunta-${pergunta.id}`} className="text-sm font-medium text-tinta">

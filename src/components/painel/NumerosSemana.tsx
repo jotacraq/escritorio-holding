@@ -38,7 +38,7 @@ function Cartao({ linha }: { linha: LinhaNumero }) {
   return (
     <div className="flex flex-col gap-1 rounded-sm border border-linha bg-papel px-3.5 py-3">
       <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">{linha.rotulo}</p>
-      <p className="font-serif text-2xl font-semibold text-tinta">{linha.valor}</p>
+      <p className="font-serif text-2xl font-bold text-tinta">{linha.valor}</p>
       <p className="text-xs text-tinta-suave">
         {percentual !== null ? `${formatarPercentual(percentual)} ${linha.baseDescricao}` : "sem base para percentual ainda"}
       </p>
@@ -55,7 +55,7 @@ export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<
   return (
     <section aria-labelledby="numeros-titulo" className="rounded-sm border border-linha bg-papel-elevado">
       <header className="border-b border-linha px-4 py-3 sm:px-5">
-        <h2 id="numeros-titulo" className="font-serif text-lg font-semibold text-tinta">
+        <h2 id="numeros-titulo" className="font-serif text-lg font-bold text-tinta">
           Números
         </h2>
         <p className="text-xs text-tinta-suave">POP 01, por edição do seminário — leitura, sem ação a tomar aqui</p>
@@ -83,7 +83,7 @@ export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<
           <div className="flex flex-col gap-4">
             {estado.itens.map((item) => (
               <div key={item.edicao_id ?? "sem-edicao"}>
-                <h3 className="mb-2 font-serif text-sm font-semibold text-tinta">
+                <h3 className="mb-2 font-serif text-sm font-bold text-tinta">
                   {item.edicao_id ? item.edicao_nome ?? item.edicao_codigo ?? "Edição sem nome cadastrado" : "Sem edição de origem"}
                 </h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

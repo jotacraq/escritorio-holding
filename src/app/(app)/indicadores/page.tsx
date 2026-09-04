@@ -54,7 +54,7 @@ function CartaoIndicador({ linha }: { linha: LinhaIndicador }) {
   return (
     <div className="flex flex-col gap-1 rounded-sm border border-linha bg-papel-elevado p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">{linha.rotulo}</p>
-      <p className="font-serif text-3xl font-semibold text-tinta">{linha.valor}</p>
+      <p className="font-serif text-3xl font-bold text-tinta">{linha.valor}</p>
       {percentual !== null && (
         <p className="text-xs text-tinta-suave">
           {formatarPercentual(percentual)} {linha.baseDescricao}
@@ -79,7 +79,7 @@ export default function PaginaIndicadores() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Indicadores</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">Indicadores</h1>
         <p className="text-sm text-tinta-suave">POP 08 — só o que a view calcula de fato. Sem fonte de dado, o indicador não aparece.</p>
       </div>
 
@@ -94,7 +94,7 @@ export default function PaginaIndicadores() {
         <div className="flex flex-col gap-6">
           {itens.map((item) => (
             <section key={item.edicao_id ?? "sem-edicao"}>
-              <h2 className="mb-2 flex items-baseline gap-2 font-serif text-lg font-semibold text-tinta">
+              <h2 className="mb-2 flex items-baseline gap-2 font-serif text-lg font-bold text-tinta">
                 {item.edicao_id ? item.edicao_nome ?? "Edição sem nome cadastrado" : "Sem edição de origem"}
                 {item.edicao_id && item.edicao_codigo && (
                   <span className="font-sans text-xs font-normal uppercase tracking-wide text-tinta-fraca">

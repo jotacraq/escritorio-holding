@@ -98,7 +98,7 @@ export function Gaveta({ aberta, aoFechar, titulo, children }: GavetaProps) {
         className="relative flex h-full w-full max-w-md flex-col border-l border-linha-forte bg-papel-elevado shadow-[var(--sombra-cartao)]"
       >
         <div className="flex items-center justify-between gap-3 border-b border-linha px-4 py-3">
-          <h2 id={tituloId} className="font-serif text-lg font-semibold text-tinta">
+          <h2 id={tituloId} className="font-serif text-lg font-bold text-tinta">
             {titulo}
           </h2>
           <button

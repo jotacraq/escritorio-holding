@@ -124,7 +124,7 @@ export function EditorCroqui({
           <input
             value={titulo}
             onChange={(e) => { setTitulo(e.target.value); setSalvo(false); }}
-            className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 font-serif text-lg font-semibold"
+            className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 font-serif text-lg font-bold"
             aria-label="Título do croqui"
           />
           <Selo tom={ROTULOS_STATUS[croqui.status].tom}>{ROTULOS_STATUS[croqui.status].rotulo}</Selo>
@@ -215,7 +215,7 @@ export function EditorCroqui({
 
             {slideAtivo.pontos && slideAtivo.pontos.length > 0 && (
               <div className="text-sm">
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">Pontos (proposta da IA)</p>
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-tinta-fraca">Pontos (proposta da IA)</p>
                 <ul className="list-disc pl-4 text-tinta-suave">
                   {slideAtivo.pontos.map((p, i) => <li key={i}>{p}</li>)}
                 </ul>
@@ -243,7 +243,7 @@ export function EditorCroqui({
 
             {slideTemGrafico(slideAtivo.tipo) && (
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">Prévia do gráfico deste slide</p>
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-tinta-fraca">Prévia do gráfico deste slide</p>
                 <GraficoDoSlide tipo={slideAtivo.tipo} dados={dadosGraficos} tema={tema} />
               </div>
             )}

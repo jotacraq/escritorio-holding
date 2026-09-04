@@ -85,7 +85,7 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
           <Link href="/importacoes" className="text-xs font-medium text-[color:var(--latao)] hover:underline">
             ← Todas as importações
           </Link>
-          <h1 className="font-serif text-xl font-semibold text-tinta">{importacao.arquivo_nome}</h1>
+          <h1 className="font-serif text-xl font-bold text-tinta">{importacao.arquivo_nome}</h1>
           <p className="text-sm text-tinta-suave">Criada em {formatarDataHora(importacao.criado_em)}{nomeDe(importacao.criado_por) ? ` por ${nomeDe(importacao.criado_por)}` : ""}.</p>
         </div>
         <Selo tom={status.tom}>{status.rotulo}</Selo>
@@ -129,7 +129,7 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
       )}
 
       <div>
-        <h2 className="mb-2 font-serif text-lg font-semibold text-tinta">Linhas</h2>
+        <h2 className="mb-2 font-serif text-lg font-bold text-tinta">Linhas</h2>
         <TabelaLinhasImportacao importacaoId={importacaoId} />
       </div>
 

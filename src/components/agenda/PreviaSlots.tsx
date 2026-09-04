@@ -43,7 +43,7 @@ export function PreviaSlots({ advogadaId }: { advogadaId: string }) {
     <div className="flex flex-col gap-3 rounded-sm border border-linha bg-papel-elevado p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-serif text-base font-semibold text-tinta">Prévia dos horários livres</h2>
+          <h2 className="font-serif text-base font-bold text-tinta">Prévia dos horários livres</h2>
           <p className="text-xs text-tinta-suave">
             É isto que resulta das janelas e bloqueios de cima — já descontando antecedência mínima e horizonte
             configurados no sistema (Admin). Não representa o que o cliente vê num link específico: aquele conjunto é

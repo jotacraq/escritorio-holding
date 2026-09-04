@@ -49,7 +49,7 @@ export function SessaoAba({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h3 className="mb-2 font-serif text-base font-semibold text-tinta">Composição familiar</h3>
+        <h3 className="mb-2 font-serif text-base font-bold text-tinta">Composição familiar</h3>
         {familiares === null ? (
           <p className="text-sm text-tinta-fraca">Carregando…</p>
         ) : familiares.length === 0 && !novoFamiliar ? (
@@ -98,7 +98,7 @@ export function SessaoAba({
       )}
 
       <div>
-        <h3 className="mb-2 font-serif text-base font-semibold text-tinta">Agendamentos</h3>
+        <h3 className="mb-2 font-serif text-base font-bold text-tinta">Agendamentos</h3>
         {agendamentos.length === 0 ? (
           <EstadoVazio titulo="Nenhum agendamento ainda" />
         ) : (

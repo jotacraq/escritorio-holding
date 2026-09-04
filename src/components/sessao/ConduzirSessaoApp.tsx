@@ -232,7 +232,7 @@ function CabecalhoPessoa({ pessoa, jornadaId }: { pessoa: Ficha360["pessoa"]; jo
     <header className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">Modo conduzir sessão</p>
-        <h1 className="font-serif text-lg font-semibold text-tinta">{pessoa.nome}</h1>
+        <h1 className="font-serif text-lg font-bold text-tinta">{pessoa.nome}</h1>
       </div>
       <Link href={`/jornadas/${jornadaId}`} className="nao-imprimir text-sm text-tinta-suave underline hover:text-tinta">
         Ver ficha completa

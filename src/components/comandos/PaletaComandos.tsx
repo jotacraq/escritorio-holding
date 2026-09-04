@@ -205,7 +205,7 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
 
         <ul id="lista-paleta-comandos" role="listbox" aria-label="Resultados" ref={listaRef} className="max-h-80 overflow-y-auto py-1.5">
           {opcoesPagina.length > 0 && (
-            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-tinta-fraca">
+            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-tinta-fraca">
               Telas
             </li>
           )}
@@ -227,7 +227,7 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
           ))}
 
           {(resultadosJornada.length > 0 || buscando || erroBusca || consulta.trim().length >= MIN_CARACTERES_BUSCA_JORNADA) && (
-            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-tinta-fraca">
+            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-tinta-fraca">
               Pessoas e jornadas
             </li>
           )}

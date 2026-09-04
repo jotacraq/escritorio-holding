@@ -55,7 +55,7 @@ export function SeloDemonstracao({ children, className = "" }: { children?: Reac
         <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-5 w-5 shrink-0 fill-current sm:mt-0">
           <path d="M10 1.5 19 17H1L10 1.5Zm0 5.4a1 1 0 0 0-1 1v3.4a1 1 0 1 0 2 0V7.9a1 1 0 0 0-1-1Zm0 7.2a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z" />
         </svg>
-        <p className="text-sm font-semibold leading-snug sm:text-base">{FRASE_DEMONSTRACAO}</p>
+        <p className="text-sm font-bold leading-snug sm:text-base">{FRASE_DEMONSTRACAO}</p>
       </div>
       {children && <div className="relative z-[1] px-4 py-4">{children}</div>}
       <p className="relative z-[1] border-t-2 border-dashed border-[color:var(--demo-faixa-forte)] px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-[color:var(--demo-faixa-forte)]">

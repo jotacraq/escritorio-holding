@@ -200,7 +200,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       </p>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">
+        <legend className="font-serif text-base font-bold text-tinta">
           {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro do POP 03"}
         </legend>
         <RoteiroDeBanco
@@ -212,7 +212,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Registro obrigatório</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Registro obrigatório</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <label htmlFor="expectativa" className="text-sm font-medium text-tinta">Expectativa principal</label>
@@ -230,7 +230,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Observação comportamental (objetiva)</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Observação comportamental (objetiva)</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div role="radiogroup" aria-label="Ritmo da fala">
             <span className="text-sm font-medium text-tinta">Ritmo</span>

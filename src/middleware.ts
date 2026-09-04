@@ -92,6 +92,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Roda em tudo, exceto assets estáticos e o próprio Next internals.
-    "/((?!_next/static|_next/image|versao.txt|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // `woff2`/`woff` (04/09/2026, fonte Neuetra em `public/fonts/`) precisam
+    // estar na lista — sem isso `/fonts/*.woff2` caía no bloco de auth acima
+    // e devolvia 307 para /login em vez do arquivo (achado real: confirmado
+    // com `curl -I`, não suposição). Ativo tanto no interno quanto no
+    // público (`/p/*`), que carrega a mesma fonte via `@font-face` global.
+    "/((?!_next/static|_next/image|versao.txt|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };

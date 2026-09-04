@@ -77,7 +77,7 @@ export function ModalConfirmarImportacao({
         aria-describedby="descricao-confirmar-importacao"
         className="flex w-full max-w-md flex-col gap-4 rounded-sm border border-linha-forte bg-papel-elevado p-5 shadow-lg"
       >
-        <h2 id="titulo-confirmar-importacao" className="font-serif text-lg font-semibold text-tinta">
+        <h2 id="titulo-confirmar-importacao" className="font-serif text-lg font-bold text-tinta">
           Confirmar esta importação?
         </h2>
 

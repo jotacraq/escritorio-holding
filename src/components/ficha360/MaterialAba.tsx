@@ -19,7 +19,7 @@ const ROTULOS_FONTE: Record<FonteDorMaterial, string> = {
 function BlocoConteudo({ bloco, indice }: { bloco: BlocoMaterial; indice: number }) {
   switch (bloco.tipo) {
     case "titulo":
-      return <h3 className="font-serif text-base font-semibold text-tinta">{bloco.texto}</h3>;
+      return <h3 className="font-serif text-base font-bold text-tinta">{bloco.texto}</h3>;
     case "paragrafo":
       return <p className="text-sm leading-relaxed text-tinta">{bloco.texto}</p>;
     case "lista":

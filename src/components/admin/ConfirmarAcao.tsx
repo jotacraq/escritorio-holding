@@ -47,7 +47,7 @@ export function ConfirmarAcao({ aberto, titulo, efeito, rotuloConfirmar = "Confi
         className="w-full max-w-sm rounded-sm border border-linha-forte bg-papel-elevado p-5 shadow-lg outline-none"
         onClick={(evento) => evento.stopPropagation()}
       >
-        <h2 id={tituloId} className="font-serif text-lg font-semibold text-tinta">
+        <h2 id={tituloId} className="font-serif text-lg font-bold text-tinta">
           {titulo}
         </h2>
         <p className="mt-2 text-sm text-tinta-suave">{efeito}</p>

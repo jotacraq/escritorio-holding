@@ -92,7 +92,7 @@ export function PainelBriefingSessao({
       className="nao-imprimir flex flex-col rounded-sm border border-linha bg-papel-elevado shadow-[var(--sombra-cartao)] lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)]"
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-linha px-3.5 py-2.5">
-        <h2 className="font-serif text-sm font-semibold text-tinta">Briefing Estratégico</h2>
+        <h2 className="font-serif text-sm font-bold text-tinta">Briefing Estratégico</h2>
         <div className="flex items-center gap-1">
           {briefingAtual && (
             <Link

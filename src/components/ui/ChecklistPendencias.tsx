@@ -31,9 +31,9 @@ export function ChecklistPendencias({ itens }: { itens: ItemPendencia[] }) {
 
   return (
     <div className="nao-imprimir rounded-sm border border-linha bg-papel-elevado" aria-labelledby="titulo-pendencias">
-      <p id="titulo-pendencias" className="border-b border-linha px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-tinta-fraca">
+      <p id="titulo-pendencias" className="border-b border-linha px-3.5 py-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">
         Falta para esta jornada andar
-        <span className="ml-1.5 rounded-full bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--ambar)]">{itens.length}</span>
+        <span className="ml-1.5 rounded-full bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--ambar)]">{itens.length}</span>
       </p>
       <ul className="flex flex-col divide-y divide-linha">
         {itens.map((item) => (

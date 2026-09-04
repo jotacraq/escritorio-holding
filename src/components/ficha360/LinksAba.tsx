@@ -129,7 +129,7 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
 
       {linkRecemEmitido && (
         <div role="alert" className="flex flex-col gap-2 rounded-sm border-2 border-ambar-borda bg-ambar-fraco px-3.5 py-3">
-          <p className="text-sm font-semibold text-[color:var(--ambar)]">
+          <p className="text-sm font-bold text-[color:var(--ambar)]">
             Link de {ROTULOS_TIPO[linkRecemEmitido.tipo]} emitido — copie agora, esta é a única vez que ele aparece.
           </p>
           <div className="flex flex-wrap items-center gap-2">

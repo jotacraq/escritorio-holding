@@ -431,7 +431,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </div>
 
       <header className="flex flex-col gap-3">
-        <h2 className="font-serif text-lg font-semibold text-tinta">Relatório da Sessão de Viabilidade</h2>
+        <h2 className="font-serif text-lg font-bold text-tinta">Relatório da Sessão de Viabilidade</h2>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
           <div><dt className="text-tinta-fraca">Cliente</dt><dd className="text-tinta">{ficha.pessoa.nome}</dd></div>
           <div><dt className="text-tinta-fraca">Cidade em que reside</dt><dd className="text-tinta">{formatarCidadeUf(ficha.pessoa.cidade, ficha.pessoa.uf)}</dd></div>
@@ -445,7 +445,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </header>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Sessão acompanhada</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Sessão acompanhada</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <CampoBooleano id="acompanhado" rotulo="Participará da sessão de viabilidade acompanhado" valor={formAtual.acompanhado} aoMudar={(v) => mudar("acompanhado", v)} />
           <CampoData id="data-contratacao" rotulo="Data da contratação da sessão" valor={formAtual.data_contratacao} aoMudar={(v) => mudar("data_contratacao", v)} />
@@ -462,24 +462,24 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Motivação do cliente em realizar a sessão</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Motivação do cliente em realizar a sessão</legend>
         <AreaTexto id="motivacao-cliente" rotulo="Motivação" valor={formAtual.motivacao_cliente} aoMudar={(v) => mudar("motivacao_cliente", v)} rows={3} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Composição familiar</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Composição familiar</legend>
         <p className="text-xs text-tinta-fraca">Casal — idade, ocupação, regime de casamento, ano do casamento. Filhos — idade, ocupação, regime de casamento, netos.</p>
         <SecaoFamiliar jornadaId={jornadaId} familiares={familiares} aoAtualizar={aoAtualizar} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Composição patrimonial</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Composição patrimonial</legend>
         <p className="nao-imprimir text-xs text-tinta-fraca">Mesma fonte da aba Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
         <SecaoPatrimonial patrimonio={patrimonio} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Situação financeira e percepção de risco</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Situação financeira e percepção de risco</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <CampoMoeda id="receita-familiar" rotulo="Receita familiar mensal" valor={formAtual.receita_familiar_mensal} aoMudar={(v) => mudar("receita_familiar_mensal", v)} />
           <CampoBooleano id="ciente-itcmd" rotulo="Está ciente da proposta de aumento do ITCMD?" valor={formAtual.ciente_itcmd} aoMudar={(v) => mudar("ciente_itcmd", v)} />
@@ -489,7 +489,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-4 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Aprofundamento</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Aprofundamento</legend>
         <AreaTexto id="preocupacao-predominante" rotulo="Entre a pandemia e o risco do ITCMD aumentar, o que te preocupa mais?" valor={formAtual.preocupacao_predominante} aoMudar={(v) => mudar("preocupacao_predominante", v)} />
         <AreaTexto id="como-organizar" rotulo="Hoje, como você gostaria de deixar organizado o patrimônio para os seus filhos?" valor={formAtual.como_deseja_organizar} aoMudar={(v) => mudar("como_deseja_organizar", v)} />
         <AreaTexto id="motiva-evitar-inventario" rotulo="A ideia de seu filho não precisar passar por Inventário te motiva a realizar um sistema de planejamento sucessório?" valor={formAtual.motiva_evitar_inventario} aoMudar={(v) => mudar("motiva_evitar_inventario", v)} />
@@ -501,7 +501,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-4 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Dados para início da execução do croqui</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Dados para início da execução do croqui</legend>
         <p className="nao-imprimir rounded-sm border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
           Alíquota e link de legislação são digitados pela advogada — o sistema não calcula tributo nenhum.
         </p>
@@ -548,7 +548,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-semibold text-tinta">Registro das considerações relevantes observadas durante a apresentação do croqui</legend>
+        <legend className="font-serif text-base font-bold text-tinta">Registro das considerações relevantes observadas durante a apresentação do croqui</legend>
         <AreaTexto id="consideracoes-croqui" rotulo="Considerações" valor={formAtual.consideracoes_apresentacao_croqui} aoMudar={(v) => mudar("consideracoes_apresentacao_croqui", v)} rows={3} />
       </fieldset>
 

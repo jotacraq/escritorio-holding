@@ -119,7 +119,7 @@ export function Abas({ abas, abaInicial, deepLinkHash = false }: { abas: Definic
                 type="button"
                 aria-current={selecionado ? "true" : undefined}
                 onClick={() => !selecionado && ativar(grupo.abas[0].id)}
-                className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors ${
+                className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors ${
                   selecionado ? "border-[color:var(--latao)] text-tinta" : "border-transparent text-tinta-suave hover:border-linha-forte hover:text-tinta"
                 }`}
               >

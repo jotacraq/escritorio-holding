@@ -110,14 +110,19 @@ export function ModoApresentacao({
           de escondido sem pista nenhuma. */}
       <div className="nao-imprimir flex flex-1 min-h-0">
         <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-10 py-6 text-center">
-          <p className="font-mono text-sm uppercase tracking-[0.3em] text-[#d3ac4c]">{String(indice + 1).padStart(2, "0")} · {slide.titulo}</p>
-          <h1 className="max-w-4xl font-serif text-4xl font-semibold leading-tight sm:text-5xl">{slide.titulo}</h1>
+          {/* `#ff7400`: laranja de marca puro (`--latao` do `.dark`,
+              globals.css, 04/09/2026) — hex fixo, não `var()`, mesma razão
+              do resto do componente (tela de apresentação sempre escura,
+              independente do tema do navegador). Antes era `#d3ac4c`
+              (dourado). 6,62:1 sobre o fundo fixo `#16171a` — WCAG AA. */}
+          <p className="font-mono text-sm uppercase tracking-[0.3em] text-[#ff7400]">{String(indice + 1).padStart(2, "0")} · {slide.titulo}</p>
+          <h1 className="max-w-4xl font-serif text-4xl font-bold leading-tight sm:text-5xl">{slide.titulo}</h1>
           <p className="max-w-3xl whitespace-pre-wrap text-xl leading-relaxed text-[#c9c6bc] sm:text-2xl">{slide.conteudo || "Sem conteúdo definido para este slide."}</p>
           {slide.pontos && slide.pontos.length > 0 && (
             <ul className="flex max-w-2xl flex-col gap-1.5 text-left text-lg text-[#c9c6bc]">
               {slide.pontos.slice(0, 4).map((p, i) => (
                 <li key={i} className="flex gap-2">
-                  <span aria-hidden="true" className="text-[#d3ac4c]">·</span>
+                  <span aria-hidden="true" className="text-[#ff7400]">·</span>
                   {p}
                 </li>
               ))}
@@ -132,7 +137,7 @@ export function ModoApresentacao({
 
         {mostrarNota && (
           <aside aria-label="Notas do apresentador" className="w-80 shrink-0 overflow-y-auto border-l border-[#3c3e44] bg-[#16171a] p-4 text-sm text-[#c9c6bc]">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#7a7a72]">Notas do apresentador</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#7a7a72]">Notas do apresentador</p>
             {slide.objetivo && <p className="mb-2"><strong className="text-[#ece9df]">Objetivo:</strong> {slide.objetivo}</p>}
             {slide.pergunta_ao_cliente && <p className="mb-2"><strong className="text-[#ece9df]">Pergunta ao cliente:</strong> {slide.pergunta_ao_cliente}</p>}
             {slide.como_apresentar && <p><strong className="text-[#ece9df]">Como apresentar:</strong> {slide.como_apresentar}</p>}
@@ -156,7 +161,7 @@ export function ModoApresentacao({
             type="button"
             onClick={() => setMostrarNota((v) => !v)}
             aria-pressed={mostrarNota}
-            className={`rounded-sm border px-2 py-1 text-xs ${mostrarNota ? "border-[#d3ac4c] text-[#d3ac4c]" : "border-[#3c3e44]"}`}
+            className={`rounded-sm border px-2 py-1 text-xs ${mostrarNota ? "border-[#ff7400] text-[#ff7400]" : "border-[#3c3e44]"}`}
           >
             Notas do apresentador (N)
           </button>
@@ -183,7 +188,7 @@ function BarraProgresso({ total, atual }: { total: number; atual: number }) {
         <span
           key={i}
           aria-hidden="true"
-          className={`h-1 w-4 rounded-full ${i <= atual ? "bg-[#d3ac4c]" : "bg-[#3c3e44]"}`}
+          className={`h-1 w-4 rounded-full ${i <= atual ? "bg-[#ff7400]" : "bg-[#3c3e44]"}`}
         />
       ))}
     </div>

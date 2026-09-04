@@ -33,7 +33,7 @@ export default function PaginaGraficosDemo() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-16">
       <header className="flex flex-col gap-3">
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Galeria de gráficos do Croqui</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">Galeria de gráficos do Croqui</h1>
         <p className="max-w-2xl text-sm text-tinta-suave">
           Cada peça abaixo é um componente puro de <code className="font-mono text-xs">src/components/graficos/</code>, SVG inline, sem
           dependência nova. Os controles trocam o <code className="font-mono text-xs">tema</code> e o{" "}

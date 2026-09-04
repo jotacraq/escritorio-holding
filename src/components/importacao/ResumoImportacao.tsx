@@ -11,7 +11,7 @@ function Cartao({ rotulo, valor, tom = "neutro" }: { rotulo: string; valor: numb
   };
   return (
     <div className={`flex flex-col gap-1 rounded-sm border px-3.5 py-3 ${tons[tom]}`}>
-      <span className="text-2xl font-semibold tabular-nums">{valor}</span>
+      <span className="text-2xl font-bold tabular-nums">{valor}</span>
       <span className="text-xs font-medium leading-snug text-tinta-suave">{rotulo}</span>
     </div>
   );

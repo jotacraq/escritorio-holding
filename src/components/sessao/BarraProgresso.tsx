@@ -24,9 +24,9 @@ export function BarraProgresso({
                 onClick={() => aoIrPara(indice)}
                 aria-current={atual ? "step" : undefined}
                 title={bloco.titulo}
-                className={`flex h-7 w-7 items-center justify-center rounded-sm border text-[11px] font-semibold transition-colors ${
+                className={`flex h-7 w-7 items-center justify-center rounded-sm border text-[11px] font-bold transition-colors ${
                   atual
-                    ? "border-[color:var(--latao)] bg-[color:var(--latao)] text-papel-elevado"
+                    ? "border-[color:var(--latao-cta)] bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)]"
                     : concluida
                       ? "border-linha-forte bg-latao-fraco text-tinta-suave"
                       : "border-linha-forte bg-papel-elevado text-tinta-fraca hover:border-tinta-fraca"

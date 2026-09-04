@@ -105,7 +105,7 @@ export function KanbanEsteira() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-serif text-2xl font-semibold text-tinta">Esteira</h1>
+        <h1 className="font-serif text-2xl font-bold text-tinta">Esteira</h1>
         <p className="text-sm text-tinta-suave">Do seminário à holding contratada — cada card é uma jornada.</p>
       </div>
 
@@ -157,7 +157,7 @@ export function KanbanEsteira() {
                   className="flex w-72 shrink-0 flex-col gap-3 rounded-sm border border-linha bg-papel-fundo/60 p-2"
                 >
                   <div className="flex items-baseline justify-between px-1.5 pt-1">
-                    <h2 className="font-serif text-sm font-semibold text-tinta">{etapa.rotulo}</h2>
+                    <h2 className="font-serif text-sm font-bold text-tinta">{etapa.rotulo}</h2>
                     <span className="font-mono text-xs text-tinta-fraca">{cartoes.length}</span>
                   </div>
                   <div className="flex flex-col gap-2 min-h-[80px]">

@@ -19,7 +19,7 @@ export function BlocoRoteiro({ sessaoId, bloco, indice, total }: { sessaoId: str
         <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">
           Parte {indice + 1} de {total}
         </p>
-        <h2 id="titulo-parte-atual" className="font-serif text-xl font-semibold leading-tight text-tinta sm:text-2xl">
+        <h2 id="titulo-parte-atual" className="font-serif text-xl font-bold leading-tight text-tinta sm:text-2xl">
           {bloco.titulo}
         </h2>
         {bloco.objetivo && <p className="text-sm text-tinta-suave">{bloco.objetivo}</p>}
@@ -30,7 +30,7 @@ export function BlocoRoteiro({ sessaoId, bloco, indice, total }: { sessaoId: str
           <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-5 w-5 shrink-0 fill-current text-[color:var(--ambar)]">
             <path d="M10 1.5 19 17H1L10 1.5Zm0 5.4a1 1 0 0 0-1 1v3.4a1 1 0 1 0 2 0V7.9a1 1 0 0 0-1-1Zm0 7.2a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z" />
           </svg>
-          <p className="text-base font-semibold leading-snug text-[color:var(--ambar)]">{bloco.acao}</p>
+          <p className="text-base font-bold leading-snug text-[color:var(--ambar)]">{bloco.acao}</p>
         </div>
       )}
 

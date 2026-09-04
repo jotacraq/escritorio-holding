@@ -28,7 +28,7 @@ export function Moldura({ titulo, fonte, legenda, tabela, tema, children, classN
       style={{ borderColor: cores.linha, background: cores.superficieElevada }}
     >
       <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="font-serif text-base font-semibold" style={{ color: cores.tinta }}>
+        <h3 className="font-serif text-base font-bold" style={{ color: cores.tinta }}>
           {titulo}
         </h3>
         {fonte && (

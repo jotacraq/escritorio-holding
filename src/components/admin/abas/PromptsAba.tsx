@@ -132,7 +132,7 @@ export function PromptsAba() {
             <section key={chave} className="rounded-sm border border-linha bg-papel-elevado">
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-linha px-4 py-2.5">
                 <div>
-                  <h3 className="font-serif text-base font-semibold text-tinta">{chave}</h3>
+                  <h3 className="font-serif text-base font-bold text-tinta">{chave}</h3>
                   <p className="text-xs text-tinta-suave">
                     {ativa ? `versão ativa: v${ativa.versao} (criada em ${formatarData(ativa.criado_em)})` : "nenhuma versão ativa"}
                   </p>
