@@ -93,8 +93,15 @@
   --raio-controle: 0.75rem;
   --raio-pilula: 2.625rem;
 
+  /* Ritmo vertical — UMA escala, quatro degraus (Fase 5 §3). O diagnóstico
+     do João foi "blocos grudados": cartões de 1,5rem de padding separados
+     por 1,5rem de gap não leem como blocos distintos, leem como um bloco só
+     listrado. A regra é o degrau de FORA ser sempre maior que o de dentro:
+     seção (2,5) > bloco (1,75) > cartão (1,5) > item (0,75). */
   --espaco-secao: 2.5rem;
+  --espaco-bloco: 1.75rem;
   --espaco-cartao: 1.5rem;
+  --espaco-item: 0.75rem;
   --alvo-minimo: 44px;
 
   --transicao-rapida: 120ms;
@@ -187,6 +194,14 @@
   --shadow-flutuante: var(--sombra-flutuante);
   --shadow-foco: var(--foco);
 
+  /* A escala de ritmo exposta ao Tailwind: `gap-secao`, `gap-bloco`,
+     `gap-cartao`, `gap-item` (e `p-*`, `mt-*` etc.). É o que M4/M5 usam em
+     vez de escolher `gap-6` ou `gap-8` no olho. */
+  --spacing-secao: var(--espaco-secao);
+  --spacing-bloco: var(--espaco-bloco);
+  --spacing-cartao: var(--espaco-cartao);
+  --spacing-item: var(--espaco-item);
+
   /* Escala tipográfica (nenhum degrau abaixo de 12px). `text-xs`/`text-sm`
      do Tailwind sobem para 13px/15px — o corpo interno inteiro usa
      `text-sm`, e 14px é pequeno para quem usa o sistema o dia inteiro aos
@@ -204,12 +219,17 @@
   --text-corpo--line-height: 1.55;
   --text-subtitulo: 1.125rem;
   --text-subtitulo--line-height: 1.4;
+  /* Entrelinha dos títulos (Fase 5 §3 — "fonte entortada"). A Neuetra bold
+     tem ascendente alta e descendente longa: com 1.12/1.2 o título que
+     quebra em duas linhas encosta o "g" da primeira no "S" da segunda. Os
+     degraus abaixo dão folga sem soltar o bloco. Não mexer sem medir em
+     título de 2 linhas a 390px. */
   --text-titulo: 1.5rem;
-  --text-titulo--line-height: 1.2;
-  --text-titulo--letter-spacing: -0.015em;
+  --text-titulo--line-height: 1.28;
+  --text-titulo--letter-spacing: -0.012em;
   --text-display: 2.125rem;
-  --text-display--line-height: 1.12;
-  --text-display--letter-spacing: -0.02em;
+  --text-display--line-height: 1.18;
+  --text-display--letter-spacing: -0.018em;
 
   --ease-suave: var(--suavizacao);
 
@@ -263,13 +283,20 @@ body {
   font-synthesis: none;
 }
 
+/* Títulos. O `letter-spacing` NÃO é declarado aqui de propósito: ele já vem
+   do degrau tipográfico (`--text-titulo--letter-spacing` etc.). A regra
+   antiga aplicava −0,015em em todo h1–h4, inclusive nos `h3` de 15px — em
+   texto pequeno o tracking negativo cola as letras e é a outra metade do
+   "entortado" que o João viu. Título pequeno agora fica com tracking zero. */
 h1, h2, h3, h4 {
   font-family: var(--font-serif);
-  letter-spacing: -0.015em;
   text-wrap: balance;
 }
-h1 {
-  letter-spacing: -0.02em;
+
+/* Parágrafo não deixa palavra órfã na última linha. `pretty` só reflui o
+   fim do bloco — não muda a altura como `balance` faria em texto corrido. */
+p, li, dd {
+  text-wrap: pretty;
 }
 
 /* Foco visível — nunca removido, só redesenhado: contorno 2px + halo. */

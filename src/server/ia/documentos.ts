@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { registrarErro } from "@/server/erros";
 
 /**
  * Upload de documento sensível — lógica reaproveitável. Vive aqui (não em
@@ -22,7 +23,38 @@ const ASSINATURAS_MIME: Record<string, Buffer[]> = {
   "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
 };
 
-export type TipoDocumento = "imposto_renda" | "contrato_social" | "matricula_imovel" | "outro";
+/**
+ * Os 10 valores que `documentos.tipo` aceita depois da 0065 (M2, radar de
+ * documentos). Os seis últimos entraram com o CHECK alargado — sem eles, um
+ * CRLV ou uma certidão de casamento pedidos pelo radar não teriam onde ser
+ * gravados, e o item ficaria `a_pedir` para sempre mesmo com o arquivo no
+ * Storage. A validação continua em três camadas: enum na rota, esta união no
+ * servidor e o CHECK no banco.
+ */
+export type TipoDocumento =
+  | "imposto_renda"
+  | "contrato_social"
+  | "matricula_imovel"
+  | "certidao_casamento"
+  | "certidao_nascimento"
+  | "crlv"
+  | "extrato_investimento"
+  | "balanco"
+  | "comprovante_residencia"
+  | "outro";
+
+export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = [
+  "imposto_renda",
+  "contrato_social",
+  "matricula_imovel",
+  "certidao_casamento",
+  "certidao_nascimento",
+  "crlv",
+  "extrato_investimento",
+  "balanco",
+  "comprovante_residencia",
+  "outro",
+] as const;
 
 export class ErroUploadDocumento extends Error {
   constructor(
@@ -62,9 +94,17 @@ export async function processarUploadDocumento(
     jornadaId: string | null;
     tipo: TipoDocumento;
     enviadoPor: string | null;
+    /**
+     * A qual bem/familiar o documento pertence (`patrimonio_itens.id` /
+     * `familiares.id`) — `documentos.item_ref`, coluna da 0065. Sem ele, o
+     * radar não consegue casar "3 matrículas soltas" com 3 imóveis e o item
+     * fica `a_pedir` com arquivo no Storage (`src/lib/radar/derivar.ts`: o
+     * casamento é exato ou não existe). `null` = documento sem item.
+     */
+    itemRef?: string | null;
   },
 ): Promise<ResultadoUploadDocumento> {
-  const { arquivo, pessoaId, jornadaId, tipo, enviadoPor } = params;
+  const { arquivo, pessoaId, jornadaId, tipo, enviadoPor, itemRef = null } = params;
 
   if (arquivo.size <= 0 || arquivo.size > TAMANHO_MAXIMO_DOCUMENTO_BYTES) {
     throw new ErroUploadDocumento("Tamanho de arquivo inválido.", "tamanho_invalido");
@@ -92,8 +132,22 @@ export async function processarUploadDocumento(
     .from("documentos-sensiveis")
     .upload(caminho, bytes, { contentType: arquivo.type, upsert: false });
 
+  // A mensagem do provedor NUNCA vai para o cliente. Erro cru de Storage/
+  // Postgres nomeia bucket, caminho (que contém `pessoas/<uuid>`), política e
+  // às vezes a versão do PostgREST — é reconhecimento de infraestrutura de
+  // graça, entregue a quem só conseguiu fazer um upload falhar. O texto real
+  // fica em `erros_servidor` (`registrarErro`, mesmo padrão de `respostaErro`)
+  // com um id correlacionável; o cliente recebe uma frase humana e acionável.
   if (erroUpload) {
-    throw new ErroUploadDocumento(`Falha no upload: ${erroUpload.message}`, "falha_no_upload");
+    registrarErro("server/ia/documentos.processarUploadDocumento#upload", erroUpload, {
+      pessoa_id: pessoaId,
+      jornada_id: jornadaId,
+      tipo,
+    });
+    throw new ErroUploadDocumento(
+      "Não foi possível guardar o arquivo agora. Tente de novo em instantes.",
+      "falha_no_upload",
+    );
   }
 
   const { error: erroInsercao } = await supabaseAdmin.from("documentos").insert({
@@ -108,11 +162,23 @@ export async function processarUploadDocumento(
     tamanho_bytes: arquivo.size,
     sha256,
     enviado_por: enviadoPor,
+    // Antes da 0065 a coluna não existe: `undefined` some do payload do
+    // PostgREST, então o insert continua funcionando no banco antigo.
+    item_ref: itemRef ?? undefined,
   });
 
   if (erroInsercao) {
     await supabaseAdmin.storage.from("documentos-sensiveis").remove([caminho]);
-    throw new ErroUploadDocumento(`Falha ao registrar documento: ${erroInsercao.message}`, "falha_ao_registrar");
+    registrarErro("server/ia/documentos.processarUploadDocumento#registrar", erroInsercao, {
+      pessoa_id: pessoaId,
+      jornada_id: jornadaId,
+      tipo,
+      documento_id: documentoId,
+    });
+    throw new ErroUploadDocumento(
+      "O arquivo subiu, mas não foi possível registrá-lo. O envio foi desfeito — tente de novo.",
+      "falha_ao_registrar",
+    );
   }
 
   return { documentoId, caminho };

@@ -112,15 +112,14 @@ export function ListaSessoes() {
   return (
     <div className="flex flex-col gap-6">
       <section aria-label="Resumo dos próximos 7 dias" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi rotulo="Sessões nos próximos 7 dias" valor={resumo.proximos.length} />
+        <Kpi rotulo="Nos 7 dias" valor={resumo.proximos.length} />
         <Kpi rotulo="Confirmaram presença" valor={resumo.confirmaram} unidade={resumo.confirmaram !== null && resumo.proximos.length > 0 ? `de ${resumo.proximos.length}` : undefined} motivoVazio={motivoConfirmaram} />
         <Kpi rotulo="Sem resposta a menos de 3 dias" valor={resumo.semResposta} motivoVazio={motivoConfirmaram} />
       </section>
 
       <Cartao
         rotulo="Em destaque"
-        titulo="Próximos 7 dias e quem confirmou"
-        descricao="Hoje, amanhã e o resto da semana, com a presença que o cliente confirmou e o próximo passo de cada sessão."
+        titulo="Próximos 7 dias"
         preenchimento="sem"
         realce="latao"
       >
@@ -139,7 +138,7 @@ export function ListaSessoes() {
       </Cartao>
 
       {resumo.depois.length > 0 && (
-        <Cartao rotulo="Depois" titulo="Mais adiante" descricao={`${resumo.depois.length} ${resumo.depois.length === 1 ? "sessão marcada" : "sessões marcadas"} depois desta semana.`} preenchimento="sem">
+        <Cartao rotulo="Depois" titulo="Mais adiante" acao={<span className="text-xs text-tinta-fraca">{resumo.depois.length}</span>} preenchimento="sem">
           <BlocoDias grupos={resumo.gruposDepois} aoAtualizar={recarregar} />
         </Cartao>
       )}

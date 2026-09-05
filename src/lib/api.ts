@@ -14,7 +14,8 @@
 
 import type { MaterialGeradoResumo } from "@/types/material";
 import type { LigacaoIaResumo, OrigemLinkSala, Tarefa, ViaPresencaConfirmada } from "@/types/banco";
-import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, DiagnosticoSv, ParametroMetodo } from "@/types/cenario";
+import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, DiagnosticoSv } from "@/types/cenario";
+import type { DocumentoTipoRadar } from "@/types/jornada-automacoes";
 
 // ---------------------------------------------------------------------------
 // Tipos de domínio (espelham docs/ARQUITETURA.md §1–§2 — nomes do Glossário)
@@ -209,11 +210,18 @@ export interface RelatorioSessao {
 
 export interface Documento {
   id: string;
-  tipo: "imposto_renda" | "contrato_social" | "matricula_imovel" | "outro";
+  /** Os 10 valores do CHECK depois da 0065 (radar de documentos, §8.3). */
+  tipo: DocumentoTipoRadar;
   nome_arquivo: string;
   mime: string;
   tamanho_bytes: number;
   criado_em: string;
+  /**
+   * A qual bem/familiar o documento pertence (`patrimonio_itens.id` /
+   * `familiares.id`), coluna da 0065. `undefined` quando o payload é de um
+   * servidor anterior à migration; `null` quando o documento não tem item.
+   */
+  item_ref?: string | null;
 }
 
 export interface EventoTimeline {
@@ -437,7 +445,7 @@ export class ApiError extends Error {
 /** Indica que o recurso não está disponível no backend ainda (contrato assumido). */
 export class RecursoIndisponivelError extends ApiError {}
 
-async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
+export async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
   let resposta: Response;
   try {
     resposta = await fetch(caminho, {
@@ -467,11 +475,20 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
     // A mensagem humana tem que vencer — senão a tela mostra o código cru
     // ("nao_encontrado") em vez do texto pensado para o usuário. `objeto.erro`
     // vira o campo `codigo` da ApiError, não o texto exibido. `detalhe` (singular,
-    // `POST /api/briefings/gerar`) carrega o checklist da porta de completude —
-    // `detalhes` (plural, `respostaErro` genérico) fica de fora de propósito.
-    const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string; codigo?: string; detalhe?: unknown };
+    // `POST /api/briefings/gerar`) carrega o checklist da porta de completude.
+    // `detalhes` (plural) é o do `respostaErro` genérico (server/erros.ts:135)
+    // e passa a ser repassado também (05/09/2026, Fase 5 M4): sem isso, o 409
+    // `parametro_ausente` do croqui chegava à tela sem a lista de chaves, e a
+    // advogada via "erro ao salvar" no lugar de "falta o ITCMD de MG".
+    const objeto = (corpo ?? {}) as {
+      erro?: string;
+      mensagem?: string;
+      codigo?: string;
+      detalhe?: unknown;
+      detalhes?: unknown;
+    };
     const mensagem = objeto.mensagem || `Falha na requisição (${resposta.status})`;
-    throw new ApiError(mensagem, resposta.status, objeto.codigo ?? objeto.erro, objeto.detalhe);
+    throw new ApiError(mensagem, resposta.status, objeto.codigo ?? objeto.erro, objeto.detalhe ?? objeto.detalhes);
   }
 
   return corpo as T;
@@ -638,12 +655,18 @@ export function atualizarAgendamento(id: string, payload: { status?: StatusAgend
 // Documentos
 // ---------------------------------------------------------------------------
 
+/**
+ * Upload de documento sensível. `itemRef` (0065) diz de QUAL bem/familiar é o
+ * arquivo — sem ele o radar não casa a matrícula com o imóvel certo e o item
+ * fica "a pedir" mesmo com o arquivo no Storage.
+ */
 export function enviarDocumento(
   pessoaId: string,
   jornadaId: string,
   arquivo: File,
   tipo: Documento["tipo"],
   aoProgredir?: (pct: number) => void,
+  itemRef?: string | null,
 ) {
   return new Promise<{ documento_id: string }>((resolve, reject) => {
     const form = new FormData();
@@ -651,6 +674,7 @@ export function enviarDocumento(
     form.append("pessoa_id", pessoaId);
     form.append("jornada_id", jornadaId);
     form.append("tipo", tipo);
+    if (itemRef) form.append("item_ref", itemRef);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/documentos`);
     xhr.withCredentials = true;
@@ -712,61 +736,25 @@ export function buscarCroquiPorId(id: string) {
   return chamar<{ croqui: Croqui }>(`/api/croquis/${id}`);
 }
 
-/**
- * Versão para o Modo Apresentação — a tela que o cliente vê.
- *
- * Traz o croqui SEM as análises e só o recorte que os gráficos consomem. Não
- * é a mesma coisa que `buscarCroquiPorId` filtrada no cliente: filtrar depois
- * de receber não adianta nada, o payload já chegou ao navegador que está na
- * frente da família. Não renderizar não é não enviar.
- */
-/** O que a matriz de critérios desenha — sem categoria nem peso na decisão. */
-export interface CriterioParaMatriz {
-  criterio: string;
-  resposta: { texto: string };
-}
-
-/** Alocação v2 (0059): onde cada bem fica — só `celula` + `item`, nunca a categoria. */
-export interface AlocacaoParaSlide {
-  celula: string;
-  item: string;
-}
-
-/** Slide "economia" (Fase 4 §4.5): custo de não agir × custo da estrutura recomendada. `null` = falta número, nunca zero. */
-export interface EconomiaParaSlide {
-  custo_inventario: number | null;
-  custo_estrutura: number | null;
-  cenario_estrutura: string | null;
-  rubricas_ausentes: { inventario: number | null; estrutura: number | null };
-}
-
-/** Recorte dos gráficos que `GET /api/croquis/[id]?modo=apresentacao` devolve. */
-export interface GraficosParaApresentar {
-  criterios: CriterioParaMatriz[] | null;
-  recomendacao_arquitetura: string | null;
-  /** `null` = análise v1 (sem alocação) ou sem análise. */
-  alocacao: AlocacaoParaSlide[] | null;
-  economia: EconomiaParaSlide;
-  /** Cenário Patrimonial (0057) na forma de `DadosCenarioCroqui` (`components/croqui/GraficoDoSlide.tsx`). `null` = view ausente / sem cenário. */
-  cenario: {
-    cenarios: CenarioPatrimonial[];
-    rubricas: CenarioRubrica[];
-    totais: CenarioTotais[];
-    parametros: Record<string, ParametroMetodo>;
-  } | null;
-}
-
-export function buscarCroquiParaApresentar(id: string) {
-  return chamar<{ croqui: Croqui; graficos: GraficosParaApresentar }>(`/api/croquis/${id}?modo=apresentacao`);
-}
 export function criarCroqui(jornadaId: string, payload: { titulo: string; conteudo?: { slides: CroquiSlide[] } }) {
   return chamar<{ croqui: Croqui }>(`/api/croquis`, { method: "POST", body: JSON.stringify({ jornada_id: jornadaId, ...payload }) });
 }
 export function atualizarCroqui(croquiId: string, payload: { titulo?: string; conteudo?: { slides: CroquiSlide[] }; status?: StatusCroqui }) {
   return chamar<{ croqui: Croqui }>(`/api/croquis/${croquiId}`, { method: "PUT", body: JSON.stringify(payload) });
 }
+/**
+ * Registra a apresentação do croqui. O `encerrar` sai com `keepalive`: ele
+ * dispara junto do `router.back()`, e quando a volta é navegação de documento
+ * (link aberto direto, aba nova, F5) o navegador cancelaria a requisição no
+ * unload — medido no Playwright: `iniciar` gravava, `encerrar` sumia, e era
+ * justamente o `encerrar` que avança a etapa `croqui_apresentado`.
+ */
 export function registrarApresentacaoCroqui(croquiId: string, payload: { acao: "iniciar" | "encerrar"; slides_vistos?: number }) {
-  return chamar<{ apresentacao: { id: string } }>(`/api/croquis/${croquiId}/apresentacao`, { method: "POST", body: JSON.stringify(payload) });
+  return chamar<{ apresentacao: { id: string } }>(`/api/croquis/${croquiId}/apresentacao`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+    keepalive: payload.acao === "encerrar",
+  });
 }
 
 // ---------------------------------------------------------------------------

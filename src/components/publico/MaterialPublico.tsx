@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import type { AberturaMaterialPublico, BlocoMaterialPublico, EstadoPdfMaterialPublico } from "@/types/publico-ui";
 import { abrirLinkMaterial, baixarPdfMaterialPublico, conferirTipo, ErroLinkPublico } from "@/components/publico/cliente";
 import { useRecurso } from "@/hooks/useRecurso";
@@ -8,6 +9,17 @@ import { CarregandoPublico, ErroTemporarioPublico } from "@/components/publico/C
 import { TelaLinkInvalido } from "@/components/publico/TelaLinkInvalido";
 import { BotaoPublico, CartaoPublico, RotuloPublico } from "@/components/publico/atomos";
 import { formatarData } from "@/lib/formatar";
+import { lerResultadoDoPayload } from "@/components/croqui/lerCroquiPublico";
+
+/**
+ * As tabelas só existem quando o payload traz o croqui. Carregar o
+ * renderizador sob demanda mantém o link público — aberto no celular, muitas
+ * vezes em rede ruim — sem alguns KB de tabela que ele talvez nunca use.
+ */
+const MaterialCroquiPublico = dynamic(
+  () => import("@/components/croqui/MaterialCroquiPublico").then((m) => m.MaterialCroquiPublico),
+  { ssr: false },
+);
 
 function BlocoConteudo({ bloco }: { bloco: BlocoMaterialPublico }) {
   switch (bloco.tipo) {
@@ -104,6 +116,12 @@ function AcoesMaterial({ token, pdfDisponivel, aoLinkInvalido }: { token: string
 }
 
 function Conteudo({ token, abertura, aoLinkInvalido }: { token: string; abertura: AberturaMaterialPublico; aoLinkInvalido: () => void }) {
+  // Fase 5: quando o payload trouxer o `ResultadoCroqui` fixado, as tabelas do
+  // método aparecem aqui — o MESMO resultado da tela, do deck e da
+  // apresentação, recortado pelo que pode sair num link sem sessão. Enquanto
+  // o servidor não carregar o campo, `null` e o material segue como hoje.
+  const croqui = useMemo(() => lerResultadoDoPayload(abertura.payload), [abertura.payload]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
@@ -121,6 +139,12 @@ function Conteudo({ token, abertura, aoLinkInvalido }: { token: string; abertura
           <BlocoConteudo key={i} bloco={bloco} />
         ))}
       </CartaoPublico>
+
+      {croqui && (
+        <CartaoPublico como="section" className="flex flex-col gap-4">
+          <MaterialCroquiPublico resultado={croqui} />
+        </CartaoPublico>
+      )}
     </div>
   );
 }

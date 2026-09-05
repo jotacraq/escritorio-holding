@@ -10,7 +10,7 @@ import type { TomSelo } from "@/components/ui/Selo";
 const ROTULO_TEMPLATE: Record<string, string> = {
   boas_vindas: "Boas-vindas",
   confirmacao_d7: "Confirmação D-7",
-  dia_da_sessao: "Dia da sessão (link da sala)",
+  dia_da_sessao: "Link da sala",
   pos_sessao: "Material pós-sessão",
   croqui_convite: "Convite do croqui",
   agendamento_link: "Link de agendamento",
@@ -46,9 +46,13 @@ export type GrupoQuando = "atrasada" | "hoje" | "amanha" | "esta_semana" | "depo
 
 export const ORDEM_GRUPOS: GrupoQuando[] = ["atrasada", "hoje", "amanha", "esta_semana", "depois", "sem_data"];
 
+/**
+ * `descricao` NÃO é renderizada dentro do fluxo (lei de texto da Fase 5):
+ * vai para o `title` do cabeçalho do grupo. É explicação, não estado.
+ */
 export const ROTULO_GRUPO: Record<GrupoQuando, { titulo: string; descricao: string }> = {
-  atrasada: { titulo: "Já deveria ter saído", descricao: "Hora passou e ainda está pendente — a régua não rodou ou o envio depende de alguém." },
-  hoje: { titulo: "Hoje", descricao: "Sai na próxima passagem do cron depois da hora marcada." },
+  atrasada: { titulo: "Atrasadas", descricao: "A hora passou e a mensagem ainda está pendente." },
+  hoje: { titulo: "Hoje", descricao: "Sai no próximo envio automático depois da hora marcada." },
   amanha: { titulo: "Amanhã", descricao: "" },
   esta_semana: { titulo: "Esta semana", descricao: "" },
   depois: { titulo: "Depois", descricao: "" },

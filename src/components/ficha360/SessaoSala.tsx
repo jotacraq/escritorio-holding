@@ -32,7 +32,7 @@ export function SessaoSala({ sessao, temAgendamentoAtivo, aoAtualizar }: { sessa
   const [salvando, setSalvando] = useState(false);
 
   if (!sessao) {
-    return <p className="text-sm text-tinta-suave">A sala só existe depois que a Sessão de Viabilidade for criada (ao agendar o primeiro horário).</p>;
+    return <p className="text-sm text-tinta-suave">Marque o horário primeiro</p>;
   }
 
   const colunaOrigemExiste = Object.prototype.hasOwnProperty.call(sessao, "link_sala_origem");

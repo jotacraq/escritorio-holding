@@ -356,8 +356,13 @@ export async function montarFicha360(
   let cenarios: CenariosDaFicha | null = null;
   if (podeVerPatrimonio) {
     const [{ data: patrimonioData }, { data: familiaresData }, diagnosticoData, cenariosData] = await Promise.all([
-      supabase.from("patrimonio_itens").select("*").eq("pessoa_id", jornadaTipada.pessoa_id),
-      supabase.from("familiares").select("*").eq("pessoa_id", jornadaTipada.pessoa_id),
+      // `.eq("ativo", true)`: baixa neste projeto é `ativo = false`, nunca DELETE
+      // (0007). Sem este filtro a Ficha era o ÚNICO leitor que mostrava bem e
+      // familiar já dados baixa — e a contagem dela divergia de todos os outros
+      // (aba de Patrimônio, radar de documentos e motor do croqui já filtravam).
+      // Era a origem do "10 bens na Ficha, 1 em `entrada.bens`".
+      supabase.from("patrimonio_itens").select("*").eq("pessoa_id", jornadaTipada.pessoa_id).eq("ativo", true),
+      supabase.from("familiares").select("*").eq("pessoa_id", jornadaTipada.pessoa_id).eq("ativo", true),
       // `.eq("jornada_id").eq("atual")` casa com `uniq_diagnostico_atual` (0058).
       consultaTolerante<DiagnosticoSv | null>(
         "diagnosticos_sv",

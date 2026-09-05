@@ -7,7 +7,7 @@ export type { SlideApresentacao };
 
 /**
  * Modo apresentação GENÉRICO — a tela escura projetada para a família, usada
- * pelo Croqui (13 slides, adaptador em `ModoApresentacao.tsx`) e pelo
+ * pelo Croqui (adaptador `ApresentarCroqui.tsx`, que monta os slides do método a partir do `ResultadoCroqui`) e pelo
  * Diagnóstico da SV (agente H, `jornadas/[id]/diagnostico/**`). Recebe
  * `slides` já montados: quem monta decide o que a família vê no `corpo` e o
  * que fica só para o apresentador em `notas`.
@@ -44,7 +44,7 @@ export interface ApresentacaoProps {
   indiceInicial?: number;
   /** Aviso discreto só para quem opera (ex.: "2 slides sem revisão"). Nunca impresso. */
   aviso?: ReactNode;
-  /** Marcação só de impressão (ex.: `DeckImpressao`) — fica escondida na tela. */
+  /** Marcação só de impressão (ex.: `DeckTabelas`) — fica escondida na tela. */
   impressao?: ReactNode;
   rotuloSair?: string;
 }

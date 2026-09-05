@@ -58,6 +58,7 @@
  * ---------------------------------------------------------------------------
  */
 import type { EtapaJornada } from "@/lib/api";
+import { rotulo, titleDe } from "@/lib/vocabulario";
 import type { ChaveItemPasta } from "./catalogo";
 import type { Sinais } from "./sinais";
 
@@ -77,8 +78,19 @@ export type ChavePasso =
 
 export interface ProximoPasso {
   chave: ChavePasso;
-  /** Frase curta, humana, com verbo — o que fazer ("Ligar para o cliente"). */
+  /**
+   * O verbo, curto e humano — o que fazer ("Ligar para o cliente").
+   *
+   * Fase 5, lei de texto (§2 + §9.2): **≤ 4 palavras e nenhuma sigla.** A
+   * frase inteira ("Ligação Estratégica", "Imposto de renda e contrato
+   * social", "Sessão de Viabilidade") vive em `title` — que o `Chip`, o
+   * `Trilho` e as filas do Painel põem no `title` do elemento, nunca no fluxo.
+   * Este texto aparece em até 6 cartões por tela na Esteira: cada palavra aqui
+   * é multiplicada por 6.
+   */
   passo: string;
+  /** A frase inteira por trás do verbo — SÓ para `title`. */
+  title?: string;
   dono: DonoPasso;
   urgencia: UrgenciaPasso;
   /**
@@ -129,8 +141,15 @@ function urgenciaPorProximidade(horas: number | null): UrgenciaPasso {
   return "quando_der";
 }
 
-function passo(chave: ChavePasso, texto: string, dono: DonoPasso, urgencia: UrgenciaPasso, rota: string | null): ProximoPasso {
-  return { chave, passo: texto, dono, urgencia, rota };
+function passo(
+  chave: ChavePasso,
+  texto: string,
+  dono: DonoPasso,
+  urgencia: UrgenciaPasso,
+  rota: string | null,
+  title?: string,
+): ProximoPasso {
+  return { chave, passo: texto, dono, urgencia, rota, title };
 }
 
 /**
@@ -152,47 +171,47 @@ export function derivarProximoPasso(sinais: Sinais, agora: number = Date.now()):
 
   // 23 — jornada fechada com holding: nada pendente.
   if (sinais.etapa === "holding_contratada" || (sinais.nivelPago !== null && sinais.nivelPago >= 3)) {
-    return passo("concluido", "Holding contratada — jornada concluída", "ninguem", "quando_der", null);
+    return passo("concluido", "Jornada concluída", "ninguem", "quando_der", null, "Holding contratada — nada pendente.");
   }
 
   // 2/3 — lead/MQL ainda sem compra: quem move é o cliente.
   if (pagou === false) {
-    return passo("aguardar_compra", "Aguardando a compra da Sessão de Viabilidade", "cliente", "quando_der", null);
+    return passo("aguardar_compra", "Aguardando a compra", "cliente", "quando_der", null, `Aguardando a compra da ${rotulo("sessao_viabilidade")}.`);
   }
 
   // ---- Antes da sessão (só enquanto ela não aconteceu) ----------------------
   if (!sessaoRealizada) {
     // 4/27 — pagou e ninguém ligou: o furo que mais dói.
     if (pagou === true && sinais.temLigacao === false) {
-      return passo("ligacao", "Ligar para o cliente (Ligação Estratégica)", "equipe", "hoje", "#ligacao");
+      return passo("ligacao", "Ligar para o cliente", "equipe", "hoje", "#ligacao", `${rotulo("pop03")} · ${titleDe("pop03")}`);
     }
     // 5 — pagou, já ligou, e não há horário marcado.
     if (pagou === true && !sessaoMarcada && sinais.proximaSessaoEm === null && sinais.etapa !== null) {
-      return passo("sessao", "Agendar a Sessão de Viabilidade", "equipe", "esta_semana", "#sessao");
+      return passo("sessao", "Agendar a sessão", "equipe", "esta_semana", "#sessao", rotulo("sessao_viabilidade"));
     }
     // 6/7/24 — sessão em ≤ 7 dias e o cliente ainda não confirmou (só com a coluna presente).
     if (sessaoMarcada && horas !== null && horas <= 7 * 24 && sinais.presencaConfirmada === false) {
-      return passo("confirmar_presenca", "Cliente precisa confirmar presença — reforçar por WhatsApp", "cliente", horas <= 3 * 24 ? "hoje" : "esta_semana", "#sessao");
+      return passo("confirmar_presenca", "Confirmar presença", "cliente", horas <= 3 * 24 ? "hoje" : "esta_semana", "#sessao", "O cliente ainda não confirmou — reforçar por WhatsApp.");
     }
     // 9/25 — sessão em < 24 h sem link da sala.
     if (sessaoMarcada && horas !== null && horas <= 24 && sinais.temLinkSala === false) {
-      return passo("colar_link_sala", "Colar o link da sala da sessão", "equipe", "hoje", "#sessao");
+      return passo("colar_link_sala", "Colar link da sala", "equipe", "hoje", "#sessao", "A sessão é em menos de 24 h e ainda não tem link de sala.");
     }
     // 10 — formulário estratégico ainda não respondido.
     if (pagou === true && sinais.temFormulario === false) {
-      return passo("formulario", "Cliente precisa responder o Formulário Estratégico", "cliente", sessaoMarcada ? urgenciaPorProximidade(horas) : "quando_der", "#formulario");
+      return passo("formulario", "Responder o formulário", "cliente", sessaoMarcada ? urgenciaPorProximidade(horas) : "quando_der", "#formulario", `${rotulo("pop02")} · ${titleDe("pop02")}`);
     }
     // 11 — sessão marcada e sem briefing.
     if (sessaoMarcada && sinais.temBriefing === false) {
-      return passo("briefing", "Gerar o Briefing Estratégico", "equipe", urgenciaPorProximidade(horas), "#briefing");
+      return passo("briefing", "Gerar o Briefing", "equipe", urgenciaPorProximidade(horas), "#briefing", rotulo("briefing_entregavel"));
     }
     // 12/26 — tudo pronto: é conduzir a sessão.
     if (sessaoMarcada) {
-      return passo("sessao", "Conduzir a Sessão de Viabilidade", "advogada", urgenciaPorProximidade(horas), "#sessao");
+      return passo("sessao", "Conduzir a sessão", "advogada", urgenciaPorProximidade(horas), "#sessao", rotulo("sessao_viabilidade"));
     }
     // Pagou, mas a fonte não diz nem ligação nem agendamento — não inventa.
     if (pagou === true) {
-      return passo("sem_informacao", "Sem informação suficiente sobre o preparo", "ninguem", "quando_der", null);
+      return passo("sem_informacao", "Sem informação", "ninguem", "quando_der", null, "Sem informação suficiente sobre o preparo da sessão.");
     }
   }
 
@@ -200,55 +219,55 @@ export function derivarProximoPasso(sinais: Sinais, agora: number = Date.now()):
   if (sessaoRealizada && !croquiContratado) {
     // 13 — relatório da SV é da advogada.
     if (sinais.temRelatorio === false) {
-      return passo("relatorio_sv", "Preencher o Relatório da Sessão", "advogada", "esta_semana", "#relatorio");
+      return passo("relatorio_sv", "Preencher o relatório", "advogada", "esta_semana", "#relatorio", `Relatório da ${rotulo("sessao_viabilidade")}`);
     }
     // 14/15 — material pós-sessão: gerar (sistema) ou aprovar (advogada).
     if (sinais.materialEstado === "nenhum") {
-      return passo("material", "Gerar o Material pós-sessão", "sistema", "esta_semana", "#material");
+      return passo("material", "Gerar o material", "sistema", "esta_semana", "#material", "Material pós-sessão");
     }
     if (sinais.materialEstado === "rascunho") {
-      return passo("material", "Aprovar o Material pós-sessão", "advogada", "esta_semana", "#material");
+      return passo("material", "Aprovar o material", "advogada", "esta_semana", "#material", "Material pós-sessão");
     }
     // 16 — tarefa assistida "enviar link do croqui" (Dra. Elaine envia pessoalmente).
     if (sinais.tarefasAbertas?.some((t) => t.tipo === "enviar_link_croqui")) {
-      return passo("enviar_link_croqui", "Enviar o link de pagamento do Croqui", "advogada", "hoje", "#sessao");
+      return passo("enviar_link_croqui", "Enviar link de pagamento", "advogada", "hoje", "#sessao", `Link de pagamento do ${rotulo("croqui")}`);
     }
     // 17 — tudo entregue: a decisão é da família.
     if (sinais.temRelatorio === true || sinais.materialEstado === "aprovado") {
-      return passo("aguardar_croqui", "Aguardando a contratação do Croqui", "cliente", "quando_der", null);
+      return passo("aguardar_croqui", "Aguardando o croqui", "cliente", "quando_der", null, `Aguardando a contratação do ${rotulo("croqui")}.`);
     }
-    return passo("sem_informacao", "Sem informação suficiente sobre o pós-sessão", "ninguem", "quando_der", null);
+    return passo("sem_informacao", "Sem informação", "ninguem", "quando_der", null, "Sem informação suficiente sobre o pós-sessão.");
   }
 
   // ---- Croqui contratado -----------------------------------------------------
   if (croquiContratado && sinais.etapa !== "croqui_apresentado") {
     // 18 — IR e contrato social ainda não chegaram.
     if (sinais.temDocumentos === false) {
-      return passo("documentos", "Cliente precisa enviar IR e contrato social", "cliente", "esta_semana", "#documentos");
+      return passo("documentos", "Enviar documentos", "cliente", "esta_semana", "#documentos", `${rotulo("imposto_renda")} e contrato social`);
     }
     // 19/20/21 — o croqui em si.
     if (sinais.croquiStatus === "nenhum") {
-      return passo("croqui", "Iniciar o Croqui", "advogada", "esta_semana", "#croqui");
+      return passo("croqui", "Iniciar o croqui", "advogada", "esta_semana", "#croqui", rotulo("croqui"));
     }
     if (sinais.croquiStatus === "rascunho") {
-      return passo("croqui", "Concluir o Croqui", "advogada", "esta_semana", "#croqui");
+      return passo("croqui", "Concluir o croqui", "advogada", "esta_semana", "#croqui", rotulo("croqui"));
     }
     if (sinais.croquiStatus === "pronto") {
-      return passo("croqui", "Apresentar o Croqui", "advogada", "esta_semana", "#croqui");
+      return passo("croqui", "Apresentar o croqui", "advogada", "esta_semana", "#croqui", rotulo("croqui"));
     }
     if (sinais.croquiStatus === "apresentado") {
-      return passo("aguardar_holding", "Aguardando a decisão sobre a Holding", "cliente", "quando_der", null);
+      return passo("aguardar_holding", "Aguardando decisão", "cliente", "quando_der", null, "Aguardando a decisão da família sobre a holding.");
     }
-    return passo("sem_informacao", "Sem informação suficiente sobre o Croqui", "ninguem", "quando_der", null);
+    return passo("sem_informacao", "Sem informação", "ninguem", "quando_der", null, `Sem informação suficiente sobre o ${rotulo("croqui")}.`);
   }
 
   // 22 — croqui apresentado: a decisão é da família.
   if (sinais.etapa === "croqui_apresentado") {
-    return passo("aguardar_holding", "Aguardando a decisão sobre a Holding", "cliente", "quando_der", null);
+    return passo("aguardar_holding", "Aguardando decisão", "cliente", "quando_der", null, "Aguardando a decisão da família sobre a holding.");
   }
 
   // 1 — nada se sabe.
-  return passo("sem_informacao", "Sem informação suficiente", "ninguem", "quando_der", null);
+  return passo("sem_informacao", "Sem informação", "ninguem", "quando_der", null, "Sem informação suficiente sobre esta jornada.");
 }
 
 /** Link para a Ficha 360 na aba do passo (ou a raiz da Pasta quando não há aba). */

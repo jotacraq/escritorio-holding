@@ -93,10 +93,15 @@ const TONS: Record<TomSelo, string> = {
  * Chip de estado. Pílula, 12px mínimo, sempre com texto (cor nunca é o único
  * sinal). `icone` opcional (SVG 20×20 `aria-hidden`) para reforçar o estado
  * sem depender de cor.
+ *
+ * `title` (Fase 5, lei de texto §2.2): o detalhe longo — a sigla do método
+ * (`titleDe()`), o motivo, a data por extenso — vive aqui, nunca num `<p>` ao
+ * lado. Antes disso, seis chamadas envolviam o selo num `<span title>` só para
+ * conseguir o mesmo efeito (relatório do M3).
  */
-export function Selo({ tom, icone, className = "", children }: { tom: TomSelo; icone?: ReactNode; className?: string; children: ReactNode }) {
+export function Selo({ tom, icone, title, className = "", children }: { tom: TomSelo; icone?: ReactNode; title?: string; className?: string; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-legenda font-medium leading-tight ${TONS[tom]} ${className}`}>
+    <span title={title} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-legenda font-medium leading-tight ${TONS[tom]} ${className}`}>
       {icone}
       {children}
     </span>

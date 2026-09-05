@@ -12,6 +12,8 @@
  * existe, com que nome de negócio e de que procedência.
  */
 
+import { rotulo, titleDe } from "@/lib/vocabulario";
+
 export type ProcedenciaItemPasta = "recebido" | "produzido" | "gerado_ia";
 
 /**
@@ -24,7 +26,16 @@ export type DonoItemPasta = "equipe" | "advogada" | "cliente" | "sistema";
 
 export interface ItemCatalogoPasta {
   chave: ChaveItemPasta;
+  /** O que aparece no cartão. Fase 5 (§2): ≤ 3 palavras, sem sigla. */
   rotulo: string;
+  /**
+   * O nome inteiro do artefato — SÓ para `title`. `undefined` quando o rótulo
+   * já é o nome inteiro. Existe porque "Transcrição da Sessão" x "Análise da
+   * Sessão" x "Diagnóstico da SV" repetiam "da Sessão"/"da SV" em três
+   * cartões vizinhos do mesmo cliente: 9 palavras para dizer o que o contexto
+   * já dizia, e uma sigla ("SV") dentro do fluxo, contra o §9.2.
+   */
+  titulo?: string;
   procedencia: ProcedenciaItemPasta;
   /** Quem precisa agir para o item existir. */
   dono: DonoItemPasta;
@@ -76,10 +87,10 @@ export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
   { chave: "links", rotulo: "Links", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
   { chave: "briefing", rotulo: "Briefing", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: false },
   { chave: "sessao", rotulo: "Sessão", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
-  { chave: "transcricao", rotulo: "Transcrição da Sessão", procedencia: "recebido", dono: "equipe", requerPatrimonio: true },
-  { chave: "analise_sessao", rotulo: "Análise da Sessão", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: true },
+  { chave: "transcricao", rotulo: "Transcrição", titulo: `Transcrição da ${rotulo("sessao_viabilidade")}`, procedencia: "recebido", dono: "equipe", requerPatrimonio: true },
+  { chave: "analise_sessao", rotulo: "Análise", titulo: `Análise da ${rotulo("sessao_viabilidade")}`, procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: true },
   // Ver nota de bloqueio no topo de `derivar.ts` — sempre 'ainda_nao' por ora.
-  { chave: "diagnostico_sv", rotulo: "Diagnóstico da SV", procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
+  { chave: "diagnostico_sv", rotulo: rotulo("diagnostico"), titulo: `${titleDe("diagnostico")} · ${rotulo("sessao_viabilidade")}`, procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
   { chave: "relatorio_sv", rotulo: "Relatório", procedencia: "produzido", dono: "advogada", requerPatrimonio: true },
   { chave: "croqui", rotulo: "Croqui", procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
   { chave: "material", rotulo: "Material", procedencia: "gerado_ia", dono: "sistema", requerPatrimonio: false },

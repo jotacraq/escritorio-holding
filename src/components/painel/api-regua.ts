@@ -40,25 +40,3 @@ export async function buscarProvaDeVida(): Promise<ProvaDeVidaEsteira> {
   pendentes.sort((a, b) => a.agendada_para.localeCompare(b.agendada_para));
   return { regua: regua.success ? regua.data : null, pendentes };
 }
-
-/** Chave do template → motivo humano (o que a mensagem faz). Desconhecido → a chave em palavras. */
-export function motivoDoTemplate(chave: string | null | undefined): string {
-  switch (chave) {
-    case "boas_vindas":
-      return "Boas-vindas";
-    case "confirmacao_d7":
-      return "Confirmação D-7";
-    case "dia_da_sessao":
-      return "Link da sala";
-    case "pos_sessao":
-      return "Material pós-sessão";
-    case "croqui_convite":
-      return "Convite do Croqui";
-    case null:
-    case undefined:
-    case "":
-      return "Mensagem da régua";
-    default:
-      return chave.replace(/_/g, " ");
-  }
-}

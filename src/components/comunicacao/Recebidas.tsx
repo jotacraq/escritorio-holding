@@ -12,6 +12,7 @@ import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { Selo, SeloStub } from "@/components/ui/Selo";
 import { formatarDataHora, formatarRelativo, formatarTelefone } from "@/lib/formatar";
+import { rotulo, titleDe } from "@/lib/vocabulario";
 import { mensagemDeErro } from "@/components/admin/http";
 import { vincularMensagemRecebida, type MensagemRecebidaItem, type RespostaMensagensRecebidas } from "./api-comunicacao";
 
@@ -36,13 +37,11 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
   if (!dados) return null;
 
   if (!dados.disponivel) {
+    // O nome da tabela e o número da migration são conserto de admin (§9.2):
+    // ficam no `title`, não no fluxo de quem só queria ler uma resposta.
     return (
-      <div className="flex flex-col gap-3">
-        <SeloStub texto="Mensagens recebidas ainda não disponíveis: a tabela mensagens_recebidas (migration 0054) não está neste banco." />
-        <p className="text-sm text-tinta-suave">
-          Quando o Chatwoot estiver ligado (Admin → Integrações → WhatsApp), toda mensagem que o cliente mandar aparece aqui, casada com a
-          pessoa pelo telefone.
-        </p>
+      <div title="Tabela mensagens_recebidas (migration 0054) ausente neste banco.">
+        <SeloStub texto="Mensagens recebidas ainda não disponíveis." />
       </div>
     );
   }
@@ -52,7 +51,14 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
       <EstadoVazio
         ilustracao="busca"
         titulo="Nenhuma mensagem recebida"
-        descricao="Assim que um cliente responder pelo WhatsApp do Chatwoot, a mensagem aparece aqui com a pessoa identificada pelo telefone."
+        acao={
+          <Link
+            href="/admin#integracoes"
+            className="inline-flex min-h-11 items-center rounded-controle border border-linha-controle bg-papel-elevado px-3.5 text-sm font-medium text-tinta hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
+          >
+            Ver integrações
+          </Link>
+        }
       />
     );
   }
@@ -64,7 +70,7 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
       <Cartao
         preenchimento="sem"
         titulo="Recebidas pelo WhatsApp"
-        descricao={semVinculo > 0 ? `${semVinculo} sem correspondência — vincule para aparecer na linha do tempo da pessoa.` : "Todas casadas com uma pessoa."}
+        acao={semVinculo > 0 ? <Selo tom="ambar">{semVinculo} sem pessoa</Selo> : <Selo tom="verde">Todas vinculadas</Selo>}
       >
         <ul className="divide-y divide-linha">
           {dados.itens.map((item) => (
@@ -92,8 +98,8 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
               </div>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta">{item.corpo}</p>
               {item.anexos.length > 0 && (
-                <p className="text-xs text-tinta-fraca">
-                  {item.anexos.length} anexo{item.anexos.length === 1 ? "" : "s"} (abrir no Chatwoot)
+                <p className="text-xs text-tinta-fraca" title={`Anexo abre na ${rotulo("provedor_whatsapp")} (${titleDe("provedor_whatsapp")}).`}>
+                  {item.anexos.length} anexo{item.anexos.length === 1 ? "" : "s"}
                 </p>
               )}
               {!item.pessoa_id && (
@@ -227,7 +233,7 @@ function VincularPessoa({
       aoFechar={aoFechar}
       rotulo={mensagem?.telefone ? formatarTelefone(mensagem.telefone) : "Mensagem recebida"}
       titulo="Vincular a uma pessoa"
-      descricao="Busque pelo nome. A mensagem passa a aparecer na linha do tempo da pessoa e da jornada aberta dela."
+      descricao="Busque pelo nome."
       rodape={
         <div className="flex justify-end gap-2">
           <Botao variante="fantasma" onClick={aoFechar}>
@@ -247,7 +253,15 @@ function VincularPessoa({
         <div aria-live="polite" className="flex flex-col gap-2">
           {buscando && <p className="text-sm text-tinta-suave">Buscando…</p>}
           {!buscando && resultados && resultados.length === 0 && (
-            <EstadoVazio compacto titulo="Ninguém com esse nome" descricao="Confira a grafia. Pessoa nova entra pela Esteira → Nova jornada." />
+            <EstadoVazio
+              compacto
+              titulo="Ninguém com esse nome"
+              acao={
+                <Link href="/esteira" className="min-h-11 text-sm font-medium text-[color:var(--latao)] underline-offset-2 hover:underline">
+                  Criar no caminho do cliente
+                </Link>
+              }
+            />
           )}
           {resultados && resultados.length > 0 && (
             <ul className="flex flex-col gap-2" role="radiogroup" aria-label="Pessoas encontradas">

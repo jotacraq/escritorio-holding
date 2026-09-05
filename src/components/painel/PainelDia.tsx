@@ -7,9 +7,11 @@ import { EsqueletoCartao, EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
 import { TourPrimeiraVez } from "@/components/onboarding/TourPrimeiraVez";
+import { useUsuarioAtual } from "@/hooks/useUsuarioAtual";
 import { formatarDataHora } from "@/lib/formatar";
 import type { PainelDiaNormalizado } from "@/types/painel-ui";
 import { usePainelDia } from "./usePainelDia";
+import { blocosDoPapel, type ChaveBlocoPainel } from "./blocosPorPapel";
 import { SessoesHoje } from "./SessoesHoje";
 import { PreparoPendente } from "./PreparoPendente";
 import { PagosSemContato } from "./PagosSemContato";
@@ -36,10 +38,29 @@ const ICONE_AJUDA = (
 );
 
 /**
- * Os quatro números do topo — só o que já está carregado; nada de fetch a
- * mais. Bloco indisponível vira `null` (travessão + motivo). "Confirmaram
- * presença" só existe quando a view do agente A traz a coluna: sem ela, o
- * KPI diz que a informação ainda não está disponível.
+ * "sábado, 05 de setembro" → "Sábado, 05 de setembro". `capitalize` do CSS
+ * subiria também o "De" do meio, o que a Neuetra bold deixa feio no display.
+ */
+function comMaiusculaInicial(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+/** Link "ver detalhe" de KPI: alvo de 44px de altura, como manda o design system. */
+const CLASSE_LINK_KPI = "inline-flex min-h-11 items-center text-[color:var(--latao)] hover:underline";
+
+/**
+ * Enquanto o papel não carregou, valem só os blocos que **todo** papel vê.
+ * É o oposto de "mostra tudo e esconde depois": bloco de sistema nunca
+ * chega ao DOM de quem não é admin, nem por um quadro de render.
+ */
+const BLOCOS_ENQUANTO_CARREGA: ChaveBlocoPainel[] = ["sessoes_hoje", "preparo"];
+
+/**
+ * Os números do topo — só o que já está carregado; nada de fetch a mais, e
+ * só o que o papel de quem olha pode ver. Bloco indisponível vira `null`
+ * (travessão + motivo). "Confirmaram presença" só existe quando a view do
+ * agente A traz a coluna: sem ela, o KPI diz que a informação ainda não está
+ * disponível.
  */
 function resumirKpis(dados: PainelDiaNormalizado) {
   const sessoes = dados.sessoesDoDia.situacao === "ok" ? dados.sessoesDoDia.itens : null;
@@ -47,7 +68,7 @@ function resumirKpis(dados: PainelDiaNormalizado) {
   return {
     sessoes: sessoes ? sessoes.length : null,
     confirmaram: sessoes && temColunaPresenca ? sessoes.filter((s) => Boolean(s.presenca_confirmada_em)).length : null,
-    motivoConfirmaram: !sessoes ? "não conseguiu carregar as sessões" : sessoes.length === 0 ? "nenhuma sessão nas próximas 48 h" : "confirmação de presença ainda não disponível",
+    motivoConfirmaram: !sessoes ? "não carregou" : sessoes.length === 0 ? "sem sessão nas próximas 48 h" : "presença ainda não disponível",
     pagosSemContato: dados.pagosSemContato.situacao === "ok" ? dados.pagosSemContato.itens.length : null,
     travados: dados.pendenciasSistema.situacao === "ok" ? dados.pendenciasSistema.itens.length : null,
   };
@@ -57,21 +78,35 @@ function resumirKpis(dados: PainelDiaNormalizado) {
  * Painel do dia — a primeira tela que a Dra. Elaine vê. Fila do dia em
  * ordem de urgência, não kanban para varrer (ARQUITETURA-FASE-2 §4.6 / §8 UX).
  *
+ * Fase 5 §9.1 — **duas visões, decididas pelo papel**: advogada vê sessão,
+ * preparo e números; relacionamento vê quem pagou e o que travou; admin vê
+ * tudo, em seções rotuladas, com o sistema reduzido a uma linha. Bloco fora
+ * da lista do papel não é renderizado — e o que ele buscaria não é buscado
+ * (a prova de vida faz o próprio `GET /api/mensagens`; para não-admin esse
+ * fetch simplesmente não acontece).
+ *
  * Sem polling: uma busca ao montar, e uma sob clique em "Atualizar". O
  * egress do Supabase é da organização inteira e já custou caro num sistema
  * desta casa com aba parada fazendo polling.
  *
  * "Atualizado às" usa `gerado_em` — o instante que o servidor calculou o
- * painel, não o relógio do navegador — para não afirmar uma frescura que
- * ninguém mediu. Sem esse campo na resposta, o rótulo simplesmente não
- * aparece (vazio nunca vira dado inventado).
+ * painel, não o relógio do navegador.
  */
 export function PainelDia() {
   const { dados, carregando, erro, recarregar } = usePainelDia();
+  const { usuario, carregando: carregandoUsuario } = useUsuarioAtual();
   const semNenhumaCargaAinda = !dados;
   const [versao, setVersao] = useState(0);
   const [tourAberto, setTourAberto] = useState(false);
   const kpis = useMemo(() => (dados ? resumirKpis(dados) : null), [dados]);
+
+  const papel = usuario?.papel ?? null;
+  const ehAdmin = papel === "admin";
+  const blocos = useMemo(
+    () => new Set<ChaveBlocoPainel>(carregandoUsuario ? BLOCOS_ENQUANTO_CARREGA : blocosDoPapel(papel)),
+    [carregandoUsuario, papel],
+  );
+  const ve = (b: ChaveBlocoPainel) => blocos.has(b);
 
   function atualizar() {
     recarregar();
@@ -79,11 +114,10 @@ export function PainelDia() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-secao">
       <CabecalhoPagina
         rotulo="Dia a dia"
-        titulo={<span className="capitalize">{FORMATADOR_DATA_TITULO.format(new Date())}</span>}
-        descricao="O que precisa da sua atenção agora, em ordem de urgência — não o quadro inteiro para varrer."
+        titulo={comMaiusculaInicial(FORMATADOR_DATA_TITULO.format(new Date()))}
         acoes={
           <>
             <Botao variante="fantasma" icone={ICONE_AJUDA} onClick={() => setTourAberto(true)}>
@@ -99,7 +133,7 @@ export function PainelDia() {
             {dados?.geradoEm && <span>Atualizado às {formatarDataHora(dados.geradoEm)}</span>}
             {Boolean(erro) && !semNenhumaCargaAinda && (
               <span role="alert" className="text-[color:var(--vermelho)]">
-                Não foi possível atualizar agora — mostrando a última carga bem-sucedida.
+                Não atualizou — mostrando a última carga.
               </span>
             )}
           </>
@@ -107,7 +141,7 @@ export function PainelDia() {
       />
 
       {carregando && semNenhumaCargaAinda && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-bloco">
           <EsqueletoCartao quantidade={4} rotulo="Carregando o painel do dia…" />
           <EsqueletoLista linhas={3} rotulo="" />
           <EsqueletoLista linhas={2} rotulo="" />
@@ -118,21 +152,69 @@ export function PainelDia() {
 
       {dados && kpis && (
         <>
-          <section aria-label="Resumo de hoje" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Kpi rotulo="Sessões nas próximas 48 h" valor={kpis.sessoes} motivoVazio="não conseguiu carregar as sessões" acao={<a href="#sessoes-hoje" className="text-[color:var(--latao)] hover:underline">Ver as sessões</a>} />
+          <section aria-label="Resumo de hoje" className="grid grid-cols-2 gap-cartao xl:grid-cols-4">
+            <Kpi
+              rotulo="Sessões em 48 h"
+              valor={kpis.sessoes}
+              motivoVazio="não carregou"
+              acao={
+                <a href="#sessoes-hoje" className={CLASSE_LINK_KPI}>
+                  Ver as sessões
+                </a>
+              }
+            />
             <Kpi rotulo="Confirmaram presença" valor={kpis.confirmaram} unidade={kpis.sessoes ? `de ${kpis.sessoes}` : undefined} motivoVazio={kpis.motivoConfirmaram} />
-            <Kpi rotulo="Pagaram e ninguém ligou" valor={kpis.pagosSemContato} motivoVazio="não conseguiu carregar" acao={<a href="#pagos-sem-contato" className="text-[color:var(--latao)] hover:underline">Ver quem</a>} />
-            <Kpi rotulo="Travado no sistema" valor={kpis.travados} motivoVazio="não conseguiu carregar" acao={<a href="#travado" className="text-[color:var(--latao)] hover:underline">Ver o que</a>} />
+            {ve("pagos_sem_contato") && (
+              <Kpi
+                rotulo="Pagaram sem contato"
+                valor={kpis.pagosSemContato}
+                motivoVazio="não carregou"
+                acao={
+                  <a href="#pagos-sem-contato" className={CLASSE_LINK_KPI}>
+                    Ver quem
+                  </a>
+                }
+              />
+            )}
+            {ve("travado") && (
+              <Kpi
+                rotulo="Travado"
+                valor={kpis.travados}
+                motivoVazio="não carregou"
+                acao={
+                  <a href="#travado" className={CLASSE_LINK_KPI}>
+                    Ver o que
+                  </a>
+                }
+              />
+            )}
           </section>
 
-          <div className="flex flex-col gap-6">
-            <PagosSemContato estado={dados.pagosSemContato} aoTentarDeNovo={atualizar} />
-            <SessoesHoje estado={dados.sessoesDoDia} aoTentarDeNovo={atualizar} />
-            <PreparoPendente estado={dados.pendenciasPreparo} aoTentarDeNovo={atualizar} />
-            <Travado estado={dados.pendenciasSistema} aoTentarDeNovo={atualizar} />
-            <ProvaDeVida versao={versao} />
-            <NumerosSemana estado={dados.indicadoresSemana} aoTentarDeNovo={atualizar} />
-          </div>
+          {/* Seção 1 — o que depende de gente. Para o admin ela é rotulada,
+              porque logo abaixo vem a seção do sistema; para os demais papéis
+              não há segunda seção, e um rótulo de seção única seria ruído. */}
+          <section aria-labelledby={ehAdmin ? "secao-acoes" : undefined} aria-label={ehAdmin ? undefined : "Ações de hoje"} className="flex flex-col gap-bloco">
+            {ehAdmin && (
+              <h2 id="secao-acoes" className="text-subtitulo font-bold text-tinta">
+                Ações de hoje
+              </h2>
+            )}
+            {ve("pagos_sem_contato") && <PagosSemContato estado={dados.pagosSemContato} aoTentarDeNovo={atualizar} />}
+            {ve("sessoes_hoje") && <SessoesHoje estado={dados.sessoesDoDia} aoTentarDeNovo={atualizar} />}
+            {ve("preparo") && <PreparoPendente estado={dados.pendenciasPreparo} aoTentarDeNovo={atualizar} />}
+            {ve("travado") && <Travado estado={dados.pendenciasSistema} papel={papel} aoTentarDeNovo={atualizar} />}
+            {ve("numeros") && <NumerosSemana estado={dados.indicadoresSemana} aoTentarDeNovo={atualizar} />}
+          </section>
+
+          {/* Seção 2 — sistema. Existe só para o admin, e cabe numa linha. */}
+          {ve("sistema") && (
+            <section aria-labelledby="secao-sistema" className="flex flex-col gap-item">
+              <h2 id="secao-sistema" className="text-subtitulo font-bold text-tinta">
+                Sistema
+              </h2>
+              <ProvaDeVida versao={versao} />
+            </section>
+          )}
         </>
       )}
 

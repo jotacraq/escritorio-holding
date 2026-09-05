@@ -4,6 +4,30 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
+> **Sessão de 05/09 (dia/noite) — FASE 5 fechada, trava final do Fable APROVADA (2 rodadas + item cirúrgico) e publicada.**
+> Leia `brain/Diário/2026-09-05.md` (entradas 02:40 em diante), `docs/ARQUITETURA-FASE-5.md` e
+> `brain/06 - Materiais/Processo real do escritorio (Drive).md` (o método real, lido da pasta de um
+> cliente — 57 arquivos — sem PII). Em uma linha: o croqui deixou de ser prosa de IA e virou
+> **cálculo determinístico do método** (19 tabelas, faixas progressivas, procedência por célula,
+> `croqui_calculos` versionado, simulador ao vivo, `.docx` no formato do escritório); a IA só narra
+> (schema 2.048 bytes, inativo até bancada). Trilho de 9 passos em toda tela de cliente, Pasta como
+> porta única, aba Sessão em linha de passos, automações com resultado, radar de documentos com
+> "Pedir agora", `/p/d` com `item_ref`, painel por papel no servidor, vocabulário humano, lei de texto
+> (Painel 278→108 palavras, Comunicação 293→85, Ficha 225→137). **Banco: 0062–0070 aplicadas e
+> provadas** (`scripts/verificacao-0069.sql`, `verificacao-0070.sql` 7/7). Pentest: 0 crítico/alto; 1 médio + 4 baixos corrigidos na 0069.
+> Fable reprovou 2× (solidificação: evento `croqui` sem status inventava "pronto" → 0070 com tipos próprios de timeline; otimização: código morto novo e rota `fixar` sem botão → apagado / botão "Fixar esta versão") e aprovou na 3ª. A CLI caiu entre a última correção e o commit; a sessão da noite fechou (diário 19:30). Skills da Vercel
+> instaladas (`docs/SKILLS.md`). Squad: Sonnet reconhece · Opus codifica · Fable orquestra/audita.
+>
+> **Configuração pendente com o João / Dra. Elaine (nada é código):**
+> 1. **Nenhum croqui fecha até cadastrar** em Admin → Parâmetros: alíquotas de ITCMD (herança e doação) e ITBI por UF/município **em faixas** com base legal, cartório de notas/imóveis por UF, e `configuracoes['croqui.horas_por_ato']` (21 atos × 50/47/35 h). Por desenho: a tela mostra a falta, nunca zero.
+> 2. **Reconciliar divergências do material do escritório** (Painel do admin → "Parâmetros em divergência"): certidões R$ 2.000 × 7.000; membership 750/1.350/2.000; crédito IBS/CBS 26,5% × 36,92%; junta da 2ª célula 500 × 511. Confirmar base do ITCMD por modelo (mercado em 1/2, DIRPF em 3) e `croqui.uf_domicilio_vantajoso`.
+> 3. Drive: `GOOGLE_SA_JSON` + `DRIVE_PASTA_RAIZ_ID` na Hostinger + pasta raiz compartilhada com a service account + regra de nome da pasta do cliente (hoje `HOLDING DRIVE - <nome>`; põe nome fora do sistema — decidir).
+> 4. `SUPABASE_SERVICE_ROLE_KEY` em produção já existe; sem ela `/p/d` cai no fallback de 3 tipos.
+> 5. `LIMITE_ARQUIVOS_POR_LINK = 5` × radar com 10+ documentos — decisão de produto.
+> 6. Ativar `agente_croqui_narrativa` v1 só após sonda + bancada (`docs/ARQUITETURA-FASE-4-VERIFICACAO.md` tem o roteiro).
+> 7. M7 (gerador de minutas por célula × regime + sub-esteira de execução na Ficha) ficou para a próxima rodada — modelo de dados previsto em `docs/ARQUITETURA-FASE-5.md` §10.2.
+> 8. Continua tudo da lista da Fase 4 abaixo (cron, Resend, Hotmart, n8n/Vapi/Chatwoot).
+
 > **Sessão de 05/09 (madrugada) — FASE 4 fechada e publicada.** Leia `brain/Diário/2026-09-05.md`
 > e `tmp/squad/fase4-brief.md` (não versionado; relatórios de 14 agentes) antes de qualquer coisa.
 > Em uma linha: esteira automatizada de ponta a ponta (confirmação `/p/c`, sala, ligação por IA,
@@ -24,7 +48,7 @@ Se você é uma IA abrindo este repositório pela primeira vez: **leia este arqu
 > 9. Trocar a senha do admin de teste antes de cliente real (§3).
 > 10. Dra. Elaine: revisar os 3 modelos de material rascunho (`origem_dado='exemplo'`) e o rodapé jurídico do PDF; cadastrar alíquotas de ITCMD/ITBI com base legal em Admin → Parâmetros (sem isso o Cenário não calcula — por desenho).
 >
-> **Regra de trabalho nova (ordem do João, 05/09):** Sonnet só levanta contexto; codificação, raciocínio e modelagem são Fable. Cuidado com tokens: o orquestrador não carrega leitura pesada no próprio chat.
+> **Regra de trabalho (ordem do João, 05/09, versão final):** Sonnet reconhece/levanta contexto · Opus cria feature e codifica · Fable orquestra, instrui, pensa fora da caixa e audita (pentest, trava) — não faz tarefa pesada. Cuidado com tokens: o orquestrador não carrega leitura pesada no próprio chat; o Fable tem limite de sessão (reseta 4h SP). Antes de implementar, `npx skills find "<tema>"` (`docs/SKILLS.md`).
 
 > **Sessão de 04/09 à tarde (fan-out de 5 agentes + bancada de IA):** rodada de
 > paralelização real — POP 03 unificado com POP 03-B, trava de LGPD com peso

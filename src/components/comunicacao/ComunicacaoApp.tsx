@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
+import { useUsuarioAtual } from "@/hooks/useUsuarioAtual";
 import { Abas } from "@/components/ui/Abas";
 import { Botao } from "@/components/ui/Botao";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
@@ -41,6 +42,12 @@ const ICONE_ATUALIZAR = (
  * viva? → o que depende de alguém → a agenda de saídas → recebidas → histórico.
  */
 export function ComunicacaoApp() {
+  const { usuario, carregando: carregandoUsuario } = useUsuarioAtual();
+  const papel = usuario?.papel ?? null;
+  // Enquanto o papel não resolveu, ninguém é admin — bloco de sistema não
+  // chega ao DOM de não-admin nem por um quadro de render (§9.1).
+  const ehAdmin = !carregandoUsuario && papel === "admin";
+
   const buscarPendentes = useCallback(() => listarMensagens({ status: "pendente" }), []);
   const pendentes = useRecurso(buscarPendentes, []);
 
@@ -65,7 +72,7 @@ export function ComunicacaoApp() {
 
   const grupos = useMemo(() => agruparPorQuando(itensFiltrados), [itensFiltrados]);
   const totalWhatsapp = (pendentes.dados?.itens ?? []).filter((m) => m.canal === "whatsapp").length;
-  const pendenciasDaTela = useMemo(() => filtrarPendenciasDeComunicacao(pendencias.dados ?? []), [pendencias.dados]);
+  const pendenciasDaTela = useMemo(() => filtrarPendenciasDeComunicacao(pendencias.dados ?? [], papel), [pendencias.dados, papel]);
   const semVinculo = recebidas.dados?.disponivel ? recebidas.dados.itens.filter((m) => !m.pessoa_id).length : 0;
   const atualizando = pendentes.carregando || recebidas.carregando || pendencias.carregando;
   // Carimbo do último fetch da fila (muda quando `dados` muda), não do render.
@@ -73,11 +80,10 @@ export function ComunicacaoApp() {
   const atualizadoEm = useMemo(() => new Date().toISOString(), [pendentes.dados]);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-secao">
       <CabecalhoPagina
         rotulo="Dia a dia"
         titulo="Comunicação"
-        descricao="O que vai sair para cada cliente, quando e por qual canal. E-mail sai sozinho quando a régua roda; WhatsApp sai pela sua mão."
         acoes={
           <Botao variante="secundario" icone={ICONE_ATUALIZAR} carregando={atualizando} onClick={atualizarTudo}>
             Atualizar
@@ -87,16 +93,23 @@ export function ComunicacaoApp() {
           pendentes.dados ? (
             <>
               <Selo tom="neutro">{pendentes.dados.itens.length} a sair</Selo>
-              {totalWhatsapp > 0 && <Selo tom="ambar">{totalWhatsapp} por WhatsApp, pela sua mão</Selo>}
+              {totalWhatsapp > 0 && (
+                <span title="WhatsApp não sai sozinho: você prepara, copia e envia." className="inline-flex">
+                  <Selo tom="ambar">{totalWhatsapp} pela sua mão</Selo>
+                </span>
+              )}
               <span>Atualizado em {formatarDataHora(atualizadoEm)}</span>
             </>
           ) : undefined
         }
       />
 
-      {pendentes.dados && <ProvaDeVidaCron regua={pendentes.dados.regua} />}
+      {/* Prova de vida do envio automático: só admin, e em uma linha (§9.1).
+          Quem não é admin não precisa saber que existe um cron — o WhatsApp
+          continua saindo pela mão dela do mesmo jeito. */}
+      {ehAdmin && pendentes.dados && <ProvaDeVidaCron regua={pendentes.dados.regua} />}
 
-      {pendenciasDaTela.length > 0 && <PendenciasSistema itens={pendenciasDaTela} />}
+      {pendenciasDaTela.length > 0 && <PendenciasSistema itens={pendenciasDaTela} papel={papel} />}
 
       <Abas
         semMoldura
@@ -104,7 +117,7 @@ export function ComunicacaoApp() {
         abas={[
           {
             id: "a-sair",
-            rotulo: "O que vai sair",
+            rotulo: "A sair",
             extra: pendentes.dados ? <Selo tom="neutro">{pendentes.dados.itens.length}</Selo> : undefined,
             conteudo: (
               <AgendaDeSaidas
@@ -124,7 +137,7 @@ export function ComunicacaoApp() {
             extra: semVinculo > 0 ? <Selo tom="ambar">{semVinculo}</Selo> : undefined,
             conteudo: <Recebidas dados={recebidas.dados} carregando={recebidas.carregando} erro={recebidas.erro} recarregar={recebidas.recarregar} />,
           },
-          { id: "historico", rotulo: "Enviadas e falhas", conteudo: <Historico /> },
+          { id: "historico", rotulo: "Enviadas", conteudo: <Historico /> },
         ]}
       />
     </div>
@@ -137,7 +150,7 @@ export function ComunicacaoApp() {
 
 function FiltroDeCanal({ canal, aoMudar }: { canal: FiltroCanal; aoMudar: (c: FiltroCanal) => void }) {
   const opcoes: { id: FiltroCanal; rotulo: string }[] = [
-    { id: "todos", rotulo: "Todos os canais" },
+    { id: "todos", rotulo: "Todos" },
     { id: "whatsapp", rotulo: "WhatsApp" },
     { id: "email", rotulo: "E-mail" },
   ];
@@ -184,18 +197,30 @@ function AgendaDeSaidas({
   if (carregando && totalSemFiltro === 0 && grupos.length === 0) return <EsqueletoLista linhas={4} rotulo="Carregando a fila…" />;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <FiltroDeCanal canal={canal} aoMudar={aoMudarCanal} />
 
       {totalSemFiltro === 0 && (
         <EstadoVazio
           ilustracao="sucesso"
-          titulo="Nada pendente para sair"
-          descricao="Toda mensagem agendada já foi enviada. Novas entram sozinhas quando um cliente compra, agenda ou realiza a sessão."
+          titulo="Nada na fila"
+          acao={
+            <Botao variante="secundario" onClick={recarregar}>
+              Atualizar
+            </Botao>
+          }
         />
       )}
       {totalSemFiltro > 0 && grupos.length === 0 && (
-        <EstadoVazio compacto titulo="Nada neste canal" descricao="Há mensagens pendentes no outro canal — troque o filtro acima." />
+        <EstadoVazio
+          compacto
+          titulo="Nada neste canal"
+          acao={
+            <Botao variante="secundario" tamanho="compacto" onClick={() => aoMudarCanal("todos")}>
+              Ver todos os canais
+            </Botao>
+          }
+        />
       )}
 
       {grupos.map(({ grupo, itens }) => (
@@ -205,8 +230,11 @@ function AgendaDeSaidas({
           como="section"
           realce={grupo === "atrasada" ? "ambar" : undefined}
           rotulo={ROTULO_GRUPO[grupo].titulo}
-          titulo={`${itens.length} ${itens.length === 1 ? "mensagem" : "mensagens"}`}
-          descricao={ROTULO_GRUPO[grupo].descricao || undefined}
+          titulo={
+            <span title={ROTULO_GRUPO[grupo].descricao || undefined}>
+              {itens.length} {itens.length === 1 ? "mensagem" : "mensagens"}
+            </span>
+          }
         >
           <ul className="divide-y divide-linha">
             {itens.map((m) => (
@@ -239,8 +267,8 @@ function Historico() {
   const ordenados = useMemo<MensagemDaFila[]>(() => [...(dados?.itens ?? [])].reverse(), [dados]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-bloco">
+      <div className="flex flex-col gap-cartao sm:flex-row sm:items-end sm:justify-between">
         <Campo rotulo="Mostrar" className="sm:w-56">
           <Selecao value={status} onChange={(e) => setStatus(e.target.value as StatusMensagem)}>
             {STATUS_HISTORICO.map((s) => (
@@ -256,10 +284,26 @@ function Historico() {
       {erro ? <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar o histórico" /> : null}
       {!erro && carregando && !dados && <EsqueletoLista linhas={4} rotulo="Carregando o histórico…" />}
       {!erro && dados && ordenados.length === 0 && (
-        <EstadoVazio compacto titulo={`Nenhuma mensagem ${STATUS_HISTORICO.find((s) => s.id === status)?.rotulo.toLowerCase() ?? ""}`} descricao="Nada registrado com este filtro." />
+        <EstadoVazio
+          compacto
+          titulo={`Nenhuma mensagem ${STATUS_HISTORICO.find((s) => s.id === status)?.rotulo.toLowerCase() ?? ""}`}
+          acao={
+            <Botao variante="secundario" tamanho="compacto" onClick={() => setCanal("todos")}>
+              Ver todos os canais
+            </Botao>
+          }
+        />
       )}
       {!erro && ordenados.length > 0 && (
-        <Cartao preenchimento="sem" rotulo="Histórico" titulo={`${ordenados.length} ${ordenados.length === 1 ? "mensagem" : "mensagens"}`} descricao={ordenados.length >= 200 ? "Mostrando as 200 mais recentes." : undefined}>
+        <Cartao
+          preenchimento="sem"
+          rotulo="Histórico"
+          titulo={
+            <span title={ordenados.length >= 200 ? "Mostrando as 200 mais recentes." : undefined}>
+              {ordenados.length} {ordenados.length === 1 ? "mensagem" : "mensagens"}
+            </span>
+          }
+        >
           <ul className="divide-y divide-linha">
             {ordenados.map((m) => (
               <ItemMensagem key={m.id} mensagem={m} modo="historico" aoMudar={recarregar} />

@@ -1,6 +1,5 @@
 import {
   ArvoreFamiliar,
-  BarrasComparativas,
   BarrasComposicao,
   DiagramaCelulas,
   GraficoIndisponivel,
@@ -10,11 +9,9 @@ import {
   type TemaGrafico,
 } from "@/components/graficos";
 import type { CroquiSlide, Familiar, PatrimonioItem, Pessoa } from "@/lib/api";
-import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, ParametroMetodo } from "@/types/cenario";
 import {
   calcularConcentracaoPatrimonial,
   mapearAlocacaoParaCelulas,
-  mapearCenarioParaEconomia,
   mapearCriteriosParaMatriz,
   mapearFamiliaParaArvore,
   mapearPatrimonioParaComposicao,
@@ -24,25 +21,13 @@ import {
 export type TipoSlide = CroquiSlide["tipo"];
 
 /** Item da `arquitetura.alocacao` v2 (schema-analise-v2.ts) como chega à tela:
- * `GET /api/croquis/[id]?modo=apresentacao` manda só `celula` + `item`
- * (a `categoria` é leitura interna do método); no editor, a análise completa
- * traz a categoria também. */
+ * a apresentação (`ApresentarCroqui`, via `GET /api/croquis/[id]`) recebe só
+ * `celula` + `item` (a `categoria` é leitura interna do método); no editor, a
+ * análise completa traz a categoria também. */
 export interface AlocacaoSlide {
   celula: string;
   item: string;
   categoria?: "fato_declarado" | "dado_documental" | "inferencia" | "ponto_a_validar";
-}
-
-/** Grade do Cenário Patrimonial (agente D, 0057) — a MESMA forma de
- * `GET /api/jornadas/[id]/cenario` e de `Ficha360.cenarios` (agente A):
- * totais por cenário (`total` null enquanto houver rubrica ausente) + rubricas
- * com procedência, para a legenda dizer de onde veio cada número. */
-export interface DadosCenarioCroqui {
-  cenarios: CenarioPatrimonial[];
-  rubricas: CenarioRubrica[];
-  totais: CenarioTotais[];
-  /** `parametros_metodo` carimbados nas rubricas `calculado` — para "alíquota X% (parâmetro vY)". */
-  parametros?: Record<string, ParametroMetodo>;
 }
 
 /** Tudo que os gráficos do croqui podem precisar, num único pacote — reunido
@@ -63,8 +48,6 @@ export interface DadosGraficosCroqui {
   recomendacaoArquitetura: string | null;
   /** Fase 4 (§4.5): alocação v2 (Cofre/Veículo/Destino) — slides 7-10. */
   alocacao?: AlocacaoSlide[] | null;
-  /** Fase 4 (§4.5): Cenário Patrimonial — slide "economia". */
-  cenario?: DadosCenarioCroqui | null;
 }
 
 /** Slides que o método (§3.4) associa a um gráfico. Os demais (legado,
@@ -78,7 +61,6 @@ const SLIDES_COM_GRAFICO = new Set<TipoSlide>([
   "celula_2",
   "celula_3",
   "controle_arquitetura",
-  "economia",
   "implementacao",
 ]);
 
@@ -197,27 +179,6 @@ export function GraficoDoSlide({
           arquitetura={arquitetura}
           celulas={celulas}
           titulo={tipo === "controle_arquitetura" ? "Controle na arquitetura" : undefined}
-          tema={tema}
-          modoApresentacao={modoApresentacao}
-        />
-      );
-    }
-
-    case "economia": {
-      // Fase 4 (§4.5): os dois números vêm da grade do Cenário Patrimonial
-      // (`vw_cenarios_totais`, 0057) — digitados pela advogada ou
-      // multiplicados de base × alíquota que ela digitou. Total `null`
-      // (rubrica ausente) NUNCA vira barra: fora da apresentação, o estado
-      // diz "faltam N rubricas"; na apresentação, o gráfico não aparece.
-      const economia = mapearCenarioParaEconomia(dados.cenario ?? null, dados.recomendacaoArquitetura);
-      return (
-        <BarrasComparativas
-          custoInventario={economia.custoInventario}
-          custoEstrutura={economia.custoEstrutura}
-          rotuloEstrutura={economia.rotuloEstrutura}
-          rubricasAusentes={economia.rubricasAusentes}
-          procedencia={economia.procedencia}
-          fonte={economia.carimbo ?? "Fonte: Cenário Patrimonial — ainda sem número"}
           tema={tema}
           modoApresentacao={modoApresentacao}
         />

@@ -79,6 +79,7 @@ export function ChipProximoPasso({ proximo, jornadaId, tamanho = "normal", class
     return (
       <Link
         href={hrefDoPasso(jornadaId, proximo)}
+        title={proximo.title}
         className={`${classes} transition-[border-color,box-shadow] duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:shadow-cartao`}
       >
         {conteudo}
@@ -86,5 +87,5 @@ export function ChipProximoPasso({ proximo, jornadaId, tamanho = "normal", class
     );
   }
 
-  return <span className={classes}>{conteudo}</span>;
+  return <span className={classes} title={proximo.title}>{conteudo}</span>;
 }

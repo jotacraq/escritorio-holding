@@ -5,6 +5,7 @@
  * precisa exatamente da mesma tabela chave→aba para navegar ao clicar num
  * cartão — duplicar as 12 entradas em dois arquivos é como elas divergem.
  */
+import { rotulo, titleDe } from "@/lib/vocabulario";
 import type { ChaveItemPasta } from "./catalogo";
 
 /**
@@ -34,25 +35,49 @@ export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
 };
 
 /**
- * Texto de ação por item da Pasta do Cliente — mesma frase que
- * `calcularPendencias()` já usava para os 5 itens em comum (verbo + item),
- * sem inventar vocabulário novo (Glossario.md).
+ * Texto de ação por item da Pasta do Cliente — verbo + item, sem inventar
+ * vocabulário novo (Glossario.md).
+ *
+ * Fase 5, lei de texto (§2 + §9.2): **verbo curto (≤ 3 palavras) e nenhuma
+ * sigla no fluxo.** O nome longo do artefato e a sigla do método ("POP 03",
+ * "IR", "SV") vivem em `TITULO_ACAO_ITEM_PASTA`, que vai para o `title` do
+ * elemento — quem conhece o termo antigo encontra; quem não conhece não
+ * tropeça. Eram 48 das 158 palavras visíveis da Ficha (medição do M5).
  */
 export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
-  formulario: "Preencher o formulário estratégico",
-  ligacao: "Registrar a Ligação Estratégica (POP 03)",
-  links: "Emitir os links pendentes",
-  briefing: "Gerar o Briefing Estratégico",
-  sessao: "Agendar a Sessão de Viabilidade",
-  transcricao: "Registrar a Transcrição da Sessão",
-  analise_sessao: "Gerar a Análise da Sessão",
-  diagnostico_sv: "Montar o Diagnóstico da SV",
-  relatorio_sv: "Preencher o Relatório da Sessão",
-  croqui: "Iniciar o Croqui",
-  material: "Gerar o Material pós-sessão",
-  patrimonio: "Cadastrar o Patrimônio",
-  familiares: "Mapear os Familiares",
-  documentos: "Anexar documentos (IR, contrato social)",
+  formulario: "Preencher o formulário",
+  ligacao: "Registrar a ligação",
+  links: "Emitir os links",
+  briefing: "Gerar o Briefing",
+  sessao: "Agendar a sessão",
+  transcricao: "Registrar a transcrição",
+  analise_sessao: "Gerar a análise",
+  diagnostico_sv: "Montar o diagnóstico",
+  relatorio_sv: "Preencher o relatório",
+  croqui: "Iniciar o croqui",
+  material: "Gerar o material",
+  patrimonio: "Cadastrar o patrimônio",
+  familiares: "Mapear os familiares",
+  documentos: "Anexar documentos",
+};
+
+/**
+ * O nome inteiro por trás do verbo curto — SÓ para `title`/`aria-describedby`.
+ * Nunca renderizado dentro do fluxo (§2). Montado a partir do dicionário único
+ * (`lib/vocabulario.ts`) para a sigla não ser redigitada aqui.
+ */
+export const TITULO_ACAO_ITEM_PASTA: Partial<Record<ChaveItemPasta, string>> = {
+  formulario: `${rotulo("pop02")} · ${titleDe("pop02")}`,
+  ligacao: `${rotulo("pop03")} · ${titleDe("pop03")}`,
+  briefing: `${rotulo("briefing_entregavel")} · ${titleDe("briefing_etapa")}`,
+  sessao: rotulo("sessao_viabilidade"),
+  transcricao: `Transcrição da ${rotulo("sessao_viabilidade")}`,
+  analise_sessao: `Análise da ${rotulo("sessao_viabilidade")}`,
+  diagnostico_sv: `${rotulo("diagnostico")} da ${rotulo("sessao_viabilidade")}`,
+  relatorio_sv: `Relatório da ${rotulo("sessao_viabilidade")}`,
+  croqui: rotulo("croqui"),
+  material: "Material pós-sessão",
+  documentos: `${rotulo("imposto_renda")} e contrato social`,
 };
 
 /**

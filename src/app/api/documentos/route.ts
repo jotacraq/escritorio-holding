@@ -3,7 +3,7 @@ import { z } from "zod";
 import { exigirVePatrimonio } from "@/server/auth";
 import { erroValidacao, respostaErro , ErroApi , registrarErro } from "@/server/erros";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
-import { ErroUploadDocumento, processarUploadDocumento } from "@/server/ia/documentos";
+import { ErroUploadDocumento, processarUploadDocumento, TIPOS_DOCUMENTO } from "@/server/ia/documentos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,18 @@ export const dynamic = "force-dynamic";
 const CamposSchema = z.object({
   pessoa_id: z.string().uuid(),
   jornada_id: z.string().uuid().optional(),
-  tipo: z.enum(["imposto_renda", "contrato_social", "matricula_imovel", "outro"]),
+  // Os 10 tipos da 0065 (radar de documentos). A lista vive em um lugar só,
+  // no servidor — a rota não redigita a união.
+  tipo: z.enum(TIPOS_DOCUMENTO as unknown as [string, ...string[]]),
+  /**
+   * `documentos.item_ref` (0065) — a qual bem/familiar o documento pertence.
+   * Vem do radar, é um uuid de `patrimonio_itens`/`familiares`. Validado como
+   * uuid para não virar campo de texto livre gravado em tabela de PII; a
+   * autorização continua sendo a mesma da rota (`exigirVePatrimonio`) e da
+   * RLS de `documentos` — item de outra pessoa não passa a ser visível por
+   * estar referenciado aqui.
+   */
+  item_ref: z.string().uuid().optional(),
 });
 
 const CODIGO_PARA_STATUS: Record<string, number> = {
@@ -41,6 +52,7 @@ export async function POST(request: NextRequest) {
       pessoa_id: formData.get("pessoa_id"),
       jornada_id: formData.get("jornada_id") || undefined,
       tipo: formData.get("tipo"),
+      item_ref: formData.get("item_ref") || undefined,
     });
 
     // Sem SUPABASE_SERVICE_ROLE_KEY isto e configuracao ausente, nao falha do
@@ -66,8 +78,9 @@ export async function POST(request: NextRequest) {
       arquivo,
       pessoaId: campos.pessoa_id,
       jornadaId: campos.jornada_id ?? null,
-      tipo: campos.tipo,
+      tipo: campos.tipo as Parameters<typeof processarUploadDocumento>[1]["tipo"],
       enviadoPor: usuario.id,
+      itemRef: campos.item_ref ?? null,
     });
 
     return NextResponse.json({ documento_id: resultado.documentoId }, { status: 201 });

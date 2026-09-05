@@ -26,7 +26,6 @@ import type {
   RespostaEscolherHorarioPublico,
   RespostaRegistrarDocumentoPublico,
   RespostaResponderFormularioPublico,
-  TipoDocumentoPublico,
   TipoLinkQualquer,
 } from "@/types/publico-ui";
 
@@ -202,7 +201,8 @@ export function escolherHorarioPublico(token: string, corpo: CorpoEscolherHorari
 export function enviarDocumentoPublico(
   token: string,
   arquivo: File,
-  tipo: TipoDocumentoPublico,
+  /** Chave OPACA do item do radar (0068) — emitida pelo servidor, devolvida intacta. */
+  tipo: string,
   aoProgredir: (percentual: number) => void,
 ): Promise<RespostaRegistrarDocumentoPublico> {
   return new Promise((resolve, reject) => {

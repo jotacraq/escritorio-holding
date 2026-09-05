@@ -71,7 +71,7 @@ export function SeloPresenca({
     const dias = diasAte(inicioEm) ?? 0;
     return (
       <Selo tom="ambar" icone={ICONE_ALERTA} className={className}>
-        Sem resposta · {dias <= 0 ? "sessão hoje" : dias === 1 ? "sessão amanhã" : `sessão em ${dias} dias`}
+        {dias <= 0 ? "Hoje" : dias === 1 ? "Amanhã" : `${dias} dias`} · sem resposta
       </Selo>
     );
   }

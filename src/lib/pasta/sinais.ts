@@ -55,6 +55,16 @@ export interface Sinais {
   temDocumentos: boolean | null;
   ligacaoIaStatus: string | null;
   tarefasAbertas: TarefaAbertaSinal[] | null;
+  // --- Fase 5 §8.1 — os três passos novos do trilho (contrato → execução →
+  // entrega). Mesma regra tri-estado: `null` = a fonte não carrega o campo.
+  // Nenhuma fonte de hoje preenche estes três; ficam `null` até o front
+  // (M5) juntar `GET /api/jornadas/[id]/execucao` com `sinaisComExecucao()`.
+  /** `contratos_assinaturas` ainda não existe (Onda 3): hoje só via `sinaisComExecucao`. */
+  contratoAssinadoEm: string | null;
+  /** Marcos de `execucao_jornada_marcos` (0067). `null` = sem informação; `{feitos:0,total:19}` = modelo carregado e nada concluído. */
+  marcosExecucao: { feitos: number; total: number } | null;
+  /** Data do marco final ("Entrega do Sistema"). */
+  entregaEm: string | null;
 }
 
 /** Ponto de partida: tudo "sem informação". Cada adaptador preenche o que a fonte tem. */
@@ -77,6 +87,31 @@ export function sinaisVazios(): Sinais {
     temDocumentos: null,
     ligacaoIaStatus: null,
     tarefasAbertas: null,
+    contratoAssinadoEm: null,
+    marcosExecucao: null,
+    entregaEm: null,
+  };
+}
+
+/**
+ * Junta os dados da sub-esteira de execução (`GET /api/jornadas/[id]/execucao`,
+ * 0067) aos sinais que a tela já tem. Existe porque nenhuma view de hoje
+ * carrega marco de execução: quem quiser o trilho COMPLETO (9 passos) busca a
+ * execução uma vez e passa por aqui. Quem não buscar continua com os três
+ * campos em `null` — e o trilho mostra "sem informação", nunca zero.
+ *
+ * Função pura. `total === 0` (modelo sem marco) vira `null`: contar "0 de 0"
+ * seria afirmar progresso que não existe.
+ */
+export function sinaisComExecucao(
+  base: Sinais,
+  dados: { feitos: number; total: number; contratoAssinadoEm?: string | null; entregaEm?: string | null },
+): Sinais {
+  return {
+    ...base,
+    marcosExecucao: dados.total > 0 ? { feitos: dados.feitos, total: dados.total } : null,
+    contratoAssinadoEm: dados.contratoAssinadoEm ?? base.contratoAssinadoEm,
+    entregaEm: dados.entregaEm ?? base.entregaEm,
   };
 }
 
@@ -136,6 +171,27 @@ function lerTarefas(valor: unknown): TarefaAbertaSinal[] | null {
   return tarefas;
 }
 
+/**
+ * Fase 5: colunas de contrato/execução/entrega. Nenhuma view as tem hoje —
+ * a leitura é tolerante de propósito, para que a view que as ganhar depois
+ * (0067+) passe a alimentar o trilho sem tocar em nenhum adaptador.
+ */
+function lerExecucao(objeto: Bruto): Pick<Sinais, "contratoAssinadoEm" | "marcosExecucao" | "entregaEm"> {
+  let marcos: Sinais["marcosExecucao"] = null;
+  const bruto = objeto.marcos_execucao;
+  if (bruto && typeof bruto === "object") {
+    const registro = bruto as Bruto;
+    const feitos = typeof registro.feitos === "number" ? registro.feitos : null;
+    const total = typeof registro.total === "number" ? registro.total : null;
+    if (feitos !== null && total !== null && total > 0) marcos = { feitos, total };
+  }
+  return {
+    contratoAssinadoEm: textoOuNulo(objeto, "contrato_assinado_em"),
+    marcosExecucao: marcos,
+    entregaEm: textoOuNulo(objeto, "entrega_em"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Adaptadores por fonte
 // ---------------------------------------------------------------------------
@@ -166,6 +222,7 @@ export function sinaisDoKanban(linha: JornadaKanban): Sinais {
     temDocumentos: booleanoOuNulo(bruto, "tem_documentos"),
     ligacaoIaStatus: textoOuNulo(bruto, "ligacao_ia_status"),
     tarefasAbertas: temChave(bruto, "tarefas_abertas") ? lerTarefas(bruto.tarefas_abertas) : null,
+    ...lerExecucao(bruto),
   };
 }
 
@@ -237,10 +294,26 @@ export function sinaisDaFicha(ficha: Ficha360): Sinais {
     .sort((a, b) => a.inicio_em.localeCompare(b.inicio_em))[0];
   const proximoBruto = proximo ? (proximo as unknown as Bruto) : null;
 
-  const eventoCroqui = ficha.timeline.find((e) => e.tipo === "croqui");
-  // Evento sem `status` legível conta como pronto — mesma leitura que a Pasta
-  // sempre fez (`derivar.ts` original: só "rascunho" explícito é em_revisao).
-  const croquiStatus = eventoCroqui ? (lerCroquiStatus(eventoCroqui.dados?.status) ?? "pronto") : "nenhum";
+  // SÓ evento `croqui` que carrega `dados.status` legível conta. O trigger
+  // `app.timeline_croqui` (0014) é o único escritor que promete esse campo —
+  // ele grava `jsonb_build_object('croqui_id', …, 'status', new.status)` a cada
+  // INSERT/UPDATE de `croquis`.
+  //
+  // A regra antiga (`?? "pronto"`) tratava evento SEM status como "croqui
+  // pronto". Enquanto o único escritor era aquele trigger, a suposição nunca
+  // era exercida; a Fase 5 criou dois escritores novos com o mesmo `tipo` e sem
+  // `status` (o trigger de `croqui_calculos` e o registro de exportação do
+  // `.docx`), e a timeline vem em ordem decrescente (`server/jornadas.ts`) —
+  // então fixar uma versão de cálculo ou baixar o relatório fazia a Pasta e o
+  // trilho anunciarem "croqui pronto — apresentar" com o croqui em rascunho, ou
+  // sem croqui nenhum. A 0070 devolve tipo próprio àqueles dois eventos; esta
+  // leitura é o outro lado da trava: escritor novo que esqueça o `status` é
+  // ignorado, e a busca continua no evento anterior em vez de inventar estado.
+  const croquiStatus =
+    ficha.timeline
+      .filter((e) => e.tipo === "croqui")
+      .map((e) => lerCroquiStatus(e.dados?.status))
+      .find((status) => status !== null) ?? "nenhum";
 
   const material = ficha.materialAtual ?? null;
   const materialEstado: MaterialEstadoSinal = !material ? "nenhum" : material.aprovado_em ? "aprovado" : "rascunho";
@@ -267,5 +340,7 @@ export function sinaisDaFicha(ficha: Ficha360): Sinais {
     temDocumentos: documentosVisiveis ? documentosVisiveis.length > 0 : null,
     ligacaoIaStatus: ligacaoIa && typeof ligacaoIa.status === "string" ? ligacaoIa.status : null,
     tarefasAbertas: temChave(bruto, "tarefasAbertas") ? lerTarefas(bruto.tarefasAbertas) : null,
+    // A Ficha 360 ainda não carrega execução (rota própria, `GET .../execucao`).
+    ...lerExecucao(bruto),
   };
 }

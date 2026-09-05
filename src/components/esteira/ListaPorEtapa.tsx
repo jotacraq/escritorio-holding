@@ -6,10 +6,12 @@ import type { EtapaJornada, EtapaOrdem, JornadaKanban } from "@/lib/api";
 import { formatarCidadeUf } from "@/lib/formatar";
 import { derivarProximoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisDoKanban } from "@/lib/pasta/sinais";
+import { derivarTrilho } from "@/lib/pasta/trilho";
 import { Cartao } from "@/components/ui/Cartao";
 import { EstadoVazio } from "@/components/ui/Estado";
 import { SeloDadoExemplo } from "@/components/ui/Selo";
-import { Marcos, rotuloDiasNaEtapa } from "./CartaoJornada";
+import { Trilho } from "@/components/ui/Trilho";
+import { TITULO_DIAS, rotuloDiasNaEtapa } from "./CartaoJornada";
 import { ChipProximoPasso } from "./ChipProximoPasso";
 import { MenuMover } from "./MenuMover";
 import { corDaEtapa } from "./etapas";
@@ -25,7 +27,9 @@ function LinhaJornada({
   emMovimento: boolean;
   aoMoverParaEtapa: (etapa: EtapaJornada) => void;
 }) {
-  const proximo = useMemo(() => derivarProximoPasso(sinaisDoKanban(jornada)), [jornada]);
+  const sinais = useMemo(() => sinaisDoKanban(jornada), [jornada]);
+  const proximo = useMemo(() => derivarProximoPasso(sinais), [sinais]);
+  const passos = useMemo(() => derivarTrilho(sinais), [sinais]);
   return (
     <li
       aria-busy={emMovimento}
@@ -48,9 +52,11 @@ function LinhaJornada({
           {jornada.faixa_patrimonio_declarada ?? <span className="text-tinta-fraca">faixa não declarada</span>}
         </p>
       </div>
-      <Marcos jornada={jornada} />
+      <Trilho passos={passos} variante="compacto" rotulo={`Trilho de ${jornada.nome}`} className="lg:w-44" />
       <ChipProximoPasso proximo={proximo} jornadaId={jornada.id} tamanho="compacto" />
-      <span className="text-xs text-tinta-fraca lg:text-right">{rotuloDiasNaEtapa(jornada.dias_na_etapa)}</span>
+      <span title={TITULO_DIAS} className="text-xs text-tinta-fraca lg:text-right">
+        {rotuloDiasNaEtapa(jornada.dias_na_etapa)}
+      </span>
       <div className="flex justify-end">
         <MenuMover etapaAtual={jornada.etapa} etapas={etapas} ocupado={emMovimento} aoEscolher={aoMoverParaEtapa} rotulo="Mover" />
       </div>
@@ -62,7 +68,7 @@ function LinhaJornada({
  * Visão "lista por etapa" — a alternativa ao quadro de 8 colunas com rolagem
  * horizontal (achado de UX, diário 04/09). Cada etapa é um cartão empilhado
  * na ordem da esteira; nenhuma informação do cartão do kanban se perde (nome,
- * cidade, faixa, marcos, próximo passo, dias, mover). Etapa vazia aparece como
+ * cidade, faixa, trilho, próximo passo, dias, mover). Etapa vazia aparece como
  * uma linha só — presente, sem alarme.
  */
 export function ListaPorEtapa({

@@ -7,6 +7,7 @@ import type { ChaveRoteiro, RoteiroBloco } from "@/types/roteiro";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando } from "@/components/ui/Estado";
 import { formatarDataHora } from "@/lib/formatar";
+import { rotulo, titleDe } from "@/lib/vocabulario";
 
 const SINAIS_CONHECIDOS = [
   "interrompe",
@@ -126,19 +127,19 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
       })
       .catch((e) => {
         if (!vivo) return;
-        const mensagem = e instanceof ErroFicha360Api ? e.message : `Não foi possível carregar o roteiro do ${rotuloPop}.`;
+        const mensagem = e instanceof ErroFicha360Api ? e.message : "Não foi possível carregar o roteiro.";
         setEstado((atual) => (atual.chave === chave ? { ...atual, carregando: false, erro: mensagem } : atual));
       });
     return () => {
       vivo = false;
     };
-  }, [chave, rotuloPop]);
+  }, [chave]);
 
   const { carregando, erro, bloco } = estado;
 
-  if (carregando) return <EstadoCarregando rotulo={`Carregando roteiro do ${rotuloPop}…`} />;
+  if (carregando) return <EstadoCarregando rotulo="Carregando roteiro…" />;
   if (erro) return <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>;
-  if (!bloco) return <p className="text-sm text-tinta-suave">Nenhuma versão ativa de roteiro para o {rotuloPop}.</p>;
+  if (!bloco) return <p className="text-sm text-tinta-suave" title={rotuloPop}>Nenhuma versão ativa de roteiro.</p>;
 
   return (
     <>
@@ -205,17 +206,21 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-xs text-tinta-fraca">
-        POP {pop03b ? "03-B" : "03"} · Ligação Estratégica{ligacaoInicial?.realizada_em && ` · registrada em ${formatarDataHora(ligacaoInicial.realizada_em)}`}
+      {/* §9.2: a sigla do método (POP 03 / POP 03-B) sai do fluxo e vai
+          para o `title` — o nome humano vem do dicionário único. */}
+      <p className="text-xs text-tinta-fraca" title={`${titleDe("pop03")}${pop03b ? "-B" : ""}`}>
+        {rotulo("pop03")}
+        {pop03b ? " · sem seminário" : ""}
+        {ligacaoInicial?.realizada_em && ` · ${formatarDataHora(ligacaoInicial.realizada_em)}`}
       </p>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="text-base font-bold text-tinta">
-          {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro do POP 03"}
+        <legend className="text-base font-bold text-tinta" title={`${titleDe("pop03")}${pop03b ? "-B" : ""}`}>
+          Roteiro
         </legend>
         <RoteiroDeBanco
           chave={pop03b ? "pop_03b" : "pop_03"}
-          rotuloPop={pop03b ? "POP 03-B" : "POP 03"}
+          rotuloPop={pop03b ? "POP 03-B" : "POP 03"} /* só `title`/`aria`, ver RoteiroDeBanco */
           respostas={ligacao.respostas}
           aoMudarResposta={(id, valor) => setLigacao((l) => ({ ...l, respostas: { ...l.respostas, [id]: valor } }))}
         />

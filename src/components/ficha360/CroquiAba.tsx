@@ -1,65 +1,113 @@
 "use client";
 
+import { useState } from "react";
 import { useTema } from "@/hooks/useTema";
 import type { EstadoCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
-import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
+import { Cartao } from "@/components/ui/Cartao";
+import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
+import { CroquiCalculado } from "@/components/croqui/CroquiCalculado";
 import { EditorCroqui } from "@/components/croqui/EditorCroqui";
+import { NarrativaCroqui } from "@/components/croqui/NarrativaCroqui";
+import { rotaCroquiApresentar, rotaCroquiSimular } from "./rotas-croqui";
 
 /**
- * A Ficha 360 · Croqui (ARQUITETURA-FASE-3.md §2/§3, onda 3 — agente H).
- * Mostra só o Editor do Croqui — a Análise da Sessão (U4) virou aba de topo
- * própria no grupo "Sessão" (`AnaliseSessaoAba.tsx`, ver `jornadas/[id]/page.tsx`),
- * consumindo o mesmo estado via `useCroquiDaJornada`. Dívida documentada aqui
- * antes ("mover Análise da Sessão para o grupo Sessão quando `page.tsx` for
- * tocado de novo") — paga nesta mudança.
+ * A Ficha 360 · Croqui.
  *
- * Estado recebido por prop (mesma cirurgia já feita com `BriefingAba`): o
- * pai (`ConteudoFicha`) chama `useCroquiDaJornada` UMA vez e compartilha com
- * `CroquiAba`, `AnaliseSessaoAba` e `CabecalhoFicha` (atalho fixo), em vez de
- * cada aba buscar o croqui por conta própria.
+ * O croqui É o cálculo: as 19 tabelas do motor, com procedência por célula
+ * (`CroquiCalculado`) — e daqui saem Apresentar, Simular e o `.docx`. Até a
+ * Fase 5 esta aba mostrava OUTRO croqui, o editor de 13 slides de prosa da IA
+ * v1, e o botão "Apresentar" abria algo que não era o que se editava. Dois
+ * croquis na mesma aba, um deles falando por números que o motor não conhece.
+ *
+ * Decisão (Fase 5, rodada de correção): o cálculo é o conteúdo; o editor v1
+ * não some — vira "Narrativa da IA (versão anterior)", recolhido, com UMA
+ * ação. Nada de dado apagado, e a tela deixa de ter duas verdades ao mesmo
+ * tempo sobre o mesmo cliente.
  */
 export function CroquiAba({ jornadaId, estadoCroqui }: { jornadaId: string; estadoCroqui: EstadoCroquiDaJornada }) {
   const { tema } = useTema();
-  const { croqui, croquiAtual, carregandoCroqui, erroCroqui, croquiInexistente, recarregarCroqui, criando, erroCriar, iniciarCroqui, dadosGraficos } =
-    estadoCroqui;
+  const [editorAberto, setEditorAberto] = useState(false);
+  const {
+    croqui,
+    croquiAtual,
+    carregandoCroqui,
+    erroCroqui,
+    croquiInexistente,
+    recarregarCroqui,
+    criando,
+    erroCriar,
+    iniciarCroqui,
+    dadosGraficos,
+  } = estadoCroqui;
 
-  const conteudoEditor = (() => {
-    if (croqui === undefined) {
-      if (carregandoCroqui) return <EstadoCarregando rotulo="Carregando croqui…" />;
-      if (erroCroqui && !croquiInexistente) return <EstadoErro erro={erroCroqui} tentarNovamente={recarregarCroqui} />;
-    }
-    if (!croquiAtual) {
-      return (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-sm text-tinta-suave">
-            Nenhum croqui iniciado para esta jornada. Iniciar monta o esqueleto dos 13 slides do método — ou rode a Análise da Sessão
-            (aba Sessão › Análise da Sessão), que cria o rascunho automaticamente.
-          </p>
-          {erroCriar && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erroCriar}</p>}
-          <Botao variante="primario" carregando={criando} onClick={iniciarCroqui}>Iniciar croqui</Botao>
-        </div>
-      );
-    }
+  if (croqui === undefined && carregandoCroqui) return <EstadoCarregando rotulo="Carregando croqui…" />;
+  if (croqui === undefined && erroCroqui && !croquiInexistente) {
+    return <EstadoErro erro={erroCroqui} tentarNovamente={recarregarCroqui} titulo="Não deu para abrir o croqui" />;
+  }
+
+  // Sem registro de croqui não há rota para apresentar nem para simular (as
+  // três telas são `/croquis/[croquiId]/…`). Uma linha e um botão.
+  if (!croquiAtual) {
     return (
-      <EditorCroqui
-        jornadaId={jornadaId}
-        croqui={croquiAtual}
-        dadosGraficos={dadosGraficos}
-        tema={tema}
-        aoAtualizar={recarregarCroqui}
-      />
+      <div className="flex flex-col gap-item">
+        <EstadoVazio
+          compacto
+          titulo="Nenhum croqui iniciado"
+          acao={
+            <Botao variante="primario" carregando={criando} onClick={iniciarCroqui}>
+              Iniciar croqui
+            </Botao>
+          }
+        />
+        {erroCriar && (
+          <p role="alert" className="text-sm text-[color:var(--vermelho)]">
+            {erroCriar}
+          </p>
+        )}
+      </div>
     );
-  })();
+  }
 
   return (
-    <div className="flex flex-col gap-3">
-      {croqui !== undefined && erroCroqui && !croquiInexistente ? (
+    <div className="flex flex-col gap-secao">
+      {Boolean(erroCroqui) && !croquiInexistente && (
         <p role="alert" className="text-xs text-[color:var(--vermelho)]">
-          Não foi possível atualizar o croqui a partir do servidor — o que está na tela é o último estado salvo com sucesso.
+          Croqui não atualizado — o que está na tela é o último estado salvo.
         </p>
-      ) : null}
-      {conteudoEditor}
+      )}
+
+      <CroquiCalculado
+        jornadaId={jornadaId}
+        croquiId={croquiAtual.id}
+        hrefSimular={rotaCroquiSimular(croquiAtual.id)}
+        hrefApresentar={rotaCroquiApresentar(croquiAtual.id)}
+      />
+
+      <NarrativaCroqui croquiId={croquiAtual.id} />
+
+      <Cartao
+        rotulo="Versão anterior"
+        titulo="Narrativa da IA"
+        preenchimento="compacto"
+        acao={
+          <Botao
+            variante="fantasma"
+            tamanho="compacto"
+            onClick={() => setEditorAberto((v) => !v)}
+            aria-expanded={editorAberto}
+            aria-controls={editorAberto ? "editor-croqui-v1" : undefined}
+          >
+            {editorAberto ? "Fechar editor" : "Abrir editor"}
+          </Botao>
+        }
+      >
+        {editorAberto && (
+          <div id="editor-croqui-v1" className="mt-4">
+            <EditorCroqui croqui={croquiAtual} dadosGraficos={dadosGraficos} tema={tema} aoAtualizar={recarregarCroqui} />
+          </div>
+        )}
+      </Cartao>
     </div>
   );
 }

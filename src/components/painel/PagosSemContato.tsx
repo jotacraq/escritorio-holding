@@ -10,7 +10,7 @@ import type { EstadoBloco, PagoSemContato } from "@/types/painel-ui";
 function rotuloDias(dias: number): string {
   const arredondado = Math.max(0, Math.round(dias));
   if (arredondado === 0) return "pagou hoje";
-  return `há ${arredondado} dia${arredondado === 1 ? "" : "s"} sem contato`;
+  return `${arredondado} dia${arredondado === 1 ? "" : "s"} sem contato`;
 }
 
 /**
@@ -24,9 +24,9 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
     <Bloco
       id="pagos-sem-contato"
       rotulo="Urgente"
-      titulo="Pagou e ninguém falou com essa pessoa"
-      legenda="Pagamento aprovado, sem ligação e sem mensagem registrada ainda"
-      mensagemNadaPendente="Todo mundo que pagou já foi contatado."
+      titulo="Pagou, sem contato"
+      dica="Pagamento aprovado e nenhuma ligação ou mensagem registrada ainda. É o furo que mais dói: o dinheiro entrou e o cliente está esperando."
+      mensagemNadaPendente="Ninguém esperando contato."
       estado={estado}
       urgente
       aoTentarDeNovo={aoTentarDeNovo}
@@ -41,7 +41,9 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                   {item.nome}
                 </Link>
 
-                <span className="whitespace-nowrap text-xs text-tinta-suave">pago em {formatarData(item.pago_em)}</span>
+                <span className="whitespace-nowrap text-xs text-tinta-suave" title="Data do pagamento aprovado">
+                  {formatarData(item.pago_em)}
+                </span>
 
                 <span className="whitespace-nowrap text-sm font-bold text-[color:var(--vermelho)]">{rotuloDias(item.dias_desde_pagamento)}</span>
 

@@ -41,7 +41,12 @@ function CartaoTipoDocumento({
   aoReceber,
 }: {
   token: string;
-  tipo: TipoDocumentoPublico;
+  /**
+   * O que o servidor espera de volta no upload: a **chave opaca** do item do
+   * radar (0068), não o tipo do documento. É `string` de propósito — o valor é
+   * emitido pelo servidor e devolvido intacto; o navegador nunca escolhe.
+   */
+  tipo: string;
   rotulo: string;
   obrigatorio: boolean;
   recebidos: DocumentoRecebidoPublico[];
@@ -236,12 +241,15 @@ export function DocumentosPublico({ token }: { token: string }) {
       <div className="flex flex-col gap-4">
         {abertura.payload.tipos_pedidos.map((pedido) => (
           <CartaoTipoDocumento
+            // `chave` é única por ITEM (três matrículas colidiam nesta key
+            // quando o cartão era por tipo); `tipo` é a categoria, e é por ela
+            // que os arquivos já recebidos se agrupam sob o cartão certo.
             key={pedido.chave}
             token={token}
             tipo={pedido.chave}
             rotulo={pedido.rotulo}
             obrigatorio={pedido.obrigatorio}
-            recebidos={porTipo.get(pedido.chave) ?? []}
+            recebidos={porTipo.get(pedido.tipo) ?? []}
             extensoesAceitas={abertura.payload.extensoes_aceitas}
             tamanhoMaximoMb={abertura.payload.tamanho_maximo_mb}
             bloqueado={limiteAtingido}

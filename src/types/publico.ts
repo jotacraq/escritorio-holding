@@ -41,8 +41,21 @@ export type EstadoLinkPublico = "ativo" | "usado" | "expirado" | "revogado";
 /** Os únicos três tipos coletáveis pelo formulário público (enum `tipo_consentimento` do banco). */
 export type ChaveConsentimentoPublico = "tratamento_ia" | "comunicacao_email" | "comunicacao_whatsapp";
 
-/** Valor real do `check` de `documentos.tipo` (0012) — não confundir com o subconjunto de `publico-ui.ts`. */
-export type TipoDocumentoPublico = "imposto_renda" | "contrato_social" | "matricula_imovel" | "outro";
+/**
+ * Valor real do `check` de `documentos.tipo` — alargado de 4 para 10 na 0065
+ * (radar de documentos). Não confundir com o subconjunto de `publico-ui.ts`.
+ */
+export type TipoDocumentoPublico =
+  | "imposto_renda"
+  | "contrato_social"
+  | "matricula_imovel"
+  | "certidao_casamento"
+  | "certidao_nascimento"
+  | "crlv"
+  | "extrato_investimento"
+  | "balanco"
+  | "comprovante_residencia"
+  | "outro";
 
 // ---------------------------------------------------------------------------
 // Payload de `abrir_link_publico`, por tipo
@@ -82,8 +95,28 @@ export interface PayloadAgendamentoPublico {
   horario_confirmado: HorarioConfirmadoPublico | null;
 }
 
+/**
+ * Um cartão de envio do `/p/d`. **Deixou de ser "um por tipo de documento" e
+ * passou a ser "um por item do radar"** (0068): a família com três imóveis vê
+ * três cartões de matrícula, cada um com a descrição do bem, e o arquivo nasce
+ * grudado no imóvel certo em vez de virar a quarta matrícula solta que o radar
+ * nunca casa.
+ */
 export interface DocumentoPedidoPublico {
-  chave: TipoDocumentoPublico;
+  /**
+   * Identificador OPACO do item, calculado no servidor
+   * (`server/publico/documentos-pedidos.ts#chavePublicaDeItem`). É o valor que
+   * o navegador devolve no campo `tipo` do upload — e é opaco porque a chave
+   * real do radar carrega o `patrimonio_itens.id`, que resposta pública não
+   * expõe (regra dura 4, §2.2).
+   *
+   * Sem `service_role` ou sem a 0065, cai no payload antigo da RPC e a chave é
+   * o próprio tipo do documento.
+   */
+  chave: string;
+  /** Categoria do documento — para agrupar `recebidos` e escolher ícone. Nunca é id. */
+  tipo: TipoDocumentoPublico;
+  /** "Matrícula · Casa da praia", "Imposto de renda · titular". */
   rotulo: string;
   obrigatorio: boolean;
 }

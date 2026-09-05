@@ -119,7 +119,15 @@ export function PendenciasAba() {
                           {item.titulo}
                           {item.pessoa_nome && <span className="font-normal text-tinta-suave"> · {item.pessoa_nome}</span>}
                         </p>
-                        {item.descricao && <p className="mt-0.5 text-sm text-tinta-suave">{item.descricao}</p>}
+                        {/* A descrição vem do servidor e pode ser um parágrafo
+                            inteiro (o passo a passo do envio automático tem 21
+                            linhas a 390 px). O §2 vale também para admin: até
+                            2 linhas na tela, o texto inteiro no `title`. */}
+                        {item.descricao && (
+                          <p className="mt-0.5 line-clamp-2 text-sm text-tinta-suave" title={item.descricao}>
+                            {item.descricao}
+                          </p>
+                        )}
                         {item.ocorrido_em && (
                           <p className="mt-0.5 text-xs text-tinta-fraca">
                             {formatarRelativo(item.ocorrido_em)} · {formatarDataHora(item.ocorrido_em)}

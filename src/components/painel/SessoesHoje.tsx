@@ -5,6 +5,7 @@ import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { SeloPresenca } from "@/components/agenda/SeloPresenca";
 import { Selo } from "@/components/ui/Selo";
 import { formatarHora } from "@/lib/formatar";
+import { titleDe } from "@/lib/vocabulario";
 import { derivarProximoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisDaSessaoDoDia } from "@/lib/pasta/sinais";
 import type { EstadoBloco, SessaoDoDia } from "@/types/painel-ui";
@@ -21,8 +22,8 @@ export function SessoesHoje({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Se
       id="sessoes-hoje"
       rotulo="Antes de entrar"
       titulo="Sessões de hoje"
-      legenda="Próximas 48 horas — o que precisa estar pronto antes de entrar na sala"
-      mensagemNadaPendente="Nenhuma sessão marcada para hoje ou amanhã."
+      dica="As próximas 48 horas: horário, presença confirmada, preparo pronto e o link da sala."
+      mensagemNadaPendente="Nenhuma sessão hoje nem amanhã."
       estado={estado}
       aoTentarDeNovo={aoTentarDeNovo}
     >
@@ -45,7 +46,10 @@ export function SessoesHoje({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Se
 
                   <div className="flex flex-wrap items-center gap-1.5">
                     <SeloPresenca presencaConfirmadaEm={sessao.presenca_confirmada_em} inicioEm={sessao.inicio_em} via={sessao.presenca_confirmada_via} />
-                    <Selo tom={sessao.tem_briefing ? "verde" : "ambar"}>{sessao.tem_briefing ? "Briefing pronto" : "Sem briefing"}</Selo>
+                    {/* A sigla do método ("briefing") fica no `title`, fora do fluxo (§9.2). */}
+                    <span title={titleDe("briefing_etapa")} className="inline-flex">
+                      <Selo tom={sessao.tem_briefing ? "verde" : "ambar"}>{sessao.tem_briefing ? "Preparo pronto" : "Sem preparo"}</Selo>
+                    </span>
                   </div>
 
                   <ChipProximoPasso proximo={proximo} jornadaId={sessao.jornada_id} tamanho="compacto" />
@@ -62,7 +66,7 @@ export function SessoesHoje({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Se
                     </a>
                   ) : (
                     <LinkBotao href={`/jornadas/${sessao.jornada_id}#sessao`} variante="secundario" className="sm:ml-auto">
-                      Sem link ainda — colar
+                      Colar link da sala
                     </LinkBotao>
                   )}
                 </LinhaFila>

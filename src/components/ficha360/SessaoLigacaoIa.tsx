@@ -188,8 +188,7 @@ export function SessaoLigacaoIa({
         </div>
       ) : (
         <p className="text-sm text-tinta-suave">
-          Nenhuma ligação por IA pedida para este cliente.
-          {temAgendamentoAtivo ? " A sessão já tem horário marcado — a ligação por IA serve para quem ainda não agendou." : " A IA liga, oferece o melhor horário da equipe e mais três alternativas, e o agendamento cai no sistema."}
+          Nenhuma ligação pedida
         </p>
       )}
 
@@ -214,7 +213,7 @@ export function SessaoLigacaoIa({
           </Botao>
         )}
         <Botao variante="fantasma" onClick={alternarHistorico} aria-expanded={mostrarHistorico}>
-          {mostrarHistorico ? "Ocultar histórico" : "Ver histórico de ligações"}
+          {mostrarHistorico ? "Ocultar" : "Histórico"}
         </Botao>
       </div>
 

@@ -4,6 +4,7 @@ import { LinkBotao } from "./LinkBotao";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { Selo } from "@/components/ui/Selo";
 import { formatarDataHora, formatarRelativo } from "@/lib/formatar";
+import { titleDe } from "@/lib/vocabulario";
 import { derivarProximoPasso, hrefDoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisDoPreparo } from "@/lib/pasta/sinais";
 import type { EstadoBloco, PendenciaPreparo } from "@/types/painel-ui";
@@ -19,8 +20,9 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
       id="preparo-pendente"
       rotulo="Preparo"
       titulo="Preparo pendente"
-      legenda="Sessão marcada nos próximos 7 dias, faltando algo antes dela"
-      mensagemNadaPendente="Toda sessão dos próximos 7 dias está com o preparo completo."
+      tituloTitle={titleDe("briefing_etapa")}
+      dica="Sessão marcada para os próximos 7 dias com algo faltando antes dela: formulário, ligação estratégica ou briefing."
+      mensagemNadaPendente="Preparo completo nos próximos 7 dias."
       estado={estado}
       aoTentarDeNovo={aoTentarDeNovo}
     >
@@ -40,10 +42,23 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                     sessão {formatarRelativo(item.inicio_em)}
                   </span>
 
+                  {/* Rótulo humano no fluxo; a sigla do POP/método só no `title` (§9.2). */}
                   <div className="flex flex-wrap gap-1.5">
-                    {item.falta_formulario && <Selo tom="neutro">Falta formulário</Selo>}
-                    {item.falta_ligacao && <Selo tom="neutro">Falta ligação</Selo>}
-                    {item.falta_briefing && <Selo tom="neutro">Falta briefing</Selo>}
+                    {item.falta_formulario && (
+                      <span title={titleDe("pop02")} className="inline-flex">
+                        <Selo tom="neutro">Falta formulário</Selo>
+                      </span>
+                    )}
+                    {item.falta_ligacao && (
+                      <span title={titleDe("pop03")} className="inline-flex">
+                        <Selo tom="neutro">Falta ligação</Selo>
+                      </span>
+                    )}
+                    {item.falta_briefing && (
+                      <span title={titleDe("briefing_etapa")} className="inline-flex">
+                        <Selo tom="neutro">Falta preparo</Selo>
+                      </span>
+                    )}
                   </div>
 
                   <ChipProximoPasso proximo={proximo} jornadaId={item.jornada_id} tamanho="compacto" />

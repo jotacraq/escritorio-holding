@@ -3,7 +3,9 @@ import { Cartao } from "@/components/ui/Cartao";
 import { EstadoVazio } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
 import { formatarPercentual } from "@/lib/formatar";
+import { titleDe } from "@/lib/vocabulario";
 import type { EstadoBloco, IndicadorEdicao } from "@/types/painel-ui";
+import { BotaoDica } from "./Bloco";
 import { LinkBotao } from "./LinkBotao";
 
 interface LinhaNumero {
@@ -15,9 +17,9 @@ interface LinhaNumero {
 
 function linhasDe(item: IndicadorEdicao): LinhaNumero[] {
   return [
-    { rotulo: "Compareceram", valor: item.compareceram, base: item.sessoes_com_desfecho, baseDescricao: "das sessões já com desfecho" },
-    { rotulo: "Formulário respondido", valor: item.formularios_respondidos, base: item.clientes_pagantes, baseDescricao: "dos clientes pagantes" },
-    { rotulo: "Decisores na sessão", valor: item.com_decisores, base: item.com_resposta_decisores, baseDescricao: "de quem respondeu sobre decisores" },
+    { rotulo: "Compareceram", valor: item.compareceram, base: item.sessoes_com_desfecho, baseDescricao: "com desfecho" },
+    { rotulo: "Formulário respondido", valor: item.formularios_respondidos, base: item.clientes_pagantes, baseDescricao: "dos pagantes" },
+    { rotulo: "Decisores na sessão", valor: item.com_decisores, base: item.com_resposta_decisores, baseDescricao: "de quem respondeu" },
   ];
 }
 
@@ -41,10 +43,19 @@ function BarraProporcao({ fracao }: { fracao: number }) {
  */
 export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<IndicadorEdicao>; aoTentarDeNovo: () => void }) {
   return (
-    <Cartao rotulo="Leitura" titulo="Números" descricao="POP 01, por edição do seminário — leitura, sem ação a tomar aqui" acao={<LinkBotao href="/indicadores">Ver indicadores</LinkBotao>}>
+    <Cartao
+      rotulo="Leitura"
+      titulo={<span title={titleDe("pop01")}>Números por edição</span>}
+      acao={
+        <>
+          <BotaoDica texto="Os três indicadores que o método acompanha, sempre por edição do seminário (coorte) — nunca por janela de calendário." rotulo="os números" />
+          <LinkBotao href="/indicadores">Ver indicadores</LinkBotao>
+        </>
+      }
+    >
       {estado.situacao === "indisponivel" && (
-        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-tinta-suave">
-          <span>Não conseguiu carregar os números agora.</span>
+        <div role="alert" className="flex flex-wrap items-center gap-item text-sm text-tinta-suave">
+          <span>Não carregou.</span>
           <Botao variante="secundario" tamanho="compacto" onClick={aoTentarDeNovo}>
             Tentar de novo
           </Botao>
@@ -52,15 +63,15 @@ export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<
       )}
 
       {estado.situacao === "ok" && estado.itens.length === 0 && (
-        <EstadoVazio compacto titulo="Nenhum indicador calculado ainda" descricao="Sem sessão com desfecho registrado nesta edição, ainda não há o que somar." />
+        <EstadoVazio compacto titulo="Nenhuma sessão com desfecho ainda" acao={<LinkBotao href="/agenda">Abrir agenda</LinkBotao>} />
       )}
 
       {estado.situacao === "ok" && estado.itens.length > 0 && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-cartao">
           {estado.itens.map((item) => (
-            <div key={item.edicao_id ?? "sem-edicao"} className="flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-tinta">{item.edicao_id ? (item.edicao_nome ?? item.edicao_codigo ?? "Edição sem nome cadastrado") : "Sem edição de origem"}</h3>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div key={item.edicao_id ?? "sem-edicao"} className="flex flex-col gap-item">
+              <h3 className="text-sm font-bold text-tinta">{item.edicao_id ? (item.edicao_nome ?? item.edicao_codigo ?? "Edição sem nome") : "Sem edição"}</h3>
+              <div className="grid grid-cols-1 gap-item sm:grid-cols-3">
                 {linhasDe(item).map((linha) => {
                   const percentual = linha.base > 0 ? (linha.valor / linha.base) * 100 : null;
                   return (
@@ -70,7 +81,7 @@ export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<
                       valor={linha.valor}
                       unidade={percentual !== null ? `· ${formatarPercentual(percentual)} ${linha.baseDescricao}` : undefined}
                       visual={percentual !== null ? <BarraProporcao fracao={linha.valor / linha.base} /> : undefined}
-                      motivoVazio="sem base para percentual ainda"
+                      motivoVazio="sem base para percentual"
                       className="bg-papel shadow-none"
                     />
                   );

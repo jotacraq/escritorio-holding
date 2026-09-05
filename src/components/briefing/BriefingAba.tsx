@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { buscarBriefing, gerarBriefing, listarBriefingsDaJornada, ApiError, type Briefing, type ResultadoCompletude } from "@/lib/api";
+import { rotulo, titleDe } from "@/lib/vocabulario";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoVazio } from "@/components/ui/Estado";
@@ -29,10 +30,10 @@ const ROTULOS_FONTE: Record<string, string> = {
   patrimonio_faixa: "Faixa de patrimônio",
 };
 
-function Secao({ numero, titulo, hipotese, children }: { numero: number; titulo: string; hipotese?: string[]; children: React.ReactNode }) {
+function Secao({ numero, titulo, tituloTitle, hipotese, children }: { numero: number; titulo: string; tituloTitle?: string; hipotese?: string[]; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5 border-t border-linha pt-4 first:border-t-0 first:pt-0">
-      <h3 className="text-base font-bold text-tinta">
+      <h3 className="text-base font-bold text-tinta" title={tituloTitle}>
         <span className="mr-2 font-mono text-sm text-tinta-fraca">{String(numero).padStart(2, "0")}</span>
         {titulo}
         <Hipotese evidencias={hipotese} />
@@ -87,7 +88,8 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 
       <Secao numero={1} titulo="Resumo executivo">{c.resumo_executivo}</Secao>
 
-      <Secao numero={2} titulo="Perfil DISC" hipotese={c.perfil_disc.evidencias}>
+      {/* §9.2: "DISC" sai do fluxo e vira `title`. */}
+      <Secao numero={2} titulo={rotulo("disc")} tituloTitle={titleDe("disc")} hipotese={c.perfil_disc.evidencias}>
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip tom="azul">{rotularDisc(c.perfil_disc.predominante)}</Chip>
           {c.perfil_disc.secundario && <Chip>secundário: {rotularDisc(c.perfil_disc.secundario)}</Chip>}

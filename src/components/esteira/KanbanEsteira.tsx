@@ -13,6 +13,7 @@ import { CartaoJornada } from "./CartaoJornada";
 import { FiltrosEsteira, haFiltroAtivo, type OpcaoEdicao } from "./FiltrosEsteira";
 import { ListaPorEtapa } from "./ListaPorEtapa";
 import { CHAVE_VISAO_ESTEIRA, corDaEtapa, type VisaoEsteira } from "./etapas";
+import { rotulo, rotuloDeEtapa, titleDe } from "@/lib/vocabulario";
 
 const ICONE_QUADRO = (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
@@ -126,7 +127,23 @@ export function KanbanEsteira() {
     };
   }, [itens, etapas, visao, colapsoManual, atualizarSombrasDeRolagem]);
 
-  const etapasOrdenadas = useMemo(() => (etapas ? [...etapas].sort((a, b) => a.ordem - b.ordem) : []), [etapas]);
+  /**
+   * O rótulo da coluna vem de `etapas_jornada_ordem.rotulo`, no banco — e uma
+   * das linhas do seed é **"Qualificado (MQL)"**. Sigla dentro do fluxo é o que
+   * o §9.2 proíbe, e o banco não muda por causa de tela (o mesmo rótulo
+   * alimenta API e relatório). Então a tradução acontece na leitura, por
+   * `rotuloDeEtapa()` (dicionário único): a sigla sai do texto e vai para o
+   * `title` da coluna e do chip de resumo. Rótulo que o dicionário não conhece
+   * passa intacto.
+   */
+  const etapasOrdenadas = useMemo(
+    () =>
+      (etapas ? [...etapas].sort((a, b) => a.ordem - b.ordem) : []).map((etapa) => ({
+        ...etapa,
+        ...rotuloDeEtapa(etapa.rotulo),
+      })),
+    [etapas],
+  );
   const contagemPorEtapa = useMemo(() => {
     const mapa = new Map<EtapaJornada, number>();
     for (const j of itens) mapa.set(j.etapa, (mapa.get(j.etapa) ?? 0) + 1);
@@ -191,7 +208,7 @@ export function KanbanEsteira() {
   }
 
   const alternadorVisao = (
-    <div role="group" aria-label="Como ver a esteira" className="inline-flex rounded-controle border border-linha-controle bg-papel-elevado p-0.5">
+    <div role="group" aria-label="Como ver" className="inline-flex rounded-controle border border-linha-controle bg-papel-elevado p-0.5">
       {(
         [
           ["quadro", "Quadro", ICONE_QUADRO],
@@ -218,8 +235,7 @@ export function KanbanEsteira() {
     <div className="flex flex-col gap-8">
       <CabecalhoPagina
         rotulo="Dia a dia"
-        titulo="Esteira"
-        descricao="Do seminário à holding contratada — cada cartão é uma pessoa, cada coluna é uma etapa. O chip diz o próximo passo e de quem é."
+        titulo={<span title={titleDe("esteira")}>{rotulo("esteira")}</span>}
         acoes={alternadorVisao}
         meta={
           !carregandoJornadas && !erroJornadas ? (
@@ -241,14 +257,10 @@ export function KanbanEsteira() {
         aoAlternarFechadas={setMostrarFechadas}
       />
 
-      {carregandoEtapas && <EsqueletoCartao quantidade={6} rotulo="Carregando as colunas da esteira…" />}
-      {Boolean(erroEtapas) && <EstadoErro erro={erroEtapas} tentarNovamente={recarregarEtapas} titulo="Não foi possível carregar as colunas da esteira" />}
+      {carregandoEtapas && <EsqueletoCartao quantidade={6} rotulo="Carregando as colunas…" />}
+      {Boolean(erroEtapas) && <EstadoErro erro={erroEtapas} tentarNovamente={recarregarEtapas} titulo="Não foi possível carregar as colunas" />}
       {!carregandoEtapas && !erroEtapas && etapasOrdenadas.length === 0 && (
-        <EstadoVazio
-          ilustracao="lista"
-          titulo="Nenhuma etapa cadastrada"
-          descricao="A esteira depende da tabela etapas_jornada_ordem. Sem linhas lá, não há coluna para desenhar — e é assim mesmo: nenhuma coluna é inventada na tela."
-        />
+        <EstadoVazio ilustracao="lista" titulo="Nenhuma etapa cadastrada" />
       )}
 
       {etapasOrdenadas.length > 0 && (
@@ -265,7 +277,7 @@ export function KanbanEsteira() {
                   className="inline-flex min-h-11 items-center gap-2 rounded-pilula border border-linha-forte bg-papel-elevado px-3.5 text-sm text-tinta transition-[border-color,box-shadow] duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:shadow-cartao"
                 >
                   <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: corDaEtapa(etapa.cor) }} />
-                  <span className="font-medium">{etapa.rotulo}</span>
+                  <span className="font-medium" title={etapa.title}>{etapa.rotulo}</span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${quantidade > 0 ? "bg-latao-fraco text-tinta" : "bg-papel text-tinta-fraca"}`}
                   >
@@ -310,7 +322,7 @@ export function KanbanEsteira() {
                 onScroll={atualizarSombrasDeRolagem}
                 tabIndex={0}
                 role="group"
-                aria-label="Colunas da esteira. Use as setas do teclado ou os botões ao lado para rolar na horizontal."
+                aria-label="Colunas. Use as setas do teclado ou os botões ao lado para rolar na horizontal."
                 className="trilha-esteira relative flex gap-4 overflow-x-auto pb-4"
               >
                 {etapasOrdenadas.map((etapa) => {
@@ -351,7 +363,7 @@ export function KanbanEsteira() {
                           >
                             {cartoes.length}
                           </span>
-                          <span id={idTitulo} className="text-sm font-bold [writing-mode:vertical-rl]">
+                          <span id={idTitulo} className="text-sm font-bold [writing-mode:vertical-rl]" title={etapa.title}>
                             {etapa.rotulo}
                           </span>
                           <span className="sr-only">— abrir coluna</span>
@@ -359,7 +371,7 @@ export function KanbanEsteira() {
                       ) : (
                         <>
                           <div className="flex items-center justify-between gap-2 px-3 pt-3">
-                            <h2 id={idTitulo} className="flex items-center gap-2 text-sm font-bold text-tinta">
+                            <h2 id={idTitulo} className="flex items-center gap-2 text-sm font-bold text-tinta" title={etapa.title}>
                               {etapa.rotulo}
                               <span
                                 className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${cartoes.length > 0 ? "bg-latao-fraco" : "bg-papel-elevado text-tinta-fraca"}`}

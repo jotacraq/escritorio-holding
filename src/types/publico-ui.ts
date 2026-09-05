@@ -88,19 +88,23 @@ export interface PayloadAgendamentoPublico {
   horario_confirmado: HorarioConfirmadoPublico | null;
 }
 
-export type TipoDocumentoPublico = "imposto_de_renda" | "contrato_social" | "outro";
+/**
+ * Costura da Fase 5 (C2, sobre o patch do C1): estes três tipos deixam de ser
+ * cópia e passam a ser o CONTRATO DO SERVIDOR (`src/types/publico.ts`).
+ *
+ * A cópia daqui nasceu antes da 0028 e nunca casou com o banco: dizia
+ * `"imposto_de_renda"` (com "de"), enquanto `documentos.tipo` sempre foi
+ * `"imposto_renda"` — um valor que o servidor recusaria. A 0065 alargou o
+ * `check` para 10 tipos e a 0068 trocou "um cartão por tipo" por "um cartão
+ * por item do radar" (com `chave` OPACA + `tipo`); manter duas listas era
+ * garantir que a terceira divergência viesse em silêncio.
+ *
+ * `publico-ui.ts` continua sendo o contrato de TELA para tudo o que é forma de
+ * apresentação; o que é forma de DADO do banco mora num lugar só.
+ */
+import type { DocumentoPedidoPublico, DocumentoRecebidoPublico, TipoDocumentoPublico } from "./publico";
 
-export interface DocumentoPedidoPublico {
-  chave: TipoDocumentoPublico;
-  rotulo: string;
-  obrigatorio: boolean;
-}
-
-export interface DocumentoRecebidoPublico {
-  tipo: TipoDocumentoPublico;
-  nome_arquivo: string;
-  enviado_em: string;
-}
+export type { DocumentoPedidoPublico, DocumentoRecebidoPublico, TipoDocumentoPublico };
 
 export interface PayloadDocumentosPublico {
   tipos_pedidos: DocumentoPedidoPublico[];

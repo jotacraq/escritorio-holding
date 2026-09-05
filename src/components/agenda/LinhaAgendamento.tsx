@@ -7,11 +7,13 @@ import { useToast } from "@/hooks/useToast";
 import { formatarData, formatarDataHora, formatarHora } from "@/lib/formatar";
 import { derivarProximoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisDaSessaoDoDia } from "@/lib/pasta/sinais";
+import { derivarTrilho } from "@/lib/pasta/trilho";
 import type { AgendamentoAgenda } from "@/types/agenda";
 import { Botao } from "@/components/ui/Botao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { Selo, type TomSelo } from "@/components/ui/Selo";
+import { Trilho } from "@/components/ui/Trilho";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { confirmarPresencaPelaEquipe } from "./api-agendamentos";
 import { FormularioAgendamento } from "./FormularioAgendamento";
@@ -67,10 +69,12 @@ export function LinhaAgendamento({
   const [ocupado, setOcupado] = useState<null | "realizado" | "nao_compareceu" | "cancelado" | "presenca">(null);
 
   const ativo = agendamento.status === "agendado" || agendamento.status === "confirmado";
-  const proximo = useMemo(
-    () => derivarProximoPasso(sinaisDaSessaoDoDia({ ...agendamento, status: agendamento.status })),
-    [agendamento],
-  );
+  // Uma leitura só do payload da agenda alimenta o próximo passo E a posição
+  // no trilho. A linha da agenda não carrega execução nem croqui: os passos
+  // que ela não sabe ficam "sem informação" — o compacto não inventa nada.
+  const sinais = useMemo(() => sinaisDaSessaoDoDia({ ...agendamento, status: agendamento.status }), [agendamento]);
+  const proximo = useMemo(() => derivarProximoPasso(sinais), [sinais]);
+  const passos = useMemo(() => derivarTrilho(sinais), [sinais]);
 
   function mensagemErro(e: unknown, padrao: string): string {
     if (e instanceof ApiError) return e.status === 409 ? `Conflito: ${e.message}` : e.message;
@@ -150,11 +154,18 @@ export function LinhaAgendamento({
             {ativo && <SeloPresenca presencaConfirmadaEm={agendamento.presenca_confirmada_em} inicioEm={agendamento.inicio_em} via={agendamento.presenca_confirmada_via} />}
             <Selo tom={status.tom}>{status.rotulo}</Selo>
           </div>
+          {ativo && <Trilho passos={passos} variante="compacto" rotulo={`Trilho de ${agendamento.pessoa_nome ?? "cliente"}`} className="max-w-sm" />}
           {ativo && <ChipProximoPasso proximo={proximo} jornadaId={agendamento.jornada_id} tamanho="compacto" />}
         </div>
 
         {ativo && (
-          <div className="nao-imprimir flex flex-wrap gap-2 @3xl:w-80 @3xl:shrink-0 @3xl:justify-end">
+          // Lei de texto §2 ("um verbo por cartão"): a linha tinha CINCO
+          // botões — 8 palavras de ação repetidas em cada sessão da agenda.
+          // Ficam à vista o verbo do momento (confirmar presença enquanto
+          // ninguém confirmou) e "Realizada", que é o que se clica no dia. O
+          // resto entra num `<details>` nativo: teclado, Esc e leitor de tela
+          // funcionam sem JS, e nada foi removido.
+          <div className="nao-imprimir flex flex-wrap items-start gap-2 @3xl:w-80 @3xl:shrink-0 @3xl:justify-end">
             {podeConfirmarPresenca && (
               <Botao variante="secundario" tamanho="compacto" icone={ICONE_CHECK} carregando={ocupado === "presenca"} disabled={ocupado !== null && ocupado !== "presenca"} onClick={confirmarPresenca}>
                 Confirmar presença
@@ -163,15 +174,25 @@ export function LinhaAgendamento({
             <Botao variante="secundario" tamanho="compacto" carregando={ocupado === "realizado"} disabled={ocupado !== null && ocupado !== "realizado"} onClick={() => mudarStatus("realizado")}>
               Realizada
             </Botao>
-            <Botao variante="fantasma" tamanho="compacto" carregando={ocupado === "nao_compareceu"} disabled={ocupado !== null && ocupado !== "nao_compareceu"} onClick={() => mudarStatus("nao_compareceu")}>
-              Não compareceu
-            </Botao>
-            <Botao variante="fantasma" tamanho="compacto" disabled={ocupado !== null} onClick={() => setRemarcando(true)}>
-              Remarcar
-            </Botao>
-            <Botao variante="perigo" tamanho="compacto" disabled={ocupado !== null} onClick={() => setCancelando(true)}>
-              Cancelar
-            </Botao>
+            <details className="relative">
+              <summary
+                aria-label={`Mais ações para ${agendamento.pessoa_nome ?? "esta sessão"}`}
+                className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-controle border border-linha-forte bg-papel-elevado px-3 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] marker:content-none hover:border-[color:var(--latao)]"
+              >
+                Mais
+              </summary>
+              <div className="absolute right-0 z-30 mt-1 flex w-52 flex-col gap-1 rounded-controle border border-linha-forte bg-papel-elevado p-2 shadow-flutuante">
+                <Botao variante="fantasma" tamanho="compacto" carregando={ocupado === "nao_compareceu"} disabled={ocupado !== null && ocupado !== "nao_compareceu"} onClick={() => mudarStatus("nao_compareceu")}>
+                  Não compareceu
+                </Botao>
+                <Botao variante="fantasma" tamanho="compacto" disabled={ocupado !== null} onClick={() => setRemarcando(true)}>
+                  Remarcar
+                </Botao>
+                <Botao variante="perigo" tamanho="compacto" disabled={ocupado !== null} onClick={() => setCancelando(true)}>
+                  Cancelar
+                </Botao>
+              </div>
+            </details>
           </div>
         )}
       </div>
@@ -181,7 +202,7 @@ export function LinhaAgendamento({
         aoFechar={() => setRemarcando(false)}
         rotulo={agendamento.pessoa_nome ?? "Agendamento"}
         titulo="Remarcar a sessão"
-        descricao={`Hoje está marcada para ${formatarDataHora(agendamento.inicio_em)}. O horário antigo é liberado e o cliente recebe a régua de novo.`}
+        descricao={`Hoje está marcada para ${formatarDataHora(agendamento.inicio_em)}. O horário antigo é liberado e as mensagens automáticas recomeçam.`}
       >
         <FormularioAgendamento
           rotuloConfirmar="Remarcar"
@@ -198,7 +219,7 @@ export function LinhaAgendamento({
       <ConfirmarAcao
         aberto={cancelando}
         titulo="Cancelar este agendamento?"
-        efeito={`A sessão de ${formatarDataHora(agendamento.inicio_em)}${agendamento.pessoa_nome ? ` com ${agendamento.pessoa_nome}` : ""} sai da agenda e as mensagens da régua pendentes são canceladas. Para marcar outra data, use “Remarcar”.`}
+        efeito={`A sessão de ${formatarDataHora(agendamento.inicio_em)}${agendamento.pessoa_nome ? ` com ${agendamento.pessoa_nome}` : ""} sai da agenda e as mensagens automáticas pendentes são canceladas. Para marcar outra data, use “Remarcar”.`}
         perigo
         rotuloConfirmar="Cancelar agendamento"
         rotuloCancelar="Manter"

@@ -21,6 +21,8 @@ export type EstadoItemPasta = "pronto" | "em_revisao" | "falta" | "ainda_nao";
 export interface ItemPasta {
   chave: ChaveItemPasta;
   rotulo: string;
+  /** Nome inteiro do artefato — só para `title` (ver `catalogo.ts`). */
+  titulo?: string;
   procedencia: ProcedenciaItemPasta;
   estado: EstadoItemPasta;
   /** Quem precisa agir para o item existir (Fase 4 §6.2, `catalogo.ts`). */
@@ -56,7 +58,11 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
   const temAgendamentoAtivo = sinais.proximaSessaoEm !== null;
   const temAnaliseSessao = ficha.timeline.some((e) => e.tipo === "analise_sessao");
   const temTranscricao = ficha.timeline.some((e) => e.tipo === "transcricao");
-  const SO_DEPOIS_DA_SESSAO = "Só depois da Sessão de Viabilidade acontecer.";
+  // Lei de texto (§2): a nota de `ainda_nao` já sai do fluxo e vira `title`
+  // (`PastaDoCliente`), mas continua sendo lida em voz alta e por quem passa o
+  // mouse — então também encolhe. "Só depois da sessão" diz o mesmo que a
+  // frase de 6 palavras que estava aqui.
+  const SO_DEPOIS_DA_SESSAO = "Só depois da sessão.";
 
   const estados: Record<ChaveItemPasta, () => { estado: EstadoItemPasta; nota?: string }> = {
     formulario: () => (sinais.temFormulario ? { estado: "pronto" } : { estado: "falta" }),
@@ -69,7 +75,7 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
     // gap no relatório final; sem fonte real, este item nunca sai de
     // `ainda_nao` aqui (não é o pré-requisito que falta, é a leitura — a
     // aba `LinksAba.tsx` continua sendo a única fonte de verdade por ora).
-    links: () => ({ estado: "ainda_nao", nota: "Contagem de links ainda não disponível neste resumo — ver aba Links." }),
+    links: () => ({ estado: "ainda_nao", nota: "Ver na aba Links." }),
 
     briefing: () => {
       if (sinais.temBriefing) return { estado: "pronto" };
@@ -83,9 +89,9 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
       if (temAgendamentoAtivo) {
         // Presença confirmada pelo cliente (0051) é fato sobre o agendamento —
         // muda a nota, não o estado. `null` = coluna ainda não existe: silêncio.
-        if (sinais.presencaConfirmada === true) return { estado: "em_revisao", nota: "Sessão agendada e presença confirmada pelo cliente." };
-        if (sinais.presencaConfirmada === false) return { estado: "em_revisao", nota: "Sessão agendada, aguardando o cliente confirmar presença." };
-        return { estado: "em_revisao", nota: "Sessão agendada, aguardando realização." };
+        if (sinais.presencaConfirmada === true) return { estado: "em_revisao", nota: "Presença confirmada." };
+        if (sinais.presencaConfirmada === false) return { estado: "em_revisao", nota: "Aguardando confirmação." };
+        return { estado: "em_revisao", nota: "Agendada." };
       }
       return { estado: "falta" };
     },
@@ -112,7 +118,7 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
     // inventado sobre um recurso que a tela não consegue ler.
     diagnostico_sv: () => {
       if (sinais.temDiagnostico === true) return { estado: "pronto" };
-      if (sinais.temDiagnostico === null) return { estado: "ainda_nao", nota: "Recurso ainda não disponível." };
+      if (sinais.temDiagnostico === null) return { estado: "ainda_nao", nota: "Ainda não disponível." };
       if (!sessaoRealizada) return { estado: "ainda_nao", nota: SO_DEPOIS_DA_SESSAO };
       return { estado: "falta" };
     },
@@ -140,7 +146,7 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
       // pronto. Contagem fina de slides não revisados exige o conteúdo
       // completo, que não está neste payload — quem mostra isso é
       // `croquiAtalho` (`jornadas/[id]/page.tsx`), não este catálogo.
-      if (sinais.croquiStatus === "rascunho") return { estado: "em_revisao", nota: "Croqui iniciado, ainda em rascunho." };
+      if (sinais.croquiStatus === "rascunho") return { estado: "em_revisao", nota: "Em rascunho." };
       return { estado: "pronto" };
     },
 
@@ -149,7 +155,7 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
       // `undefined` (chave nunca populada) é tratado igual a `null` — nunca
       // lança, nunca inventa "pronto".
       if (sinais.materialEstado === "aprovado") return { estado: "pronto" };
-      if (sinais.materialEstado === "rascunho") return { estado: "em_revisao", nota: "Gerado, aguardando aprovação." };
+      if (sinais.materialEstado === "rascunho") return { estado: "em_revisao", nota: "Aguardando aprovação." };
       return { estado: "falta" };
     },
 
@@ -168,7 +174,7 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
 
   return CATALOGO_PASTA.filter((item) => !item.requerPatrimonio || podeVerPatrimonio).map((item) => {
     const { estado, nota } = estados[item.chave]();
-    return { chave: item.chave, rotulo: item.rotulo, procedencia: item.procedencia, estado, dono: item.dono, nota };
+    return { chave: item.chave, rotulo: item.rotulo, titulo: item.titulo, procedencia: item.procedencia, estado, dono: item.dono, nota };
   });
 }
 

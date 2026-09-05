@@ -4,7 +4,6 @@ import { use, useEffect, useState } from "react";
 import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
 import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
-import { contarRevisaoSlides } from "@/lib/croqui";
 import { EstadoErro } from "@/components/ui/Estado";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
@@ -29,6 +28,9 @@ import { AnaliseSessaoAba } from "@/components/ficha360/AnaliseSessaoAba";
 import { TimelineAba } from "@/components/ficha360/TimelineAba";
 import { DiagnosticoSv } from "@/components/ficha360/DiagnosticoSv";
 import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/api-extras";
+import { TrilhoDaFicha } from "@/components/ficha360/TrilhoDaFicha";
+import { AutomacoesFicha } from "@/components/ficha360/AutomacoesFicha";
+import { RadarDocumentos } from "@/components/ficha360/RadarDocumentos";
 import type { SinaisSessaoPasta } from "@/components/pasta/PastaDoCliente";
 import type { Ficha360 } from "@/lib/api";
 
@@ -73,9 +75,10 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // prop `croquiAtalho` do cabeçalho é que fica `null` quando o papel não vê
   // patrimônio — não a chamada do hook.
   const estadoCroqui = useCroquiDaJornada({ jornadaId: id, ficha, timeline: ficha.timeline });
-  const croquiAtalho = podeVerPatrimonio && estadoCroqui.croquiAtual
-    ? { croquiId: estadoCroqui.croquiAtual.id, pendentes: contarRevisaoSlides(estadoCroqui.croquiAtual.conteudo.slides).pendentes }
-    : null;
+  // Sem o contador de revisão dos 13 slides: ele mede o editor da IA v1, e o
+  // botão ao lado abre a apresentação das 19 tabelas do motor — número de
+  // uma tela carimbado no atalho de outra.
+  const croquiAtalho = podeVerPatrimonio && estadoCroqui.croquiAtual ? { croquiId: estadoCroqui.croquiAtual.id } : null;
   // Fase 2 de "A Pasta do Cliente" — mesma lista que alimenta o chip
   // "Próxima ação" da faixa vital (CabecalhoFicha), calculada uma vez e
   // compartilhada, não duplicada por componente.
@@ -180,7 +183,7 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   const [gavetaAberta, setGavetaAberta] = useState<ChaveItemPasta | null>(null);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoFicha
         ficha={ficha}
         aoAtualizar={recarregar}
@@ -188,6 +191,17 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
         croquiAtalho={croquiAtalho}
         aoAbrirGaveta={(chave) => setGavetaAberta(chave)}
       />
+      {/* Fase 5 §1.3 — o trilho de 9 passos é a primeira coisa da Ficha e é
+          sticky: onde a família está + a ÚNICA ação de agora, sempre à vista.
+          Substitui a antiga faixa vital nesse papel (ver `CabecalhoFicha`). */}
+      <div className="nao-imprimir sticky top-0 z-20">
+        <TrilhoDaFicha ficha={ficha} aoAbrirGaveta={setGavetaAberta} />
+      </div>
+      {/* §1.4 e §1.5 — o que o sistema fez e o que falta de documento, no
+          fluxo da jornada, não escondidos em aba. O radar lê patrimônio e
+          família: fora do recorte, nem é montado (a rota recusaria). */}
+      <AutomacoesFicha jornadaId={id} />
+      {podeVerPatrimonio && <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} />}
       <ConteudoPastaOuAbas pasta={pasta} abas={abas} aoMudarGaveta={setGavetaAberta} sinaisSessao={sinaisSessao} />
 
       <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.formulario!}>
@@ -275,10 +289,34 @@ function ConteudoPastaOuAbas({
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   }
 
+  /**
+   * Fase 5 §1.4 do pedido do João: as 9 abas **deixam de ser menu**. A Pasta é
+   * a única porta; quem quiser a tela crua entra por aqui. Nada foi apagado —
+   * o mesmo `<Abas>` de sempre, agora atrás de um botão em vez de ocupar a
+   * dobra com uma barra de 9 nomes.
+   */
+  function verTudo() {
+    const primeira = abas[0];
+    if (!primeira) return;
+    window.location.hash = `#${primeira.id}`;
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+
   return (
     <>
-      <div hidden={temHashValido}>
+      <div hidden={temHashValido} className="flex flex-col gap-bloco">
         <PastaDoCliente itens={pasta} aoAbrirGaveta={aoMudarGaveta} sinaisSessao={sinaisSessao} />
+        <div className="nao-imprimir">
+          <button
+            type="button"
+            onClick={verTudo}
+            aria-expanded={temHashValido}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)]"
+          >
+            Ver tudo
+            <span className="text-xs font-normal text-tinta-fraca">{abas.length} telas</span>
+          </button>
+        </div>
       </div>
       <div hidden={!temHashValido}>
         <button
@@ -286,7 +324,7 @@ function ConteudoPastaOuAbas({
           onClick={voltarParaPasta}
           className="nao-imprimir mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-controle text-sm font-medium text-tinta-suave hover:text-tinta"
         >
-          ← Voltar à Pasta do Cliente
+          ← Pasta do Cliente
         </button>
         <Abas abas={abas} deepLinkHash />
       </div>

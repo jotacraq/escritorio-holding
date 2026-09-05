@@ -3,8 +3,11 @@
 import type { ReactNode } from "react";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import type { EstadoItemPasta, ItemPasta } from "@/lib/pasta/derivar";
-import { ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA, caminhoItemPasta } from "@/lib/pasta/rotas";
-import { Selo, SeloIA } from "@/components/ui/Selo";
+import { ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA, TITULO_ACAO_ITEM_PASTA, caminhoItemPasta } from "@/lib/pasta/rotas";
+import { Selo } from "@/components/ui/Selo";
+
+/** A mesma frase do `ui/Selo#SeloIA` — aqui ela vive no `title`, não no fluxo. */
+const FRASE_SELO_IA = "Gerado por IA — insumo do advogado, não parecer";
 import { SeloPresenca } from "@/components/agenda/SeloPresenca";
 
 /**
@@ -91,7 +94,10 @@ const ROTULO_ESTADO: Record<EstadoItemPasta, string> = {
   pronto: "Pronto",
   em_revisao: "Em revisão",
   falta: "Falta",
-  ainda_nao: "Ainda não é hora",
+  // Lei de texto §2: estado ≤ 4 palavras. "Ainda não é hora" aparecia até 9
+  // vezes na mesma tela — 36 palavras para dizer o que o glifo tracejado e o
+  // `title` do cartão já dizem.
+  ainda_nao: "Ainda não",
 };
 
 /**
@@ -295,34 +301,60 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
   const emGaveta = ITENS_EM_GAVETA.has(item.chave);
   const href = clicavel && !emGaveta ? caminhoItemPasta(item.chave) : undefined;
   const acao = ACAO_POR_ITEM_PASTA[item.chave];
+  // O nome inteiro do artefato e a frase inteira do verbo saíram do fluxo
+  // (§2/§9.2, `catalogo.ts` e `rotas.ts`) — reaparecem aqui, e só aqui, como
+  // `title`: quem procura "POP 03", "IR" ou "Diagnóstico da SV" ainda acha.
+  const tituloDoCartao = item.titulo ?? TITULO_ACAO_ITEM_PASTA[item.chave];
   const extrasSessao = item.chave === "sessao" && sinaisSessao && sinaisSessao.proximaSessaoEm ? sinaisSessao : null;
   const ligacaoIa = item.chave === "sessao" && sinaisSessao?.ligacaoIaStatus ? ROTULO_LIGACAO_IA[sinaisSessao.ligacaoIaStatus] : null;
 
   // `pronto` sem nota fica sem descrição de propósito: "Pronto · Concluído."
   // é redundância — cartão feito merece ser compacto, não ocupar o mesmo
   // espaço de um cartão que ainda pede trabalho.
-  const descricao = item.nota ?? (item.estado === "pronto" ? undefined : acao);
+  //
+  // Fase 5 (lei de texto §2): cartão `ainda_nao` não é acionável, então a nota
+  // que explica POR QUE ainda não é hora sai do fluxo e vira `title`. Eram até
+  // 3 linhas de prosa por cartão-fantasma, e são 9 desses numa jornada nova —
+  // a maior fonte de texto da Ficha. O estado ("Ainda não é hora") continua
+  // escrito, com glifo próprio: nada de informação se perde de relance.
+  const descricao = item.estado === "ainda_nao" ? undefined : (item.nota ?? (item.estado === "pronto" ? undefined : acao));
+  const explicacao = item.estado === "ainda_nao" ? item.nota ?? undefined : undefined;
 
   const conteudo = (
     <>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3" title={explicacao ?? tituloDoCartao}>
         <span aria-hidden="true" className={`grid h-10 w-10 shrink-0 place-items-center rounded-controle ${estilo.selo}`}>
           <IconeItem chave={item.chave} />
         </span>
         <div className="flex min-w-0 flex-col gap-1">
-          <p className={`text-[15px] font-bold leading-snug ${estilo.titulo}`}>{item.rotulo}</p>
+          <p className={`text-[15px] font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
+            {item.rotulo}
+          </p>
           <p className={`inline-flex items-center gap-1.5 text-xs font-bold ${estilo.texto}`}>
             <IconeEstado estado={item.estado} />
             {ROTULO_ESTADO[item.estado]}
           </p>
           {descricao && (
-            <p className={`text-sm leading-snug ${item.estado === "falta" ? "font-medium text-tinta" : "text-tinta-suave"}`}>
+            <p
+              className={`text-sm leading-snug ${item.estado === "falta" ? "font-medium text-tinta" : "text-tinta-suave"}`}
+              title={descricao === acao ? TITULO_ACAO_ITEM_PASTA[item.chave] : undefined}
+            >
               {descricao}
             </p>
           )}
         </div>
       </div>
-      {item.procedencia === "gerado_ia" && <SeloIA className="self-start" />}
+      {/* Fase 5: a frase inteira do `SeloIA` ("Gerado por IA — insumo do
+          advogado, não parecer") aparecia CINCO vezes nesta tela — 45 das 222
+          palavras da Ficha. Aqui o cartão é um ponteiro, não o conteúdo de IA:
+          o rótulo fica, curto, e a frase inteira vai para o `title`. Nas telas
+          onde o conteúdo gerado É o conteúdo (Briefing, Análise da Sessão,
+          Material), o `SeloIA` completo continua intocado. */}
+      {item.procedencia === "gerado_ia" && (
+        <Selo tom="neutro" title={FRASE_SELO_IA} className="self-start">
+          IA
+        </Selo>
+      )}
       {(extrasSessao || ligacaoIa) && (
         <div className="flex flex-wrap gap-1.5">
           {extrasSessao && <SeloPresenca presencaConfirmadaEm={extrasSessao.presencaConfirmadaEm} inicioEm={extrasSessao.proximaSessaoEm!} via={extrasSessao.presencaConfirmadaVia} />}
@@ -421,14 +453,15 @@ export function PastaDoCliente({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2.5 rounded-controle border border-linha-forte bg-papel-elevado px-4 py-3">
+        {/* Número primeiro (§2): "3 de 7 prontos", não "Você já tem 3 de 7
+            itens desta fase". */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <p className="text-sm font-medium text-tinta">
-            Você já tem <span className="font-bold">{prontos}</span> de <span className="font-bold">{total}</span>{" "}
-            itens desta fase.
+            <span className="font-bold">{prontos}</span> de <span className="font-bold">{total}</span> prontos
           </p>
           {aindaNao > 0 && (
-            <p className="text-xs text-tinta-fraca">
-              {aindaNao} {aindaNao === 1 ? "item chega" : "itens chegam"} depois da Sessão de Viabilidade.
+            <p className="text-xs text-tinta-fraca" title="Estes itens dependem da Sessão de Viabilidade acontecer.">
+              {aindaNao} depois da sessão
             </p>
           )}
         </div>
@@ -480,7 +513,7 @@ export function PastaDoCliente({
                 </h2>
                 <span className="text-xs font-medium text-tinta-fraca">
                   {acionaveisDoMomento.length === 0
-                    ? "chega depois da Sessão de Viabilidade"
+                    ? "depois da sessão"
                     : `${prontosDoMomento} de ${acionaveisDoMomento.length} ${acionaveisDoMomento.length === 1 ? "pronto" : "prontos"}`}
                 </span>
               </div>

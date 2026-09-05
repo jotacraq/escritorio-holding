@@ -16,8 +16,8 @@ import { Selo, SeloDemonstracao, SeloIA, SeloStub, type TomSelo } from "@/compon
 import { formatarDataHora } from "@/lib/formatar";
 
 const ROTULOS_FONTE: Record<FonteDorMaterial, string> = {
-  ligacao: "Registro da ligação (POP 03)",
-  formulario: "Formulário (POP 02)",
+  ligacao: "Registro da ligação",
+  formulario: "Formulário do cliente",
   relatorio: "Relatório da Sessão de Viabilidade",
   nenhuma: "Nenhuma — material padrão",
 };
@@ -141,7 +141,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
       notificar({
         tom: "erro",
         titulo: erroApi?.status === 503 ? "IA não configurada neste ambiente" : "Não foi possível gerar o material",
-        descricao: erroApi?.status === 503 ? "Falta a chave do provedor de IA (OPENROUTER_API_KEY) — Admin → Pendências." : erroApi?.message ?? "Confira a internet e tente de novo.",
+        descricao: erroApi?.status === 503 ? "Configure o provedor de IA em Administração." : erroApi?.message ?? "Confira a internet e tente de novo.",
       });
     } finally {
       setGerando(false);
@@ -153,7 +153,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
     setAprovando(true);
     try {
       const res = await aprovarMaterial(jornadaId, atual.id);
-      notificar({ tom: "sucesso", titulo: "Material aprovado", descricao: "A régua pode enviar o e-mail pós-sessão com o link e o PDF." });
+      notificar({ tom: "sucesso", titulo: "Material aprovado", descricao: "O e-mail pós-sessão pode sair com o link e o PDF." });
       setConfirmandoAprovacao(false);
       if (res.pdf) avisarPdf(res.pdf);
       recarregar();
@@ -175,8 +175,8 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
       const erroApi = e instanceof ErroFicha360Api ? e : null;
       notificar({
         tom: "erro",
-        titulo: erroApi?.codigo === "pdf_indisponivel" ? "Este material ainda não tem PDF" : erroApi?.status === 503 ? "Download indisponível neste ambiente" : "Não foi possível baixar o PDF",
-        descricao: erroApi?.codigo === "pdf_indisponivel" ? "Use “Gerar PDF de novo”." : erroApi?.status === 503 ? "O servidor está sem a chave de serviço (SUPABASE_SERVICE_ROLE_KEY)." : erroApi?.message ?? "Confira a internet e tente de novo.",
+        titulo: erroApi?.codigo === "pdf_indisponivel" ? "Este material ainda não tem PDF" : erroApi?.status === 503 ? "Download indisponível agora" : "Não foi possível baixar o PDF",
+        descricao: erroApi?.codigo === "pdf_indisponivel" ? "Use “Gerar PDF de novo”." : erroApi?.status === 503 ? "O servidor não está pronto para gerar o arquivo." : erroApi?.message ?? "Confira a internet e tente de novo.",
       });
     } finally {
       setBaixando(false);
@@ -194,7 +194,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
       const erroApi = e instanceof ErroFicha360Api ? e : null;
       notificar({
         tom: "erro",
-        titulo: erroApi?.codigo === "material_nao_aprovado" ? "Aprove antes de gerar o PDF" : erroApi?.status === 503 ? "PDF indisponível neste ambiente" : "Não foi possível gerar o PDF",
+        titulo: erroApi?.codigo === "material_nao_aprovado" ? "Aprove antes de gerar o PDF" : erroApi?.status === 503 ? "PDF indisponível agora" : "Não foi possível gerar o PDF",
         descricao: erroApi?.codigo === "material_nao_aprovado" ? "Rascunho nunca vira arquivo." : erroApi?.message ?? "Confira a internet e tente de novo.",
       });
     } finally {
@@ -218,7 +218,6 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
       <Cartao
         rotulo="Depois da sessão"
         titulo="Material pós-sessão"
-        descricao="Artigo curto personalizado pela dor do cliente. A régua não envia sem aprovação humana; só o aprovado vira PDF."
       >
         {!gerando && (
           <div className="nao-imprimir mb-4 flex flex-wrap gap-2">
@@ -350,7 +349,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
       <ConfirmarAcao
         aberto={confirmandoAprovacao}
         titulo="Aprovar este material?"
-        efeito={`A versão ${atual?.versao ?? ""} passa a ser a que o cliente recebe: a régua libera o e-mail pós-sessão com o link /p/m, o PDF é gerado agora e anexado. Para mudar o texto depois, gere uma nova versão e aprove de novo.`}
+        efeito={`A versão ${atual?.versao ?? ""} passa a ser a que o cliente recebe: o e-mail pós-sessão é liberado com o link e o PDF anexado. Para mudar o texto depois, gere uma nova versão e aprove de novo.`}
         rotuloConfirmar="Aprovar material"
         confirmando={aprovando}
         aoConfirmar={aprovar}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { atualizarCroqui, ApiError, type Croqui, type StatusCroqui } from "@/lib/api";
 import { contarRevisaoSlides } from "@/lib/croqui";
 import { Botao } from "@/components/ui/Botao";
+import { rotaCroquiApresentar } from "@/components/ficha360/rotas-croqui";
 import { Selo } from "@/components/ui/Selo";
 import { Campo, Entrada, AreaTexto, Opcao } from "@/components/ui/Campo";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
@@ -36,13 +37,11 @@ const TOM_CATEGORIA: Record<string, TomChip> = {
  * confirmação explícita antes de salvar (`ConfirmarAcao`), mas não bloqueia.
  */
 export function EditorCroqui({
-  jornadaId,
   croqui,
   dadosGraficos,
   tema,
   aoAtualizar,
 }: {
-  jornadaId: string;
   croqui: Croqui;
   dadosGraficos: DadosGraficosCroqui;
   tema: TemaGrafico;
@@ -132,8 +131,11 @@ export function EditorCroqui({
             {slides.length - pendentes} de {slides.length} slides revisados
           </span>
           <Botao variante="secundario" carregando={salvando} onClick={() => salvar()}>Salvar rascunho</Botao>
-          <Link href={`/jornadas/${jornadaId}/croqui/${croqui.id}/apresentar`}>
-            <Botao variante="secundario">Abrir apresentação</Botao>
+          {/* A apresentação saiu de `/jornadas/[id]/croqui/[croquiId]/apresentar`
+              (rota apagada na costura da Fase 5) para `/croquis/[id]/apresentar`.
+              O caminho vem do módulo de rotas — nunca escrito à mão. */}
+          <Link href={rotaCroquiApresentar(croqui.id)}>
+            <Botao variante="secundario">Apresentar</Botao>
           </Link>
           <Botao variante="primario" carregando={salvando} onClick={aoClicarMarcarComoPronto}>
             Marcar como pronto
@@ -141,10 +143,17 @@ export function EditorCroqui({
         </div>
       </div>
 
+      {/* Lei de texto (§2): número primeiro, uma linha. As duas frases que
+          explicavam a regra ("pode marcar como pronto assim mesmo — a
+          assinatura é sua") saem do fluxo e vão para o `title`: eram o último
+          bloco de prosa > 2 linhas da aba Croqui a 390 px. */}
       {pendentes > 0 && (
-        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-4 py-3 text-sm text-[color:var(--ambar)]">
-          {pendentes} de {slides.length} slides ainda sem revisão da advogada. O croqui pode ser marcado como pronto assim mesmo — a
-          assinatura é sua.
+        <p
+          role="status"
+          title="O croqui pode ser marcado como pronto assim mesmo — a assinatura é sua."
+          className="rounded-controle border border-ambar-borda bg-ambar-fraco px-4 py-3 text-sm text-[color:var(--ambar)]"
+        >
+          {pendentes} de {slides.length} slides sem revisão
         </p>
       )}
 

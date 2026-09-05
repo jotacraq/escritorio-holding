@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
 import { Selo } from "@/components/ui/Selo";
 import { formatarData, formatarDataHora, formatarHora, formatarRelativo, formatarTelefone, linkWhatsapp } from "@/lib/formatar";
+import { rotulo } from "@/lib/vocabulario";
 import { mensagemDeErro } from "@/components/admin/http";
 import { marcarMensagemEnviada, prepararMensagem, type MensagemDaFila } from "./api-comunicacao";
 import { ROTULO_STATUS, TOM_STATUS, rotuloCanal, rotuloTemplate } from "./humanizar";
@@ -31,13 +32,14 @@ interface Props {
   aoMudar: () => void;
 }
 
-type NotaLocal = { tom: "aviso" | "erro"; texto: string; jornadaId?: string } | null;
+type NotaLocal = { tom: "aviso" | "erro"; texto: string; jornadaId?: string; detalhe?: string } | null;
 
 /**
- * Uma linha da fila. WhatsApp pendente é a única que age: "Preparar e
- * copiar" chama `POST …/preparar` (resolve `{{link_*}}` e congela o texto) e
- * SÓ ENTÃO copia — placeholder literal nunca chega ao cliente. 409 vira
- * aviso humano com link para a Ficha; 503 vira "envio indisponível".
+ * Uma linha da fila: título + estado + ação. WhatsApp pendente é a única que
+ * age: "Copiar texto" chama `POST …/preparar` (resolve `{{link_*}}` e congela
+ * o texto) e SÓ ENTÃO copia — placeholder literal nunca chega ao cliente. 409
+ * vira aviso humano com link para a Ficha; 503 vira "envio indisponível", com
+ * o nome da variável de ambiente só no `title` (§9.2).
  */
 export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
   const { notificar } = useToast();
@@ -70,9 +72,7 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
       const resultado = await prepararMensagem(mensagem.id);
       if (resultado.situacao === "falta_dado") {
         const ehSala = resultado.codigo === "sessao_sem_sala";
-        const texto = ehSala
-          ? "Esta mensagem leva o link da sala, e a sessão ainda não tem um. Cole o link na Ficha → Sessão (ou ligue a integração em Admin → Integrações) e volte aqui."
-          : resultado.mensagem;
+        const texto = ehSala ? "A sessão ainda não tem link da sala." : resultado.mensagem;
         setNota({ tom: "aviso", texto, jornadaId: mensagem.jornada_id });
         notificar({
           tom: "aviso",
@@ -83,8 +83,11 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
         return;
       }
       if (resultado.situacao === "indisponivel") {
-        const texto = "Envio indisponível: falta SUPABASE_SERVICE_ROLE_KEY no servidor. A mensagem continua na fila.";
-        setNota({ tom: "erro", texto });
+        // O nome da variável de ambiente é conserto de admin, não recado para
+        // quem só queria enviar a mensagem (§9.2): rótulo humano no fluxo, a
+        // sigla técnica só no `title` da nota.
+        const texto = `${rotulo("envio_indisponivel")}. A mensagem continua na fila.`;
+        setNota({ tom: "erro", texto, detalhe: resultado.mensagem });
         notificar({ tom: "erro", titulo: "Não foi possível preparar", descricao: texto });
         return;
       }
@@ -123,17 +126,17 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
 
   return (
     <li className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:gap-5">
-      {/* Coluna da hora: o "quando" é o eixo desta lista. */}
+      {/* Coluna da hora: o "quando" é o eixo desta lista. Data e "em 3 dias"
+          ficam DENTRO do `<time>` — é a mesma informação de agenda, e assim o
+          leitor de tela anuncia uma coisa só. */}
       <div className="flex shrink-0 items-baseline gap-2 sm:w-24 sm:flex-col sm:gap-0">
         {modo === "agenda" ? (
-          <>
-            <time dateTime={mensagem.agendada_para} className="text-titulo font-bold tabular-nums text-tinta">
-              {formatarHora(mensagem.agendada_para)}
-            </time>
+          <time dateTime={mensagem.agendada_para} className="flex items-baseline gap-2 sm:flex-col sm:gap-0">
+            <span className="text-titulo font-bold tabular-nums text-tinta">{formatarHora(mensagem.agendada_para)}</span>
             <span className="text-xs text-tinta-fraca">
               {formatarData(mensagem.agendada_para)} · {formatarRelativo(mensagem.agendada_para)}
             </span>
-          </>
+          </time>
         ) : (
           <time dateTime={mensagem.enviada_em ?? mensagem.agendada_para} className="text-sm font-medium tabular-nums text-tinta">
             {formatarDataHora(mensagem.enviada_em ?? mensagem.agendada_para)}
@@ -144,21 +147,36 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-corpo font-bold text-tinta">{rotuloTemplate(mensagem.template_chave)}</p>
-          <Selo tom={mensagem.canal === "whatsapp" ? "verde" : "azul"}>{rotuloCanal(mensagem.canal)}</Selo>
+          <span
+            className="inline-flex"
+            title={
+              mensagem.canal === "email" && mensagem.status === "pendente" && mensagem.precisa_preparar
+                ? "O link desta mensagem é montado na hora do envio."
+                : undefined
+            }
+          >
+            <Selo tom={mensagem.canal === "whatsapp" ? "verde" : "azul"}>{rotuloCanal(mensagem.canal)}</Selo>
+          </span>
           {modo === "historico" && <Selo tom={TOM_STATUS[mensagem.status]}>{ROTULO_STATUS[mensagem.status]}</Selo>}
-          {ehWhatsappPendente && <Selo tom="ambar">Sai pela sua mão</Selo>}
+          {ehWhatsappPendente && <Selo tom="ambar">Pela sua mão</Selo>}
         </div>
+        {/* Destinatário é dado do cliente: nome + endereço, sem a palavra "Para". */}
         <p className="text-sm text-tinta-suave">
-          Para{" "}
-          <Link href={linkFicha} className="font-medium text-tinta underline-offset-2 hover:underline">
+          {/* Alvo ≥ 44px sem inflar a linha: `min-h-11` compensado por margem
+              negativa, o mesmo padrão das filas do Painel. */}
+          <Link href={linkFicha} className="-my-2.5 inline-flex min-h-11 items-center py-2.5 font-medium text-tinta underline-offset-2 hover:underline">
             {nome}
           </Link>
-          {mensagem.pessoa_nome && <span className="text-tinta-fraca"> · {destinatario}</span>}
+          {mensagem.pessoa_nome && (
+            <span data-dado-cliente className="text-tinta-fraca">
+              {" · "}
+              {destinatario}
+            </span>
+          )}
         </p>
 
-        {mensagem.canal === "email" && mensagem.status === "pendente" && mensagem.precisa_preparar && (
-          <p className="text-xs text-tinta-fraca">O link desta mensagem é montado na hora do envio.</p>
-        )}
+        {/* "O link é montado na hora do envio" era explicação de mecanismo dentro
+            do fluxo (lei de texto): virou `title` do rótulo do canal, acima. */}
         {mensagem.tentativas > 0 && (
           <p className="text-xs text-tinta-fraca">
             {mensagem.tentativas} tentativa{mensagem.tentativas === 1 ? "" : "s"}
@@ -172,13 +190,17 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
         )}
 
         {nota && (
-          <p role={nota.tom === "erro" ? "alert" : "status"} className={`rounded-controle px-3.5 py-2.5 text-sm ${nota.tom === "erro" ? "bg-vermelho-fraco text-[color:var(--vermelho)]" : "bg-ambar-fraco text-[color:var(--ambar)]"}`}>
+          <p
+            role={nota.tom === "erro" ? "alert" : "status"}
+            title={nota.detalhe}
+            className={`rounded-controle px-3.5 py-2.5 text-sm ${nota.tom === "erro" ? "bg-vermelho-fraco text-[color:var(--vermelho)]" : "bg-ambar-fraco text-[color:var(--ambar)]"}`}
+          >
             {nota.texto}
             {nota.jornadaId && (
               <>
                 {" "}
                 <Link href={`/jornadas/${nota.jornadaId}#sessao`} className="font-bold underline underline-offset-2">
-                  Abrir a Ficha → Sessão
+                  Colar o link
                 </Link>
               </>
             )}
@@ -193,7 +215,7 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
               aria-expanded={verTexto}
               className="min-h-11 text-sm font-medium text-[color:var(--latao)] underline-offset-2 hover:underline"
             >
-              {verTexto ? "Esconder o texto" : "Ver o texto"}
+              {verTexto ? "Esconder" : "Ver texto"}
             </button>
             {verTexto && <p className="mt-1 whitespace-pre-wrap rounded-controle bg-papel px-4 py-3 text-sm leading-relaxed text-tinta">{corpo}</p>}
           </div>
@@ -202,7 +224,7 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
         {ehWhatsappPendente && (
           <div className="mt-1 flex flex-wrap gap-2">
             <Botao variante="secundario" tamanho="compacto" icone={ICONE_COPIAR} carregando={preparando} onClick={prepararECopiar}>
-              Preparar e copiar
+              Copiar texto
             </Botao>
             {linkWa && (
               <a
@@ -211,11 +233,11 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
                 rel="noreferrer noopener"
                 className="inline-flex min-h-11 items-center justify-center rounded-controle border border-linha-controle bg-papel-elevado px-3.5 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
               >
-                Abrir no WhatsApp
+                Abrir WhatsApp
               </a>
             )}
             <Botao variante="secundario" tamanho="compacto" icone={ICONE_OK} carregando={marcando} onClick={marcarEnviada}>
-              Marcar como enviada
+              Já enviei
             </Botao>
           </div>
         )}

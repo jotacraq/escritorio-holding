@@ -10,7 +10,12 @@ export const dynamic = "force-dynamic";
 const ParamsSchema = z.object({ id: z.string().uuid() });
 const CorpoSchema = z.object({
   acao: z.enum(["iniciar", "encerrar"]),
-  slides_vistos: z.number().int().min(0).max(13).optional(),
+  // Teto 30, não 13. O 13 era o número de slides do editor de prosa da IA v1;
+  // o deck do método (`components/croqui/slidesDoMetodo.tsx`) tem 17–19 e
+  // cresce com as tabelas que fecham, então a apresentação real batia no
+  // 422 e a contagem se perdia. 30 é folga sobre as 19 tabelas + slides de
+  // discurso, e continua sendo um teto (o campo é contador, não texto livre).
+  slides_vistos: z.number().int().min(0).max(30).optional(),
 });
 
 /**

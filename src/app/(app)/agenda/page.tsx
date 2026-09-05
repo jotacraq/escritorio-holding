@@ -18,7 +18,6 @@ export default function PaginaAgenda() {
       <CabecalhoPagina
         rotulo="Dia a dia"
         titulo="Agenda"
-        descricao="As Sessões de Viabilidade dos próximos dias e quem já confirmou presença. Nas outras abas, os horários livres da advogada e os bloqueios — é daí que saem as opções que o cliente vê no link de agendamento."
       />
 
       <Abas abas={abas} abaInicial="sessoes" deepLinkHash semMoldura />

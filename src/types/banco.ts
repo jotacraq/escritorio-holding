@@ -398,7 +398,18 @@ export type TipoEventoTimeline =
   | "agendamento"
   | "documento"
   | "mensagem"
+  // `croqui` é o canal EXCLUSIVO do trigger `app.timeline_croqui` (0014):
+  // todo evento deste tipo carrega `dados.status` (rascunho/pronto/apresentado),
+  // e `sinaisDaFicha()` (lib/pasta/sinais.ts) deriva dele o estado do croqui na
+  // Pasta e no trilho. Quem registra OUTRO fato do croqui usa um tipo próprio —
+  // ver `croqui_calculo` e `croqui_exportacao` abaixo (0070).
   | "croqui"
+  /** Versão do motor determinístico gravada em `croqui_calculos` (trigger `app.timeline_croqui_calculo`, 0063/0070). Sem `status`: NÃO é estado de croqui. */
+  | "croqui_calculo"
+  /** Relatório do croqui exportado em `.docx`/Drive (`api/croquis/[id]/docx`, 0070). Sem `status`: NÃO é estado de croqui. */
+  | "croqui_exportacao"
+  /** Narrativa v3 da IA gravada em `croqui_narrativas` (trigger `app.timeline_croqui_narrativa`, 0070). */
+  | "croqui_narrativa"
   | "patrimonio"
   | "familia"
   | "relatorio"
