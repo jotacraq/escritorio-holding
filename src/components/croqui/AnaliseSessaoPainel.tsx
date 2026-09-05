@@ -21,7 +21,7 @@ import {
   type CategoriaAfirmacao,
   type ResultadoAnaliseSessao,
 } from "@/components/ficha360/api-analise";
-import { detectarVersaoAnalise, converterAnaliseEmSlides } from "./mapeamentoGraficos";
+import { detectarVersaoAnalise, converterAnaliseEmSlides, analiseComoV2SeForma } from "./mapeamentoGraficos";
 import { rotularRecomendacaoArquitetura } from "./rotulos";
 import { GraficoDoSlide, type DadosGraficosCroqui } from "./GraficoDoSlide";
 import type { CroquiConteudo } from "@/server/ia/schema-croqui-slides";
@@ -53,7 +53,7 @@ function ListaAfirmacoes({ itens }: { itens: Afirmacao[] }) {
 
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-sm border border-linha px-3.5 py-3">
+    <section className="rounded-controle border border-linha px-3.5 py-3">
       <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       {children}
     </section>
@@ -183,7 +183,7 @@ export function AnaliseSessaoPainel({
           {briefingAtualId && (
             <a
               href={`/jornadas/${jornadaId}#briefing`}
-              className="rounded-sm text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+              className="rounded-controle text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
             >
               Briefing Estratégico gerado antes desta sessão
             </a>
@@ -213,7 +213,7 @@ export function AnaliseSessaoPainel({
             setSalvo(false);
           }}
           placeholder="Cole aqui o texto da transcrição da Sessão de Viabilidade (mínimo de 200 caracteres para uma análise responsável)."
-          className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-2 font-sans text-sm"
+          className="rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-2 font-sans text-sm"
         />
         <div className="flex flex-wrap items-center gap-2">
           <Botao
@@ -240,7 +240,7 @@ export function AnaliseSessaoPainel({
       </section>
 
       {resultado?.croqui_criado_agora && (
-        <p role="status" className="rounded-sm border border-azul-fraco bg-azul-fraco px-3 py-2 text-sm text-[color:var(--azul)]">
+        <p role="status" className="rounded-controle border border-azul-fraco bg-azul-fraco px-3 py-2 text-sm text-[color:var(--azul)]">
           Um croqui em rascunho foi criado automaticamente para esta jornada — veja no Editor do Croqui, abaixo.
         </p>
       )}
@@ -337,7 +337,12 @@ function ConteudoAnalise({
         <GraficoDoSlide
           tipo="alternativas"
           tema={tema}
-          dados={{ ...dadosGraficos, criterios: analise.arquitetura.criterios, recomendacaoArquitetura: analise.arquitetura.recomendacao }}
+          dados={{
+            ...dadosGraficos,
+            criterios: analise.arquitetura.criterios,
+            recomendacaoArquitetura: analise.arquitetura.recomendacao,
+            alocacao: analiseComoV2SeForma(analise)?.arquitetura.alocacao ?? null,
+          }}
         />
       </Secao>
 
@@ -385,7 +390,7 @@ function ConteudoAnalise({
       <Secao titulo="Fechamento"><p className="text-sm text-tinta">{analise.fechamento}</p></Secao>
 
       {analise.lacunas.length > 0 && (
-        <p role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
+        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
           Lacunas nesta análise: {analise.lacunas.join(" · ")}
         </p>
       )}

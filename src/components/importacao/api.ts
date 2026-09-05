@@ -13,7 +13,13 @@
  */
 
 import { ApiError } from "@/lib/api";
-import type { Importacao, ImportacaoLinha, MapaColunas, ResultadoLinhaImportacao } from "@/types/importacao";
+import type {
+  Importacao,
+  ImportacaoLinha,
+  MapaColunas,
+  PerguntasSeminario,
+  ResultadoLinhaImportacao,
+} from "@/types/importacao";
 
 export { ApiError };
 
@@ -94,9 +100,13 @@ export function cancelarImportacao(id: string) {
  * `aoProgredir` recebe 0-100 do ENVIO do arquivo (não do processamento do
  * servidor, que acontece depois, síncrono, sem barra própria — o chamador
  * mostra um estado "processando" nesse intervalo).
+ *
+ * `perguntasSeminario` (Fase 4 §5.2) vai em campo próprio do multipart —
+ * ver `src/types/importacao.ts`. Só é anexado quando há ao menos uma coluna
+ * marcada, para o payload de quem não usa ficar idêntico ao de antes.
  */
 export function criarImportacao(
-  params: { arquivo: File; edicaoId: string; mapaColunas: MapaColunas },
+  params: { arquivo: File; edicaoId: string; mapaColunas: MapaColunas; perguntasSeminario?: PerguntasSeminario },
   aoProgredir?: (percentual: number) => void,
 ): Promise<{ importacao: Importacao }> {
   return new Promise((resolve, reject) => {
@@ -104,6 +114,9 @@ export function criarImportacao(
     formData.append("arquivo", params.arquivo);
     formData.append("edicao_id", params.edicaoId);
     formData.append("mapa_colunas", JSON.stringify(params.mapaColunas));
+    if (params.perguntasSeminario && params.perguntasSeminario.length > 0) {
+      formData.append("perguntas_seminario", JSON.stringify(params.perguntasSeminario));
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/importacoes");

@@ -1,57 +1,27 @@
 "use client";
 
-import { listarProximosAgendamentos } from "@/lib/api";
-import { useRecurso } from "@/hooks/useRecurso";
-import { EstadoCarregando, EstadoIndisponivel, EstadoVazio } from "@/components/ui/Estado";
-import { LinhaAgendamento } from "@/components/agenda/LinhaAgendamento";
+import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
+import { ListaSessoes } from "@/components/agenda/ListaSessoes";
 import { PainelDisponibilidade } from "@/components/agenda/PainelDisponibilidade";
 import { PainelBloqueios } from "@/components/agenda/PainelBloqueios";
 
-function AbaSessoes() {
-  const { dados, carregando, recarregar } = useRecurso(listarProximosAgendamentos, []);
-  const itens = dados?.itens;
-  const indisponivel = dados === null;
-
-  return (
-    <div className="flex flex-col gap-4">
-      {carregando && <EstadoCarregando rotulo="Carregando agenda…" />}
-
-      {!carregando && indisponivel && <EstadoIndisponivel titulo="Lista global de agendamentos ainda não disponível" />}
-
-      {!carregando && itens && itens.length === 0 && (
-        <EstadoVazio titulo="Nenhum agendamento próximo" descricao="Agende uma Sessão de Viabilidade a partir da ficha da jornada." />
-      )}
-
-      {!carregando && itens && itens.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {itens.map((a) => (
-            <LinhaAgendamento key={a.id} agendamento={a} aoAtualizar={recarregar} mostrarPessoa />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export default function PaginaAgenda() {
   const abas: DefinicaoAba[] = [
-    { id: "sessoes", rotulo: "Sessões", conteudo: <AbaSessoes /> },
-    { id: "disponibilidade", rotulo: "Disponibilidade", conteudo: <PainelDisponibilidade /> },
+    { id: "sessoes", rotulo: "Sessões", conteudo: <ListaSessoes /> },
+    { id: "disponibilidade", rotulo: "Horários livres", conteudo: <PainelDisponibilidade /> },
     { id: "bloqueios", rotulo: "Bloqueios", conteudo: <PainelBloqueios /> },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="font-serif text-2xl font-bold text-tinta">Agenda</h1>
-        <p className="text-sm text-tinta-suave">
-          Sessões marcadas, janelas de disponibilidade da advogada e bloqueios pontuais. É daqui que saem os horários
-          oferecidos no link de agendamento do cliente.
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <CabecalhoPagina
+        rotulo="Dia a dia"
+        titulo="Agenda"
+        descricao="As Sessões de Viabilidade dos próximos dias e quem já confirmou presença. Nas outras abas, os horários livres da advogada e os bloqueios — é daí que saem as opções que o cliente vê no link de agendamento."
+      />
 
-      <Abas abas={abas} abaInicial="sessoes" />
+      <Abas abas={abas} abaInicial="sessoes" deepLinkHash semMoldura />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   TAMANHO_MAXIMO_BYTES_PADRAO,
 } from "@/server/importacao/config";
 import { ErroImportacao } from "@/server/importacao/erros";
+import { MAX_CHARS_PERGUNTA, MAX_PERGUNTAS_SEMINARIO } from "@/server/importacao/perguntas";
 import { processarNovaImportacao } from "@/server/importacao/processarImportacao";
 import { CAMPOS_IMPORTAVEIS } from "@/types/importacao";
 import type { Importacao, MapaColunas } from "@/types/importacao";
@@ -32,6 +33,10 @@ const CODIGO_PARA_STATUS: Record<string, number> = {
   mapeamento_campo_invalido: 422,
   mapeamento_campo_duplicado: 422,
   mapeamento_sem_nome: 422,
+  perguntas_excesso: 422,
+  pergunta_coluna_inexistente: 422,
+  pergunta_coluna_tambem_cadastral: 422,
+  pergunta_longa: 422,
 };
 
 const FiltrosSchema = z.object({
@@ -72,12 +77,17 @@ export async function GET(request: NextRequest) {
 }
 
 const MapaColunasSchema = z.record(z.string().trim().min(1).max(200), z.enum(CAMPOS_IMPORTAVEIS));
+// Fase 4 (`src/server/importacao/perguntas.ts`): cabeçalhos marcados como
+// "Pergunta do seminário" — campo SEPARADO de `mapa_colunas`, opcional.
+const PerguntasSeminarioSchema = z.array(z.string().trim().min(1).max(MAX_CHARS_PERGUNTA)).max(MAX_PERGUNTAS_SEMINARIO);
 
 /**
  * POST /api/importacoes — fase 1 (prévia). Corpo `multipart/form-data`:
  *   - `arquivo`: File (.csv)
  *   - `edicao_id`: uuid da edição do seminário (`edicoes_seminario.id`)
  *   - `mapa_colunas`: JSON `{ "<cabeçalho do arquivo>": "<campo do domínio>" }`
+ *   - `perguntas_seminario` (opcional, Fase 4): JSON `string[]` de cabeçalhos
+ *     cuja célula é a resposta a uma pergunta da pesquisa do seminário
  *
  * Zero escrita em `pessoas`/`jornadas` — só grava a prévia (`status='previa'`).
  * Confirmar é uma chamada separada (`POST /api/importacoes/[id]/confirmar`),
@@ -136,10 +146,23 @@ export async function POST(request: NextRequest) {
     }
     const mapaColunas = MapaColunasSchema.parse(mapaColunasJson) as MapaColunas;
 
+    const perguntasBruto = formData.get("perguntas_seminario");
+    let perguntasSeminario: string[] | null = null;
+    if (typeof perguntasBruto === "string" && perguntasBruto.trim().length > 0) {
+      let perguntasJson: unknown;
+      try {
+        perguntasJson = JSON.parse(perguntasBruto);
+      } catch {
+        throw erroValidacao(null, "'perguntas_seminario' precisa ser um JSON válido (lista de cabeçalhos).");
+      }
+      perguntasSeminario = PerguntasSeminarioSchema.parse(perguntasJson);
+    }
+
     const { importacao } = await processarNovaImportacao(supabase, {
       arquivo,
       edicaoId,
       mapaColunas,
+      perguntasSeminario,
       criadoPor: usuario.id,
     });
 

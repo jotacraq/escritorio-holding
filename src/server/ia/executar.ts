@@ -41,10 +41,20 @@ import { erroLimiteIaAtingido, erroNaoEncontrado, ErroIa } from "./erros";
 
 interface PromptAtivo {
   id: string;
+  versao: number;
   corpo_sistema: string;
   modelo_padrao: string;
   effort: EffortIa;
 }
+
+/**
+ * Bi-versão (ARQUITETURA-FASE-4.md §4.4/§5.2): o schema pode depender da
+ * versão do prompt que está ATIVA — v3 do briefing exige `linguagem_do_cliente`,
+ * v2 do croqui exige os 13 slides tipados. Quem chama passa uma função e este
+ * módulo resolve com a `versao` da MESMA linha de `prompts_versoes` já lida
+ * (zero query extra). Um schema fixo continua aceito.
+ */
+export type SchemaPorVersao<T> = z.ZodType<T> | ((versao: number) => z.ZodType<T>);
 
 export interface ParamsExecutarComAuditoria<T> {
   chavePrompt: string;
@@ -67,7 +77,7 @@ export interface ParamsExecutarComAuditoria<T> {
    * lida no chamador) — este módulo só concatena, não decide.
    */
   extraSistema?: string;
-  schema: z.ZodType<T>;
+  schema: SchemaPorVersao<T>;
   nomeSchema: string;
   maxTokens: number;
   /** Só a bancada — mede `effort` diferente do gravado em `prompts_versoes` sem criar prompt novo. */
@@ -87,6 +97,8 @@ export interface ResultadoExecucaoAuditada<T> {
   execucaoId: string;
   saida: T;
   custoUsd: number | null;
+  /** Versão de `prompts_versoes` efetivamente usada — quem grava carimba o schema correspondente (ex.: `p_schema_versao`). */
+  promptVersao: number;
 }
 
 export async function executarComAuditoria<T>(
@@ -111,7 +123,7 @@ export async function executarComAuditoria<T>(
 
   let consultaPrompt = supabaseAdmin
     .from("prompts_versoes")
-    .select("id, corpo_sistema, modelo_padrao, effort")
+    .select("id, versao, corpo_sistema, modelo_padrao, effort")
     .eq("chave", chavePrompt);
   consultaPrompt =
     versaoPrompt != null ? consultaPrompt.eq("versao", versaoPrompt) : consultaPrompt.eq("ativo", true);
@@ -145,6 +157,7 @@ export async function executarComAuditoria<T>(
   const modeloOverride = process.env.IA_MODELO_PADRAO?.trim();
   const modelo = modeloOverride ? modeloOverride : prompt.modelo_padrao;
   const effort = effortOverride ?? prompt.effort;
+  const schemaResolvido: z.ZodType<T> = typeof schema === "function" ? schema(prompt.versao) : schema;
   const sistema = extraSistema ? `${prompt.corpo_sistema}\n\n${extraSistema}` : prompt.corpo_sistema;
 
   const entradaSerializada = JSON.stringify(entrada);
@@ -177,7 +190,7 @@ export async function executarComAuditoria<T>(
       modelo,
       sistema,
       usuario: `${prefixoUsuario}\n\n${entradaSerializada}`,
-      schema,
+      schema: schemaResolvido,
       nomeSchema,
       maxTokens,
       effort,
@@ -238,7 +251,7 @@ export async function executarComAuditoria<T>(
       })
       .eq("id", execucao.id);
 
-    return { execucaoId: execucao.id, saida: resposta.saida, custoUsd };
+    return { execucaoId: execucao.id, saida: resposta.saida, custoUsd, promptVersao: prompt.versao };
   } catch (erro) {
     if (erro instanceof ErroIa) throw erro;
     const mensagem = erro instanceof Error ? erro.message : String(erro);

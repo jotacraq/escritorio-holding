@@ -150,8 +150,8 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
                   <text x={x + larguraCaixa / 2} y={y + 20} fontSize="14" fontWeight={700} textAnchor="middle" fill={cores.superficie}>
                     {ROTULO_CELULA[celula.tipo]}
                   </text>
-                  <text x={x + larguraCaixa / 2} y={y + 36} fontSize="10.5" textAnchor="middle" fill={cores.superficie} opacity={0.9}>
-                    {truncar(DESCRICAO_CELULA[celula.tipo], Math.floor(larguraCaixa / 5.4))}
+                  <text x={x + larguraCaixa / 2} y={y + 36} fontSize="12" textAnchor="middle" fill={cores.superficie} opacity={0.95}>
+                    {truncar(DESCRICAO_CELULA[celula.tipo], Math.floor(larguraCaixa / 6.4))}
                   </text>
                 </>
               )}
@@ -175,7 +175,7 @@ export function DiagramaCelulas({ arquitetura, celulas, titulo, tema = "claro", 
               })}
 
               {celula.destaqueInstituidor && (
-                <text x={x + larguraCaixa / 2} y={y + alturaCaixa - 12} fontSize="11" fontWeight={700} textAnchor="middle" fill={cores.latao}>
+                <text x={x + larguraCaixa / 2} y={y + alturaCaixa - 12} fontSize="12" fontWeight={700} textAnchor="middle" fill={cores.latao}>
                   ★ {truncar(celula.destaqueInstituidor, 24)}
                 </text>
               )}

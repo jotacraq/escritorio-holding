@@ -26,7 +26,16 @@
  *     do F-1A ainda não nomeia. Ver relatório de entrega para a recomendação de rotear.
  */
 
+/** Os 4 tipos que a EQUIPE emite (`POST /api/jornadas/[id]/links`). */
 export type TipoLinkPublico = "formulario" | "agendamento" | "documentos" | "material";
+/**
+ * `confirmacao` (0050/0051, Fase 4): emitido SÓ pelo sistema no envio da D-7
+ * (`emitir_link_confirmacao_sistema`), nunca pela equipe. Rota pública `/p/c/[token]`.
+ * Fica fora de `TipoLinkPublico` de propósito: os `Record<TipoLinkPublico, …>` das telas
+ * de emissão continuam exaustivos sobre o que a equipe pode pedir.
+ */
+export type TipoLinkSistema = "confirmacao";
+export type TipoLinkQualquer = TipoLinkPublico | TipoLinkSistema;
 export type EstadoLinkPublico = "ativo" | "usado" | "expirado" | "revogado";
 
 /** Os únicos três tipos coletáveis pelo formulário público (enum `tipo_consentimento` do banco). */
@@ -93,16 +102,31 @@ export interface PayloadDocumentosPublico {
   extensoes_aceitas: string[];
 }
 
+/**
+ * `app.payload_link_material` (0031 + 0060): `{titulo, blocos, aprovado_em,
+ * pdf_disponivel}` — a forma de tela completa está em `src/types/publico-ui.ts`.
+ * `pdf_disponivel` só existe com a 0060 aplicada (`undefined` = sondar no clique).
+ */
 export interface PayloadMaterialPublico {
-  disponivel: boolean;
-  conteudo?: unknown;
+  titulo: string;
+  blocos: unknown[];
+  aprovado_em: string;
+  pdf_disponivel?: boolean;
+}
+
+/** `app.payload_link_confirmacao` (0051). `ja_confirmada_em` não-nulo = tela "já confirmado". */
+export interface PayloadConfirmacaoPublico {
+  inicio_em: string;
+  fim_em: string;
+  ja_confirmada_em: string | null;
 }
 
 export type PayloadLinkPublico =
   | PayloadFormularioPublico
   | PayloadAgendamentoPublico
   | PayloadDocumentosPublico
-  | PayloadMaterialPublico;
+  | PayloadMaterialPublico
+  | PayloadConfirmacaoPublico;
 
 export interface AberturaLinkPublico<TPayload = PayloadLinkPublico> {
   tipo: TipoLinkPublico;
@@ -110,6 +134,15 @@ export interface AberturaLinkPublico<TPayload = PayloadLinkPublico> {
   expira_em: string;
   estado: EstadoLinkPublico;
   payload: TPayload;
+}
+
+/** `GET /api/publico/[token]` para um link `/p/c` — mesma forma, `tipo='confirmacao'` (0051). */
+export interface AberturaLinkConfirmacaoPublico {
+  tipo: TipoLinkSistema;
+  primeiro_nome: string;
+  expira_em: string;
+  estado: EstadoLinkPublico;
+  payload: PayloadConfirmacaoPublico;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +166,9 @@ export type CodigoErroPublico =
   | "limite_remarcacoes"
   | "agendamento_indisponivel"
   | "limite_arquivos_atingido"
-  | "arquivo_duplicado";
+  | "arquivo_duplicado"
+  /** Fase 4 (agente C): material aprovado sem PDF gerado — `GET /api/publico/[token]/material-pdf`. */
+  | "pdf_indisponivel";
 
 export interface ErroPublico {
   erro: CodigoErroPublico;
@@ -170,6 +205,14 @@ export interface RespostaEscolherHorarioPublico {
 export interface RespostaRegistrarDocumentoPublico {
   ok: true;
   documento: DocumentoRecebidoPublico;
+}
+
+/** `POST /api/publico/[token]/confirmar` — sem corpo; um toque. Idempotente: segunda chamada devolve a mesma `confirmada_em`. */
+export interface RespostaConfirmarPresencaPublico {
+  ok: true;
+  inicio_em: string;
+  fim_em: string;
+  confirmada_em: string;
 }
 
 // ---------------------------------------------------------------------------

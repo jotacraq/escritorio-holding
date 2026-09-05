@@ -9,12 +9,10 @@ import { exigirInterno, exigirPapel } from "@/server/auth";
 import { ErroApi, registrarErro, respostaErro } from "@/server/erros";
 import { ErroIa } from "@/server/ia/erros";
 import { gerarMaterial } from "@/server/ia/material";
+import { COLUNAS_MATERIAL_RESUMO, paraResumoMaterial, type LinhaMaterialGerado } from "@/server/material/resumo";
 import type {
   ConteudoMaterial,
-  FonteDorMaterial,
   MaterialGeradoDetalhe,
-  MaterialGeradoResumo,
-  OrigemDadoMaterial,
   RespostaGerarMaterial,
   RespostaListarMateriais,
 } from "@/types/material";
@@ -22,46 +20,13 @@ import type {
 const ParametroSchema = z.object({ id: z.string().uuid() });
 const CorpoSchema = z.object({ forcar_regeracao: z.boolean().optional() });
 
-interface LinhaMaterialGerado {
-  id: string;
-  versao: number;
-  fonte_dor: FonteDorMaterial;
-  dor_principal: string | null;
-  origem_dado: OrigemDadoMaterial;
-  atual: boolean;
-  aprovado_por: string | null;
-  aprovado_em: string | null;
-  criado_em: string;
-  conteudo: unknown;
-  materiais_modelos: { chave: string } | { chave: string }[] | null;
-}
-
-function chaveModeloDe(linha: LinhaMaterialGerado): string | null {
-  const modelo = linha.materiais_modelos;
-  if (!modelo) return null;
-  return Array.isArray(modelo) ? (modelo[0]?.chave ?? null) : modelo.chave;
-}
-
-function paraResumo(linha: LinhaMaterialGerado): MaterialGeradoResumo {
-  return {
-    id: linha.id,
-    versao: linha.versao,
-    chave_modelo: chaveModeloDe(linha),
-    fonte_dor: linha.fonte_dor,
-    dor_principal: linha.dor_principal,
-    origem_dado: linha.origem_dado,
-    atual: linha.atual,
-    aprovado_por: linha.aprovado_por,
-    aprovado_em: linha.aprovado_em,
-    criado_em: linha.criado_em,
-  };
-}
-
 /**
  * GET /api/jornadas/[id]/material — histórico de versões + a atual com
  * conteúdo (para a aba "Material" da Ficha 360, F-3A, e para a tela de
  * aprovação). Qualquer papel interno lê (mesmo recorte de `mg_sel`, 0031) —
  * conteúdo de material não é patrimônio, não exige `ve_patrimonio`.
+ * `pdf_caminho` é caminho de bucket privado, não URL: baixar é
+ * `GET .../material/[materialId]/pdf`.
  */
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -71,10 +36,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const supabase = await criarClienteServidor();
     const { data, error } = await supabase
       .from("materiais_gerados")
-      .select(
-        "id, versao, fonte_dor, dor_principal, origem_dado, atual, aprovado_por, aprovado_em, criado_em, " +
-          "conteudo, materiais_modelos(chave)",
-      )
+      .select(`${COLUNAS_MATERIAL_RESUMO}, conteudo, materiais_modelos(chave)`)
       .eq("jornada_id", jornadaId)
       .order("versao", { ascending: false });
 
@@ -83,10 +45,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const linhas = (data ?? []) as unknown as LinhaMaterialGerado[];
     const linhaAtual = linhas.find((linha) => linha.atual) ?? null;
     const atual: MaterialGeradoDetalhe | null = linhaAtual
-      ? { ...paraResumo(linhaAtual), conteudo: linhaAtual.conteudo as ConteudoMaterial }
+      ? { ...paraResumoMaterial(linhaAtual), conteudo: linhaAtual.conteudo as ConteudoMaterial }
       : null;
 
-    const resposta: RespostaListarMateriais = { itens: linhas.map(paraResumo), atual };
+    const resposta: RespostaListarMateriais = { itens: linhas.map(paraResumoMaterial), atual };
     return NextResponse.json(resposta);
   } catch (erro) {
     return respostaErro("GET /api/jornadas/[id]/material", erro);
@@ -127,6 +89,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       fonte_dor: resultado.fonteDor,
       chave_modelo: resultado.chaveModelo,
       origem_dado: resultado.origemDado,
+      motivo_modelo: resultado.motivoModelo,
     };
     return NextResponse.json(resposta, { status: 202 });
   } catch (erro) {

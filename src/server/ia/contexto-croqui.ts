@@ -37,7 +37,40 @@ export interface ContextoAnaliseCroqui {
   formulario: Record<string, unknown> | null;
   ligacao: Record<string, unknown> | null;
   relatorio_sessao: Record<string, unknown> | null;
+  /**
+   * Cenário Patrimonial (0057, agente D — `vw_cenarios_totais`): TOTAL por
+   * cenário, e só quando nenhuma rubrica está `ausente` (a view devolve null
+   * caso contrário). São números DIGITADOS pela advogada (ou multiplicados de
+   * base × alíquota que ela digitou) — a IA recebe para escrever "economia"
+   * como DIFERENÇA entre dois totais e nada mais; nunca calcula imposto nem
+   * inventa alíquota (B26). `null` = view ainda não existe ou nada foi
+   * digitado: o slide "economia" vira ponto a validar.
+   */
+  cenario: Array<{ cenario: string; total: number | null; rubricas_ausentes: number }> | null;
   transcricao_sessao: string;
+}
+
+/**
+ * Leitura TOLERANTE de `vw_cenarios_totais`: a view é da 0057 (agente D, mesma
+ * onda) e pode não existir neste banco ainda. Tabela/view ausente → `null`,
+ * nunca erro — o croqui continua saindo sem o cenário, como hoje.
+ */
+export async function lerCenarioTolerante(
+  supabase: SupabaseClient,
+  jornadaId: string,
+): Promise<ContextoAnaliseCroqui["cenario"]> {
+  const { data, error } = await supabase
+    .from("vw_cenarios_totais")
+    .select("cenario, total, rubricas_ausentes")
+    .eq("jornada_id", jornadaId);
+  if (error || !data) return null;
+  const linhas = data as Array<{ cenario: string; total: number | string | null; rubricas_ausentes: number | string | null }>;
+  if (linhas.length === 0) return null;
+  return linhas.map((l) => ({
+    cenario: l.cenario,
+    total: l.total == null ? null : Number(l.total),
+    rubricas_ausentes: Number(l.rubricas_ausentes ?? 0),
+  }));
 }
 
 export async function montarContextoAnaliseCroqui(
@@ -46,7 +79,7 @@ export async function montarContextoAnaliseCroqui(
 ): Promise<ContextoAnaliseCroqui> {
   const { jornadaId, pessoaId, transcricaoSessao } = params;
 
-  const [pessoaRes, familiaresRes, patrimonioRes, formularioRes, ligacaoRes, sessaoRes] = await Promise.all([
+  const [pessoaRes, familiaresRes, patrimonioRes, formularioRes, ligacaoRes, sessaoRes, cenario] = await Promise.all([
     supabaseAdmin
       .from("pessoas")
       .select("nome, cidade, uf, profissao, estado_civil")
@@ -73,6 +106,7 @@ export async function montarContextoAnaliseCroqui(
       .select("id, relatorios_sessao(*)")
       .eq("jornada_id", jornadaId)
       .maybeSingle(),
+    lerCenarioTolerante(supabaseAdmin, jornadaId),
   ]);
 
   const pessoa = pessoaRes.data as
@@ -101,6 +135,7 @@ export async function montarContextoAnaliseCroqui(
     formulario: (formularioRes.data as { respostas: Record<string, unknown> } | null)?.respostas ?? null,
     ligacao: (ligacaoRes.data as Record<string, unknown> | null) ?? null,
     relatorio_sessao: relatorio,
+    cenario,
     transcricao_sessao: transcricaoSessao,
   };
 }

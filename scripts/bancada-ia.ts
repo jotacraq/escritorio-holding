@@ -11,9 +11,24 @@
  *
  * MODO DE USO:
  *   npx tsx scripts/bancada-ia.ts                    # mede, imprime tabela, NÃO promove
+ *   npx tsx scripts/bancada-ia.ts --so-bytes         # SÓ mede bytes de contexto antes/depois (Fase 4) — ZERO chamada de IA
+ *   npx tsx scripts/bancada-ia.ts --variantes=baseline,v3_fontes   # restringe a matriz (gasto menor)
  *   npx tsx scripts/bancada-ia.ts --promover=effort_low
  *   npx tsx scripts/bancada-ia.ts --promover=prompt_v2
  *   npx tsx scripts/bancada-ia.ts --promover=prompt_v2_low
+ *   npx tsx scripts/bancada-ia.ts --variantes=baseline,v3_fontes --promover=v3_fontes   # Fase 4, §5.3
+ *
+ * FASE 4 (ARQUITETURA-FASE-4.md §5.2/§5.3): a mesma bancada mede
+ *   (1) bytes do contexto ANTES (sem seminário/CNPJ/ligação IA/L7) e DEPOIS
+ *       (todas as fontes) por fixture — `montarContextoBriefing(...,
+ *       {fontesEstendidas:false|true})`, sem IA, custo zero. Meta do §5.2:
+ *       crescimento ≤ 25 % com todas as fontes presentes;
+ *   (2) as variantes `v3_fontes` (prompt v3 da 0059, inativo) e
+ *       `v3_fontes_low` contra o `baseline` (prompt ativo). O gate é o mesmo
+ *       do §1.9; para a v3 a leitura honesta é: custo médio ≤ US$ 0,045 e
+ *       `expressoes_nao_localizadas` = 0 (toda expressão literal achada no
+ *       material). Custo estimado da rodada mínima (3 fixtures × 2 variantes ×
+ *       3 repetições × ~US$ 0,045) ≈ US$ 0,81 — abaixo do teto de US$ 5.
  *
  * Fixtures: `tmp/bancada/fixtures.json` (fora do versionamento — cita
  * `jornada_id` de clientes reais). Formato:
@@ -36,6 +51,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { gerarBriefingSemGravar } from "../src/server/ia/briefing";
+import { montarContextoBriefing } from "../src/server/ia/contexto-briefing";
 import type { EffortIa } from "../src/server/ia/cliente";
 
 // ===========================================================================
@@ -113,6 +129,32 @@ const VARIANTES: DefinicaoVariante[] = [
         .eq("versao", 2);
     },
   },
+  // Fase 4 (0059): v3 = todas as fontes + `linguagem_do_cliente`. Nasce
+  // inativa; promover = desativar TODAS as outras versões da chave (índice
+  // único `uniq_prompt_ativo`) e ativar a 3. `effort` da v3 na migration é
+  // 'low' (o ponto de operação medido em 04/09) — `v3_fontes_low` só existe
+  // para medir a v3 com effort forçado caso alguém tenha subido o da linha.
+  {
+    variante: "v3_fontes",
+    versaoPrompt: 3,
+    async promover(supabaseAdmin) {
+      await supabaseAdmin.from("prompts_versoes").update({ ativo: false }).eq("chave", CHAVE_PROMPT).neq("versao", 3);
+      await supabaseAdmin.from("prompts_versoes").update({ ativo: true }).eq("chave", CHAVE_PROMPT).eq("versao", 3);
+    },
+  },
+  {
+    variante: "v3_fontes_low",
+    versaoPrompt: 3,
+    effortOverride: "low",
+    async promover(supabaseAdmin) {
+      await supabaseAdmin.from("prompts_versoes").update({ ativo: false }).eq("chave", CHAVE_PROMPT).neq("versao", 3);
+      await supabaseAdmin
+        .from("prompts_versoes")
+        .update({ ativo: true, effort: "low" })
+        .eq("chave", CHAVE_PROMPT)
+        .eq("versao", 3);
+    },
+  },
 ];
 
 // ===========================================================================
@@ -136,6 +178,21 @@ interface MedidaExecucao {
   cobertura_evidencia: number | null;
   ancoragem: number | null;
   frases_nao_localizadas: number | null;
+  /** Fase 4: expressões de `linguagem_do_cliente` não achadas no material (v3); 0 em v1/v2. */
+  expressoes_nao_localizadas: number | null;
+  /** `JSON.stringify(contexto).length` da execução — entrada real que foi para o modelo. */
+  bytes_contexto: number | null;
+  prompt_versao: number | null;
+}
+
+/** Fase 4 §5.2 — bytes do contexto por fixture, sem IA. */
+interface MedidaBytesContexto {
+  fixture: string;
+  faixa: string;
+  bytes_antes: number;
+  bytes_depois: number;
+  crescimento_pct: number;
+  fontes_depois: string[];
 }
 
 interface LinhaExecucaoIa {
@@ -162,7 +219,7 @@ async function medirUmaExecucao(
   def: DefinicaoVariante,
   repeticao: number,
 ): Promise<MedidaExecucao> {
-  const base: Omit<MedidaExecucao, "ok" | "erro" | "custo_usd" | "tokens_entrada" | "tokens_saida" | "tokens_raciocinio" | "latencia_ms" | "grau_confianca" | "completude_score" | "cobertura_evidencia" | "ancoragem" | "frases_nao_localizadas"> = {
+  const base: Pick<MedidaExecucao, "fixture" | "faixa" | "variante" | "repeticao"> = {
     fixture: fixture.rotulo,
     faixa: fixture.faixa,
     variante: def.variante,
@@ -199,6 +256,9 @@ async function medirUmaExecucao(
       cobertura_evidencia: resultado.verificacao.cobertura_evidencia_media,
       ancoragem: resultado.verificacao.ancoragem,
       frases_nao_localizadas: resultado.verificacao.frases_nao_localizadas,
+      expressoes_nao_localizadas: resultado.verificacao.expressoes_nao_localizadas,
+      bytes_contexto: resultado.bytesContexto,
+      prompt_versao: resultado.promptVersao,
     };
   } catch (erro) {
     return {
@@ -215,8 +275,34 @@ async function medirUmaExecucao(
       cobertura_evidencia: null,
       ancoragem: null,
       frases_nao_localizadas: null,
+      expressoes_nao_localizadas: null,
+      bytes_contexto: null,
+      prompt_versao: null,
     };
   }
+}
+
+/**
+ * Fase 4 §5.2 — bytes do contexto ANTES/DEPOIS das fontes novas, por fixture.
+ * Só leitura de banco; ZERO chamada de IA. É o número que vai no comentário
+ * da 0059 ("entrada não cresce mais de 25 % com todas as fontes presentes").
+ */
+async function medirBytesContexto(
+  supabaseAdmin: ReturnType<typeof criarClienteAdmin>,
+  fixture: Fixture,
+): Promise<MedidaBytesContexto> {
+  const antes = await montarContextoBriefing(supabaseAdmin, fixture.jornada_id, { fontesEstendidas: false });
+  const depois = await montarContextoBriefing(supabaseAdmin, fixture.jornada_id, { fontesEstendidas: true });
+  const bytesAntes = JSON.stringify(antes.contexto).length;
+  const bytesDepois = JSON.stringify(depois.contexto).length;
+  return {
+    fixture: fixture.rotulo,
+    faixa: fixture.faixa,
+    bytes_antes: bytesAntes,
+    bytes_depois: bytesDepois,
+    crescimento_pct: bytesAntes > 0 ? ((bytesDepois - bytesAntes) / bytesAntes) * 100 : 0,
+    fontes_depois: depois.fontesUsadas,
+  };
 }
 
 // ===========================================================================
@@ -249,6 +335,9 @@ interface AgregadoVariante {
   cobertura_evidencia_media: number | null;
   ancoragem_media: number | null;
   frases_nao_localizadas_total: number;
+  expressoes_nao_localizadas_total: number;
+  bytes_contexto_medio: number | null;
+  tokens_entrada_medio: number | null;
 }
 
 function agregarPorVariante(medidas: MedidaExecucao[], variante: string): AgregadoVariante {
@@ -266,6 +355,9 @@ function agregarPorVariante(medidas: MedidaExecucao[], variante: string): Agrega
     cobertura_evidencia_media: media(ok.map((m) => m.cobertura_evidencia ?? NaN)),
     ancoragem_media: media(ok.map((m) => m.ancoragem ?? NaN)),
     frases_nao_localizadas_total: ok.reduce((soma, m) => soma + (m.frases_nao_localizadas ?? 0), 0),
+    expressoes_nao_localizadas_total: ok.reduce((soma, m) => soma + (m.expressoes_nao_localizadas ?? 0), 0),
+    bytes_contexto_medio: media(ok.map((m) => m.bytes_contexto ?? NaN)),
+    tokens_entrada_medio: media(ok.map((m) => m.tokens_entrada ?? NaN)),
   };
 }
 
@@ -340,23 +432,36 @@ function gerarRelatorioMarkdown(
   medidas: MedidaExecucao[],
   agregadosPorFixtureEVariante: Array<{ fixture: string; faixa: string; agregado: AgregadoVariante }>,
   veredito: VereditoGate[],
+  bytesContexto: MedidaBytesContexto[],
 ): string {
   const linhas: string[] = [];
   linhas.push(`# Bancada de IA — Briefing Estratégico`);
   linhas.push(``);
   linhas.push(`Gerado em ${new Date().toISOString()}. ${REPETICOES} repetições por (fixture, variante).`);
   linhas.push(``);
+  linhas.push(`## Bytes do contexto — antes/depois das fontes da Fase 4 (sem IA; meta §5.2: ≤ +25 %)`);
+  linhas.push(``);
+  linhas.push(`| fixture | faixa | bytes antes | bytes depois | crescimento | fontes depois |`);
+  linhas.push(`|---|---|---:|---:|---:|---|`);
+  for (const b of bytesContexto) {
+    linhas.push(
+      `| ${b.fixture} | ${b.faixa} | ${b.bytes_antes} | ${b.bytes_depois} | ${b.crescimento_pct.toFixed(1)}% | ${b.fontes_depois.join(", ") || "—"} |`,
+    );
+  }
+  linhas.push(``);
+  if (medidas.length === 0) return linhas.join("\n");
   linhas.push(`## Por fixture e variante`);
   linhas.push(``);
   linhas.push(
-    `| fixture | faixa | variante | execuções | falhas | custo US$ médio | tokens saída médio | tokens raciocínio médio | %saída raciocínio | latência s média | grau confiança médio | cobertura evidência | ancoragem | frases não localizadas |`,
+    `| fixture | faixa | variante | prompt v | execuções | falhas | custo US$ médio | tokens entrada médio | tokens saída médio | tokens raciocínio médio | %saída raciocínio | latência s média | grau confiança médio | cobertura evidência | ancoragem | frases não localizadas | expressões não localizadas | bytes contexto |`,
   );
-  linhas.push(`|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|`);
+  linhas.push(`|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|`);
   for (const { fixture, faixa, agregado: a } of agregadosPorFixtureEVariante) {
     const pctRaciocinio =
       a.tokens_saida_medio && a.tokens_raciocinio_medio ? (a.tokens_raciocinio_medio / a.tokens_saida_medio) * 100 : null;
+    const promptVersao = medidas.find((m) => m.variante === a.variante && m.ok)?.prompt_versao ?? null;
     linhas.push(
-      `| ${fixture} | ${faixa} | ${a.variante} | ${a.execucoes} | ${a.falhas} | ${formatarNumero(a.custo_usd_medio)} | ${formatarNumero(a.tokens_saida_medio, 0)} | ${formatarNumero(a.tokens_raciocinio_medio, 0)} | ${pctRaciocinio == null ? "—" : pctRaciocinio.toFixed(1) + "%"} | ${formatarNumero(a.latencia_ms_media ? a.latencia_ms_media / 1000 : null, 1)} | ${formatarNumero(a.grau_confianca_medio, 1)} | ${formatarNumero(a.cobertura_evidencia_media, 2)} | ${formatarNumero(a.ancoragem_media, 2)} | ${a.frases_nao_localizadas_total} |`,
+      `| ${fixture} | ${faixa} | ${a.variante} | ${promptVersao ?? "—"} | ${a.execucoes} | ${a.falhas} | ${formatarNumero(a.custo_usd_medio)} | ${formatarNumero(a.tokens_entrada_medio, 0)} | ${formatarNumero(a.tokens_saida_medio, 0)} | ${formatarNumero(a.tokens_raciocinio_medio, 0)} | ${pctRaciocinio == null ? "—" : pctRaciocinio.toFixed(1) + "%"} | ${formatarNumero(a.latencia_ms_media ? a.latencia_ms_media / 1000 : null, 1)} | ${formatarNumero(a.grau_confianca_medio, 1)} | ${formatarNumero(a.cobertura_evidencia_media, 2)} | ${formatarNumero(a.ancoragem_media, 2)} | ${a.frases_nao_localizadas_total} | ${a.expressoes_nao_localizadas_total} | ${formatarNumero(a.bytes_contexto_medio, 0)} |`,
     );
   }
   linhas.push(``);
@@ -405,18 +510,52 @@ function lerFixtures(): Fixture[] {
 
 async function main() {
   const argPromover = process.argv.find((a) => a.startsWith("--promover="))?.split("=")[1];
+  const argVariantes = process.argv.find((a) => a.startsWith("--variantes="))?.split("=")[1];
+  const soBytes = process.argv.includes("--so-bytes");
+
+  // `--variantes=a,b` restringe a matriz (menos gasto). `baseline` entra
+  // sempre: sem ele não há gate. Nome desconhecido aborta antes de gastar.
+  const nomesPedidos = argVariantes ? argVariantes.split(",").map((v) => v.trim()).filter(Boolean) : null;
+  if (nomesPedidos) {
+    const desconhecidas = nomesPedidos.filter((n) => !VARIANTES.some((v) => v.variante === n));
+    if (desconhecidas.length > 0) {
+      console.error(`--variantes: desconhecida(s): ${desconhecidas.join(", ")}. Opções: ${VARIANTES.map((v) => v.variante).join(", ")}.`);
+      process.exit(1);
+    }
+  }
+  const variantes = nomesPedidos
+    ? VARIANTES.filter((v) => v.variante === "baseline" || nomesPedidos.includes(v.variante))
+    : VARIANTES;
 
   const supabaseAdmin = criarClienteAdmin();
   const fixtures = lerFixtures();
 
-  console.log(`Bancada — ${fixtures.length} fixture(s), ${VARIANTES.length} configuração(ões), ${REPETICOES} repetições.`);
+  // Fase 4 §5.2 — sempre, e sem IA: bytes de contexto antes/depois por fixture.
+  console.log(`Bytes do contexto (sem IA) — ${fixtures.length} fixture(s):`);
+  const bytesContexto: MedidaBytesContexto[] = [];
+  for (const fixture of fixtures) {
+    const b = await medirBytesContexto(supabaseAdmin, fixture);
+    bytesContexto.push(b);
+    console.log(`  ${b.fixture} (${b.faixa}): ${b.bytes_antes} → ${b.bytes_depois} bytes (${b.crescimento_pct >= 0 ? "+" : ""}${b.crescimento_pct.toFixed(1)}%) · fontes: ${b.fontes_depois.join(", ") || "—"}`);
+  }
+
+  if (soBytes) {
+    const relatorioBytes = gerarRelatorioMarkdown([], [], [], bytesContexto);
+    fs.mkdirSync(DIR_BANCADA, { recursive: true });
+    const caminho = path.join(DIR_BANCADA, `bytes-contexto-${Date.now()}.md`);
+    fs.writeFileSync(caminho, relatorioBytes, "utf-8");
+    console.log(`\n--so-bytes: nenhuma chamada de IA feita. Relatório: ${caminho}`);
+    return;
+  }
+
+  console.log(`\nBancada — ${fixtures.length} fixture(s), ${variantes.length} configuração(ões) [${variantes.map((v) => v.variante).join(", ")}], ${REPETICOES} repetições.`);
   console.log(`Teto de gasto desta rodada: US$ ${ORCAMENTO_MAXIMO_USD}.`);
 
   const medidas: MedidaExecucao[] = [];
   let gastoAcumulado = 0;
 
   for (const fixture of fixtures) {
-    for (const def of VARIANTES) {
+    for (const def of variantes) {
       for (let repeticao = 1; repeticao <= REPETICOES; repeticao++) {
         if (gastoAcumulado >= ORCAMENTO_MAXIMO_USD) {
           console.error(
@@ -438,7 +577,7 @@ async function main() {
 
   // Agregado por (fixture, variante) — para a tabela.
   const agregadosPorFixtureEVariante = fixtures.flatMap((fixture) =>
-    VARIANTES.map((def) => ({
+    variantes.map((def) => ({
       fixture: fixture.rotulo,
       faixa: fixture.faixa,
       agregado: agregarPorVariante(
@@ -449,16 +588,16 @@ async function main() {
   );
 
   // Gate — agregado de TODAS as fixtures juntas (visão de conjunto, não por fixture isolada).
-  const agregadoGeralPorVariante = new Map(VARIANTES.map((def) => [def.variante, agregarPorVariante(medidas, def.variante)]));
+  const agregadoGeralPorVariante = new Map(variantes.map((def) => [def.variante, agregarPorVariante(medidas, def.variante)]));
   const baselineGeral = agregadoGeralPorVariante.get("baseline")!;
   const desvioCoberturaBaseline = desvioPadrao(medidas.filter((m) => m.variante === "baseline" && m.ok).map((m) => m.cobertura_evidencia ?? NaN)) ?? 0;
   const desvioAncoragemBaseline = desvioPadrao(medidas.filter((m) => m.variante === "baseline" && m.ok).map((m) => m.ancoragem ?? NaN)) ?? 0;
 
-  const veredito: VereditoGate[] = VARIANTES.filter((def) => def.variante !== "baseline").map((def) =>
+  const veredito: VereditoGate[] = variantes.filter((def) => def.variante !== "baseline").map((def) =>
     avaliarGate(baselineGeral, agregadoGeralPorVariante.get(def.variante)!, desvioCoberturaBaseline, desvioAncoragemBaseline),
   );
 
-  const relatorio = gerarRelatorioMarkdown(medidas, agregadosPorFixtureEVariante, veredito);
+  const relatorio = gerarRelatorioMarkdown(medidas, agregadosPorFixtureEVariante, veredito, bytesContexto);
   fs.mkdirSync(DIR_BANCADA, { recursive: true });
   const caminhoRelatorio = path.join(DIR_BANCADA, `resultado-${Date.now()}.md`);
   fs.writeFileSync(caminhoRelatorio, relatorio, "utf-8");

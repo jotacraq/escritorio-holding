@@ -32,6 +32,12 @@ export default function PaginaApresentacaoCroqui({ params }: { params: Promise<{
     patrimonio: ficha?.patrimonio ?? null,
     criterios: (resposta?.graficos.criterios ?? null) as CriterioParaMatriz[] | null,
     recomendacaoArquitetura: resposta?.graficos.recomendacao_arquitetura ?? null,
+    // Fase 4 (§4.5): `GET /api/croquis/[id]?modo=apresentacao` já devolve
+    // `graficos.alocacao` e `graficos.cenario` (agente K) — repassar poupa as
+    // 2 leituras extras do adaptador em `ModoApresentacao` (`apiCroqui.ts`).
+    // `null` = "não existe" (análise v1 / view ausente), nunca inventado.
+    alocacao: resposta?.graficos.alocacao ?? null,
+    cenario: resposta?.graficos.cenario ?? null,
   }), [ficha, resposta]);
 
   // A ficha é auxiliar (gráficos) — não bloqueia a apresentação se falhar
@@ -59,5 +65,5 @@ export default function PaginaApresentacaoCroqui({ params }: { params: Promise<{
     );
   }
 
-  return <ModoApresentacao croqui={croqui} jornadaId={jornadaId} dadosGraficos={dadosGraficos} />;
+  return <ModoApresentacao croqui={croqui} dadosGraficos={dadosGraficos} />;
 }

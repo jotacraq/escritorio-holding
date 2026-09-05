@@ -4,6 +4,28 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
+> **Sessão de 05/09 (madrugada) — FASE 4 fechada e publicada.** Leia `brain/Diário/2026-09-05.md`
+> e `tmp/squad/fase4-brief.md` (não versionado; relatórios de 14 agentes) antes de qualquer coisa.
+> Em uma linha: esteira automatizada de ponta a ponta (confirmação `/p/c`, sala, ligação por IA,
+> material em PDF, tarefa do croqui, cron de 4 etapas), Cenário Patrimonial com procedência,
+> Diagnóstico da SV apresentável, identidade do seminário em TODAS as telas (design system em
+> `docs/DESIGN-SYSTEM.md`), Comunicação "o que vai sair e quando", Admin com Integrações/Parâmetros/
+> Modelos. **Banco: 0050–0061 aplicadas e provadas (roteiro 17/17 + hardening 8/8).**
+>
+> **Configuração pendente com o João (nada disso é código — sem isso o sistema roda em modo manual rotulado):**
+> 1. Cron no hPanel da Hostinger: `POST https://escritorio.grupoparticipa.app.br/api/cron/regua` a cada 5 min com header `x-cron-secret` = `CRON_SECRET` de produção (a tela de Comunicação mostra "cron parado" até isso existir).
+> 2. `RESEND_API_KEY` + `EMAIL_FROM` (+ DNS do domínio) — e-mails da régua e o PDF anexado.
+> 3. `HOTMART_WEBHOOK_SECRET` + 3 `hotmart_produto_id` em Admin → Produtos + `url_checkout` do Croqui.
+> 4. Ligação por IA: no n8n, variáveis `LIGACAO_IA_WEBHOOK_SECRET` e `VAPI_PHONE_NUMBER_ID`; conferir a credencial `Vapi API - RSVP` no nó HTTP; Server URL do assistente Vapi = URL do workflow WEBHOOK; structured data `{horario_escolhido, resultado}`; publicar os 2 workflows (`zh5tjDcSoHaPaRRL`, `OXetB37jgJgmif3d`). Na Hostinger: `N8N_WEBHOOK_LIGACAO_URL`, `LIGACAO_IA_WEBHOOK_SECRET`, `VAPI_ASSISTENTE_ID`. Depois `UPDATE configuracoes SET valor='"n8n"' WHERE chave='ligacao_ia.provedor'`; `ligacao_ia.automatica=true` SÓ após decisão LGPD (B33).
+> 5. Sala automática: workflow n8n de sala NÃO existe (falta escolher Meet/Zoom); `N8N_WEBHOOK_SALA_URL` + `INTEGRACOES_WEBHOOK_SECRET`; até lá `sala.provedor='manual'` (colar link na Ficha → Sessão).
+> 6. Chatwoot: `CHATWOOT_URL/ACCOUNT_ID/API_TOKEN/INBOX_ID/WEBHOOK_SECRET`, webhook para `/api/webhooks/chatwoot?token=…`, `regua.canal_whatsapp='chatwoot'`.
+> 7. Prompts v3 (briefing) e v2 (croqui) estão INATIVOS: ativar só com sonda + bancada (`docs/ARQUITETURA-FASE-4-VERIFICACAO.md`).
+> 8. `scripts/limpeza-teste-h.sql` — apaga o cenário/diagnóstico de teste gravados na jornada "(exemplo)"; rodar se incomodar.
+> 9. Trocar a senha do admin de teste antes de cliente real (§3).
+> 10. Dra. Elaine: revisar os 3 modelos de material rascunho (`origem_dado='exemplo'`) e o rodapé jurídico do PDF; cadastrar alíquotas de ITCMD/ITBI com base legal em Admin → Parâmetros (sem isso o Cenário não calcula — por desenho).
+>
+> **Regra de trabalho nova (ordem do João, 05/09):** Sonnet só levanta contexto; codificação, raciocínio e modelagem são Fable. Cuidado com tokens: o orquestrador não carrega leitura pesada no próprio chat.
+
 > **Sessão de 04/09 à tarde (fan-out de 5 agentes + bancada de IA):** rodada de
 > paralelização real — POP 03 unificado com POP 03-B, trava de LGPD com peso
 > jurídico aplicada e verificada, aviso antes de emitir link de material sem

@@ -9,4 +9,5 @@ export { MatrizCriterios, type CriterioMatriz, type MatrizCriteriosProps, type N
 export { LinhaDoTempo, type EventoLinhaDoTempo, type LinhaDoTempoProps } from "./LinhaDoTempo";
 export { QuadroSocietario, type QuadroSocietarioProps, type SocioQuadro } from "./QuadroSocietario";
 export { PALETA_GRAFICO, ORDEM_TIPO_BEM, ROTULO_TIPO_BEM, ROTULO_CATEGORIA_AFIRMACAO, formatarMoeda, formatarPercentual, formatarData, type TemaGrafico, type TipoBemGrafico } from "./paleta";
-export type { CategoriaAfirmacaoGrafico, CenarioComparado, GraficoBaseProps, ItemFaltante, ItemPatrimonialTabela } from "./tipos";
+export { GlifoProcedencia, ItemLegenda, LegendaProcedencia } from "./Moldura";
+export type { CategoriaAfirmacaoGrafico, CenarioComparado, GraficoBaseProps, ItemFaltante, ItemPatrimonialTabela, ProcedenciaGrafico, ResumoProcedencia } from "./tipos";

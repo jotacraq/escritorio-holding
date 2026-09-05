@@ -1,5 +1,6 @@
 import type { ContextoBriefing } from "./contexto-briefing";
 import type { Briefing } from "./schema-briefing";
+import { separarLinguagemDoCliente } from "./linguagem-cliente";
 
 /**
  * Verificação de fidelidade (ARQUITETURA-FASE-3.md §1.8) — a checagem que
@@ -35,6 +36,13 @@ export interface ResultadoFidelidade {
   /** Média das coberturas de evidência (perfil_disc + arquétipo). Métrica da bancada (§1.9). */
   cobertura_evidencia_media: number;
   frases_nao_localizadas: number;
+  /**
+   * v3 (ARQUITETURA-FASE-4.md §5.2): `linguagem_do_cliente` → expressões
+   * literais verificadas com a MESMA régua de `frase_literal` (substring após
+   * normalização). Vazio em briefing v1/v2 (a seção não existe). Custo zero.
+   */
+  expressoes_cliente: VerificacaoFraseLiteral[];
+  expressoes_nao_localizadas: number;
 }
 
 /** minúsculas, sem acento, sem pontuação, espaço colapsado — mesma normalização para agulha e palheiro. */
@@ -126,6 +134,14 @@ export function calcularFidelidade(contexto: ContextoBriefing, briefing: Briefin
   const cobertura_evidencia_media =
     todasCoberturas.length > 0 ? todasCoberturas.reduce((a, b) => a + b, 0) / todasCoberturas.length : 1;
 
+  const expressoes_cliente: VerificacaoFraseLiteral[] = separarLinguagemDoCliente(
+    briefing.linguagem_do_cliente,
+  ).expressoes.map((expressao) => ({
+    frase_literal: expressao,
+    status: verificarFraseLiteral(expressao, palheiro),
+  }));
+  const expressoes_nao_localizadas = expressoes_cliente.filter((e) => e.status === "nao_localizada").length;
+
   return {
     frases_fechamento,
     evidencias_perfil_disc,
@@ -133,5 +149,7 @@ export function calcularFidelidade(contexto: ContextoBriefing, briefing: Briefin
     ancoragem,
     cobertura_evidencia_media,
     frases_nao_localizadas,
+    expressoes_cliente,
+    expressoes_nao_localizadas,
   };
 }

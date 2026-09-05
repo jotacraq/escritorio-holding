@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import type { RoteiroFala, RoteiroVersao, SimIdentificador } from "@/types/roteiro";
 import { ErroSessao, registrarSim, type EstadoSims } from "@/components/sessao/api";
 import { Botao } from "@/components/ui/Botao";
+import { Cartao } from "@/components/ui/Cartao";
+import { Selo } from "@/components/ui/Selo";
 import { formatarDataHora } from "@/lib/formatar";
 import { NUMERO_SIM, ORDEM_SIMS, ROTULO_SIM } from "@/components/sessao/rotulos";
 
@@ -19,14 +21,12 @@ function acharFalaDoSim(roteiro: RoteiroVersao, sim: SimIdentificador): RoteiroF
 function LinhaSim({
   sim,
   fala,
-  sessaoId,
   registrado,
   emQue,
   aoRegistrar,
 }: {
   sim: SimIdentificador;
   fala: RoteiroFala | null;
-  sessaoId: string;
   registrado: boolean | null; // null = não registrado ainda
   emQue: string | null;
   aoRegistrar: (sim: SimIdentificador, confirmado: boolean) => Promise<void>;
@@ -48,20 +48,20 @@ function LinhaSim({
   }
 
   const tomBorda =
-    registrado === true ? "border-verde" : registrado === false ? "border-vermelho" : "border-linha-forte";
+    registrado === true ? "border-l-[color:var(--verde)]" : registrado === false ? "border-l-[color:var(--vermelho)]" : "border-l-linha-forte";
 
   return (
-    <li className={`flex flex-col gap-1.5 rounded-sm border-l-4 bg-papel-elevado px-3 py-2.5 ${tomBorda}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <li className={`flex flex-col gap-2 border-l-4 px-4 py-3 sm:px-5 ${tomBorda}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setExpandido((v) => !v)}
           aria-expanded={expandido}
-          className="flex items-center gap-2 text-left text-sm font-medium text-tinta"
+          className="flex min-h-11 items-center gap-2.5 rounded-controle text-left text-sm font-medium text-tinta"
         >
           <span
             aria-hidden="true"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-bold text-tinta-suave"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-linha-forte bg-papel text-legenda font-bold text-tinta-suave"
           >
             {NUMERO_SIM[sim]}
           </span>
@@ -76,35 +76,19 @@ function LinhaSim({
         </button>
 
         {registrado === null ? (
-          <div className="flex items-center gap-1.5">
-            <Botao
-              variante="primario"
-              className="px-2.5 py-1 text-xs"
-              carregando={enviando === "sim"}
-              disabled={enviando !== null}
-              onClick={() => registrar(true)}
-            >
+          <div className="flex items-center gap-2">
+            <Botao variante="primario" tamanho="compacto" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
               Cliente disse sim
             </Botao>
-            <Botao
-              variante="perigo"
-              className="px-2.5 py-1 text-xs"
-              carregando={enviando === "nao"}
-              disabled={enviando !== null}
-              onClick={() => registrar(false)}
-            >
+            <Botao variante="perigo" tamanho="compacto" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
               Não confirmou
             </Botao>
           </div>
         ) : (
-          <span
-            className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
-              registrado ? "bg-verde-fraco text-[color:var(--verde)]" : "bg-vermelho-fraco text-[color:var(--vermelho)]"
-            }`}
-          >
+          <Selo tom={registrado ? "verde" : "vermelho"}>
             {registrado ? "Registrado — SIM" : "Registrado — não confirmou"}
             {emQue && ` · ${formatarDataHora(emQue)}`}
-          </span>
+          </Selo>
         )}
       </div>
 
@@ -115,7 +99,7 @@ function LinhaSim({
       )}
 
       {expandido && fala && (
-        <blockquote className="rounded-sm border border-linha bg-papel px-3 py-2 font-serif text-[15px] italic leading-snug text-tinta-suave">
+        <blockquote className="rounded-controle border border-linha bg-papel px-4 py-3 text-sm italic leading-relaxed text-tinta-suave">
           “{fala.texto}”
         </blockquote>
       )}
@@ -153,14 +137,14 @@ export function PainelSims({
     (estado.sigilo_gravacao ? 1 : 0) + Object.values(estado.sims).filter((s) => s?.ok !== undefined).length;
 
   return (
-    <section aria-labelledby="titulo-sims" className="flex flex-col gap-2 rounded-sm border border-linha bg-papel px-3 py-3 sm:px-4">
-      <div className="flex items-center justify-between">
-        <h2 id="titulo-sims" className="font-serif text-sm font-bold text-tinta">
-          Os 4 SIMs — PARTE 01
-        </h2>
-        <span className="text-xs text-tinta-fraca">{totalRegistrados} de 4 registrados</span>
-      </div>
-      <ul className="flex flex-col gap-1.5">
+    <Cartao
+      rotulo="Parte 01"
+      titulo="Os 4 SIMs"
+      descricao="Sigilo, licitude, decisores e próximo passo — registre cada um assim que o cliente responder."
+      preenchimento="sem"
+      acao={<Selo tom={totalRegistrados === 4 ? "verde" : "neutro"}>{totalRegistrados} de 4 registrados</Selo>}
+    >
+      <ul className="flex flex-col divide-y divide-linha">
         {ORDEM_SIMS.map((sim) => {
           if (sim === "sigilo_gravacao") {
             const consentimento = estado.sigilo_gravacao;
@@ -179,7 +163,6 @@ export function PainelSims({
               key={sim}
               sim={sim}
               fala={falasPorSim.get(sim) ?? null}
-              sessaoId={sessaoId}
               registrado={simEstado ? simEstado.ok : null}
               emQue={simEstado?.em ?? null}
               aoRegistrar={aoRegistrar}
@@ -187,7 +170,7 @@ export function PainelSims({
           );
         })}
       </ul>
-    </section>
+    </Cartao>
   );
 }
 
@@ -223,46 +206,41 @@ function LinhaSimGravacao({
   }
 
   const registrado = consentimento?.concedido ?? null;
-  const tomBorda = registrado === true ? "border-verde" : registrado === false ? "border-vermelho" : "border-linha-forte";
+  const tomBorda =
+    registrado === true ? "border-l-[color:var(--verde)]" : registrado === false ? "border-l-[color:var(--vermelho)]" : "border-l-linha-forte";
 
   return (
-    <li className={`flex flex-col gap-1.5 rounded-sm border-l-4 bg-papel-elevado px-3 py-2.5 ${tomBorda}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <li className={`flex flex-col gap-2 border-l-4 px-4 py-3 sm:px-5 ${tomBorda}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setExpandido((v) => !v)}
           aria-expanded={expandido}
-          className="flex items-center gap-2 text-left text-sm font-medium text-tinta"
+          className="flex min-h-11 flex-wrap items-center gap-2.5 rounded-controle text-left text-sm font-medium text-tinta"
         >
           <span
             aria-hidden="true"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-linha-forte text-[11px] font-bold text-tinta-suave"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-linha-forte bg-papel text-legenda font-bold text-tinta-suave"
           >
             1
           </span>
           Sigilo e Gravação
-          <span className="rounded-sm border border-linha-forte px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-tinta-fraca">
-            registro jurídico
-          </span>
+          <span className="rounded-full border border-linha-forte px-2 py-0.5 text-legenda font-medium uppercase text-tinta-fraca">registro jurídico</span>
         </button>
 
         {!consentimento ? (
-          <div className="flex items-center gap-1.5">
-            <Botao variante="primario" className="px-2.5 py-1 text-xs" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
+          <div className="flex items-center gap-2">
+            <Botao variante="primario" tamanho="compacto" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
               Cliente disse sim
             </Botao>
-            <Botao variante="perigo" className="px-2.5 py-1 text-xs" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
+            <Botao variante="perigo" tamanho="compacto" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
               Não confirmou
             </Botao>
           </div>
         ) : (
-          <span
-            className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
-              registrado ? "bg-verde-fraco text-[color:var(--verde)]" : "bg-vermelho-fraco text-[color:var(--vermelho)]"
-            }`}
-          >
+          <Selo tom={registrado ? "verde" : "vermelho"}>
             {registrado ? "Consentimento concedido" : "Consentimento não concedido"} · {formatarDataHora(consentimento.concedido_em)}
-          </span>
+          </Selo>
         )}
       </div>
 
@@ -273,12 +251,12 @@ function LinhaSimGravacao({
       )}
 
       {expandido && (
-        <blockquote className="rounded-sm border border-linha bg-papel px-3 py-2 font-serif text-[15px] italic leading-snug text-tinta-suave">
+        <blockquote className="rounded-controle border border-linha bg-papel px-4 py-3 text-sm italic leading-relaxed text-tinta-suave">
           “{consentimento?.texto_apresentado ?? fala?.texto ?? "Texto do roteiro não encontrado."}”
         </blockquote>
       )}
       {consentimento && (
-        <p className="text-[11px] text-tinta-fraca">
+        <p className="text-xs text-tinta-fraca">
           Texto congelado no momento do registro · versão {consentimento.versao_texto} · canal {consentimento.canal}
         </p>
       )}

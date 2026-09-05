@@ -15,11 +15,20 @@
  * resposta pública só conhece o token da URL e os campos que a RPC devolve (§2.2, regra 4).
  */
 
+import type { ReactNode } from "react";
+
 // ---------------------------------------------------------------------------
 // Núcleo — `abrir_link_publico`
 // ---------------------------------------------------------------------------
 
 export type TipoLinkPublico = "formulario" | "agendamento" | "documentos" | "material";
+/**
+ * `confirmacao` (0050/0051, Fase 4): link que só o SISTEMA emite, no envio da
+ * mensagem D-7 — nunca a equipe. Rota pública `/p/c/[token]`. Fora de
+ * `TipoLinkPublico` de propósito, espelhando `src/types/publico.ts`.
+ */
+export type TipoLinkSistema = "confirmacao";
+export type TipoLinkQualquer = TipoLinkPublico | TipoLinkSistema;
 
 /**
  * `resolve_link` (§4.1) já filtra expirado/revogado/inexistente/de-jornada-fechada para NULL
@@ -112,10 +121,19 @@ export interface PayloadMaterialPublico {
   titulo: string;
   blocos: BlocoMaterialPublico[];
   aprovado_em: string;
+  /** 0060: material aprovado atual tem `pdf_caminho`. `undefined` = banco anterior à 0060 (manter a sonda no clique). */
+  pdf_disponivel?: boolean;
+}
+
+/** `app.payload_link_confirmacao` (0051). `ja_confirmada_em` não-nulo = tela "já confirmado", sem botão. */
+export interface PayloadConfirmacaoPublico {
+  inicio_em: string;
+  fim_em: string;
+  ja_confirmada_em: string | null;
 }
 
 export interface AberturaLinkPublico<TPayload> {
-  tipo: TipoLinkPublico;
+  tipo: TipoLinkQualquer;
   /** Só o primeiro nome — nunca o nome completo (§2.2, regra 4). */
   primeiro_nome: string;
   expira_em: string;
@@ -127,6 +145,7 @@ export type AberturaFormularioPublico = AberturaLinkPublico<PayloadFormularioPub
 export type AberturaAgendamentoPublico = AberturaLinkPublico<PayloadAgendamentoPublico>;
 export type AberturaDocumentosPublico = AberturaLinkPublico<PayloadDocumentosPublico>;
 export type AberturaMaterialPublico = AberturaLinkPublico<PayloadMaterialPublico>;
+export type AberturaConfirmacaoPublico = AberturaLinkPublico<PayloadConfirmacaoPublico>;
 
 // ---------------------------------------------------------------------------
 // Erros públicos — todos os casos ruins devolvem um destes formatos, nunca mais que isso.
@@ -143,7 +162,17 @@ export type CodigoErroPublico =
   | "horario_indisponivel"
   | "envio_indisponivel"
   | "arquivo_invalido"
-  | "erro_desconhecido";
+  | "erro_desconhecido"
+  /** Casos de borda que o backend (`src/types/publico.ts`) já nomeia — alinhados aqui em 05/09. */
+  | "respostas_invalidas"
+  | "formulario_indisponivel"
+  | "limite_remarcacoes"
+  /** `/p/c`: o agendamento do link foi remarcado/cancelado — a equipe manda link novo (409). */
+  | "agendamento_indisponivel"
+  | "limite_arquivos_atingido"
+  | "arquivo_duplicado"
+  /** `/p/m`: material aprovado sem arquivo PDF gerado (409) — a página continua com `window.print()`. */
+  | "pdf_indisponivel";
 
 export interface ErroPublico {
   erro: CodigoErroPublico;
@@ -182,6 +211,41 @@ export interface RespostaEscolherHorarioPublico {
 export interface RespostaRegistrarDocumentoPublico {
   ok: true;
   documento: DocumentoRecebidoPublico;
+}
+
+/** `POST /api/publico/[token]/confirmar` — sem corpo; um toque. Idempotente: a 2ª chamada devolve a mesma `confirmada_em`. */
+export interface RespostaConfirmarPresencaPublico {
+  ok: true;
+  inicio_em: string;
+  fim_em: string;
+  confirmada_em: string;
+}
+
+/**
+ * Resultado de `baixarPdfMaterialPublico` (`GET /api/publico/[token]/material-pdf`).
+ * `disponivel` = a rota respondeu 302 (URL assinada). `pdf_indisponivel` (409) e
+ * `envio_indisponivel` (503) são estados esperados — a tela mantém a impressão
+ * como caminho, nunca finge que o botão funcionou.
+ */
+export type EstadoPdfMaterialPublico = "disponivel" | "pdf_indisponivel" | "envio_indisponivel" | "limite_excedido" | "link_invalido" | "erro_desconhecido";
+
+// ---------------------------------------------------------------------------
+// Modo apresentação genérico (`src/components/croqui/Apresentacao.tsx`) —
+// contrato compartilhado entre o Croqui (13 slides) e o Diagnóstico da SV
+// (agente H, `jornadas/[id]/diagnostico/**`).
+// ---------------------------------------------------------------------------
+
+export interface SlideApresentacao {
+  /** Chave estável (React `key` + âncora). */
+  id: string;
+  /** Título grande do slide — o que a família lê. */
+  titulo: string;
+  /** Rótulo pequeno em caixa alta acima do título (ex.: "03 · Família"). Omitido = "NN de TOTAL". */
+  rotulo?: string;
+  /** Corpo do slide (texto, pontos, gráfico). Quem monta decide o que a família vê. */
+  corpo: ReactNode;
+  /** Notas do apresentador — só aparecem no painel lateral (tecla N), nunca no corpo. */
+  notas?: string;
 }
 
 // ---------------------------------------------------------------------------

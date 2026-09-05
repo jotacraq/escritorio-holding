@@ -9,10 +9,12 @@ import {
   formatarPercentual,
   type TemaGrafico,
 } from "@/components/graficos";
-import type { CriterioArquitetura } from "@/components/ficha360/api-analise";
 import type { CroquiSlide, Familiar, PatrimonioItem, Pessoa } from "@/lib/api";
+import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, ParametroMetodo } from "@/types/cenario";
 import {
   calcularConcentracaoPatrimonial,
+  mapearAlocacaoParaCelulas,
+  mapearCenarioParaEconomia,
   mapearCriteriosParaMatriz,
   mapearFamiliaParaArvore,
   mapearPatrimonioParaComposicao,
@@ -21,10 +23,35 @@ import {
 
 export type TipoSlide = CroquiSlide["tipo"];
 
+/** Item da `arquitetura.alocacao` v2 (schema-analise-v2.ts) como chega à tela:
+ * `GET /api/croquis/[id]?modo=apresentacao` manda só `celula` + `item`
+ * (a `categoria` é leitura interna do método); no editor, a análise completa
+ * traz a categoria também. */
+export interface AlocacaoSlide {
+  celula: string;
+  item: string;
+  categoria?: "fato_declarado" | "dado_documental" | "inferencia" | "ponto_a_validar";
+}
+
+/** Grade do Cenário Patrimonial (agente D, 0057) — a MESMA forma de
+ * `GET /api/jornadas/[id]/cenario` e de `Ficha360.cenarios` (agente A):
+ * totais por cenário (`total` null enquanto houver rubrica ausente) + rubricas
+ * com procedência, para a legenda dizer de onde veio cada número. */
+export interface DadosCenarioCroqui {
+  cenarios: CenarioPatrimonial[];
+  rubricas: CenarioRubrica[];
+  totais: CenarioTotais[];
+  /** `parametros_metodo` carimbados nas rubricas `calculado` — para "alíquota X% (parâmetro vY)". */
+  parametros?: Record<string, ParametroMetodo>;
+}
+
 /** Tudo que os gráficos do croqui podem precisar, num único pacote — reunido
  * uma vez por tela (Editor / Análise / Apresentação) para não repetir busca
  * de dado em cada slide. Cada campo é honesto sobre o que falta: `null`
- * nunca vira "vazio silencioso", vira `<GraficoIndisponivel>` (§3.4). */
+ * nunca vira "vazio silencioso", vira `<GraficoIndisponivel>` (§3.4).
+ * `undefined` (campo não informado pela tela) é diferente de `null` (a tela
+ * procurou e não havia): o Modo Apresentação completa os `undefined` com uma
+ * leitura própria — ver `apiCroqui.ts`. */
 export interface DadosGraficosCroqui {
   pessoa: Pick<Pessoa, "id" | "nome"> | null;
   familiares: Familiar[] | null;
@@ -34,6 +61,10 @@ export interface DadosGraficosCroqui {
    *  metodo e nunca chegam ao navegador que esta na frente da familia. */
   criterios: Array<{ criterio: string; resposta: { texto: string } }> | null;
   recomendacaoArquitetura: string | null;
+  /** Fase 4 (§4.5): alocação v2 (Cofre/Veículo/Destino) — slides 7-10. */
+  alocacao?: AlocacaoSlide[] | null;
+  /** Fase 4 (§4.5): Cenário Patrimonial — slide "economia". */
+  cenario?: DadosCenarioCroqui | null;
 }
 
 /** Slides que o método (§3.4) associa a um gráfico. Os demais (legado,
@@ -54,6 +85,12 @@ const SLIDES_COM_GRAFICO = new Set<TipoSlide>([
 export function slideTemGrafico(tipo: TipoSlide): boolean {
   return SLIDES_COM_GRAFICO.has(tipo);
 }
+
+const CELULAS_DA_RECOMENDACAO: Record<string, TipoSlide> = {
+  "1_celula": "celula_1",
+  "2_celulas": "celula_2",
+  "3_celulas": "celula_3",
+};
 
 /**
  * O roteador tipo→gráfico (§3.4), num único lugar — a Ficha 360 (editor e
@@ -126,18 +163,65 @@ export function GraficoDoSlide({
     case "celula_2":
     case "celula_3":
     case "controle_arquitetura": {
-      // `analise.arquitetura.alocacao` só existe na v2 (prompt ainda não
-      // publicado, ver mapeamentoGraficos.ts) — sem isso, nunca inventamos
-      // onde cada bem vai; o componente mostra o estado vazio honesto.
-      return <DiagramaCelulas celulas={[]} tema={tema} modoApresentacao={modoApresentacao} />;
+      // A alocação v2 (`arquitetura.alocacao`) diz onde cada bem fica NA
+      // ARQUITETURA RECOMENDADA — só. Desenhá-la nos slides das outras
+      // alternativas seria inventar uma alocação que a análise não produziu:
+      // o diagrama aparece no slide da recomendação e no de Controle.
+      const recomendacao = dados.recomendacaoArquitetura;
+      const slideDaRecomendacao = recomendacao ? CELULAS_DA_RECOMENDACAO[recomendacao] : undefined;
+      const ehSlideDaRecomendacao = tipo === "controle_arquitetura" || tipo === slideDaRecomendacao;
+      const arquitetura = recomendacao ? mapearRecomendacaoParaColuna(recomendacao) : undefined;
+
+      if (!ehSlideDaRecomendacao) {
+        const rotuloAlternativa = tipo === "celula_1" ? "1 célula" : tipo === "celula_2" ? "2 células" : "3 células";
+        return (
+          <GraficoIndisponivel
+            titulo={`Arquitetura de ${rotuloAlternativa}`}
+            itensFaltantes={[
+              {
+                campo: slideDaRecomendacao
+                  ? `A alocação dos bens existe só para a arquitetura recomendada (${arquitetura} ${arquitetura === 1 ? "célula" : "células"})`
+                  : "Recomendação de arquitetura (1, 2 ou 3 células)",
+                onde: "Análise da Sessão",
+              },
+            ]}
+            tema={tema}
+            modoApresentacao={modoApresentacao}
+          />
+        );
+      }
+
+      const celulas = mapearAlocacaoParaCelulas(dados.alocacao ?? null, recomendacao, tipo === "controle_arquitetura" ? (dados.pessoa?.nome ?? null) : null);
+      return (
+        <DiagramaCelulas
+          arquitetura={arquitetura}
+          celulas={celulas}
+          titulo={tipo === "controle_arquitetura" ? "Controle na arquitetura" : undefined}
+          tema={tema}
+          modoApresentacao={modoApresentacao}
+        />
+      );
     }
 
     case "economia": {
-      // `relatorios_sessao.tributos` e `ideia_custo_inventario` ainda são
-      // texto livre no Relatório da Sessão, não número (RelatorioAba.tsx,
-      // fora desta fronteira) — sem campo numérico, nunca adivinhamos um
-      // valor. Pedido ao backend/RelatorioAba no relatório da onda.
-      return <BarrasComparativas custoInventario={null} custoEstrutura={null} tema={tema} modoApresentacao={modoApresentacao} />;
+      // Fase 4 (§4.5): os dois números vêm da grade do Cenário Patrimonial
+      // (`vw_cenarios_totais`, 0057) — digitados pela advogada ou
+      // multiplicados de base × alíquota que ela digitou. Total `null`
+      // (rubrica ausente) NUNCA vira barra: fora da apresentação, o estado
+      // diz "faltam N rubricas"; na apresentação, o gráfico não aparece.
+      const economia = mapearCenarioParaEconomia(dados.cenario ?? null, dados.recomendacaoArquitetura);
+      return (
+        <BarrasComparativas
+          custoInventario={economia.custoInventario}
+          custoEstrutura={economia.custoEstrutura}
+          rotuloEstrutura={economia.rotuloEstrutura}
+          rubricasAusentes={economia.rubricasAusentes}
+          procedencia={economia.procedencia}
+          fonte={economia.carimbo ?? "Fonte: Cenário Patrimonial — ainda sem número"}
+          tema={tema}
+          modoApresentacao={modoApresentacao}
+        />
+      );
     }
 
     case "implementacao": {

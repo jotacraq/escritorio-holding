@@ -5,19 +5,23 @@ export const dynamic = "force-dynamic";
 
 export default function PaginaLogin() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-1 text-lg font-bold text-slate-900">SIC-HF</h1>
-        <p className="mb-6 text-sm text-slate-500">Acesso da equipe — Time Holding Brasil</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-papel-fundo px-4 py-10">
+      <main className="anim-surgir w-full max-w-md rounded-cartao border border-linha bg-papel-elevado p-7 shadow-cartao sm:p-9">
+        <p className="text-rotulo font-medium uppercase text-[color:var(--latao)]">Time Holding Brasil · Acesso da equipe</p>
+        <h1 className="mt-2 text-display font-bold text-tinta">Entrar no SIC-HF</h1>
+        <p className="mt-2 text-corpo text-tinta-suave">Use o e-mail e a senha que você recebeu do escritório.</p>
 
-        <Suspense fallback={null}>
-          <FormularioLogin />
-        </Suspense>
+        <div className="mt-7">
+          <Suspense fallback={null}>
+            <FormularioLogin />
+          </Suspense>
+        </div>
 
-        <p className="mt-6 text-xs text-slate-400">
-          Acesso só por convite. Fale com o administrador se ainda não tem conta.
+        <p className="mt-7 border-t border-linha pt-5 text-xs text-tinta-suave">
+          O acesso é só por convite. Se você ainda não tem conta ou esqueceu a senha, fale com quem administra o sistema no escritório.
         </p>
-      </div>
+      </main>
+      <p className="mt-6 text-legenda text-tinta-fraca">Dra. Elaine Montenegro · Planejamento Patrimonial</p>
     </div>
   );
 }

@@ -4,23 +4,14 @@ export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { exigirPapel } from "@/server/auth";
-import { erroNaoEncontrado, respostaErro } from "@/server/erros";
-import type { FonteDorMaterial, OrigemDadoMaterial, RespostaAprovarMaterial } from "@/types/material";
+import { erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
+import { COLUNAS_MATERIAL_RESUMO, paraResumoMaterial, type LinhaMaterialGerado } from "@/server/material/resumo";
+import { gerarEGravarPdfMaterial } from "@/server/material/storage";
+import type { RespostaAprovarMaterial, ResultadoPdfMaterial } from "@/types/material";
 
 const ParametroSchema = z.object({ id: z.string().uuid(), materialId: z.string().uuid() });
-
-interface LinhaMaterialAprovado {
-  id: string;
-  versao: number;
-  fonte_dor: FonteDorMaterial;
-  dor_principal: string | null;
-  origem_dado: OrigemDadoMaterial;
-  atual: boolean;
-  aprovado_por: string | null;
-  aprovado_em: string | null;
-  criado_em: string;
-}
 
 /**
  * POST /api/jornadas/[id]/material/[materialId]/aprovar — aprovação humana do
@@ -30,10 +21,14 @@ interface LinhaMaterialAprovado {
  * — as duas são obrigatórias, mesmo padrão de `exigirPapel` documentado em
  * `src/server/auth.ts`.
  *
- * Usa o cliente da SESSÃO do usuário (não `service_role`): a RPC já faz seu
- * próprio gate de papel via `auth.uid()`, exatamente como `emitir_link_publico`/
- * `revogar_link_publico` (0028) — aprovar não precisa (nem deve) rodar fora da
- * identidade de quem aprovou.
+ * Aprovar usa o cliente da SESSÃO do usuário (não `service_role`): a RPC já faz
+ * seu próprio gate de papel via `auth.uid()`.
+ *
+ * Fase 4 (§3.3): DEPOIS da aprovação, e só então, o PDF é gerado + subido ao
+ * bucket privado + registrado (`registrar_pdf_material`, service_role). Falha
+ * no PDF NÃO desfaz a aprovação — volta em `pdf.estado='falhou'` com o motivo
+ * e a tela oferece "gerar de novo" (`POST .../pdf`). Sem
+ * `SUPABASE_SERVICE_ROLE_KEY`, a aprovação vale e `pdf.estado='indisponivel'`.
  */
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string; materialId: string }> }) {
   try {
@@ -56,30 +51,33 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       throw erroNaoEncontrado("Material não encontrado para esta jornada.");
     }
 
-    const { data: linha, error } = await supabase
-      .rpc("aprovar_material_gerado", { p_material_id: materialId })
-      .single<LinhaMaterialAprovado>();
-
+    const { error } = await supabase.rpc("aprovar_material_gerado", { p_material_id: materialId }).single();
     if (error) {
       if (error.code === "P0002") throw erroNaoEncontrado("Material não encontrado.");
       throw error;
     }
-    if (!linha) throw erroNaoEncontrado("Material não encontrado.");
 
-    const resposta: RespostaAprovarMaterial = {
-      material: {
-        id: linha.id,
-        versao: linha.versao,
-        chave_modelo: null,
-        fonte_dor: linha.fonte_dor,
-        dor_principal: linha.dor_principal,
-        origem_dado: linha.origem_dado,
-        atual: linha.atual,
-        aprovado_por: linha.aprovado_por,
-        aprovado_em: linha.aprovado_em,
-        criado_em: linha.criado_em,
-      },
-    };
+    let pdf: ResultadoPdfMaterial;
+    try {
+      const supabaseAdmin = criarClienteAdmin();
+      pdf = await gerarEGravarPdfMaterial(supabaseAdmin, { materialId });
+    } catch (erroServiceRole) {
+      registrarErro("POST /api/jornadas/[id]/material/[materialId]/aprovar#service_role_ausente", erroServiceRole, {
+        material_id: materialId,
+      });
+      pdf = { estado: "indisponivel", motivo: "PDF exige SUPABASE_SERVICE_ROLE_KEY no servidor — aprovação registrada; gere o PDF depois." };
+    }
+
+    // Relê pela sessão (RLS `mg_sel`) para devolver o estado REAL da linha —
+    // inclusive `pdf_*` gravados pela RPC — em vez de montar à mão.
+    const { data: linha, error: erroLeitura } = await supabase
+      .from("materiais_gerados")
+      .select(`${COLUNAS_MATERIAL_RESUMO}, materiais_modelos(chave)`)
+      .eq("id", materialId)
+      .single<LinhaMaterialGerado>();
+    if (erroLeitura || !linha) throw erroLeitura ?? erroNaoEncontrado("Material não encontrado.");
+
+    const resposta: RespostaAprovarMaterial = { material: paraResumoMaterial(linha), pdf };
     return NextResponse.json(resposta);
   } catch (erro) {
     return respostaErro("POST /api/jornadas/[id]/material/[materialId]/aprovar", erro);

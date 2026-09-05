@@ -58,7 +58,14 @@ export const NivelAutoridadeSchema = z.string();
 export const SimNaoIndefinidoSchema = z.string();
 export const RitmoSessaoSchema = z.string();
 
-export const BriefingSchema = z.object({
+/**
+ * Schema v2 — a forma que `protocolo_01_briefing` v1/v2 produzem hoje em
+ * produção (MEDIDO em 04/09/2026: 3.813 bytes de JSON Schema estrito, compila).
+ * Fica congelado: toda linha de `prompts_versoes` com `versao <= 2` valida
+ * contra ele (`schemaBriefingParaVersao`). Nunca ganha campo novo — campo
+ * novo entra na versão seguinte, medido pela sonda antes de ativar.
+ */
+export const BriefingV2Schema = z.object({
   resumo_executivo: z.string().min(1),
   perfil_disc: z.object({
     predominante: DiscSchema,
@@ -138,4 +145,46 @@ export const BriefingSchema = z.object({
   lacunas: z.array(z.string()),
 });
 
-export type Briefing = z.infer<typeof BriefingSchema>;
+/**
+ * Schema v3 (ARQUITETURA-FASE-4.md §5.2) — v2 + `linguagem_do_cliente`, a
+ * seção "como ele fala": palavras que o cliente repete, expressões literais
+ * (verificadas por `fidelidade.ts`) e o registro (formal/coloquial…).
+ *
+ * POR QUE É UMA STRING E NÃO UM OBJETO COM ARRAYS: o teto de gramática do
+ * provedor (3.905 bytes compila, 4.428 não — CONTINUAR-AQUI.md §0) não deixa.
+ * MEDIDO em 04/09/2026 com `Buffer.byteLength(JSON.stringify(paraJsonSchemaEstrito(...)))`:
+ *   - v2 (base) ............................................ 3.813 bytes
+ *   - v2 + objeto {palavras_repetidas[], expressoes_literais[], registro} 4.146 bytes (ESTOURA)
+ *   - v2 + objeto com 3 strings ............................ 4.096 bytes (ESTOURA)
+ *   - v2 + 2 strings na raiz ............................... 3.884 bytes
+ *   - v2 + `linguagem_do_cliente: string` (esta) ........... 3.877 bytes ✓ (≤ 3.900)
+ * O fallback previsto no §5.2 ("viram uma string separada por `;`, o
+ * consumidor divide") é o que está aqui, com formato fixo de 3 linhas
+ * (ver `linguagem-cliente.ts`: `FORMATO_LINGUAGEM_DO_CLIENTE` no prompt e
+ * `separarLinguagemDoCliente()` para a tela e para a fidelidade). Nenhuma
+ * seção antiga foi comprimida — a tela continua lendo tudo que já lia.
+ *
+ * A gramática só é compilada do outro lado da rede: antes de ATIVAR a v3
+ * (0059), rodar `POST /api/admin/sonda-schema {"chave":"briefing_v3"}` e
+ * colar o resultado na migration.
+ */
+export const BriefingSchema = BriefingV2Schema.extend({
+  linguagem_do_cliente: z.string(),
+});
+
+export type BriefingV2 = z.infer<typeof BriefingV2Schema>;
+export type BriefingV3 = z.infer<typeof BriefingSchema>;
+/**
+ * Tipo que circula pelo sistema: v3 com a seção nova OPCIONAL — um briefing
+ * gravado por prompt v1/v2 não a tem, e a tela mostra vazio, não inventa.
+ */
+export type Briefing = BriefingV2 & { linguagem_do_cliente?: string };
+
+/**
+ * Bi-versão (mesmo padrão de `croqui-analise.ts`): a versão ATIVA de
+ * `prompts_versoes` decide o schema — v3 só passa a ser exigido quando a v3
+ * for promovida, o que só acontece depois da sonda e da bancada (0059).
+ */
+export function schemaBriefingParaVersao(versao: number): z.ZodType<Briefing> {
+  return versao >= 3 ? BriefingSchema : BriefingV2Schema;
+}

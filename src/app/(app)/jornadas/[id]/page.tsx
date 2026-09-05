@@ -5,7 +5,8 @@ import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
 import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
 import { contarRevisaoSlides } from "@/lib/croqui";
-import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
+import { EstadoErro } from "@/components/ui/Estado";
+import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { PastaDoCliente } from "@/components/pasta/PastaDoCliente";
@@ -26,6 +27,9 @@ import { PesquisaPublicaAba } from "@/components/ficha360/PesquisaPublicaAba";
 import { CroquiAba } from "@/components/ficha360/CroquiAba";
 import { AnaliseSessaoAba } from "@/components/ficha360/AnaliseSessaoAba";
 import { TimelineAba } from "@/components/ficha360/TimelineAba";
+import { DiagnosticoSv } from "@/components/ficha360/DiagnosticoSv";
+import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/api-extras";
+import type { SinaisSessaoPasta } from "@/components/pasta/PastaDoCliente";
 import type { Ficha360 } from "@/lib/api";
 
 /** Rótulo de cada Gaveta migrada (Camada 2) — mesmo nome de negócio da aba original. */
@@ -41,8 +45,12 @@ export default function PaginaFicha360({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const { ficha, carregando, erro, recarregar } = useFicha360(id);
 
-  if (carregando) return <EstadoCarregando rotulo="Carregando ficha…" />;
-  if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar esta jornada" />;
+  // Fase 4 (agente H): recarregar depois de uma ação NÃO derruba a tela —
+  // a ficha antiga fica de pé enquanto a nova chega (senão toda ação em
+  // gaveta/aba fechava a gaveta e piscava a página inteira). Só a primeira
+  // carga mostra o esqueleto; erro só toma a tela quando não há ficha.
+  if (carregando && !ficha) return <EsqueletoFicha rotulo="Carregando ficha…" />;
+  if (erro && !ficha) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar esta jornada" />;
   if (!ficha) return null;
 
   return <ConteudoFicha id={id} ficha={ficha} recarregar={recarregar} />;
@@ -108,8 +116,22 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
         />
       ),
     },
-    { id: "sessao", rotulo: "Sessão", conteudo: <SessaoAba jornadaId={id} sessao={ficha.sessao} agendamentos={ficha.agendamentos} aoAtualizar={recarregar} /> },
+    { id: "sessao", rotulo: "Sessão", conteudo: <SessaoAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} /> },
   ];
+
+  // Fase 4 (agente H) — sinais da Sessão para o cartão "Sessão" da Pasta:
+  // presença (0051), sala e ligação por IA, lidos do MESMO payload da Ficha
+  // (`extrasDaFicha` tolera coluna/tabela ausente → "sem informação").
+  const extras = extrasDaFicha(ficha);
+  const proximoAgendamento = proximoAgendamentoAtivo(extras.agendamentos);
+  const sinaisSessao: SinaisSessaoPasta = {
+    proximaSessaoEm: proximoAgendamento?.inicio_em ?? null,
+    presencaConfirmadaEm:
+      proximoAgendamento && Object.prototype.hasOwnProperty.call(proximoAgendamento, "presenca_confirmada_em") ? (proximoAgendamento.presenca_confirmada_em ?? null) : undefined,
+    presencaConfirmadaVia: proximoAgendamento?.presenca_confirmada_via ?? null,
+    temLinkSala: ficha.sessao ? Boolean(ficha.sessao.link_sala) : null,
+    ligacaoIaStatus: extras.ligacaoIaAtual?.status ?? null,
+  };
 
   // "Análise da Sessão" (U3/U4, ARQUITETURA-FASE-3.md §5.3) — antes era
   // sub-aba de CroquiAba, a 4 cliques e 3 níveis de aninhamento do Briefing.
@@ -129,6 +151,17 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // servidor negaria.
   if (podeVerPatrimonio) {
     abas.push({ id: "relatorio", rotulo: "Relatório", conteudo: <RelatorioAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} /> });
+  }
+
+  // Diagnóstico da SV (Fase 4 §4.7, 0058) — mesmo gate de patrimônio do
+  // Relatório/Cenário: a rota exige `ve_patrimonio`. Página própria em
+  // `/jornadas/[id]/diagnostico` para o modo apresentação.
+  if (podeVerPatrimonio) {
+    abas.push({
+      id: "diagnostico",
+      rotulo: "Diagnóstico",
+      conteudo: <DiagnosticoSv jornadaId={id} hrefApresentar={`/jornadas/${id}/diagnostico?apresentar=1`} aoMudar={recarregar} />,
+    });
   }
 
   abas.push({ id: "material", rotulo: "Material", conteudo: <MaterialAba jornadaId={id} /> });
@@ -155,7 +188,7 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
         croquiAtalho={croquiAtalho}
         aoAbrirGaveta={(chave) => setGavetaAberta(chave)}
       />
-      <ConteudoPastaOuAbas pasta={pasta} abas={abas} aoMudarGaveta={setGavetaAberta} />
+      <ConteudoPastaOuAbas pasta={pasta} abas={abas} aoMudarGaveta={setGavetaAberta} sinaisSessao={sinaisSessao} />
 
       <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.formulario!}>
         <FormularioAba jornadaId={id} />
@@ -200,10 +233,12 @@ function ConteudoPastaOuAbas({
   pasta,
   abas,
   aoMudarGaveta,
+  sinaisSessao,
 }: {
   pasta: ReturnType<typeof derivarPasta>;
   abas: DefinicaoAba[];
   aoMudarGaveta: (chave: ChaveItemPasta | null) => void;
+  sinaisSessao: SinaisSessaoPasta;
 }) {
   const [hash, setHash] = useState<string | null>(null);
 
@@ -243,13 +278,13 @@ function ConteudoPastaOuAbas({
   return (
     <>
       <div hidden={temHashValido}>
-        <PastaDoCliente itens={pasta} aoAbrirGaveta={aoMudarGaveta} />
+        <PastaDoCliente itens={pasta} aoAbrirGaveta={aoMudarGaveta} sinaisSessao={sinaisSessao} />
       </div>
       <div hidden={!temHashValido}>
         <button
           type="button"
           onClick={voltarParaPasta}
-          className="nao-imprimir mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-tinta-suave hover:text-tinta"
+          className="nao-imprimir mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-controle text-sm font-medium text-tinta-suave hover:text-tinta"
         >
           ← Voltar à Pasta do Cliente
         </button>

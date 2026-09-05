@@ -74,7 +74,6 @@ export function useAcessoAdmin() {
     return () => {
       vivo = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave]);
 
   return { estado, verificar };

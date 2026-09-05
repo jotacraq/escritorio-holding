@@ -7,6 +7,7 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { CarregandoPublico, ErroTemporarioPublico } from "@/components/publico/CarregandoPublico";
 import { TelaLinkInvalido } from "@/components/publico/TelaLinkInvalido";
 import { formatarData } from "@/lib/formatar";
+import { CartaoPublico, RotuloPublico } from "@/components/publico/atomos";
 
 interface EnvioEmAndamento {
   id: string;
@@ -86,9 +87,9 @@ function CartaoTipoDocumento({
   );
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-linha bg-papel px-4 py-4">
+    <CartaoPublico como="section" className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-base font-bold text-tinta">
+        <p className="text-subtitulo font-bold text-tinta">
           {rotulo}
           {obrigatorio && (
             <span aria-hidden="true" className="text-[color:var(--vermelho)]">
@@ -98,7 +99,7 @@ function CartaoTipoDocumento({
           )}
         </p>
         {recebidos.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-sm bg-verde-fraco px-2 py-0.5 text-xs font-medium text-[color:var(--verde)]">
+          <span className="inline-flex items-center gap-1 rounded-full bg-verde-fraco px-2.5 py-1 text-sm font-medium text-[color:var(--verde)]">
             <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-current">
               <path d="M8.5 13.5 4.7 9.7l1.4-1.4 2.4 2.4 5.4-5.4 1.4 1.4z" />
             </svg>
@@ -130,15 +131,15 @@ function CartaoTipoDocumento({
               setArrastandoSobre(false);
               if (e.dataTransfer.files.length > 0) enviarArquivos(e.dataTransfer.files);
             }}
-            className={`flex flex-col items-center gap-1.5 rounded-md border-2 border-dashed px-4 py-6 text-center ${
-              arrastandoSobre ? "border-[color:var(--latao)] bg-latao-fraco" : "border-linha-forte bg-papel-elevado"
+            className={`flex min-h-[3.25rem] flex-col items-center gap-1.5 rounded-controle border-2 border-dashed px-4 py-6 text-center transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao-cta)] ${
+              arrastandoSobre ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
             }`}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-tinta-suave stroke-[1.5]">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14" />
             </svg>
-            <span className="text-sm font-medium text-tinta">Toque para escolher o arquivo</span>
-            <span className="text-xs text-tinta-fraca">ou arraste aqui · {extensoesAceitas.map((e) => `.${e}`).join(", ")} · até {tamanhoMaximoMb} MB</span>
+            <span className="text-base font-bold text-tinta">Toque para escolher o arquivo</span>
+            <span className="text-sm text-tinta-suave">ou arraste aqui · {extensoesAceitas.map((e) => `.${e}`).join(", ")} · até {tamanhoMaximoMb} MB</span>
           </button>
           <input
             ref={inputRef}
@@ -171,12 +172,12 @@ function CartaoTipoDocumento({
               aria-label={`Enviando ${envio.nome}`}
               className="h-2 w-full overflow-hidden rounded-full bg-linha"
             >
-              <div className="h-full rounded-full bg-[color:var(--latao)] transition-[width]" style={{ width: `${envio.percentual}%` }} />
+              <div className="h-full rounded-full bg-[color:var(--latao-cta)] transition-[width]" style={{ width: `${envio.percentual}%` }} />
             </div>
           )}
         </div>
       ))}
-    </div>
+    </CartaoPublico>
   );
 }
 
@@ -209,12 +210,13 @@ export function DocumentosPublico({ token }: { token: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-serif text-xl font-bold text-tinta">Envio de documentos</h1>
-        <p className="mt-1 text-tinta-suave">Olá, {abertura.primeiro_nome}. Estes são os documentos que a equipe precisa para dar andamento.</p>
+      <div className="flex flex-col gap-2">
+        <RotuloPublico>Documentos</RotuloPublico>
+        <h1 className="text-tinta">Envio de documentos</h1>
+        <p className="text-tinta-suave">Olá, {abertura.primeiro_nome}. Estes são os documentos que a equipe precisa para dar andamento.</p>
       </div>
 
-      <div className="flex items-start gap-2.5 rounded-md border border-linha-forte bg-papel-elevado px-4 py-3 text-sm text-tinta-suave">
+      <div className="flex items-start gap-2.5 rounded-controle border border-linha-forte bg-papel px-4 py-3 text-sm text-tinta-suave">
         <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 shrink-0 fill-current text-tinta-fraca">
           <path d="M10 2a5 5 0 0 0-5 5v2H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2Z" />
         </svg>
@@ -226,7 +228,7 @@ export function DocumentosPublico({ token }: { token: string }) {
       </div>
 
       {limiteAtingido && (
-        <p className="rounded-md border border-ambar-borda bg-ambar-fraco px-4 py-3 text-sm text-[color:var(--ambar)]">
+        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-4 py-3 text-sm font-medium text-[color:var(--ambar)]">
           Você já enviou o máximo de arquivos permitido neste link ({abertura.payload.limite_arquivos}).
         </p>
       )}

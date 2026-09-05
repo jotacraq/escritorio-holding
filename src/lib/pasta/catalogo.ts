@@ -14,10 +14,20 @@
 
 export type ProcedenciaItemPasta = "recebido" | "produzido" | "gerado_ia";
 
+/**
+ * De quem é o item quando ele está faltando (Fase 4 §6.2) — o mesmo
+ * vocabulário de `DonoPasso` em `proximo-passo.ts`. `cliente` = a família
+ * precisa mandar/responder; `equipe` = relacionamento registra/aciona;
+ * `advogada` = só ela produz; `sistema` = a esteira gera sozinha.
+ */
+export type DonoItemPasta = "equipe" | "advogada" | "cliente" | "sistema";
+
 export interface ItemCatalogoPasta {
   chave: ChaveItemPasta;
   rotulo: string;
   procedencia: ProcedenciaItemPasta;
+  /** Quem precisa agir para o item existir. */
+  dono: DonoItemPasta;
   /**
    * Item de patrimônio pesado (PII, CLAUDE.md) — omitido INTEIRAMENTE do
    * array de `derivarPasta()` para quem não tem `podeVerPatrimonio`. Nunca
@@ -61,19 +71,19 @@ export type ChaveItemPasta =
  *   vocabulário de produto próprio no sistema.
  */
 export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
-  { chave: "formulario", rotulo: "Formulário", procedencia: "produzido", requerPatrimonio: false },
-  { chave: "ligacao", rotulo: "Ligação", procedencia: "produzido", requerPatrimonio: false },
-  { chave: "links", rotulo: "Links", procedencia: "produzido", requerPatrimonio: false },
-  { chave: "briefing", rotulo: "Briefing", procedencia: "gerado_ia", requerPatrimonio: false },
-  { chave: "sessao", rotulo: "Sessão", procedencia: "produzido", requerPatrimonio: false },
-  { chave: "transcricao", rotulo: "Transcrição da Sessão", procedencia: "recebido", requerPatrimonio: true },
-  { chave: "analise_sessao", rotulo: "Análise da Sessão", procedencia: "gerado_ia", requerPatrimonio: true },
+  { chave: "formulario", rotulo: "Formulário", procedencia: "produzido", dono: "cliente", requerPatrimonio: false },
+  { chave: "ligacao", rotulo: "Ligação", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
+  { chave: "links", rotulo: "Links", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
+  { chave: "briefing", rotulo: "Briefing", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: false },
+  { chave: "sessao", rotulo: "Sessão", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
+  { chave: "transcricao", rotulo: "Transcrição da Sessão", procedencia: "recebido", dono: "equipe", requerPatrimonio: true },
+  { chave: "analise_sessao", rotulo: "Análise da Sessão", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: true },
   // Ver nota de bloqueio no topo de `derivar.ts` — sempre 'ainda_nao' por ora.
-  { chave: "diagnostico_sv", rotulo: "Diagnóstico da SV", procedencia: "gerado_ia", requerPatrimonio: true },
-  { chave: "relatorio_sv", rotulo: "Relatório", procedencia: "produzido", requerPatrimonio: true },
-  { chave: "croqui", rotulo: "Croqui", procedencia: "gerado_ia", requerPatrimonio: true },
-  { chave: "material", rotulo: "Material", procedencia: "gerado_ia", requerPatrimonio: false },
-  { chave: "patrimonio", rotulo: "Patrimônio", procedencia: "produzido", requerPatrimonio: true },
-  { chave: "familiares", rotulo: "Familiares", procedencia: "produzido", requerPatrimonio: true },
-  { chave: "documentos", rotulo: "Documentos", procedencia: "recebido", requerPatrimonio: true },
+  { chave: "diagnostico_sv", rotulo: "Diagnóstico da SV", procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
+  { chave: "relatorio_sv", rotulo: "Relatório", procedencia: "produzido", dono: "advogada", requerPatrimonio: true },
+  { chave: "croqui", rotulo: "Croqui", procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
+  { chave: "material", rotulo: "Material", procedencia: "gerado_ia", dono: "sistema", requerPatrimonio: false },
+  { chave: "patrimonio", rotulo: "Patrimônio", procedencia: "produzido", dono: "equipe", requerPatrimonio: true },
+  { chave: "familiares", rotulo: "Familiares", procedencia: "produzido", dono: "equipe", requerPatrimonio: true },
+  { chave: "documentos", rotulo: "Documentos", procedencia: "recebido", dono: "cliente", requerPatrimonio: true },
 ];

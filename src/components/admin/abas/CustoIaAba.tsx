@@ -3,9 +3,14 @@
 import { useCallback } from "react";
 import Link from "next/link";
 import { useRecurso } from "@/hooks/useRecurso";
-import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
+import { Cartao } from "@/components/ui/Cartao";
+import { EsqueletoCartao } from "@/components/ui/Esqueleto";
+import { EstadoErro } from "@/components/ui/Estado";
+import { Kpi } from "@/components/ui/Kpi";
+import { Selo, SeloStub } from "@/components/ui/Selo";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { buscarCustoIa } from "../adminApi";
+import { IntroAba, Tabela, Tbody, Td, Th, Thead, Tr } from "../comum";
 
 const FORMATADOR_MES = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", month: "long", year: "numeric" });
 
@@ -16,149 +21,157 @@ function formatarMes(iso: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
+function SeloModo({ modo }: { modo: "real" | "demonstracao" }) {
+  return modo === "real" ? <Selo tom="latao">real</Selo> : <Selo tom="neutro">demonstração</Selo>;
+}
+
+/**
+ * Custo é informação de gestão — mesmo recorte de quem vê patrimônio
+ * (admin + advogada). Execução de demonstração nunca soma no real.
+ * Ligações por IA (`vw_custo_ligacoes_ia_mensal`, 0053) ainda não têm rota
+ * — bloco rotulado, não número inventado.
+ */
 export function CustoIaAba() {
   const buscar = useCallback(() => buscarCustoIa(), []);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, []);
 
   if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar o custo de IA" />;
-  if (carregando && !dados) return <EstadoCarregando rotulo="Carregando custo de IA…" />;
+  if (carregando && !dados) return <EsqueletoCartao quantidade={2} rotulo="Carregando custo de IA…" />;
   if (!dados) return null;
 
   const { resumo, por_mes, por_prompt, por_jornada } = dados;
-  const semExecucaoReal = resumo.execucoes_reais === 0 && resumo.custo_real_total_usd === 0;
+  const semExecucaoReal = resumo.execucoes_reais === 0;
 
   return (
-    <div className="flex flex-col gap-5">
-      <p className="text-xs text-tinta-fraca">
-        Só execução real conta neste custo. Execução de demonstração aparece separada e nunca soma no total real.
-      </p>
+    <div className="flex flex-col gap-6">
+      <IntroAba>Quanto a IA custou, em dólar, por mês, por versão de prompt e por cliente. Só execução real conta; demonstração aparece separada.</IntroAba>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-sm border border-linha bg-papel-elevado p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">Custo real</p>
-          {semExecucaoReal ? (
-            <p className="mt-1 text-sm text-tinta-suave">
-              Nenhuma execução real de IA registrada ainda. O custo aparece aqui assim que a primeira análise rodar.
-            </p>
-          ) : (
-            <>
-              <p className="font-serif text-3xl font-bold text-tinta">{formatarMoeda(resumo.custo_real_total_usd)}</p>
-              <p className="text-xs text-tinta-suave">{resumo.execucoes_reais} execução(ões) real(is)</p>
-            </>
-          )}
-        </div>
-        <div className="rounded-sm border border-linha border-dashed bg-papel p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">Demonstração (não soma no real)</p>
-          <p className="font-serif text-3xl font-bold text-tinta-suave">{formatarMoeda(resumo.custo_demonstracao_total_usd)}</p>
-          <p className="text-xs text-tinta-suave">{resumo.execucoes_demonstracao} execução(ões) de demonstração</p>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Kpi
+          rotulo="Custo real acumulado"
+          valor={semExecucaoReal ? null : formatarMoeda(resumo.custo_real_total_usd)}
+          unidade="USD"
+          motivoVazio="nenhuma execução real de IA registrada ainda"
+          acao={!semExecucaoReal ? <span className="text-tinta-suave">{resumo.execucoes_reais} execução{resumo.execucoes_reais === 1 ? "" : "ões"}</span> : undefined}
+        />
+        <Kpi
+          rotulo="Demonstração (não soma no real)"
+          valor={resumo.execucoes_demonstracao === 0 ? null : formatarMoeda(resumo.custo_demonstracao_total_usd)}
+          unidade="USD"
+          motivoVazio="nenhuma execução de demonstração"
+          acao={resumo.execucoes_demonstracao > 0 ? <span className="text-tinta-suave">{resumo.execucoes_demonstracao} execução{resumo.execucoes_demonstracao === 1 ? "" : "ões"}</span> : undefined}
+        />
       </div>
 
+      <Cartao rotulo="Ligações por IA" titulo="Custo das ligações" descricao="Minutos de voz cobrados pelo provedor (Vapi), por mês.">
+        <SeloStub texto="Ainda não disponível: a view vw_custo_ligacoes_ia_mensal (migration 0053) existe no desenho, mas não há rota de leitura nem a migration está aplicada. Quando houver, este bloco mostra custo e minutos por mês." />
+      </Cartao>
+
       {por_mes.length > 0 && (
-        <div>
-          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por mês</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-linha-forte text-left text-tinta-suave">
-                  <th className="py-1.5 pr-3 font-medium">Mês</th>
-                  <th className="py-1.5 pr-3 font-medium">Modo</th>
-                  <th className="py-1.5 pr-3 font-medium">Execuções</th>
-                  <th className="py-1.5 pr-3 font-medium">Custo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {por_mes.map((linha, indice) => (
-                  <tr key={`${linha.mes}-${linha.modo}-${indice}`} className="border-b border-linha">
-                    <td className="py-1.5 pr-3">{formatarMes(linha.mes)}</td>
-                    <td className="py-1.5 pr-3">
-                      <span
-                        className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
-                          linha.modo === "real" ? "bg-latao-fraco text-[color:var(--latao-forte)]" : "border border-linha text-tinta-fraca"
-                        }`}
-                      >
-                        {linha.modo === "real" ? "real" : "demonstração"}
-                      </span>
-                    </td>
-                    <td className="py-1.5 pr-3 tabular-nums">{linha.execucoes}</td>
-                    <td className="py-1.5 pr-3 font-mono">{formatarMoeda(linha.custo_usd_total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Cartao preenchimento="sem" rotulo="Por mês" titulo="Custo mensal">
+          <Tabela resumo="Custo de IA por mês e modo">
+            <Thead>
+              <tr>
+                <Th>Mês</Th>
+                <Th>Modo</Th>
+                <Th>Execuções</Th>
+                <Th>Custo</Th>
+              </tr>
+            </Thead>
+            <Tbody>
+              {por_mes.map((linha, i) => (
+                <Tr key={`${linha.mes}-${linha.modo}-${i}`}>
+                  <Td rotulo="Mês" className="font-medium">
+                    {formatarMes(linha.mes)}
+                  </Td>
+                  <Td rotulo="Modo">
+                    <SeloModo modo={linha.modo} />
+                  </Td>
+                  <Td rotulo="Execuções" className="tabular-nums">
+                    {linha.execucoes}
+                  </Td>
+                  <Td rotulo="Custo" className="tabular-nums">
+                    {formatarMoeda(linha.custo_usd_total)}
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Tabela>
+        </Cartao>
       )}
 
       {por_prompt.length > 0 && (
-        <div>
-          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por versão de prompt</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-linha-forte text-left text-tinta-suave">
-                  <th className="py-1.5 pr-3 font-medium">Chave</th>
-                  <th className="py-1.5 pr-3 font-medium">Versão</th>
-                  <th className="py-1.5 pr-3 font-medium">Modo</th>
-                  <th className="py-1.5 pr-3 font-medium">Execuções</th>
-                  <th className="py-1.5 pr-3 font-medium">Custo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {por_prompt.map((linha, indice) => (
-                  <tr key={`${linha.prompt_versao_id}-${linha.modo}-${indice}`} className="border-b border-linha">
-                    <td className="py-1.5 pr-3">{linha.chave}</td>
-                    <td className="py-1.5 pr-3">
-                      v{linha.versao}
-                      {linha.versao_ativa && (
-                        <span className="ml-1.5 inline-flex items-center rounded-sm bg-verde-fraco px-1 py-0.5 text-[10px] font-medium text-[color:var(--verde)]">
-                          ativa
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-1.5 pr-3">{linha.modo === "real" ? "real" : "demonstração"}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{linha.execucoes}</td>
-                    <td className="py-1.5 pr-3 font-mono">{formatarMoeda(linha.custo_usd_total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Cartao preenchimento="sem" rotulo="Por versão de prompt" titulo="Onde o dinheiro vai">
+          <Tabela resumo="Custo de IA por versão de prompt">
+            <Thead>
+              <tr>
+                <Th>Prompt</Th>
+                <Th>Versão</Th>
+                <Th>Modo</Th>
+                <Th>Execuções</Th>
+                <Th>Custo</Th>
+              </tr>
+            </Thead>
+            <Tbody>
+              {por_prompt.map((linha, i) => (
+                <Tr key={`${linha.prompt_versao_id}-${linha.modo}-${i}`}>
+                  <Td rotulo="Prompt" className="font-medium">
+                    {linha.chave}
+                  </Td>
+                  <Td rotulo="Versão">
+                    v{linha.versao} {linha.versao_ativa && <Selo tom="verde">ativa</Selo>}
+                  </Td>
+                  <Td rotulo="Modo">
+                    <SeloModo modo={linha.modo} />
+                  </Td>
+                  <Td rotulo="Execuções" className="tabular-nums">
+                    {linha.execucoes}
+                  </Td>
+                  <Td rotulo="Custo" className="tabular-nums">
+                    {formatarMoeda(linha.custo_usd_total)}
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Tabela>
+        </Cartao>
       )}
 
       {por_jornada.length > 0 && (
-        <div>
-          <h3 className="mb-1.5 font-serif text-base font-bold text-tinta">Por jornada (top 50)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-linha-forte text-left text-tinta-suave">
-                  <th className="py-1.5 pr-3 font-medium">Jornada</th>
-                  <th className="py-1.5 pr-3 font-medium">Modo</th>
-                  <th className="py-1.5 pr-3 font-medium">Execuções</th>
-                  <th className="py-1.5 pr-3 font-medium">Custo</th>
-                  <th className="py-1.5 pr-3 font-medium">Última execução</th>
-                </tr>
-              </thead>
-              <tbody>
-                {por_jornada.map((linha, indice) => (
-                  <tr key={`${linha.jornada_id}-${linha.modo}-${indice}`} className="border-b border-linha">
-                    <td className="py-1.5 pr-3">
-                      <Link href={`/jornadas/${linha.jornada_id}`} className="text-latao-forte underline-offset-2 hover:underline">
-                        ver jornada
-                      </Link>
-                    </td>
-                    <td className="py-1.5 pr-3">{linha.modo === "real" ? "real" : "demonstração"}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{linha.execucoes}</td>
-                    <td className="py-1.5 pr-3 font-mono">{formatarMoeda(linha.custo_usd_total)}</td>
-                    <td className="py-1.5 pr-3">{formatarDataHora(linha.ultima_execucao_em)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Cartao preenchimento="sem" rotulo="Por cliente" titulo="Os 50 que mais custaram">
+          <Tabela resumo="Custo de IA por jornada">
+            <Thead>
+              <tr>
+                <Th>Cliente</Th>
+                <Th>Modo</Th>
+                <Th>Execuções</Th>
+                <Th>Custo</Th>
+                <Th>Última execução</Th>
+              </tr>
+            </Thead>
+            <Tbody>
+              {por_jornada.map((linha, i) => (
+                <Tr key={`${linha.jornada_id}-${linha.modo}-${i}`}>
+                  <Td rotulo="Cliente">
+                    <Link href={`/jornadas/${linha.jornada_id}`} className="inline-flex min-h-11 items-center font-medium text-[color:var(--latao)] underline-offset-2 hover:underline">
+                      abrir a Ficha
+                    </Link>
+                  </Td>
+                  <Td rotulo="Modo">
+                    <SeloModo modo={linha.modo} />
+                  </Td>
+                  <Td rotulo="Execuções" className="tabular-nums">
+                    {linha.execucoes}
+                  </Td>
+                  <Td rotulo="Custo" className="tabular-nums">
+                    {formatarMoeda(linha.custo_usd_total)}
+                  </Td>
+                  <Td rotulo="Última">{formatarDataHora(linha.ultima_execucao_em)}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Tabela>
+        </Cartao>
       )}
     </div>
   );

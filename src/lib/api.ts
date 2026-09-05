@@ -13,6 +13,8 @@
  */
 
 import type { MaterialGeradoResumo } from "@/types/material";
+import type { LigacaoIaResumo, OrigemLinkSala, Tarefa, ViaPresencaConfirmada } from "@/types/banco";
+import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, DiagnosticoSv, ParametroMetodo } from "@/types/cenario";
 
 // ---------------------------------------------------------------------------
 // Tipos de domínio (espelham docs/ARQUITETURA.md §1–§2 — nomes do Glossário)
@@ -178,6 +180,11 @@ export interface Agendamento {
   origem: "equipe" | "cliente" | "ia";
   observacoes: string | null;
   advogada_id?: string | null;
+  /** 0051 (Fase 4). Opcionais: `undefined` = coluna ainda não existe no banco
+   * (as telas checam `hasOwnProperty`); `null` = aguardando confirmação do
+   * cliente — não confundir com `status='confirmado'` (C23). */
+  presenca_confirmada_em?: string | null;
+  presenca_confirmada_via?: ViaPresencaConfirmada | null;
 }
 
 export interface SessaoViabilidade {
@@ -188,6 +195,10 @@ export interface SessaoViabilidade {
   realizada_em: string | null;
   resultado: "fechou" | "nao_fechou" | "indefinido" | null;
   motivo_resultado: string | null;
+  /** 0051 (Fase 4) — opcionais pelo mesmo motivo de `Agendamento.presenca_*`. */
+  link_sala_origem?: OrigemLinkSala;
+  link_sala_atualizado_em?: string | null;
+  sala_solicitada_em?: string | null;
 }
 
 export interface RelatorioSessao {
@@ -272,6 +283,16 @@ export interface Ficha360 {
   /** Material pós-sessão atual, sem `conteudo` (payload leve). `null` = jornada
    * nunca gerou material. Usado por `derivarPasta()` (`lib/pasta/derivar.ts`). */
   materialAtual: Omit<MaterialGeradoResumo, "chave_modelo"> | null;
+  // --- Fase 4 (0053/0057/0058, `server/jornadas.ts`). Carregados de forma
+  // tolerante: tabela ausente no banco vira `null`/`[]`, nunca derruba a ficha. ---
+  /** `diagnosticos_sv` atual — mesma forma de `GET /api/jornadas/[id]/diagnostico`.atual. `null` sem `ve_patrimonio`. */
+  diagnosticoAtual: DiagnosticoSv | null;
+  /** Cenário Patrimonial — mesma forma de `GET /api/jornadas/[id]/cenario` (sem `rubricas_padrao`/`parametros`). `null` sem permissão. */
+  cenarios: { cenarios: CenarioPatrimonial[]; rubricas: CenarioRubrica[]; totais: CenarioTotais[] } | null;
+  /** Última `ligacoes_ia` da jornada, sem transcrição. */
+  ligacaoIaAtual: LigacaoIaResumo | null;
+  /** `tarefas` abertas (ex.: `tipo='enviar_link_croqui'`). */
+  tarefasAbertas: Tarefa[];
 }
 
 /** Espelha `server/ia/completude.ts#ResultadoCompletude` — vem em `ApiError.detalhe`
@@ -393,19 +414,6 @@ export interface MembroEquipe {
   nome: string;
   papel: PapelEquipe;
   ativo: boolean;
-}
-
-export interface MensagemAgendada {
-  id: string;
-  jornada_id: string;
-  pessoa_nome?: string;
-  canal: CanalMensagem;
-  destinatario: string;
-  agendada_para: string;
-  status: StatusMensagem;
-  corpo_renderizado: string | null;
-  erro: string | null;
-  enviada_em: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,11 +726,38 @@ export interface CriterioParaMatriz {
   resposta: { texto: string };
 }
 
+/** Alocação v2 (0059): onde cada bem fica — só `celula` + `item`, nunca a categoria. */
+export interface AlocacaoParaSlide {
+  celula: string;
+  item: string;
+}
+
+/** Slide "economia" (Fase 4 §4.5): custo de não agir × custo da estrutura recomendada. `null` = falta número, nunca zero. */
+export interface EconomiaParaSlide {
+  custo_inventario: number | null;
+  custo_estrutura: number | null;
+  cenario_estrutura: string | null;
+  rubricas_ausentes: { inventario: number | null; estrutura: number | null };
+}
+
+/** Recorte dos gráficos que `GET /api/croquis/[id]?modo=apresentacao` devolve. */
+export interface GraficosParaApresentar {
+  criterios: CriterioParaMatriz[] | null;
+  recomendacao_arquitetura: string | null;
+  /** `null` = análise v1 (sem alocação) ou sem análise. */
+  alocacao: AlocacaoParaSlide[] | null;
+  economia: EconomiaParaSlide;
+  /** Cenário Patrimonial (0057) na forma de `DadosCenarioCroqui` (`components/croqui/GraficoDoSlide.tsx`). `null` = view ausente / sem cenário. */
+  cenario: {
+    cenarios: CenarioPatrimonial[];
+    rubricas: CenarioRubrica[];
+    totais: CenarioTotais[];
+    parametros: Record<string, ParametroMetodo>;
+  } | null;
+}
+
 export function buscarCroquiParaApresentar(id: string) {
-  return chamar<{
-    croqui: Croqui;
-    graficos: { criterios: CriterioParaMatriz[] | null; recomendacao_arquitetura: string | null };
-  }>(`/api/croquis/${id}?modo=apresentacao`);
+  return chamar<{ croqui: Croqui; graficos: GraficosParaApresentar }>(`/api/croquis/${id}?modo=apresentacao`);
 }
 export function criarCroqui(jornadaId: string, payload: { titulo: string; conteudo?: { slides: CroquiSlide[] } }) {
   return chamar<{ croqui: Croqui }>(`/api/croquis`, { method: "POST", body: JSON.stringify({ jornada_id: jornadaId, ...payload }) });
@@ -749,14 +784,6 @@ export function buscarIndicadores(edicaoId?: string) {
 /** ASSUMIDO — necessário para o filtro "responsável" (F2) mostrar nome, não uuid. */
 export function listarEquipe() {
   return chamarOpcional<{ itens: MembroEquipe[] }>("/api/equipe");
-}
-
-/** ASSUMIDO — F8 exige fila (pendentes/enviadas/falhas); §3 não lista rota de leitura. */
-export function listarMensagens(params: { status?: StatusMensagem; canal?: CanalMensagem } = {}) {
-  return chamarOpcional<{ itens: MensagemAgendada[] }>(`/api/mensagens${paraQueryString(params)}`);
-}
-export function marcarMensagemEnviada(id: string) {
-  return chamar<{ mensagem: MensagemAgendada }>(`/api/mensagens/${id}`, { method: "PATCH", body: JSON.stringify({ status: "enviada" }) });
 }
 
 export function vincularAuth() {

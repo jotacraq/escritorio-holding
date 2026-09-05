@@ -31,6 +31,19 @@ const VARIAVEIS = [
   "CRON_SECRET",
   "RESEND_API_KEY",
   "EMAIL_FROM",
+  "LINK_PUBLICO_PEPPER",
+  // Fase 4 · F2 — integrações (ARQUITETURA-FASE-4.md §12). Todas opcionais;
+  // ausência = comportamento manual rotulado, nunca falha silenciosa.
+  "N8N_WEBHOOK_LIGACAO_URL",
+  "LIGACAO_IA_WEBHOOK_SECRET",
+  "VAPI_ASSISTENTE_ID",
+  "N8N_WEBHOOK_SALA_URL",
+  "INTEGRACOES_WEBHOOK_SECRET",
+  "CHATWOOT_URL",
+  "CHATWOOT_ACCOUNT_ID",
+  "CHATWOOT_API_TOKEN",
+  "CHATWOOT_INBOX_ID",
+  "CHATWOOT_WEBHOOK_SECRET",
   "TZ",
 ] as const;
 

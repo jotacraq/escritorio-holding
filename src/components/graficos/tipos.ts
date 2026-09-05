@@ -13,6 +13,22 @@ export interface ItemFaltante {
   onde?: string;
 }
 
+/**
+ * Procedência de um valor do Cenário Patrimonial (0057, enum
+ * `procedencia_valor`): `digitado` pela advogada, `calculado` pelo trigger
+ * do banco (base × alíquota de `parametros_metodo`), `ausente`. A legenda
+ * dos gráficos usa GLIFO + texto — nunca só cor.
+ */
+export type ProcedenciaGrafico = "digitado" | "calculado" | "ausente";
+
+/** Contagem de rubricas por procedência — o que a legenda mostra. */
+export interface ResumoProcedencia {
+  digitado: number;
+  calculado: number;
+  ausente: number;
+  total: number;
+}
+
 /** Props comuns a todo componente desta pasta. */
 export interface GraficoBaseProps {
   /** Claro = Ficha 360 e impressão. Escuro = Modo Apresentação (fundo fixo

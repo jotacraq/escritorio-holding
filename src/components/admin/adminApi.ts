@@ -1,20 +1,14 @@
 /**
- * Camada de acesso às 21 rotas de `/api/admin/**` (B-2B, backend).
+ * Camada de acesso às rotas de `/api/admin/**` (B-2B + Fase 4).
  *
- * Isolada de propósito de `src/lib/api.ts` — aquele arquivo é fronteira de
- * outro agente (mesmo padrão já usado por `src/components/painel/usePainelDia.ts`).
- * `ApiError` é só importada (não editada) para reaproveitar o mesmo tratamento
- * de erro do resto do app em `<EstadoErro>`.
+ * Núcleo HTTP em `./http.ts` (compartilhado com a tela Comunicação). Aqui só
+ * vive o mapa rota → tipo. `ApiError` é importada de `src/lib/api.ts` (não
+ * editada) para reaproveitar o tratamento de erro do resto do app.
  *
- * Duas formas de chamar:
- *   - `chamar<T>`: lança `ApiError` em qualquer resposta não-2xx. Uso normal.
- *   - `chamarBruto<T>`: NUNCA lança por status HTTP (só por falha de rede).
- *     Só usada no fluxo de convite de equipe, onde um 503 é um resultado de
- *     NEGÓCIO esperado ("linha criada, e-mail indisponível" — CONFLITO C15),
- *     não uma falha a ser tratada como erro genérico.
+ * `chamarBruto` só aparece no convite de equipe, onde um 503 é resultado de
+ * NEGÓCIO esperado ("linha criada, e-mail indisponível" — CONFLITO C15).
  */
 
-import { ApiError } from "@/lib/api";
 import type {
   ConfiguracaoAdmin,
   CustoIaResposta,
@@ -28,55 +22,15 @@ import type {
   PromptVersaoResumo,
   ResultadoConviteEmail,
 } from "@/types/admin";
-
-interface CorpoErroApi {
-  erro?: string;
-  mensagem?: string;
-  detalhes?: unknown;
-}
-
-async function lerCorpo(resposta: Response): Promise<unknown> {
-  const texto = await resposta.text();
-  if (!texto) return null;
-  try {
-    return JSON.parse(texto);
-  } catch {
-    return null;
-  }
-}
-
-async function fazerRequisicao(caminho: string, init?: RequestInit): Promise<{ status: number; corpo: unknown }> {
-  let resposta: Response;
-  try {
-    resposta = await fetch(caminho, {
-      credentials: "include",
-      ...init,
-      headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
-        ...init?.headers,
-      },
-    });
-  } catch {
-    throw new ApiError("Sem conexão com o servidor. Verifique a rede e tente de novo.", 0, "rede");
-  }
-  const corpo = await lerCorpo(resposta);
-  return { status: resposta.status, corpo };
-}
-
-async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
-  const { status, corpo } = await fazerRequisicao(caminho, init);
-  if (status < 200 || status >= 300) {
-    const objeto = (corpo ?? {}) as CorpoErroApi;
-    const mensagem = objeto.mensagem || objeto.erro || `Falha na requisição (${status})`;
-    throw new ApiError(mensagem, status, objeto.erro);
-  }
-  return corpo as T;
-}
-
-async function chamarBruto<T>(caminho: string, init?: RequestInit): Promise<{ status: number; corpo: T | null }> {
-  const { status, corpo } = await fazerRequisicao(caminho, init);
-  return { status, corpo: corpo as T | null };
-}
+import type { ChaveIntegracao, RespostaIntegracoes, ResultadoTesteIntegracao } from "@/types/integracoes";
+import type { CorpoCriarParametro, ParametroMetodo, RespostaAdminParametros } from "@/types/cenario";
+import type {
+  CorpoCriarMaterialModelo,
+  CorpoEditarMaterialModelo,
+  RespostaListarMateriaisModelos,
+  RespostaMaterialModelo,
+} from "@/types/material";
+import { chamar, chamarBruto, erroDaResposta } from "./http";
 
 // ---------------------------------------------------------------------------
 // Equipe
@@ -110,10 +64,7 @@ export async function criarConviteEquipe(payload: { email: string; nome: string;
     }
   }
 
-  if (status < 200 || status >= 300) {
-    const objeto = (corpo ?? {}) as CorpoErroApi;
-    throw new ApiError(objeto.mensagem || objeto.erro || `Falha na requisição (${status})`, status, objeto.erro);
-  }
+  if (status < 200 || status >= 300) throw erroDaResposta(status, corpo);
 
   return { perfil: corpo!.perfil, convite: corpo!.convite ?? { enviado: true } };
 }
@@ -133,10 +84,7 @@ export async function reenviarConviteEquipe(id: string, perfilAtual: PerfilEquip
     return { perfil: corpo?.detalhes?.perfil ?? perfilAtual, convite: { enviado: false, motivo: "service_role_ausente" } };
   }
 
-  if (status < 200 || status >= 300) {
-    const objeto = (corpo ?? {}) as CorpoErroApi;
-    throw new ApiError(objeto.mensagem || objeto.erro || `Falha na requisição (${status})`, status, objeto.erro);
-  }
+  if (status < 200 || status >= 300) throw erroDaResposta(status, corpo);
 
   return { perfil: corpo?.perfil ?? perfilAtual, convite: corpo?.convite ?? { enviado: true } };
 }
@@ -149,11 +97,14 @@ export function listarProdutos() {
   return chamar<{ itens: ProdutoAdmin[] }>("/api/admin/produtos");
 }
 
-export function criarProduto(payload: { tipo: ProdutoAdmin["tipo"]; nome: string; hotmart_produto_id?: string | null }) {
+export function criarProduto(payload: { tipo: ProdutoAdmin["tipo"]; nome: string; hotmart_produto_id?: string | null; url_checkout?: string | null }) {
   return chamar<{ produto: ProdutoAdmin }>("/api/admin/produtos", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function atualizarProduto(id: string, patch: { nome?: string; hotmart_produto_id?: string | null; ativo?: boolean }) {
+export function atualizarProduto(
+  id: string,
+  patch: { nome?: string; hotmart_produto_id?: string | null; url_checkout?: string | null; ativo?: boolean },
+) {
   return chamar<{ produto: ProdutoAdmin }>(`/api/admin/produtos/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
@@ -260,4 +211,52 @@ export function reprocessarWebhook(id: string) {
 
 export function reenfileirarMensagem(id: string) {
   return chamar<{ mensagem: unknown }>(`/api/admin/mensagens/${id}/reenfileirar`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Integrações (Fase 4 §2.6) — estado por variável (só nomes) + "Testar"
+// ---------------------------------------------------------------------------
+
+export function listarIntegracoes() {
+  return chamar<RespostaIntegracoes>("/api/admin/integracoes");
+}
+
+export function testarIntegracao(chave: ChaveIntegracao) {
+  return chamar<ResultadoTesteIntegracao>(`/api/admin/integracoes/${chave}/testar`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Parâmetros do método (0056) — versionado; valor nunca é editado, só versão nova
+// ---------------------------------------------------------------------------
+
+export function listarParametros(filtro: { chave?: string; prefixo?: string } = {}) {
+  const query = new URLSearchParams();
+  if (filtro.chave) query.set("chave", filtro.chave);
+  if (filtro.prefixo) query.set("prefixo", filtro.prefixo);
+  const sufixo = query.toString();
+  return chamar<RespostaAdminParametros>(`/api/admin/parametros${sufixo ? `?${sufixo}` : ""}`);
+}
+
+export function criarParametro(corpo: CorpoCriarParametro) {
+  return chamar<{ parametro: ParametroMetodo }>("/api/admin/parametros", { method: "POST", body: JSON.stringify(corpo) });
+}
+
+export function ativarParametro(id: string) {
+  return chamar<{ parametro: ParametroMetodo }>(`/api/admin/parametros/${id}/ativar`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Modelos de material (0055) — catálogo por dor/arquétipo
+// ---------------------------------------------------------------------------
+
+export function listarMateriaisModelos() {
+  return chamar<RespostaListarMateriaisModelos>("/api/admin/materiais-modelos");
+}
+
+export function criarMaterialModeloVersao(corpo: CorpoCriarMaterialModelo) {
+  return chamar<RespostaMaterialModelo>("/api/admin/materiais-modelos", { method: "POST", body: JSON.stringify(corpo) });
+}
+
+export function editarMaterialModelo(id: string, patch: CorpoEditarMaterialModelo) {
+  return chamar<RespostaMaterialModelo>(`/api/admin/materiais-modelos/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }

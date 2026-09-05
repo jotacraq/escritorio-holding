@@ -16,7 +16,6 @@ import type {
   TipoLinkPublico,
 } from "@/types/publico";
 import type {
-  MaterialGeradoResumo,
   RespostaAprovarMaterial,
   RespostaGerarMaterial,
   RespostaListarMateriais,
@@ -33,7 +32,12 @@ export class ErroFicha360Api extends Error {
   }
 }
 
-async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
+/**
+ * Chamada JSON compartilhada pelos clientes `api-*.ts` desta pasta (Fase 4,
+ * agente H): mesmo tratamento de rede/erro para tarefas, ligação por IA,
+ * cenário, diagnóstico e PDF do material.
+ */
+export async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
   let resposta: Response;
   try {
     resposta = await fetch(caminho, {
@@ -111,8 +115,9 @@ export function gerarMaterial(jornadaId: string, forcarRegeracao = false): Promi
   });
 }
 
-export function aprovarMaterial(jornadaId: string, materialId: string): Promise<MaterialGeradoResumo> {
+/** Fase 4: a aprovação também gera o PDF — a resposta traz `material` + `pdf` (gerado | falhou | indisponivel). */
+export function aprovarMaterial(jornadaId: string, materialId: string): Promise<RespostaAprovarMaterial> {
   return chamar<RespostaAprovarMaterial>(`/api/jornadas/${jornadaId}/material/${materialId}/aprovar`, {
     method: "POST",
-  }).then((d) => d.material);
+  });
 }

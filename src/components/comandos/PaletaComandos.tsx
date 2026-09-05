@@ -1,24 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { listarJornadas, ApiError, type JornadaKanban } from "@/lib/api";
 import { ITENS_NAVEGACAO } from "@/components/shell/Nav";
 import { formatarCidadeUf } from "@/lib/formatar";
+import { useTema } from "@/hooks/useTema";
 
 /**
- * U7 — paleta de comandos (Ctrl+K / Cmd+K). "Buscar pessoa e pular para uma
- * tela sem navegar por menu" — é o que transforma "fácil de operar" em
- * verdade para quem usa o dia inteiro (arquitetura Fase 3, §5.3).
- *
- * Reusa `/api/jornadas` (via `listarJornadas`) — sem endpoint novo, como o
- * plano pede. Sem polling: a busca só dispara quando a pessoa digita, com
- * debounce e cancelamento da resposta anterior.
+ * U7 — paleta de comandos (Ctrl+K / Cmd+K): buscar um cliente e pular para
+ * uma tela sem navegar por menu. Três grupos: "Ir para" (telas, com a
+ * descrição de uma linha da navegação), "Clientes" (busca em `/api/jornadas`
+ * — sem endpoint novo, com debounce e cancelamento) e "Ações" (coisas que
+ * não são tela: tema, imprimir).
  */
 
 type Opcao =
-  | { tipo: "pagina"; id: string; rotulo: string; href: string }
-  | { tipo: "jornada"; id: string; rotulo: string; descricao: string; href: string };
+  | { tipo: "pagina"; id: string; rotulo: string; descricao: string; href: string }
+  | { tipo: "jornada"; id: string; rotulo: string; descricao: string; href: string }
+  | { tipo: "acao"; id: string; rotulo: string; descricao: string; executar: () => void };
 
 const MIN_CARACTERES_BUSCA_JORNADA = 2;
 const ATRASO_DEBOUNCE_MS = 250;
@@ -30,14 +30,8 @@ function normalizar(texto: string): string {
     .toLowerCase();
 }
 
-function paginasFiltradas(consulta: string): Opcao[] {
-  const alvo = normalizar(consulta.trim());
-  return ITENS_NAVEGACAO.filter((item) => !alvo || normalizar(item.rotulo).includes(alvo)).map((item) => ({
-    tipo: "pagina" as const,
-    id: item.href,
-    rotulo: item.rotulo,
-    href: item.href,
-  }));
+function contem(alvo: string, ...campos: string[]): boolean {
+  return !alvo || campos.some((c) => normalizar(c).includes(alvo));
 }
 
 function jornadaParaOpcao(j: JornadaKanban): Opcao {
@@ -45,8 +39,15 @@ function jornadaParaOpcao(j: JornadaKanban): Opcao {
   return { tipo: "jornada", id: j.id, rotulo: j.nome, descricao: detalhe || j.origem, href: `/jornadas/${j.id}` };
 }
 
+const ICONE: Record<Opcao["tipo"], ReactNode> = {
+  pagina: <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 14.5v-9ZM7 8h6M7 11h4" />,
+  jornada: <path d="M10 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 7a6 6 0 0 1 12 0" />,
+  acao: <path d="M11 3 5 11h4l-1 6 6-8h-4l1-6Z" />,
+};
+
 export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar: () => void }) {
   const router = useRouter();
+  const { tema, alternar } = useTema();
   const [consulta, setConsulta] = useState("");
   const [resultadosJornada, setResultadosJornada] = useState<Opcao[]>([]);
   const [buscando, setBuscando] = useState(false);
@@ -61,8 +62,6 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
   useEffect(() => {
     if (!aberta) return;
     focoAnteriorRef.current = document.activeElement as HTMLElement | null;
-    // Reseta o estado da busca sempre que a paleta abre — cada abertura é
-    // uma nova sessão de busca, não uma continuação da anterior.
     /* eslint-disable react-hooks/set-state-in-effect */
     setConsulta("");
     setResultadosJornada([]);
@@ -83,8 +82,6 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
     if (!aberta) return;
     const termo = consulta.trim();
     if (termo.length < MIN_CARACTERES_BUSCA_JORNADA) {
-      // Consulta curta demais para buscar — limpa o resultado anterior em
-      // vez de deixar uma lista de outra busca na tela.
       /* eslint-disable react-hooks/set-state-in-effect */
       setResultadosJornada([]);
       setBuscando(false);
@@ -105,7 +102,7 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
         .catch((e) => {
           if (!vivo) return;
           setResultadosJornada([]);
-          setErroBusca(e instanceof ApiError ? e.message : "Não foi possível buscar agora.");
+          setErroBusca(e instanceof ApiError ? e.message : "Não foi possível buscar agora. Tente de novo em instantes.");
         })
         .finally(() => {
           if (vivo) setBuscando(false);
@@ -117,11 +114,59 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
     };
   }, [consulta, aberta]);
 
-  const opcoesPagina = useMemo(() => paginasFiltradas(consulta), [consulta]);
-  const opcoes = useMemo(() => [...opcoesPagina, ...resultadosJornada], [opcoesPagina, resultadosJornada]);
+  const alvo = normalizar(consulta.trim());
+
+  const opcoesPagina = useMemo<Opcao[]>(
+    () =>
+      ITENS_NAVEGACAO.filter((item) => contem(alvo, item.rotulo, item.descricao, item.grupo)).map((item) => ({
+        tipo: "pagina" as const,
+        id: item.href,
+        rotulo: item.rotulo,
+        descricao: item.descricao,
+        href: item.href,
+      })),
+    [alvo],
+  );
+
+  const opcoesAcao = useMemo<Opcao[]>(() => {
+    const todas: Opcao[] = [
+      {
+        tipo: "acao",
+        id: "tema",
+        rotulo: tema === "escuro" ? "Usar tema claro" : "Usar tema escuro",
+        descricao: "Troca as cores do sistema inteiro.",
+        executar: alternar,
+      },
+      {
+        tipo: "acao",
+        id: "imprimir",
+        rotulo: "Imprimir esta tela",
+        descricao: "Abre a impressão do navegador (ou salvar em PDF).",
+        executar: () => window.print(),
+      },
+    ];
+    return todas.filter((a) => contem(alvo, a.rotulo, a.descricao, "tema", "imprimir", "pdf"));
+  }, [alvo, tema, alternar]);
+
+  const grupos = useMemo(
+    () =>
+      [
+        { rotulo: "Ir para", opcoes: opcoesPagina },
+        { rotulo: "Clientes", opcoes: resultadosJornada },
+        { rotulo: "Ações", opcoes: opcoesAcao },
+      ].filter((g) => g.opcoes.length > 0),
+    [opcoesPagina, resultadosJornada, opcoesAcao],
+  );
+  const opcoes = useMemo(() => grupos.flatMap((g) => g.opcoes), [grupos]);
 
   const ativar = useCallback(
     (opcao: Opcao) => {
+      if (opcao.tipo === "acao") {
+        aoFechar();
+        // Depois de fechar, para o foco voltar antes da ação (imprimir bloqueia).
+        window.setTimeout(opcao.executar, 0);
+        return;
+      }
       router.push(opcao.href);
       aoFechar();
     },
@@ -135,6 +180,12 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
     } else if (evento.key === "ArrowUp") {
       evento.preventDefault();
       setIndiceAtivo((i) => Math.max(i - 1, 0));
+    } else if (evento.key === "Home" && opcoes.length > 0) {
+      evento.preventDefault();
+      setIndiceAtivo(0);
+    } else if (evento.key === "End" && opcoes.length > 0) {
+      evento.preventDefault();
+      setIndiceAtivo(opcoes.length - 1);
     } else if (evento.key === "Enter") {
       evento.preventDefault();
       const opcao = opcoes[indiceAtivo];
@@ -166,12 +217,22 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
   if (!aberta) return null;
 
   const idAtivo = opcoes[indiceAtivo] ? `opcao-${opcoes[indiceAtivo].tipo}-${opcoes[indiceAtivo].id}` : undefined;
+  const termoLongo = consulta.trim().length >= MIN_CARACTERES_BUSCA_JORNADA;
+  let indiceGlobal = -1;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[12vh]" onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}>
-      <div role="dialog" aria-modal="true" aria-label="Paleta de comandos" className="w-full max-w-lg overflow-hidden rounded-sm border border-linha-forte bg-papel-elevado shadow-[var(--sombra-cartao)]">
-        <div className="flex items-center gap-2 border-b border-linha px-3.5 py-2.5">
-          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-current text-tinta-fraca">
+    <div
+      className="anim-esmaecer fixed inset-0 z-50 flex items-start justify-center bg-[color:var(--veu)] px-3 pt-[10vh] sm:px-4"
+      onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Buscar cliente ou tela"
+        className="anim-surgir flex w-full max-w-xl flex-col overflow-hidden rounded-cartao border border-linha bg-papel-elevado shadow-flutuante"
+      >
+        <div className="flex items-center gap-3 border-b border-linha px-4 py-2">
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 shrink-0 fill-current text-tinta-fraca">
             <path d="M8.5 3a5.5 5.5 0 1 0 3.42 9.83l3.63 3.62a1 1 0 0 0 1.41-1.41l-3.62-3.63A5.5 5.5 0 0 0 8.5 3Zm-3.5 5.5a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0Z" />
           </svg>
           <input
@@ -181,103 +242,112 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
             aria-controls="lista-paleta-comandos"
             aria-activedescendant={idAtivo}
             aria-autocomplete="list"
-            aria-label="Buscar pessoa, jornada ou tela"
+            aria-label="Buscar cliente, tela ou ação"
             value={consulta}
             onChange={(e) => {
               setConsulta(e.target.value);
               setIndiceAtivo(0);
             }}
             onKeyDown={aoTeclarInput}
-            placeholder="Buscar pessoa ou pular para uma tela…"
-            className="w-full bg-transparent text-sm text-tinta outline-none placeholder:text-tinta-fraca"
+            placeholder="Nome do cliente, tela ou ação…"
+            className="min-h-12 w-full bg-transparent text-corpo text-tinta outline-none placeholder:text-tinta-fraca"
           />
           <button
             ref={fecharRef}
             type="button"
             onClick={aoFechar}
             onKeyDown={aoTeclarFechar}
-            aria-label="Fechar paleta de comandos"
-            className="shrink-0 rounded-sm border border-linha-forte px-1.5 py-0.5 font-mono text-[11px] text-tinta-suave hover:text-tinta"
+            aria-label="Fechar"
+            className="flex h-11 min-w-11 shrink-0 items-center justify-center rounded-controle border border-linha-forte px-2 font-mono text-legenda text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
           >
             Esc
           </button>
         </div>
 
-        <ul id="lista-paleta-comandos" role="listbox" aria-label="Resultados" ref={listaRef} className="max-h-80 overflow-y-auto py-1.5">
-          {opcoesPagina.length > 0 && (
-            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-tinta-fraca">
-              Telas
-            </li>
-          )}
-          {opcoesPagina.map((opcao, i) => (
-            <li key={opcao.id}>
-              <button
-                type="button"
-                id={`opcao-${opcao.tipo}-${opcao.id}`}
-                role="option"
-                data-indice={i}
-                aria-selected={i === indiceAtivo}
-                onMouseEnter={() => setIndiceAtivo(i)}
-                onClick={() => ativar(opcao)}
-                className={`flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm ${i === indiceAtivo ? "bg-[color:var(--latao-fraco)] text-tinta" : "text-tinta"}`}
-              >
-                {opcao.rotulo}
-              </button>
+        <ul id="lista-paleta-comandos" role="listbox" aria-label="Resultados" ref={listaRef} className="max-h-[60vh] overflow-y-auto py-2">
+          {grupos.map((grupo) => (
+            <li key={grupo.rotulo} role="presentation">
+              <p className="px-4 pb-1 pt-3 text-rotulo font-medium uppercase text-tinta-fraca">{grupo.rotulo}</p>
+              <ul role="group" aria-label={grupo.rotulo}>
+                {grupo.opcoes.map((opcao) => {
+                  indiceGlobal += 1;
+                  const i = indiceGlobal;
+                  const selecionada = i === indiceAtivo;
+                  return (
+                    <li key={`${opcao.tipo}-${opcao.id}`}>
+                      <button
+                        type="button"
+                        id={`opcao-${opcao.tipo}-${opcao.id}`}
+                        role="option"
+                        data-indice={i}
+                        aria-selected={selecionada}
+                        onMouseEnter={() => setIndiceAtivo(i)}
+                        onClick={() => ativar(opcao)}
+                        className={`flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-colors duration-[var(--transicao-rapida)] ${
+                          selecionada ? "bg-latao-fraco text-tinta" : "text-tinta"
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${selecionada ? "bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)]" : "bg-papel text-tinta-suave"}`}
+                        >
+                          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                            {ICONE[opcao.tipo]}
+                          </svg>
+                        </span>
+                        <span className="flex min-w-0 flex-col">
+                          <span className="text-sm font-medium">{opcao.rotulo}</span>
+                          {opcao.descricao && <span className="truncate text-legenda text-tinta-suave">{opcao.descricao}</span>}
+                        </span>
+                        {selecionada && (
+                          <kbd aria-hidden="true" className="ml-auto rounded-md border border-linha-forte bg-papel-elevado px-1.5 py-0.5 font-mono text-legenda text-tinta-fraca">
+                            Enter
+                          </kbd>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </li>
           ))}
 
-          {(resultadosJornada.length > 0 || buscando || erroBusca || consulta.trim().length >= MIN_CARACTERES_BUSCA_JORNADA) && (
-            <li role="presentation" className="px-3.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-tinta-fraca">
-              Pessoas e jornadas
-            </li>
-          )}
-          {resultadosJornada.map((opcao, i) => {
-            const indiceGlobal = opcoesPagina.length + i;
-            return (
-              <li key={opcao.id}>
-                <button
-                  type="button"
-                  id={`opcao-${opcao.tipo}-${opcao.id}`}
-                  role="option"
-                  data-indice={indiceGlobal}
-                  aria-selected={indiceGlobal === indiceAtivo}
-                  onMouseEnter={() => setIndiceAtivo(indiceGlobal)}
-                  onClick={() => ativar(opcao)}
-                  className={`flex w-full flex-col items-start gap-0.5 px-3.5 py-2 text-left text-sm ${indiceGlobal === indiceAtivo ? "bg-[color:var(--latao-fraco)] text-tinta" : "text-tinta"}`}
-                >
-                  <span>{opcao.rotulo}</span>
-                  {opcao.tipo === "jornada" && opcao.descricao && <span className="text-xs text-tinta-fraca">{opcao.descricao}</span>}
-                </button>
-              </li>
-            );
-          })}
-
           {buscando && (
-            <li role="presentation" className="px-3.5 py-2.5 text-sm text-tinta-fraca">
-              Buscando…
+            <li role="presentation" className="flex items-center gap-2 px-4 py-3 text-sm text-tinta-suave">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-linha-forte border-t-[color:var(--latao-cta)]" aria-hidden="true" />
+              Buscando clientes…
             </li>
           )}
           {!buscando && erroBusca && (
-            <li role="presentation" className="px-3.5 py-2.5 text-sm text-[color:var(--vermelho)]">
+            <li role="presentation" className="px-4 py-3 text-sm text-[color:var(--vermelho)]">
               {erroBusca}
             </li>
           )}
-          {!buscando && !erroBusca && opcoes.length === 0 && consulta.trim().length > 0 && (
-            <li role="presentation" className="px-3.5 py-2.5 text-sm text-tinta-fraca">
-              Nada encontrado para &ldquo;{consulta.trim()}&rdquo;.
+          {!buscando && !erroBusca && termoLongo && resultadosJornada.length === 0 && (
+            <li role="presentation" className="px-4 py-3 text-sm text-tinta-suave">
+              Nenhum cliente com &ldquo;{consulta.trim()}&rdquo;. Confira a grafia ou procure pelo primeiro nome.
+            </li>
+          )}
+          {!termoLongo && consulta.trim().length === 0 && (
+            <li role="presentation" className="px-4 pb-1 pt-3 text-xs text-tinta-fraca">
+              Digite ao menos 2 letras para buscar um cliente.
             </li>
           )}
         </ul>
 
-        <div className="flex items-center gap-3 border-t border-linha px-3.5 py-2 text-[11px] text-tinta-fraca">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-linha bg-papel px-4 py-2.5 text-legenda text-tinta-suave">
           <span className="flex items-center gap-1">
-            <kbd className="rounded-sm border border-linha-forte bg-papel px-1.5 py-0.5 font-mono">↑</kbd>
-            <kbd className="rounded-sm border border-linha-forte bg-papel px-1.5 py-0.5 font-mono">↓</kbd>
-            navega
+            <kbd className="rounded-md border border-linha-forte bg-papel-elevado px-1.5 py-0.5 font-mono">↑</kbd>
+            <kbd className="rounded-md border border-linha-forte bg-papel-elevado px-1.5 py-0.5 font-mono">↓</kbd>
+            escolher
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded-sm border border-linha-forte bg-papel px-1.5 py-0.5 font-mono">Enter</kbd>
-            abre
+            <kbd className="rounded-md border border-linha-forte bg-papel-elevado px-1.5 py-0.5 font-mono">Enter</kbd>
+            abrir
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-md border border-linha-forte bg-papel-elevado px-1.5 py-0.5 font-mono">Esc</kbd>
+            fechar
           </span>
         </div>
       </div>

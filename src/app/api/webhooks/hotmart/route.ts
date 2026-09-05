@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { registrarErro } from "@/server/erros";
+import { processarEventoHotmart, type PayloadHotmart } from "@/server/pagamentos/hotmart";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,47 +33,20 @@ function segredosIguais(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-type StatusPagamento = "pendente" | "em_analise" | "aprovado" | "cancelado" | "estornado" | "reembolsado";
-
-/**
- * Mapeamento best-effort do status de compra da Hotmart. Os valores exatos
- * dependem da versão/contrato do webhook contratado — BLOQUEIO B7 do plano.
- * Nunca assume "aprovado" por default: status desconhecido cai em 'em_analise'.
- */
-function mapearStatusHotmart(statusBruto: string | undefined): StatusPagamento {
-  const status = (statusBruto ?? "").toUpperCase();
-  if (status === "APPROVED" || status === "COMPLETE" || status === "COMPLETED") return "aprovado";
-  if (status === "CANCELLED" || status === "CANCELED" || status === "EXPIRED") return "cancelado";
-  if (status === "REFUNDED") return "reembolsado";
-  if (status === "CHARGEBACK" || status === "DISPUTE") return "estornado";
-  if (status === "BILLET_PRINTED" || status === "STARTED" || status === "PRE_ORDER" || status === "PROCESSING_TRANSACTION") {
-    return "pendente";
-  }
-  return "em_analise";
-}
-
-interface PayloadHotmart {
-  id?: string;
-  event?: string;
-  data?: {
-    purchase?: {
-      transaction?: string;
-      status?: string;
-      price?: { value?: number; currency_value?: string };
-      payment?: { installments_number?: number };
-      approved_date?: number;
-      order_date?: number;
-    };
-    product?: { id?: number | string };
-    buyer?: { email?: string; name?: string; checkout_phone?: string };
-  };
-}
-
 /**
  * POST /api/webhooks/hotmart — contrato de segurança do ARQUITETURA.md §3.1.
  * Ordem obrigatória: fail-closed de secret -> comparação em tempo constante ->
  * persistir bruto primeiro (idempotência por evento_externo_id) -> processar em
  * transação (função de banco) -> nunca 200 em erro real de processamento.
+ *
+ * Fase 4 (§1.5): o miolo vive em `processarEventoHotmart` (compartilhado com o
+ * botão de Admin) e a REENTREGA passa a olhar `processado_em`:
+ *   linha nova                          → processa
+ *   linha existente, processado_em null → processa de novo (mesmo bruto já gravado)
+ *   linha existente, já processada      → 200 {reentrega:true}, nada é tocado
+ *   linha existente com assinatura inválida + entrega VÁLIDA agora → a válida
+ *   substitui o bruto e processa (uma tentativa forjada com o mesmo id não
+ *   pode "ocupar" o evento e esconder a venda real).
  */
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "desconhecido";
@@ -97,7 +71,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ erro: "payload_muito_grande" }, { status: 413 });
   }
 
-  const supabaseAdmin = criarClienteAdmin();
+  let supabaseAdmin;
+  try {
+    supabaseAdmin = criarClienteAdmin();
+  } catch (erro) {
+    registrarErro("POST /api/webhooks/hotmart#service_role", erro);
+    return NextResponse.json({ erro: "servico_indisponivel" }, { status: 503 });
+  }
 
   // Passo 2 — comparação em tempo constante do hottok.
   const hottokRecebido = request.headers.get("x-hotmart-hottok") ?? "";
@@ -117,18 +97,23 @@ export async function POST(request: NextRequest) {
 
   if (!assinaturaValida) {
     // Grava mesmo assim: tentativa inválida é sinal de segurança, não descartar.
-    await supabaseAdmin.from("webhooks_eventos").insert({
-      origem: "hotmart",
-      evento_externo_id: eventoExternoId,
-      tipo_evento: payload.event ?? null,
-      assinatura_valida: false,
-      bruto: payload,
-    });
+    // `upsert` com ignoreDuplicates: um id já existente (válido ou não) não é
+    // sobrescrito por uma tentativa inválida.
+    await supabaseAdmin.from("webhooks_eventos").upsert(
+      {
+        origem: "hotmart",
+        evento_externo_id: eventoExternoId,
+        tipo_evento: payload.event ?? null,
+        assinatura_valida: false,
+        bruto: payload,
+      },
+      { onConflict: "origem,evento_externo_id", ignoreDuplicates: true },
+    );
     return NextResponse.json({ erro: "nao_autorizado" }, { status: 401 });
   }
 
   // Passo 3 — persistir o bruto primeiro. Idempotência é do banco (constraint
-  // unique), não de cache em memória. Reentrega -> 200 imediato, sem reprocessar.
+  // unique), não de cache em memória.
   const { data: linhaInserida, error: erroInsercao } = await supabaseAdmin
     .from("webhooks_eventos")
     .upsert(
@@ -149,103 +134,70 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ erro: "falha_ao_persistir" }, { status: 500 });
   }
 
-  if (!linhaInserida) {
-    // Já existia: reentrega da Hotmart. Idempotente — nada a reprocessar.
-    return NextResponse.json({ recebido: true, reentrega: true }, { status: 200 });
-  }
+  let webhookEventoId: string;
+  let reentrega = false;
 
-  const webhookEventoId = linhaInserida.id as string;
-  const purchase = payload.data?.purchase;
-  const produto = payload.data?.product;
-  const buyer = payload.data?.buyer;
-
-  if (!purchase) {
-    // Evento sem dados de compra (ex.: outro tipo de notificação): registrado,
-    // nada a processar.
-    await supabaseAdmin
+  if (linhaInserida) {
+    webhookEventoId = linhaInserida.id as string;
+  } else {
+    // Já existia: reentrega da Hotmart (ou id já ocupado por tentativa inválida).
+    const { data: existente, error: erroExistente } = await supabaseAdmin
       .from("webhooks_eventos")
-      .update({ processado_em: new Date().toISOString() })
-      .eq("id", webhookEventoId);
-    return NextResponse.json({ recebido: true }, { status: 200 });
-  }
+      .select("id, processado_em, assinatura_valida")
+      .eq("origem", "hotmart")
+      .eq("evento_externo_id", eventoExternoId)
+      .maybeSingle<{ id: string; processado_em: string | null; assinatura_valida: boolean }>();
 
-  const statusPagamento = mapearStatusHotmart(purchase.status);
-  const pagoEm = purchase.approved_date
-    ? new Date(purchase.approved_date).toISOString()
-    : purchase.order_date
-      ? new Date(purchase.order_date).toISOString()
-      : null;
+    if (erroExistente || !existente) {
+      registrarErro("POST /api/webhooks/hotmart#ler_existente", erroExistente ?? new Error("linha sumiu"));
+      return NextResponse.json({ erro: "falha_ao_persistir" }, { status: 500 });
+    }
+
+    if (existente.processado_em && existente.assinatura_valida) {
+      // Idempotente — nada a reprocessar, nada é tocado.
+      return NextResponse.json({ recebido: true, reentrega: true }, { status: 200 });
+    }
+
+    if (!existente.assinatura_valida) {
+      // Entrega VÁLIDA de um id que só tinha tentativa inválida: a válida manda.
+      const { error: erroSubstituir } = await supabaseAdmin
+        .from("webhooks_eventos")
+        .update({ assinatura_valida: true, bruto: payload, tipo_evento: payload.event ?? null, erro: null, processado_em: null })
+        .eq("id", existente.id);
+      if (erroSubstituir) {
+        registrarErro("POST /api/webhooks/hotmart#substituir_invalido", erroSubstituir, { webhook_evento_id: existente.id });
+        return NextResponse.json({ erro: "falha_ao_persistir" }, { status: 500 });
+      }
+    }
+
+    webhookEventoId = existente.id;
+    reentrega = true;
+  }
 
   try {
-    // Passo 4 — processar em transação (função de banco, ver 0011).
-    const { data: resultado, error: erroProcessamento } = await supabaseAdmin
-      .rpc("processar_pagamento_hotmart", {
-        p_hotmart_produto_id: produto?.id != null ? String(produto.id) : null,
-        p_transacao_externa_id: purchase.transaction ?? eventoExternoId,
-        p_status: statusPagamento,
-        p_valor: purchase.price?.value ?? null,
-        p_moeda: purchase.price?.currency_value ?? "BRL",
-        p_parcelas: purchase.payment?.installments_number ?? null,
-        p_comprador_email: buyer?.email ?? null,
-        p_comprador_nome: buyer?.name ?? null,
-        p_comprador_telefone: buyer?.checkout_phone ?? null,
-        p_pago_em: pagoEm,
-        p_bruto: payload,
-      })
-      .single<{
-        pagamento_id: string | null;
-        jornada_id: string | null;
-        produto_mapeado: boolean;
-        etapa_avancada: boolean;
-        observacao: string | null;
-      }>();
+    const resultado = await processarEventoHotmart(supabaseAdmin, webhookEventoId);
 
-    if (erroProcessamento) {
-      throw new Error(erroProcessamento.message);
+    switch (resultado.tipo) {
+      case "sem_compra":
+        return NextResponse.json({ recebido: true, reentrega }, { status: 200 });
+      case "produto_nao_mapeado":
+        // Passo 6 — produto desconhecido: 200, marcado para a tela de pendências.
+        return NextResponse.json({ recebido: true, reentrega, produto_nao_mapeado: true }, { status: 200 });
+      case "pagamento_nao_registrado":
+        // Dinheiro sem registro: 500 para a Hotmart reentregar; fica bem visível
+        // (`processado_em` continua nulo → pendência `webhook_falho`).
+        return NextResponse.json({ erro: "falha_ao_registrar_pagamento" }, { status: 500 });
+      case "processado":
+        return NextResponse.json({ recebido: true, reentrega, pagamento_id: resultado.pagamento_id }, { status: 200 });
+      case "ja_processado":
+        return NextResponse.json({ recebido: true, reentrega: true }, { status: 200 });
+      case "assinatura_invalida":
+        return NextResponse.json({ erro: "nao_autorizado" }, { status: 401 });
     }
-
-    // Passo 6 — produto desconhecido: 200, marcado para a tela de pendências.
-    if (!resultado?.produto_mapeado) {
-      await supabaseAdmin
-        .from("webhooks_eventos")
-        .update({ erro: "produto_nao_mapeado", processado_em: new Date().toISOString() })
-        .eq("id", webhookEventoId);
-      return NextResponse.json({ recebido: true, produto_nao_mapeado: true }, { status: 200 });
-    }
-
-    // Pagamento não foi possível registrar (rede de segurança da trava de piso
-    // cross-migration — ver comentário na função). Isto é crítico: dinheiro sem
-    // registro. Responde 500 para a Hotmart reentregar e fica bem visível.
-    if (!resultado.pagamento_id) {
-      await supabaseAdmin
-        .from("webhooks_eventos")
-        .update({
-          erro: resultado.observacao ?? "pagamento_nao_registrado",
-          tentativas: 1,
-        })
-        .eq("id", webhookEventoId);
-      registrarErro("POST /api/webhooks/hotmart#pagamento_nao_registrado", new Error(resultado.observacao ?? "sem observacao"), { webhook_evento_id: webhookEventoId });
-      return NextResponse.json({ erro: "falha_ao_registrar_pagamento" }, { status: 500 });
-    }
-
-    await supabaseAdmin
-      .from("webhooks_eventos")
-      .update({
-        erro: resultado.observacao,
-        processado_em: new Date().toISOString(),
-      })
-      .eq("id", webhookEventoId);
-
-    return NextResponse.json({ recebido: true, pagamento_id: resultado.pagamento_id }, { status: 200 });
   } catch (erro) {
     // Passo 5 — erro no processamento: 500 (bruto já salvo, a Hotmart reentrega
     // e a idempotência do passo 3 protege). Nunca engolir erro devolvendo 200.
-    const mensagem = erro instanceof Error ? erro.message : String(erro);
     registrarErro("POST /api/webhooks/hotmart#processar", erro, { webhook_evento_id: webhookEventoId });
-    await supabaseAdmin
-      .from("webhooks_eventos")
-      .update({ erro: mensagem })
-      .eq("id", webhookEventoId);
     return NextResponse.json({ erro: "falha_ao_processar" }, { status: 500 });
   }
 }

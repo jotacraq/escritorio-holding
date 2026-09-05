@@ -9,8 +9,8 @@ import { Selo, SeloDadoExemplo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { objecaoPrincipal } from "@/components/briefing/atomos";
 import { rotularDisc } from "@/components/briefing/tipos";
-import { derivarPasta } from "@/lib/pasta/derivar";
-import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
+import { ROTULO_DONO, derivarProximoPasso, hrefDoPasso } from "@/lib/pasta/proximo-passo";
+import { sinaisDaFicha } from "@/lib/pasta/sinais";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 
 const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
@@ -66,13 +66,12 @@ function FaixaVital({
   const { jornada, familiares } = ficha;
   const objecao = objecaoPrincipal(briefing?.conteudo.objecoes_provaveis);
   const disc = briefing?.conteudo.perfil_disc;
-  // Chip "Próxima ação" lê da Pasta do Cliente (14 itens, 4 estados) em vez
-  // de `calcularPendencias` (5 itens fixos) — primeiro item com estado
-  // `falta`. `ChecklistPendencias` (fora deste componente, em
-  // `jornadas/[id]/page.tsx`) continua na fonte antiga — migração dele é
-  // Fase 2 do plano ("A Pasta do Cliente").
-  const pasta = derivarPasta(ficha, podeVerPatrimonio);
-  const proximaAcaoPasta = pasta.find((item) => item.estado === "falta") ?? null;
+  // "Próxima ação" vem da MESMA função pura que alimenta a Esteira, o Painel
+  // e a Agenda (`derivarProximoPasso` sobre `sinaisDaFicha`) — Fase 4 §6:
+  // uma fonte só para "próximo passo e de quem é". Antes esta faixa derivava
+  // da Pasta (primeiro item `falta`) e podia discordar do kanban; e
+  // `derivarPasta` rodava duas vezes por render (aqui e em `page.tsx`).
+  const proximo = derivarProximoPasso(sinaisDaFicha(ficha));
 
   const itens: ItemFaixa[] = [{ rotulo: "Etapa", valor: rotuloEtapa }];
 
@@ -100,30 +99,28 @@ function FaixaVital({
   }
   itens.push({
     rotulo: "Próxima ação",
-    valor: proximaAcaoPasta ? ACAO_POR_ITEM_PASTA[proximaAcaoPasta.chave] : "Nenhuma pendência",
-    ...(proximaAcaoPasta && ITENS_EM_GAVETA.has(proximaAcaoPasta.chave)
-      ? { onClick: () => aoAbrirGaveta(proximaAcaoPasta.chave) }
-      : { href: proximaAcaoPasta ? `#${ABA_POR_ITEM_PASTA[proximaAcaoPasta.chave]}` : undefined }),
+    valor: proximo.dono === "ninguem" ? proximo.passo : `${proximo.passo} · ${ROTULO_DONO[proximo.dono]}`,
+    href: proximo.rota ? hrefDoPasso(jornada.id, proximo) : undefined,
   });
 
   return (
-    <dl className="nao-imprimir sticky top-0 z-20 flex flex-wrap items-baseline gap-x-5 gap-y-1.5 rounded-sm border border-linha-forte bg-papel-elevado px-3.5 py-2 text-xs shadow-[var(--sombra-cartao)] sm:text-[13px]">
+    <dl className="nao-imprimir sticky top-0 z-20 flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3.5 py-2.5 text-xs shadow-[var(--sombra-cartao)]">
       {itens.map((item) => (
-        <div key={item.rotulo} className="flex items-baseline gap-1.5">
+        <div key={item.rotulo} className="flex items-center gap-1.5">
           <dt className="text-tinta-fraca">{item.rotulo}</dt>
           <dd>
             {item.onClick ? (
               <button
                 type="button"
                 onClick={item.onClick}
-                className="rounded-sm font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
+                className="-my-2 inline-flex min-h-11 items-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
               >
                 {item.valor}
               </button>
             ) : item.href ? (
               <a
                 href={item.href}
-                className="rounded-sm font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
+                className="-my-2 inline-flex min-h-11 items-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]"
               >
                 {item.valor}
               </a>
@@ -199,7 +196,7 @@ export function CabecalhoFicha({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-serif text-2xl font-bold text-tinta">{pessoa.nome}</h1>
+            <h1 className="text-2xl font-bold text-tinta">{pessoa.nome}</h1>
             {jornada.origem_dado === "exemplo" && <SeloDadoExemplo />}
           </div>
           <p className="text-sm text-tinta-suave">
@@ -215,7 +212,7 @@ export function CabecalhoFicha({
           <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
           <Link
             href={`/sessoes/${jornada.id}/conduzir`}
-            className="nao-imprimir inline-flex items-center justify-center gap-1.5 rounded-full border border-transparent bg-[color:var(--latao-cta)] px-3.5 py-2 text-sm font-medium text-[color:var(--latao-cta-texto)] shadow-[0_3px_0_0_var(--latao-cta-forte)] transition-colors hover:bg-[color:var(--latao-cta-forte)] hover:shadow-none active:translate-y-[1px] active:shadow-none"
+            className="nao-imprimir inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-transparent bg-[color:var(--latao-cta)] px-3.5 py-2 text-sm font-medium text-[color:var(--latao-cta-texto)] shadow-[0_3px_0_0_var(--latao-cta-forte)] transition-colors hover:bg-[color:var(--latao-cta-forte)] hover:shadow-none active:translate-y-[1px] active:shadow-none"
           >
             Conduzir sessão
           </Link>
@@ -227,10 +224,10 @@ export function CabecalhoFicha({
             // "Ver e explicar" é a leitura contínua com notas visíveis,
             // dentro do shell normal, para a advogada estudar o croqui
             // sozinha ou explicar num formato de documento.
-            <div className="nao-imprimir inline-flex overflow-hidden rounded-sm border border-linha-forte">
+            <div className="nao-imprimir inline-flex overflow-hidden rounded-controle border border-linha-forte">
               <Link
                 href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/apresentar`}
-                className="inline-flex items-center justify-center gap-1.5 bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
               >
                 Apresentar
                 {croquiAtalho.pendentes > 0 && (
@@ -239,7 +236,7 @@ export function CabecalhoFicha({
               </Link>
               <Link
                 href={`/jornadas/${jornada.id}/croqui/${croquiAtalho.croquiId}/ver`}
-                className="inline-flex items-center justify-center gap-1.5 border-l border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 border-l border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors hover:bg-papel-fundo"
               >
                 Ver e explicar
               </Link>
@@ -249,6 +246,7 @@ export function CabecalhoFicha({
       </div>
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+        {/* `min-w-0` + `break-all`: e-mail longo quebrava a grade e criava rolagem horizontal na Ficha inteira (medido a 1280px). */}
         <div>
           <dt className="text-tinta-fraca">Origem</dt>
           <dd className="text-tinta">
@@ -270,12 +268,12 @@ export function CabecalhoFicha({
         </div>
         <div>
           <dt className="text-tinta-fraca">E-mail</dt>
-          <dd className="text-tinta">{pessoa.email ?? "—"}</dd>
+          <dd className="min-w-0 break-all text-tinta">{pessoa.email ?? "—"}</dd>
         </div>
       </dl>
 
       {jornada.motivo_desfecho && jornada.desfecho !== "aberta" && (
-        <p className="rounded-sm bg-papel-fundo px-3 py-2 text-sm text-tinta-suave">
+        <p className="rounded-controle bg-papel-fundo px-3 py-2 text-sm text-tinta-suave">
           <span className="font-medium text-tinta">Motivo do desfecho: </span>
           {jornada.motivo_desfecho}
         </p>
@@ -283,12 +281,12 @@ export function CabecalhoFicha({
 
       {!editandoDesfecho ? (
         <div className="nao-imprimir">
-          <Botao variante="fantasma" className="px-2 py-1 text-xs" onClick={() => setEditandoDesfecho(true)}>
+          <Botao variante="fantasma" tamanho="compacto" onClick={() => setEditandoDesfecho(true)}>
             Alterar desfecho
           </Botao>
         </div>
       ) : (
-        <div className="nao-imprimir flex flex-col gap-2 rounded-sm border border-linha bg-papel-fundo p-3">
+        <div className="nao-imprimir flex flex-col gap-2 rounded-controle border border-linha bg-papel-fundo p-3">
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor="novo-desfecho" className="text-xs font-medium text-tinta-suave">
               Novo desfecho
@@ -297,7 +295,7 @@ export function CabecalhoFicha({
               id="novo-desfecho"
               value={novoDesfecho}
               onChange={(e) => setNovoDesfecho(e.target.value as DesfechoJornada)}
-              className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1 text-sm"
+              className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1 text-sm"
             >
               {Object.entries(ROTULOS_DESFECHO).map(([valor, info]) => (
                 <option key={valor} value={valor}>
@@ -312,7 +310,7 @@ export function CabecalhoFicha({
               onChange={(e) => setMotivo(e.target.value)}
               placeholder="Motivo (obrigatório)"
               rows={2}
-              className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5 text-sm"
+              className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5 text-sm"
             />
           )}
           {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}

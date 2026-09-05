@@ -50,6 +50,8 @@ export interface ProdutoAdmin {
   tipo: ProdutoTipo;
   nome: string;
   hotmart_produto_id: string | null;
+  /** Link de pagamento (só https) — 0051. `null` = a tarefa "enviar link do croqui" sai sem link. */
+  url_checkout: string | null;
   ativo: boolean;
   criado_em: string;
 }
@@ -107,7 +109,22 @@ export type ConfiguracaoChave =
   | "ia.cooldown_segundos"
   | "ia.teto_execucoes_dia_por_usuario"
   | "agenda.duracao_padrao_minutos"
-  | "agenda.slots_ofertados_ao_cliente";
+  | "agenda.slots_ofertados_ao_cliente"
+  // Fase 4 (0049, 0052–0057): toggles de integração e do método. Todas nascem por migration.
+  | "croqui.exige_revisao_para_pronto"
+  | "sala.provedor"
+  | "regua.canal_whatsapp"
+  | "ligacao_ia.provedor"
+  | "ligacao_ia.automatica"
+  | "ligacao_ia.max_tentativas"
+  | "ligacao_ia.intervalo_retentativa_minutos"
+  | "ligacao_ia.timeout_minutos"
+  | "material.anexar_pdf"
+  | "material.rodape_juridico"
+  | "cenario.rubricas";
+
+/** Chaves que só o sistema escreve (cron, jobs). A tela mostra, nunca edita. */
+export type ConfiguracaoChaveSomenteLeitura = "regua.ultimo_cron_em";
 
 export interface ConfiguracaoAdmin<T = unknown> {
   chave: string;
@@ -175,16 +192,29 @@ export interface CustoIaResposta {
 // Pendências — Admin consome `vw_pendencias_sistema` (0034, B-1B), não duplica.
 // ---------------------------------------------------------------------------
 
-export type TipoPendenciaSistema = "webhook_falho" | "mensagem_falhou" | "link_expirando";
+/**
+ * Tipos de `vw_pendencias_sistema`: 0031 (3 primeiros), 0052 (`sessao_sem_sala`,
+ * `cron_parado`), 0053 (`ligacao_ia_falhou`). Tipo novo vindo do banco nunca
+ * derruba a aba: a tela rotula o que conhece e humaniza o resto.
+ */
+export type TipoPendenciaSistema =
+  | "webhook_falho"
+  | "mensagem_falhou"
+  | "link_expirando"
+  | "material_aguardando_aprovacao"
+  | "sessao_sem_sala"
+  | "cron_parado"
+  | "ligacao_ia_falhou";
 
 export interface PendenciaSistema {
   id: string;
-  tipo: TipoPendenciaSistema;
+  tipo: TipoPendenciaSistema | (string & {});
   titulo: string;
-  descricao: string;
+  descricao: string | null;
   jornada_id: string | null;
   pessoa_nome: string | null;
-  ocorrido_em: string;
+  /** `null` em `cron_parado` quando o cron nunca rodou. */
+  ocorrido_em: string | null;
 }
 
 /**

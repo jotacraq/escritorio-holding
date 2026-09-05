@@ -76,13 +76,13 @@ export function DocumentosAba({
 
   return (
     <div className="flex flex-col gap-5">
-      <p role="note" className="rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-xs text-tinta-suave">
+      <p role="note" className="rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-xs text-tinta-suave">
         Documento com dado pessoal sensível (IR, contrato social). Fica em armazenamento privado; a visualização usa link assinado de 5 minutos, e todo acesso é registrado.
       </p>
 
       <div className="flex flex-col gap-2">
         <label htmlFor="tipo-documento" className="text-sm font-medium text-tinta">Tipo de documento a enviar</label>
-        <select id="tipo-documento" value={tipoSelecionado} onChange={(e) => setTipoSelecionado(e.target.value as Documento["tipo"])} className="w-fit rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm">
+        <select id="tipo-documento" value={tipoSelecionado} onChange={(e) => setTipoSelecionado(e.target.value as Documento["tipo"])} className="w-fit rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm">
           {Object.entries(ROTULOS_TIPO).map(([v, r]) => (
             <option key={v} value={v}>{r}</option>
           ))}
@@ -92,7 +92,7 @@ export function DocumentosAba({
           onDragOver={(e) => { e.preventDefault(); setArrastandoSobre(true); }}
           onDragLeave={() => setArrastandoSobre(false)}
           onDrop={(e) => { e.preventDefault(); setArrastandoSobre(false); processarArquivo(e.dataTransfer.files[0]); }}
-          className={`flex flex-col items-center gap-2 rounded-sm border-2 border-dashed px-6 py-8 text-center text-sm ${arrastandoSobre ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)]" : "border-linha-forte text-tinta-suave"}`}
+          className={`flex flex-col items-center gap-2 rounded-controle border-2 border-dashed px-6 py-8 text-center text-sm ${arrastandoSobre ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)]" : "border-linha-forte text-tinta-suave"}`}
         >
           <p>Arraste o arquivo aqui, ou</p>
           <Botao variante="secundario" onClick={() => inputRef.current?.click()}>Escolher arquivo</Botao>
@@ -113,7 +113,7 @@ export function DocumentosAba({
       ) : (
         <ul className="flex flex-col gap-2">
           {documentosIniciais.map((doc) => (
-            <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-sm">
+            <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-sm">
               <div>
                 <p className="font-medium text-tinta">{doc.nome_arquivo}</p>
                 <p className="text-xs text-tinta-fraca">{ROTULOS_TIPO[doc.tipo]} · {formatarTamanho(doc.tamanho_bytes)} · enviado em {formatarDataHora(doc.criado_em)}</p>

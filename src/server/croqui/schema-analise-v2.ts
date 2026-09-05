@@ -51,11 +51,32 @@ export const AlocacaoItemSchema = z.object({
 });
 export type AlocacaoItem = z.infer<typeof AlocacaoItemSchema>;
 
+/**
+ * NOVO na v2 (ARQUITETURA-FASE-4.md §4.4): afirmação de patrimônio com o
+ * valor DECLARADO pelo cliente na transcrição — número só quando o cliente
+ * disse um número; senão `null`. A IA não calcula nem estima: é extração de
+ * fato declarado, carimbada como tal. Na tela vira o botão "usar como valor
+ * de mercado deste bem", que grava em `patrimonio_itens.valor_mercado` com
+ * `origem_valor='transcricao'` (0059) por ação HUMANA, nunca automaticamente.
+ *
+ * `.nullable()` vira `type:[number,null]` na gramática — é o motivo de a v2
+ * nascer inativa e passar pela sonda (`chave: 'croqui_v2'`) antes.
+ * `.default(null)`: o campo continua OBRIGATÓRIO no JSON Schema enviado ao
+ * modelo (`required`), mas um conteúdo v2 gravado sem ele (fixtures/testes
+ * anteriores a este campo) ainda valida — `parse` preenche `null`, que é
+ * exatamente "não declarou". A chave `default` é removida do schema estrito
+ * por `json-schema-estrito.ts`.
+ */
+export const AfirmacaoPatrimonioSchema = AfirmacaoSchema.extend({
+  valor_declarado: z.number().nullable().default(null),
+});
+export type AfirmacaoPatrimonio = z.infer<typeof AfirmacaoPatrimonioSchema>;
+
 export const CroquiAnaliseV2Schema = z.object({
   resumo_executivo: z.string(),
   historia: z.array(AfirmacaoSchema),
   familia: z.array(AfirmacaoSchema),
-  patrimonio: z.array(AfirmacaoSchema),
+  patrimonio: z.array(AfirmacaoPatrimonioSchema),
   empresas: z.array(AfirmacaoSchema),
   objetivos: z.array(AfirmacaoSchema),
   riscos: z.array(AfirmacaoSchema),
@@ -86,4 +107,11 @@ export const CroquiAnaliseV2Schema = z.object({
   grau_confianca: z.number().int().min(0).max(100),
   lacunas: z.array(z.string()),
 });
-export type CroquiAnaliseV2 = z.infer<typeof CroquiAnaliseV2Schema>;
+/**
+ * `z.input` (não `z.infer`): o único campo com `.default()` é
+ * `patrimonio[].valor_declarado`, e no tipo de ENTRADA ele é opcional — o que
+ * descreve honestamente um conteúdo v2 gravado antes do campo existir e
+ * mantém válido quem monta o objeto sem ele (fixtures, testes). Depois de
+ * `parse()` o valor sempre existe (`null` quando não declarado).
+ */
+export type CroquiAnaliseV2 = z.input<typeof CroquiAnaliseV2Schema>;

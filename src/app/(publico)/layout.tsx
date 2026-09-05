@@ -26,16 +26,16 @@ export const metadata: Metadata = {
 export default function LayoutPublico({ children }: { children: ReactNode }) {
   return (
     <div className="area-publica flex min-h-screen flex-col bg-papel-fundo">
-      <header className="border-b border-linha bg-papel px-5 py-5 text-center sm:px-8">
-        <p className="font-serif text-lg font-bold leading-tight text-tinta sm:text-xl">Time Holding Brasil</p>
-        <p className="mt-1 text-sm text-tinta-suave">Planejamento Patrimonial · Dra. Elaine Montenegro</p>
+      <header className="px-5 pb-2 pt-7 text-center sm:px-8 sm:pt-9">
+        <p className="text-rotulo font-medium uppercase text-tinta-fraca">Planejamento Patrimonial</p>
+        <p className="mt-1.5 text-subtitulo font-bold leading-tight text-tinta">Time Holding Brasil · Dra. Elaine Montenegro</p>
       </header>
 
-      <main id="conteudo-principal" className="mx-auto flex w-full max-w-lg flex-1 flex-col px-5 py-7 sm:px-6 sm:py-10">
+      <main id="conteudo-principal" className="mx-auto flex w-full max-w-lg flex-1 flex-col px-5 py-7 sm:px-6 sm:py-8">
         {children}
       </main>
 
-      <footer className="border-t border-linha px-5 py-5 text-center text-xs leading-relaxed text-tinta-fraca sm:px-8">
+      <footer className="px-5 py-6 text-center text-xs leading-relaxed text-tinta-fraca sm:px-8">
         <p>Este link é pessoal e sigiloso — não encaminhe para terceiros.</p>
       </footer>
     </div>

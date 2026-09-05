@@ -5,9 +5,10 @@ import { buscarBriefing, gerarBriefing, listarBriefingsDaJornada, ApiError, type
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando, EstadoVazio } from "@/components/ui/Estado";
-import { ConfirmarAcao } from "@/components/admin/ConfirmarAcao";
+import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { BadgeConfianca, Chip, ConteudoCompacto, FraseComFidelidade, Hipotese, ListaEvidencias } from "@/components/briefing/atomos";
 import { SeloIA } from "@/components/ui/Selo";
+import { ComoEleFala } from "@/components/briefing/ComoEleFala";
 import {
   rotularArquetipo,
   rotularDisc,
@@ -31,7 +32,7 @@ const ROTULOS_FONTE: Record<string, string> = {
 function Secao({ numero, titulo, hipotese, children }: { numero: number; titulo: string; hipotese?: string[]; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5 border-t border-linha pt-4 first:border-t-0 first:pt-0">
-      <h3 className="font-serif text-base font-bold text-tinta">
+      <h3 className="text-base font-bold text-tinta">
         <span className="mr-2 font-mono text-sm text-tinta-fraca">{String(numero).padStart(2, "0")}</span>
         {titulo}
         <Hipotese evidencias={hipotese} />
@@ -53,7 +54,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
           não há chave de persistência sensata para recolher/expandir. */}
       <ConteudoCompacto briefing={briefing} c={c} />
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-linha bg-papel-fundo px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-controle border border-linha bg-papel-fundo px-3.5 py-2.5">
         <BadgeConfianca valor={briefing.grau_confianca} />
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-tinta-suave">
           <span className="font-medium text-tinta">Fontes usadas:</span>
@@ -61,7 +62,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
             <span className="italic">nenhuma fonte estruturada</span>
           ) : (
             briefing.fontes_usadas.map((f) => (
-              <span key={f} className="rounded-sm border border-linha-forte bg-papel-elevado px-1.5 py-0.5">{ROTULOS_FONTE[f] ?? f}</span>
+              <span key={f} className="rounded-controle border border-linha-forte bg-papel-elevado px-1.5 py-0.5">{ROTULOS_FONTE[f] ?? f}</span>
             ))
           )}
         </div>
@@ -70,13 +71,13 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       <p className="border-t border-linha pt-4 text-xs font-bold uppercase tracking-wide text-tinta-fraca">Análise completa — 13 seções</p>
 
       {(briefing.modo_reduzido ?? !briefing.fontes_usadas.includes("transcricao")) && (
-        <p role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-[color:var(--ambar)]">
+        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-[color:var(--ambar)]">
           Briefing sem transcrição — consentimento de tratamento por IA não registrado.
         </p>
       )}
 
       {c.lacunas.length > 0 && (
-        <div role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5">
+        <div role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5">
           <p className="text-sm font-bold text-[color:var(--ambar)]">Lacunas — o que faltou para uma análise mais firme</p>
           <ul className="mt-1 list-inside list-disc text-sm text-[color:var(--ambar)]">
             {c.lacunas.map((l, i) => <li key={i}>{l}</li>)}
@@ -125,6 +126,13 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         <p className="mt-1.5 text-tinta-suave">{c.linguagem_recomendada.justificativa}</p>
       </Secao>
 
+      {/* Fase 4 §5.2 — "Como ele fala" (schema v3). Sem número: é a lente
+          sobre a linguagem do cliente, não uma 14ª seção da análise. */}
+      <section className="flex flex-col gap-1.5 border-t border-linha pt-4">
+        <h3 className="text-subtitulo font-bold text-tinta">Como ele fala</h3>
+        <ComoEleFala briefing={briefing} />
+      </section>
+
       <Secao numero={7} titulo="Pontos de atenção — o que não fazer">
         <ul className="list-inside list-disc">
           {c.pontos_de_atencao.map((p, i) => <li key={i}><strong>{p.nao_fazer}</strong> — {p.motivo}</li>)}
@@ -164,7 +172,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
       </Secao>
 
       <section className="flex flex-col gap-1.5 border-t border-linha pt-4">
-        <h3 className="font-serif text-base font-bold text-tinta">Processo decisório (POP 03)</h3>
+        <h3 className="text-base font-bold text-tinta">Processo decisório (POP 03)</h3>
         <p><strong>Velocidade:</strong> <Chip>{rotularNivel(c.processo_decisorio.velocidade)}</Chip>{c.processo_decisorio.velocidade_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.velocidade_nota}</span>}</p>
         <p><strong>Necessidade de segurança:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_seguranca)}</Chip>{c.processo_decisorio.necessidade_seguranca_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_seguranca_nota}</span>}</p>
         <p><strong>Necessidade de validação:</strong> <Chip>{rotularNivel(c.processo_decisorio.necessidade_validacao)}</Chip>{c.processo_decisorio.necessidade_validacao_nota && <span className="ml-1.5 text-tinta-suave">— {c.processo_decisorio.necessidade_validacao_nota}</span>}</p>
@@ -195,10 +203,10 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
  */
 function ChecklistCompletude({ resultado }: { resultado: ResultadoCompletude }) {
   return (
-    <div className="rounded-sm border border-linha bg-papel-elevado">
+    <div className="rounded-controle border border-linha bg-papel-elevado">
       <p className="border-b border-linha px-3.5 py-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">
         Dado insuficiente para um briefing confiável
-        <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--vermelho)]">
+        <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-legenda font-bold text-[color:var(--vermelho)]">
           {resultado.score} de {resultado.minimo} pontos necessários
         </span>
       </p>
@@ -292,7 +300,7 @@ export function BriefingAba({
       {temAnaliseSessao && (
         <a
           href={`#analise-sessao`}
-          className="nao-imprimir rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-sm text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+          className="nao-imprimir rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-sm text-tinta-suave underline decoration-linha-forte hover:text-tinta"
         >
           Sessão já realizada — ver a Análise da Sessão
         </a>
@@ -325,7 +333,7 @@ export function BriefingAba({
               value={briefing?.id ?? ""}
               disabled={trocandoVersao}
               onChange={(e) => trocarVersao(e.target.value)}
-              className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1 disabled:opacity-60"
+              className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1 disabled:opacity-60"
             >
               {historico.map((h) => (
                 <option key={h.id} value={h.id}>v{h.versao} · {formatarDataHora(h.criado_em)}</option>
@@ -336,7 +344,7 @@ export function BriefingAba({
       </div>
 
       {erroGerar && !completudeInsuficiente && (
-        <p role="alert" className="rounded-sm border border-vermelho bg-vermelho-fraco px-3 py-2 text-sm text-[color:var(--vermelho)]">
+        <p role="alert" className="rounded-controle border border-vermelho bg-vermelho-fraco px-3 py-2 text-sm text-[color:var(--vermelho)]">
           {erroGerar.status === 503
             ? "O briefing não pôde ser gerado: sem chave de IA configurada ou sem consentimento de tratamento por IA registrado. Nenhum briefing de mentira é mostrado nesta tela."
             : erroGerar.message}

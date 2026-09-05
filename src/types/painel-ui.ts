@@ -32,6 +32,14 @@ export const SessaoDoDiaSchema = z.object({
   advogada_id: z.string().nullable().optional().default(null),
   advogada_nome: z.string().nullable().optional().default(null),
   tem_briefing: z.boolean(),
+  /**
+   * Fase 4 (0051/0052, agente A): presença confirmada pelo cliente. SEM
+   * `.default(null)` de propósito — `undefined` = a view ainda não tem a
+   * coluna ("sem informação"); `null` = tem a coluna e ninguém confirmou.
+   * `lib/pasta/sinais.ts` depende dessa diferença para não inventar alarme.
+   */
+  presenca_confirmada_em: z.string().nullable().optional(),
+  presenca_confirmada_via: z.string().nullable().optional(),
 });
 export type SessaoDoDia = z.infer<typeof SessaoDoDiaSchema>;
 
@@ -75,13 +83,24 @@ export type PagoSemContato = z.infer<typeof PagoSemContatoSchema>;
 // onde a linha leva — uma linha sem `jornada_id` não vira link inventado.
 // ---------------------------------------------------------------------------
 
-export const TipoPendenciaSistemaSchema = z.enum([
+/**
+ * Tipos conhecidos hoje. A Fase 4 acrescenta `cron_parado`, `sessao_sem_sala`
+ * e outros (0051/0052/0053) — por isso o schema aceita QUALQUER string: um
+ * tipo novo vindo do banco não pode derrubar o bloco inteiro para
+ * "indisponível". A tela rotula o que conhece e mostra o resto humanizado.
+ */
+export const TIPOS_PENDENCIA_SISTEMA_CONHECIDOS = [
   "webhook_falho",
   "mensagem_falhou",
   "link_expirando",
   "material_aguardando_aprovacao",
-]);
-export type TipoPendenciaSistema = z.infer<typeof TipoPendenciaSistemaSchema>;
+  "cron_parado",
+  "sessao_sem_sala",
+  "ligacao_ia_falhou",
+] as const;
+export type TipoPendenciaSistemaConhecido = (typeof TIPOS_PENDENCIA_SISTEMA_CONHECIDOS)[number];
+export const TipoPendenciaSistemaSchema = z.string().min(1);
+export type TipoPendenciaSistema = string;
 
 export const PendenciaSistemaSchema = z.object({
   id: z.string(),
@@ -129,6 +148,35 @@ export const RespostaPainelSchema = z.object({
 export type RespostaPainel = z.infer<typeof RespostaPainelSchema>;
 
 /** Chaves de bloco do envelope — usado para validar bloco a bloco. */
+/**
+ * Prova de vida da esteira automática (Fase 4 §1.6): `GET /api/mensagens`
+ * passa a devolver `regua: { ultimo_cron_em, cron_atrasado }`. Enquanto o
+ * agente A não expõe o bloco, `regua` fica `undefined` e a tela diz "cron
+ * ainda não configurado" — nunca um vazio mudo.
+ */
+export const ReguaProvaDeVidaSchema = z.object({
+  ultimo_cron_em: z.string().nullable(),
+  cron_atrasado: z.boolean().optional(),
+});
+export type ReguaProvaDeVida = z.infer<typeof ReguaProvaDeVidaSchema>;
+
+export const MensagemPendenteSchema = z.object({
+  id: z.string(),
+  agendada_para: z.string(),
+  canal: z.string(),
+  status: z.string(),
+  template_chave: z.string().nullable().optional(),
+  pessoa_nome: z.string().nullable().optional(),
+});
+export type MensagemPendente = z.infer<typeof MensagemPendenteSchema>;
+
+export interface ProvaDeVidaEsteira {
+  /** `null` = a API ainda não expõe o bloco `regua` (cron não configurado / A não entregou). */
+  regua: ReguaProvaDeVida | null;
+  /** Mensagens `pendente` na fila, já ordenadas por `agendada_para`. */
+  pendentes: MensagemPendente[];
+}
+
 export type ChaveBlocoPainel =
   | "sessoes_do_dia"
   | "pendencias_preparo"

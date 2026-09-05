@@ -3,8 +3,33 @@
 import type { ReactNode } from "react";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import type { EstadoItemPasta, ItemPasta } from "@/lib/pasta/derivar";
-import { ABA_POR_ITEM_PASTA, ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
-import { SeloIA } from "@/components/ui/Selo";
+import { ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA, caminhoItemPasta } from "@/lib/pasta/rotas";
+import { Selo, SeloIA } from "@/components/ui/Selo";
+import { SeloPresenca } from "@/components/agenda/SeloPresenca";
+
+/**
+ * Fase 4 (agente H) — sinais da Sessão que a Pasta reflete no cartão
+ * `sessao` além do estado derivado: presença (fato 0051), sala e ligação por
+ * IA. `undefined` = a Ficha ainda não carrega o campo (sem informação).
+ */
+export interface SinaisSessaoPasta {
+  proximaSessaoEm: string | null;
+  /** `undefined` = coluna ausente no payload; `null` = ainda não confirmou. */
+  presencaConfirmadaEm: string | null | undefined;
+  presencaConfirmadaVia?: string | null;
+  temLinkSala: boolean | null;
+  ligacaoIaStatus: string | null;
+}
+
+const ROTULO_LIGACAO_IA: Record<string, { rotulo: string; tom: "azul" | "latao" | "verde" | "ambar" | "vermelho" | "neutro" }> = {
+  na_fila: { rotulo: "IA vai ligar", tom: "azul" },
+  discando: { rotulo: "IA discando", tom: "azul" },
+  em_ligacao: { rotulo: "IA em ligação", tom: "latao" },
+  concluida: { rotulo: "IA ligou", tom: "verde" },
+  sem_resposta: { rotulo: "IA: não atendeu", tom: "ambar" },
+  falhou: { rotulo: "IA: falhou", tom: "vermelho" },
+  cancelada: { rotulo: "IA: cancelada", tom: "neutro" },
+};
 
 /**
  * "A Pasta do Cliente" (Fase 2 do plano, `brain/Diário/2026-09-04.md`) — a
@@ -264,12 +289,14 @@ const ESTILO_NO: Record<ReturnType<typeof statusDoMomento>, string> = {
   futuro: "border-linha-forte bg-papel-elevado text-tinta-fraca",
 };
 
-function CartaoItem({ item, aoAbrirGaveta }: { item: ItemPasta; aoAbrirGaveta: (chave: ChaveItemPasta) => void }) {
+function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; aoAbrirGaveta: (chave: ChaveItemPasta) => void; sinaisSessao?: SinaisSessaoPasta }) {
   const estilo = ESTILO_ESTADO[item.estado];
   const clicavel = item.estado !== "ainda_nao";
   const emGaveta = ITENS_EM_GAVETA.has(item.chave);
-  const href = clicavel && !emGaveta ? `#${ABA_POR_ITEM_PASTA[item.chave]}` : undefined;
+  const href = clicavel && !emGaveta ? caminhoItemPasta(item.chave) : undefined;
   const acao = ACAO_POR_ITEM_PASTA[item.chave];
+  const extrasSessao = item.chave === "sessao" && sinaisSessao && sinaisSessao.proximaSessaoEm ? sinaisSessao : null;
+  const ligacaoIa = item.chave === "sessao" && sinaisSessao?.ligacaoIaStatus ? ROTULO_LIGACAO_IA[sinaisSessao.ligacaoIaStatus] : null;
 
   // `pronto` sem nota fica sem descrição de propósito: "Pronto · Concluído."
   // é redundância — cartão feito merece ser compacto, não ocupar o mesmo
@@ -279,11 +306,11 @@ function CartaoItem({ item, aoAbrirGaveta }: { item: ItemPasta; aoAbrirGaveta: (
   const conteudo = (
     <>
       <div className="flex items-start gap-3">
-        <span aria-hidden="true" className={`grid h-10 w-10 shrink-0 place-items-center rounded-sm ${estilo.selo}`}>
+        <span aria-hidden="true" className={`grid h-10 w-10 shrink-0 place-items-center rounded-controle ${estilo.selo}`}>
           <IconeItem chave={item.chave} />
         </span>
         <div className="flex min-w-0 flex-col gap-1">
-          <p className={`font-serif text-[15px] font-bold leading-snug ${estilo.titulo}`}>{item.rotulo}</p>
+          <p className={`text-[15px] font-bold leading-snug ${estilo.titulo}`}>{item.rotulo}</p>
           <p className={`inline-flex items-center gap-1.5 text-xs font-bold ${estilo.texto}`}>
             <IconeEstado estado={item.estado} />
             {ROTULO_ESTADO[item.estado]}
@@ -296,10 +323,19 @@ function CartaoItem({ item, aoAbrirGaveta }: { item: ItemPasta; aoAbrirGaveta: (
         </div>
       </div>
       {item.procedencia === "gerado_ia" && <SeloIA className="self-start" />}
+      {(extrasSessao || ligacaoIa) && (
+        <div className="flex flex-wrap gap-1.5">
+          {extrasSessao && <SeloPresenca presencaConfirmadaEm={extrasSessao.presencaConfirmadaEm} inicioEm={extrasSessao.proximaSessaoEm!} via={extrasSessao.presencaConfirmadaVia} />}
+          {extrasSessao && extrasSessao.temLinkSala !== null && (
+            <Selo tom={extrasSessao.temLinkSala ? "verde" : "ambar"}>{extrasSessao.temLinkSala ? "Sala pronta" : "Sem link da sala"}</Selo>
+          )}
+          {ligacaoIa && <Selo tom={ligacaoIa.tom}>{ligacaoIa.rotulo}</Selo>}
+        </div>
+      )}
     </>
   );
 
-  const classeBase = `flex min-h-[44px] flex-col gap-2 rounded-sm border p-3.5 text-left transition-all ${estilo.cartao}`;
+  const classeBase = `flex min-h-[44px] flex-col gap-2 rounded-controle border p-3.5 text-left transition-all ${estilo.cartao}`;
 
   if (!clicavel) {
     // `ainda_nao`: não navega — mas continua no DOM como elemento estático,
@@ -355,7 +391,16 @@ const COR_SEGMENTO: Record<Exclude<EstadoItemPasta, "ainda_nao">, string> = {
   falta: "bg-linha-forte",
 };
 
-export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; aoAbrirGaveta: (chave: ChaveItemPasta) => void }) {
+export function PastaDoCliente({
+  itens,
+  aoAbrirGaveta,
+  sinaisSessao,
+}: {
+  itens: ItemPasta[];
+  aoAbrirGaveta: (chave: ChaveItemPasta) => void;
+  /** Presença/sala/ligação IA para o cartão "Sessão" (Fase 4). Opcional: sem ele, o cartão fica como antes. */
+  sinaisSessao?: SinaisSessaoPasta;
+}) {
   // Contador honesto: o denominador é só o que já é "hora de fazer"
   // (pronto + em_revisao + falta) — `ainda_nao` fica de fora do total tanto
   // quanto do numerador. Contar "3 de 14" para um cliente que acabou de
@@ -375,7 +420,7 @@ export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; a
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2.5 rounded-sm border border-linha-forte bg-papel-elevado px-4 py-3">
+      <div className="flex flex-col gap-2.5 rounded-controle border border-linha-forte bg-papel-elevado px-4 py-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <p className="text-sm font-medium text-tinta">
             Você já tem <span className="font-bold">{prontos}</span> de <span className="font-bold">{total}</span>{" "}
@@ -419,7 +464,7 @@ export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; a
               {!ultimo && <span aria-hidden="true" className="absolute bottom-0 left-[17px] top-11 w-px bg-linha-forte" />}
               <span
                 aria-hidden="true"
-                className={`absolute left-0 top-0 grid h-9 w-9 place-items-center rounded-full border font-serif text-sm font-bold ${ESTILO_NO[status]}`}
+                className={`absolute left-0 top-0 grid h-9 w-9 place-items-center rounded-full border text-sm font-bold ${ESTILO_NO[status]}`}
               >
                 {status === "concluido" ? (
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -430,7 +475,7 @@ export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; a
                 )}
               </span>
               <div className="mb-3 flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <h2 id={`momento-${momento.id}`} className="font-serif text-lg font-bold leading-tight text-tinta">
+                <h2 id={`momento-${momento.id}`} className="text-lg font-bold leading-tight text-tinta">
                   {momento.titulo}
                 </h2>
                 <span className="text-xs font-medium text-tinta-fraca">
@@ -441,7 +486,7 @@ export function PastaDoCliente({ itens, aoAbrirGaveta }: { itens: ItemPasta[]; a
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {momento.itens.map((item) => (
-                  <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} />
+                  <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} sinaisSessao={sinaisSessao} />
                 ))}
               </div>
             </li>

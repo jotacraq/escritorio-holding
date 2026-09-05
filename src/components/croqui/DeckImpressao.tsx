@@ -40,10 +40,13 @@ export function DeckImpressao({
               razão do resto do arquivo (folha impressa sempre clara). Antes
               era `#7c5e26` (dourado, latão original). 4,80:1 sobre o papel
               fixo `#fffdf8` — WCAG AA. */}
-          <p className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: "#b85400" }}>
+          <p className="text-rotulo font-medium uppercase tracking-[0.2em]" style={{ color: "#b85400" }}>
             {String(i + 1).padStart(2, "0")} · Croqui Estrutural
           </p>
-          <h1 className="font-serif text-3xl font-bold">{slide.titulo}</h1>
+          {/* `h2`, não `h1`: o deck é UM documento com 13 seções (na tela, o único
+              `h1` é o do slide projetado; na folha, o título da peça é o do
+              cabeçalho da impressão). */}
+          <h2 className="text-titulo font-bold sm:text-display">{slide.titulo}</h2>
           <p className="max-w-2xl whitespace-pre-wrap text-base leading-relaxed" style={{ color: "#52514c" }}>
             {slide.conteudo || "Sem conteúdo definido para este slide."}
           </p>

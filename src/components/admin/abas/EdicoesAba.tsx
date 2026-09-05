@@ -1,46 +1,68 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
-import { ApiError } from "@/lib/api";
+import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
-import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
+import { Campo, Entrada } from "@/components/ui/Campo";
+import { Cartao } from "@/components/ui/Cartao";
+import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
+import { EsqueletoLista } from "@/components/ui/Esqueleto";
+import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { formatarData } from "@/lib/formatar";
 import { atualizarEdicao, criarEdicao, listarEdicoes } from "../adminApi";
-import { ConfirmarAcao } from "../ConfirmarAcao";
-import { AvisoInline } from "../AvisoInline";
+import { mensagemDeErro } from "../http";
+import { IntroAba, SeloAtivo, Tabela, Tbody, Td, Th, Thead, Tr } from "../comum";
 import type { EdicaoSeminario } from "@/types/admin";
 
-function formularioVazio() {
-  return { codigo: "", nome: "", inicio_em: "", fim_em: "" };
+interface Rascunho {
+  codigo: string;
+  nome: string;
+  inicio_em: string;
+  fim_em: string;
 }
 
+function validar(r: Rascunho, exigirCodigo: boolean): Partial<Rascunho> {
+  const e: Partial<Rascunho> = {};
+  if (exigirCodigo && !r.codigo.trim()) e.codigo = "Informe o código (ex.: 2026-09).";
+  if (!r.nome.trim()) e.nome = "Dê um nome à edição.";
+  if (!r.inicio_em) e.inicio_em = "Informe o início.";
+  if (!r.fim_em) e.fim_em = "Informe o fim.";
+  if (r.inicio_em && r.fim_em && r.fim_em < r.inicio_em) e.fim_em = "O fim precisa ser depois do início.";
+  return e;
+}
+
+/** Cada edição do seminário é a coorte que os indicadores agrupam — nunca por janela de tempo. */
 export function EdicoesAba() {
   const buscar = useCallback(() => listarEdicoes(), []);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, []);
+  const { notificar } = useToast();
 
-  const [novo, setNovo] = useState<ReturnType<typeof formularioVazio> | null>(null);
-  const [salvando, setSalvando] = useState(false);
+  const [novo, setNovo] = useState<Rascunho | null>(null);
   const [edicaoId, setEdicaoId] = useState<string | null>(null);
-  const [rascunho, setRascunho] = useState({ nome: "", inicio_em: "", fim_em: "" });
-  const [processando, setProcessando] = useState(false);
+  const [rascunho, setRascunho] = useState<Rascunho>({ codigo: "", nome: "", inicio_em: "", fim_em: "" });
+  const [erros, setErros] = useState<Partial<Rascunho>>({});
+  const [salvando, setSalvando] = useState(false);
   const [confirmarDesativar, setConfirmarDesativar] = useState<EdicaoSeminario | null>(null);
-  const [aviso, setAviso] = useState<{ tom: "sucesso" | "erro"; texto: string } | null>(null);
 
   if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar as edições" />;
-  if (carregando && !dados) return <EstadoCarregando rotulo="Carregando edições…" />;
+  if (carregando && !dados) return <EsqueletoLista linhas={3} rotulo="Carregando edições…" />;
   if (!dados) return null;
 
-  async function salvarNovo() {
-    if (!novo || !novo.codigo.trim() || !novo.nome.trim() || !novo.inicio_em || !novo.fim_em) return;
+  async function salvarNovo(evento: FormEvent) {
+    evento.preventDefault();
+    if (!novo) return;
+    const e = validar(novo, true);
+    setErros(e);
+    if (Object.keys(e).length > 0) return;
     setSalvando(true);
-    setAviso(null);
     try {
-      await criarEdicao(novo);
+      await criarEdicao({ codigo: novo.codigo.trim(), nome: novo.nome.trim(), inicio_em: novo.inicio_em, fim_em: novo.fim_em });
+      notificar({ tom: "sucesso", titulo: "Edição criada", descricao: novo.nome.trim() });
       setNovo(null);
       recarregar();
-    } catch (e) {
-      setAviso({ tom: "erro", texto: e instanceof ApiError ? e.message : "Não foi possível criar a edição." });
+    } catch (err) {
+      notificar({ tom: "erro", titulo: "Não foi possível criar", descricao: mensagemDeErro(err, "Tente de novo em instantes.") });
     } finally {
       setSalvando(false);
     }
@@ -48,209 +70,169 @@ export function EdicoesAba() {
 
   function abrirEdicao(edicao: EdicaoSeminario) {
     setEdicaoId(edicao.id);
-    setRascunho({ nome: edicao.nome, inicio_em: edicao.inicio_em, fim_em: edicao.fim_em });
+    setErros({});
+    setRascunho({ codigo: edicao.codigo, nome: edicao.nome, inicio_em: edicao.inicio_em, fim_em: edicao.fim_em });
   }
 
-  async function salvarEdicaoExistente(edicao: EdicaoSeminario) {
-    setProcessando(true);
-    setAviso(null);
+  async function salvarEdicao(evento: FormEvent, edicao: EdicaoSeminario) {
+    evento.preventDefault();
+    const e = validar(rascunho, false);
+    setErros(e);
+    if (Object.keys(e).length > 0) return;
+    setSalvando(true);
     try {
-      await atualizarEdicao(edicao.id, rascunho);
+      await atualizarEdicao(edicao.id, { nome: rascunho.nome.trim(), inicio_em: rascunho.inicio_em, fim_em: rascunho.fim_em });
+      notificar({ tom: "sucesso", titulo: "Edição salva", descricao: rascunho.nome.trim() });
       setEdicaoId(null);
       recarregar();
-    } catch (e) {
-      setAviso({ tom: "erro", texto: e instanceof ApiError ? e.message : "Não foi possível salvar as alterações." });
+    } catch (err) {
+      notificar({ tom: "erro", titulo: "Não foi possível salvar", descricao: mensagemDeErro(err, "Tente de novo em instantes.") });
     } finally {
-      setProcessando(false);
+      setSalvando(false);
     }
   }
 
-  async function ativar(edicao: EdicaoSeminario) {
-    setAviso(null);
+  async function mudarAtiva(edicao: EdicaoSeminario, ativa: boolean) {
+    setSalvando(true);
     try {
-      await atualizarEdicao(edicao.id, { ativa: true });
-      recarregar();
-    } catch (e) {
-      setAviso({ tom: "erro", texto: e instanceof ApiError ? e.message : "Não foi possível reativar a edição." });
-    }
-  }
-
-  async function confirmarDesativarEdicao() {
-    if (!confirmarDesativar) return;
-    setProcessando(true);
-    setAviso(null);
-    try {
-      await atualizarEdicao(confirmarDesativar.id, { ativa: false });
+      await atualizarEdicao(edicao.id, { ativa });
+      notificar({ tom: "sucesso", titulo: ativa ? "Edição reativada" : "Edição desativada", descricao: edicao.nome });
       setConfirmarDesativar(null);
       recarregar();
-    } catch (e) {
-      setAviso({ tom: "erro", texto: e instanceof ApiError ? e.message : "Não foi possível desativar a edição." });
+    } catch (err) {
+      notificar({ tom: "erro", titulo: ativa ? "Não foi possível reativar" : "Não foi possível desativar", descricao: mensagemDeErro(err, "Tente de novo em instantes.") });
     } finally {
-      setProcessando(false);
+      setSalvando(false);
     }
   }
 
+  const camposForm = (r: Rascunho, setR: (r: Rascunho) => void, comCodigo: boolean) => (
+    <div className={`grid gap-4 ${comCodigo ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+      {comCodigo && (
+        <Campo rotulo="Código" obrigatorio erro={erros.codigo} ajuda="Curto e único (ex.: 2026-09).">
+          <Entrada value={r.codigo} onChange={(e) => setR({ ...r, codigo: e.target.value })} autoComplete="off" />
+        </Campo>
+      )}
+      <Campo rotulo="Nome" obrigatorio erro={erros.nome}>
+        <Entrada value={r.nome} onChange={(e) => setR({ ...r, nome: e.target.value })} />
+      </Campo>
+      <Campo rotulo="Início" obrigatorio erro={erros.inicio_em}>
+        <Entrada type="date" value={r.inicio_em} onChange={(e) => setR({ ...r, inicio_em: e.target.value })} />
+      </Campo>
+      <Campo rotulo="Fim" obrigatorio erro={erros.fim_em}>
+        <Entrada type="date" value={r.fim_em} onChange={(e) => setR({ ...r, fim_em: e.target.value })} />
+      </Campo>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-xs text-tinta-fraca">Cada edição do seminário é a coorte que os indicadores agrupam — nunca por janela de tempo.</p>
-
-      {aviso && <AvisoInline tom={aviso.tom}>{aviso.texto}</AvisoInline>}
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-linha-forte text-left text-tinta-suave">
-              <th className="py-1.5 pr-3 font-medium">Código</th>
-              <th className="py-1.5 pr-3 font-medium">Nome</th>
-              <th className="py-1.5 pr-3 font-medium">Início</th>
-              <th className="py-1.5 pr-3 font-medium">Fim</th>
-              <th className="py-1.5 pr-3 font-medium">Status</th>
-              <th className="py-1.5 font-medium sr-only">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dados.itens.map((edicao) =>
-              edicaoId === edicao.id ? (
-                <tr key={edicao.id} className="border-b border-linha bg-papel-fundo align-top">
-                  <td className="py-2 pr-3 text-tinta-suave">{edicao.codigo}</td>
-                  <td className="py-2 pr-3">
-                    <input
-                      value={rascunho.nome}
-                      onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })}
-                      className="w-full rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-3">
-                    <input
-                      type="date"
-                      value={rascunho.inicio_em}
-                      onChange={(e) => setRascunho({ ...rascunho, inicio_em: e.target.value })}
-                      className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-3">
-                    <input
-                      type="date"
-                      value={rascunho.fim_em}
-                      onChange={(e) => setRascunho({ ...rascunho, fim_em: e.target.value })}
-                      className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-3" />
-                  <td className="py-2">
-                    <div className="flex justify-end gap-2">
-                      <Botao variante="primario" className="text-xs" carregando={processando} onClick={() => salvarEdicaoExistente(edicao)}>
-                        Salvar
-                      </Botao>
-                      <Botao variante="fantasma" className="text-xs" onClick={() => setEdicaoId(null)}>
-                        Cancelar
-                      </Botao>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                <tr key={edicao.id} className="border-b border-linha">
-                  <td className="py-2 pr-3 font-mono text-xs text-tinta-suave">{edicao.codigo}</td>
-                  <td className="py-2 pr-3 font-medium text-tinta">{edicao.nome}</td>
-                  <td className="py-2 pr-3">{formatarData(edicao.inicio_em)}</td>
-                  <td className="py-2 pr-3">{formatarData(edicao.fim_em)}</td>
-                  <td className="py-2 pr-3">
-                    {edicao.ativa ? (
-                      <span className="inline-flex items-center rounded-sm bg-verde-fraco px-1.5 py-0.5 text-[11px] font-medium text-[color:var(--verde)]">
-                        Ativa
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-sm border border-linha bg-papel px-1.5 py-0.5 text-[11px] font-medium text-tinta-fraca">
-                        Inativa
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2">
-                    <div className="flex justify-end gap-2">
-                      <Botao variante="fantasma" className="text-xs" onClick={() => abrirEdicao(edicao)}>
-                        Editar
-                      </Botao>
-                      {edicao.ativa ? (
-                        <Botao variante="perigo" className="text-xs" onClick={() => setConfirmarDesativar(edicao)}>
-                          Desativar
-                        </Botao>
-                      ) : (
-                        <Botao variante="secundario" className="text-xs" onClick={() => ativar(edicao)}>
-                          Reativar
-                        </Botao>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ),
-            )}
-          </tbody>
-        </table>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <IntroAba>Cada edição do seminário é a coorte que os indicadores agrupam — quem entrou por ela é medido junto, do seminário à holding.</IntroAba>
+        {!novo && (
+          <Botao variante="primario" onClick={() => setNovo({ codigo: "", nome: "", inicio_em: "", fim_em: "" })}>
+            Nova edição
+          </Botao>
+        )}
       </div>
 
-      {novo ? (
-        <div className="flex flex-col gap-3 rounded-sm border border-linha bg-papel-fundo p-3">
-          <div className="grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1 text-sm">
-              Código
-              <input
-                value={novo.codigo}
-                onChange={(e) => setNovo({ ...novo, codigo: e.target.value })}
-                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Nome
-              <input
-                value={novo.nome}
-                onChange={(e) => setNovo({ ...novo, nome: e.target.value })}
-                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Início
-              <input
-                type="date"
-                value={novo.inicio_em}
-                onChange={(e) => setNovo({ ...novo, inicio_em: e.target.value })}
-                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Fim
-              <input
-                type="date"
-                value={novo.fim_em}
-                onChange={(e) => setNovo({ ...novo, fim_em: e.target.value })}
-                className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-              />
-            </label>
-          </div>
-          <div className="flex gap-2">
-            <Botao variante="primario" carregando={salvando} onClick={salvarNovo}>
-              Criar edição
-            </Botao>
-            <Botao variante="fantasma" onClick={() => setNovo(null)}>
-              Cancelar
-            </Botao>
-          </div>
-        </div>
+      {novo && (
+        <Cartao rotulo="Nova edição" titulo="Edição do seminário">
+          <form noValidate onSubmit={salvarNovo} className="flex flex-col gap-5">
+            {camposForm(novo, setNovo, true)}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Botao variante="fantasma" onClick={() => setNovo(null)}>
+                Cancelar
+              </Botao>
+              <Botao type="submit" variante="primario" carregando={salvando}>
+                Criar edição
+              </Botao>
+            </div>
+          </form>
+        </Cartao>
+      )}
+
+      {dados.itens.length === 0 && !novo ? (
+        <EstadoVazio ilustracao="agenda" titulo="Nenhuma edição cadastrada" descricao="Sem edição, o lead do seminário não tem origem rastreável." />
       ) : (
-        <div>
-          <Botao variante="secundario" onClick={() => setNovo(formularioVazio())}>
-            + Nova edição do seminário
-          </Botao>
-        </div>
+        <Cartao preenchimento="sem">
+          <Tabela resumo="Edições do seminário">
+            <Thead>
+              <tr>
+                <Th>Código</Th>
+                <Th>Nome</Th>
+                <Th>Início</Th>
+                <Th>Fim</Th>
+                <Th>Estado</Th>
+                <Th srOnly>Ações</Th>
+              </tr>
+            </Thead>
+            <Tbody>
+              {dados.itens.map((edicao) =>
+                edicaoId === edicao.id ? (
+                  <Tr key={edicao.id} className="bg-papel">
+                    <td colSpan={6} className="block px-0 py-2 sm:table-cell sm:px-5 sm:py-4">
+                      <form noValidate onSubmit={(e) => salvarEdicao(e, edicao)} className="flex flex-col gap-4">
+                        <p className="text-sm text-tinta-suave">
+                          Editando <span className="font-bold text-tinta">{edicao.codigo}</span>
+                        </p>
+                        {camposForm(rascunho, setRascunho, false)}
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Botao variante="fantasma" tamanho="compacto" onClick={() => setEdicaoId(null)}>
+                            Cancelar
+                          </Botao>
+                          <Botao type="submit" variante="secundario" tamanho="compacto" carregando={salvando}>
+                            Salvar
+                          </Botao>
+                        </div>
+                      </form>
+                    </td>
+                  </Tr>
+                ) : (
+                  <Tr key={edicao.id}>
+                    <Td rotulo="Código" className="text-tinta-suave">
+                      {edicao.codigo}
+                    </Td>
+                    <Td rotulo="Nome" className="font-medium">
+                      {edicao.nome}
+                    </Td>
+                    <Td rotulo="Início">{formatarData(edicao.inicio_em)}</Td>
+                    <Td rotulo="Fim">{formatarData(edicao.fim_em)}</Td>
+                    <Td rotulo="Estado">
+                      <SeloAtivo ativo={edicao.ativa} />
+                    </Td>
+                    <Td acoes>
+                      <div className="flex flex-wrap gap-2 sm:justify-end">
+                        <Botao variante="fantasma" tamanho="compacto" onClick={() => abrirEdicao(edicao)}>
+                          Editar
+                        </Botao>
+                        {edicao.ativa ? (
+                          <Botao variante="perigo" tamanho="compacto" onClick={() => setConfirmarDesativar(edicao)}>
+                            Desativar
+                          </Botao>
+                        ) : (
+                          <Botao variante="secundario" tamanho="compacto" carregando={salvando} onClick={() => mudarAtiva(edicao, true)}>
+                            Reativar
+                          </Botao>
+                        )}
+                      </div>
+                    </Td>
+                  </Tr>
+                ),
+              )}
+            </Tbody>
+          </Tabela>
+        </Cartao>
       )}
 
       <ConfirmarAcao
         aberto={confirmarDesativar !== null}
         titulo="Desativar edição"
-        efeito={`Marca "${confirmarDesativar?.nome}" como inativa — ela deixa de ser sugerida como opção padrão para novos leads do seminário. Jornadas já vinculadas não mudam.`}
+        efeito={`Marca "${confirmarDesativar?.nome}" como inativa — deixa de ser sugerida para novos leads do seminário. Jornadas já vinculadas não mudam.`}
         rotuloConfirmar="Desativar"
         perigo
-        confirmando={processando}
-        aoConfirmar={confirmarDesativarEdicao}
+        confirmando={salvando}
+        aoConfirmar={() => confirmarDesativar && mudarAtiva(confirmarDesativar, false)}
         aoCancelar={() => setConfirmarDesativar(null)}
       />
     </div>

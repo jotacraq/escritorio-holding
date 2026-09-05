@@ -35,6 +35,8 @@ const CorpoSchema = z.object({
   tipo: z.enum(["sessao_viabilidade", "croqui_estrutural", "holding"]),
   nome: z.string().trim().min(2).max(200),
   hotmart_produto_id: z.string().trim().min(1).max(100).nullish(),
+  /** 0051: link de pagamento; só https (o CHECK do banco é a segunda trava). */
+  url_checkout: z.string().trim().url().max(500).startsWith("https://", "O link de pagamento precisa começar com https://").nullish(),
 });
 
 interface ErroPostgrest {
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
         tipo: corpo.tipo,
         nome: corpo.nome,
         hotmart_produto_id: corpo.hotmart_produto_id ?? null,
+        url_checkout: corpo.url_checkout ?? null,
       })
       .select("*")
       .single<ProdutoAdmin>();

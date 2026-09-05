@@ -64,13 +64,13 @@ export default function PaginaVerCroqui({ params }: { params: Promise<{ id: stri
       <div className="nao-imprimir flex flex-wrap items-center justify-between gap-3">
         <Link
           href={`/jornadas/${jornadaId}#croqui`}
-          className="rounded-sm text-sm text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+          className="rounded-controle text-sm text-tinta-suave underline decoration-linha-forte hover:text-tinta"
         >
           ← Voltar à Ficha 360
         </Link>
         <div className="flex items-center gap-2">
           {pendentes > 0 && (
-            <span className="rounded-sm border border-ambar-borda bg-ambar-fraco px-2 py-1 text-xs font-medium text-[color:var(--ambar)]">
+            <span className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2 py-1 text-xs font-medium text-[color:var(--ambar)]">
               {pendentes} slide{pendentes > 1 ? "s" : ""} sem revisão
             </span>
           )}
@@ -81,7 +81,7 @@ export default function PaginaVerCroqui({ params }: { params: Promise<{ id: stri
       {/* `DeckImpressao` com `modoTela` — mesma marcação da impressão,
           visível na tela. Fundo/texto claros fixos, mesmo em tema escuro na
           navegação ao redor (ver justificativa em DeckImpressao.tsx). */}
-      <div className="overflow-hidden rounded-sm border border-linha-forte">
+      <div className="overflow-hidden rounded-controle border border-linha-forte">
         <DeckImpressao slides={slides} dadosGraficos={dadosGraficos} modoTela />
       </div>
     </div>

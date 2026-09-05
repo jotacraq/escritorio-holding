@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
+import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
+import { Cartao } from "@/components/ui/Cartao";
 import { ROTULO_DIA_SEMANA } from "./rotulos";
 import { ApiError, criarDisponibilidade } from "./api";
 
@@ -12,13 +15,8 @@ import { ApiError, criarDisponibilidade } from "./api";
  * no front. O campo existe só para quem quiser uma duração diferente desta
  * janela específica.
  */
-export function FormularioDisponibilidade({
-  advogadaId,
-  aoCriar,
-}: {
-  advogadaId: string;
-  aoCriar: () => void;
-}) {
+export function FormularioDisponibilidade({ advogadaId, aoCriar }: { advogadaId: string; aoCriar: () => void }) {
+  const { notificar } = useToast();
   const [diaSemana, setDiaSemana] = useState(1);
   const [horaInicio, setHoraInicio] = useState("09:00");
   const [horaFim, setHoraFim] = useState("18:00");
@@ -26,14 +24,15 @@ export function FormularioDisponibilidade({
   const [valeDe, setValeDe] = useState(() => new Date().toISOString().slice(0, 10));
   const [valeAte, setValeAte] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const [erroHora, setErroHora] = useState<string | null>(null);
 
-  async function salvar() {
-    setErro(null);
+  async function salvar(evento: React.FormEvent) {
+    evento.preventDefault();
     if (horaFim <= horaInicio) {
-      setErro("O horário final precisa ser depois do inicial.");
+      setErroHora("O horário final precisa ser depois do inicial.");
       return;
     }
+    setErroHora(null);
     setSalvando(true);
     try {
       await criarDisponibilidade({
@@ -47,73 +46,52 @@ export function FormularioDisponibilidade({
       });
       setDuracaoMinutos("");
       setValeAte("");
+      notificar({ tom: "sucesso", titulo: "Janela adicionada", descricao: `${ROTULO_DIA_SEMANA[diaSemana]}, ${horaInicio} às ${horaFim}` });
       aoCriar();
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : "Não foi possível salvar esta janela.");
+      notificar({ tom: "erro", titulo: "Não foi possível adicionar a janela", descricao: e instanceof ApiError ? e.message : "Confira a internet e tente de novo." });
     } finally {
       setSalvando(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-sm border border-linha bg-papel-fundo p-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-dia">
-          Dia da semana
-          <select
-            id="disp-dia"
-            value={diaSemana}
-            onChange={(e) => setDiaSemana(Number(e.target.value))}
-            className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-          >
-            {ROTULO_DIA_SEMANA.map((rotulo, indice) => (
-              <option key={rotulo} value={indice}>
-                {rotulo}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-inicio">
-          Início
-          <input id="disp-inicio" type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5" />
-        </label>
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-fim">
-          Fim
-          <input id="disp-fim" type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5" />
-        </label>
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-duracao">
-          Duração da sessão (min)
-          <input
-            id="disp-duracao"
-            type="number"
-            min={1}
-            max={480}
-            placeholder="valor padrão do sistema"
-            value={duracaoMinutos}
-            onChange={(e) => setDuracaoMinutos(e.target.value)}
-            className="w-40 rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-            aria-describedby="disp-duracao-ajuda"
-          />
-        </label>
-      </div>
-      <p id="disp-duracao-ajuda" className="text-xs text-tinta-fraca">
-        Deixe em branco para usar o valor padrão configurado no sistema. Esse padrão é um VALOR INICIAL — não vem do
-        método da Dra. Elaine — e é ajustável em Admin sem precisar mexer em código.
-      </p>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-vale-de">
-          Vale a partir de
-          <input id="disp-vale-de" type="date" value={valeDe} onChange={(e) => setValeDe(e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5" />
-        </label>
-        <label className="flex flex-col gap-1 text-sm" htmlFor="disp-vale-ate">
-          Vale até (opcional)
-          <input id="disp-vale-ate" type="date" value={valeAte} onChange={(e) => setValeAte(e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5" />
-        </label>
-        <Botao variante="primario" carregando={salvando} onClick={salvar}>
-          Adicionar janela
-        </Botao>
-      </div>
-      {erro && <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>}
-    </div>
+    <Cartao como="div" rotulo="Nova janela" titulo="Adicionar horário livre recorrente" descricao="Toda semana, neste dia e neste intervalo, a advogada atende. É daqui que saem as opções do link de agendamento.">
+      <form noValidate onSubmit={salvar} className="flex flex-col gap-5">
+        <div className="grid gap-5 sm:grid-cols-3">
+          <Campo rotulo="Dia da semana" id="disp-dia">
+            <Selecao value={diaSemana} onChange={(e) => setDiaSemana(Number(e.target.value))}>
+              {ROTULO_DIA_SEMANA.map((rotulo, indice) => (
+                <option key={rotulo} value={indice}>
+                  {rotulo}
+                </option>
+              ))}
+            </Selecao>
+          </Campo>
+          <Campo rotulo="Início" id="disp-inicio">
+            <Entrada type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Fim" id="disp-fim" erro={erroHora}>
+            <Entrada type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} onBlur={() => horaFim > horaInicio && setErroHora(null)} />
+          </Campo>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <Campo rotulo="Duração da sessão" id="disp-duracao" extra="opcional" ajuda="Em minutos. Em branco, vale o padrão configurado em Admin (é um valor inicial, ajustável sem código).">
+            <Entrada type="number" min={1} max={480} inputMode="numeric" placeholder="padrão do sistema" value={duracaoMinutos} onChange={(e) => setDuracaoMinutos(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Vale a partir de" id="disp-vale-de">
+            <Entrada type="date" value={valeDe} onChange={(e) => setValeDe(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Vale até" id="disp-vale-ate" extra="opcional">
+            <Entrada type="date" value={valeAte} onChange={(e) => setValeAte(e.target.value)} />
+          </Campo>
+        </div>
+        <div className="flex justify-end">
+          <Botao type="submit" variante="primario" carregando={salvando}>
+            Adicionar janela
+          </Botao>
+        </div>
+      </form>
+    </Cartao>
   );
 }

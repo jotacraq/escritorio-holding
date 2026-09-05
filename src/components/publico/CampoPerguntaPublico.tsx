@@ -47,7 +47,7 @@ export function CampoPerguntaPublico({
           value={(valor as string) ?? ""}
           onChange={(e) => aoMudar(e.target.value)}
           autoComplete="off"
-          className="w-full rounded-md border border-linha-forte bg-papel-elevado px-4 py-3 text-base text-tinta"
+          className="w-full rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
       );
     case "numero":
@@ -59,7 +59,7 @@ export function CampoPerguntaPublico({
           min={0}
           value={(valor as number) ?? ""}
           onChange={(e) => aoMudar(e.target.value === "" ? null : Number(e.target.value))}
-          className="w-32 rounded-md border border-linha-forte bg-papel-elevado px-4 py-3 text-base text-tinta"
+          className="w-32 rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
       );
     case "texto_longo":
@@ -69,7 +69,7 @@ export function CampoPerguntaPublico({
           rows={4}
           value={(valor as string) ?? ""}
           onChange={(e) => aoMudar(e.target.value)}
-          className="w-full rounded-md border border-linha-forte bg-papel-elevado px-4 py-3 text-base text-tinta"
+          className="w-full rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
       );
     case "sim_nao":
@@ -78,11 +78,11 @@ export function CampoPerguntaPublico({
           {(["sim", "nao"] as const).map((opcao) => (
             <label
               key={opcao}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-4 py-3 text-base font-medium ${
-                valor === opcao ? "border-[color:var(--latao)] bg-latao-fraco text-tinta" : "border-linha-forte bg-papel-elevado text-tinta"
+              className={`flex flex-1 items-center justify-center gap-2 min-h-11 rounded-controle border-2 px-4 py-3 text-base font-medium ${
+                valor === opcao ? "border-[color:var(--latao-cta)] bg-latao-fraco text-tinta" : "border-linha-forte bg-papel text-tinta"
               }`}
             >
-              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 accent-[color:var(--latao)]" />
+              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 accent-[color:var(--latao-cta)]" />
               {opcao === "sim" ? "Sim" : "Não"}
             </label>
           ))}
@@ -94,11 +94,11 @@ export function CampoPerguntaPublico({
           {(pergunta.opcoes ?? []).map((opcao) => (
             <label
               key={opcao}
-              className={`flex items-center gap-3 rounded-md border px-4 py-3 text-base ${
-                valor === opcao ? "border-[color:var(--latao)] bg-latao-fraco" : "border-linha-forte bg-papel-elevado"
+              className={`flex items-center gap-3 min-h-11 rounded-controle border-2 px-4 py-3 text-base ${
+                valor === opcao ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
               }`}
             >
-              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 shrink-0 accent-[color:var(--latao)]" />
+              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 shrink-0 accent-[color:var(--latao-cta)]" />
               <span className="text-tinta">{opcao}</span>
             </label>
           ))}
@@ -111,15 +111,15 @@ export function CampoPerguntaPublico({
           {(pergunta.opcoes ?? []).map((opcao) => (
             <label
               key={opcao}
-              className={`flex items-center gap-3 rounded-md border px-4 py-3 text-base ${
-                selecionadas.includes(opcao) ? "border-[color:var(--latao)] bg-latao-fraco" : "border-linha-forte bg-papel-elevado"
+              className={`flex items-center gap-3 min-h-11 rounded-controle border-2 px-4 py-3 text-base ${
+                selecionadas.includes(opcao) ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
               }`}
             >
               <input
                 type="checkbox"
                 checked={selecionadas.includes(opcao)}
                 onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
-                className="h-5 w-5 shrink-0 rounded-sm accent-[color:var(--latao)]"
+                className="h-5 w-5 shrink-0 rounded-controle accent-[color:var(--latao-cta)]"
               />
               <span className="text-tinta">{opcao}</span>
             </label>

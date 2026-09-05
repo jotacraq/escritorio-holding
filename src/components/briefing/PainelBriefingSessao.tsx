@@ -8,6 +8,7 @@ import { Botao } from "@/components/ui/Botao";
 import { EstadoCarregando } from "@/components/ui/Estado";
 import { ConteudoCompacto } from "@/components/briefing/atomos";
 import type { BriefingConteudoV2 } from "@/components/briefing/tipos";
+import { ComoEleFala } from "@/components/briefing/ComoEleFala";
 
 /** Chave de localStorage: aberto/fechado é decisão do usuário, sobrevive a F5. */
 function chaveAberto(sessaoId: string) {
@@ -89,15 +90,15 @@ export function PainelBriefingSessao({
   return (
     <aside
       aria-label="Briefing Estratégico"
-      className="nao-imprimir flex flex-col rounded-sm border border-linha bg-papel-elevado shadow-[var(--sombra-cartao)] lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)]"
+      className="nao-imprimir flex flex-col rounded-controle border border-linha bg-papel-elevado shadow-[var(--sombra-cartao)] lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)]"
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-linha px-3.5 py-2.5">
-        <h2 className="font-serif text-sm font-bold text-tinta">Briefing Estratégico</h2>
+        <h2 className="text-sm font-bold text-tinta">Briefing Estratégico</h2>
         <div className="flex items-center gap-1">
           {briefingAtual && (
             <Link
               href={`/jornadas/${jornadaId}#briefing`}
-              className="rounded-sm px-1.5 py-1 text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+              className="-my-2 inline-flex min-h-11 items-center rounded-controle px-1.5 text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
             >
               Ver completo
             </Link>
@@ -107,7 +108,7 @@ export function PainelBriefingSessao({
             aria-expanded={aberto}
             aria-controls="painel-briefing-sessao-conteudo"
             onClick={alternarAberto}
-            className="flex items-center gap-1 rounded-sm border border-linha px-2 py-1 text-xs font-medium text-tinta-suave hover:bg-papel-fundo hover:text-tinta"
+            className="-my-2 flex min-h-11 items-center gap-1 rounded-controle border border-linha px-2.5 text-xs font-medium text-tinta-suave hover:bg-papel-fundo hover:text-tinta"
           >
             {aberto ? "Recolher" : "Mostrar"}
             <svg aria-hidden="true" viewBox="0 0 20 20" className={`h-3 w-3 fill-current transition-transform ${aberto ? "rotate-180" : ""}`}>
@@ -129,7 +130,15 @@ export function PainelBriefingSessao({
             <SemBriefing gerando={gerando} erro={erroGerar} aoGerar={gerar} />
           )}
 
-          {!carregando && !erroCarregar && briefing && c && <ConteudoCompacto briefing={briefing} c={c} />}
+          {!carregando && !erroCarregar && briefing && c && (
+            <div className="flex flex-col gap-3">
+              <ConteudoCompacto briefing={briefing} c={c} />
+              <section className="rounded-controle border border-linha px-3 py-2.5">
+                <h3 className="mb-1.5 text-rotulo font-medium uppercase text-tinta-fraca">Como ele fala</h3>
+                <ComoEleFala briefing={briefing} compacto />
+              </section>
+            </div>
+          )}
         </div>
       )}
     </aside>
@@ -138,7 +147,7 @@ export function PainelBriefingSessao({
 
 function SemBriefing({ gerando, erro, aoGerar }: { gerando: boolean; erro: ApiError | null; aoGerar: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-2.5 rounded-sm border border-dashed border-linha-forte px-3 py-4 text-sm text-tinta-suave">
+    <div className="flex flex-col items-start gap-2.5 rounded-controle border border-dashed border-linha-forte px-3 py-4 text-sm text-tinta-suave">
       <p className="font-medium text-tinta">Nenhum briefing gerado ainda</p>
       <p>Sem análise, este painel não mostra nada — nenhum exemplo é inventado no lugar dela.</p>
       <Botao variante="primario" carregando={gerando} onClick={aoGerar} className="mt-1">
@@ -150,7 +159,7 @@ function SemBriefing({ gerando, erro, aoGerar }: { gerando: boolean; erro: ApiEr
         </p>
       )}
       {erro && (
-        <p role="alert" className="w-full rounded-sm border border-vermelho bg-vermelho-fraco px-2.5 py-2 text-xs text-[color:var(--vermelho)]">
+        <p role="alert" className="w-full rounded-controle border border-vermelho bg-vermelho-fraco px-2.5 py-2 text-xs text-[color:var(--vermelho)]">
           {mensagemErroGerar(erro)}
         </p>
       )}

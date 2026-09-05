@@ -10,6 +10,7 @@ import { BarraProgresso } from "@/components/publico/BarraProgresso";
 import { CampoPerguntaPublico, perguntaPublicaRespondida, perguntaPublicaVisivel } from "@/components/publico/CampoPerguntaPublico";
 import { lerRascunho, limparRascunho, salvarRascunho } from "@/components/publico/rascunhoLocal";
 import { formatarData } from "@/lib/formatar";
+import { BotaoPublico, CartaoPublico, IconeFeito, RotuloPublico } from "@/components/publico/atomos";
 
 function agruparPorBloco(definicao: PerguntaFormularioPublico[]): { bloco: string; perguntas: PerguntaFormularioPublico[] }[] {
   const ordem: string[] = [];
@@ -29,26 +30,27 @@ function TelaConcluida({ abertura }: { abertura: AberturaFormularioPublico }) {
   const blocos = agruparPorBloco(abertura.payload.definicao);
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-11 w-11 fill-none stroke-[color:var(--verde)] stroke-2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
-        </svg>
-        <h1 className="font-serif text-xl font-bold text-tinta">
-          Recebemos suas respostas{abertura.payload.respondido_em ? ` em ${formatarData(abertura.payload.respondido_em)}` : ""}
-        </h1>
-        <p className="max-w-sm text-tinta-suave">
-          {abertura.primeiro_nome}, obrigada por responder. A equipe da Dra. Elaine já está com essas informações antes da
-          sua conversa.
-        </p>
+      <div className="flex flex-col items-center gap-4 text-center" aria-live="polite">
+        <IconeFeito />
+        <div className="flex flex-col gap-2">
+          <RotuloPublico>Formulário Estratégico</RotuloPublico>
+          <h1 className="text-tinta">
+            Recebemos suas respostas{abertura.payload.respondido_em ? ` em ${formatarData(abertura.payload.respondido_em)}` : ""}
+          </h1>
+          <p className="max-w-sm text-tinta-suave">
+            {abertura.primeiro_nome}, obrigada por responder. A equipe da Dra. Elaine já está com essas informações antes da
+            sua conversa.
+          </p>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-5 rounded-md border border-linha bg-papel px-5 py-5">
+      <CartaoPublico className="flex flex-col gap-5">
         {blocos.map(({ bloco, perguntas }) => {
           const visiveis = perguntas.filter((p) => respostas[p.id] !== undefined && respostas[p.id] !== null && respostas[p.id] !== "");
           if (visiveis.length === 0) return null;
           return (
             <div key={bloco} className="flex flex-col gap-2.5">
-              <h2 className="font-serif text-sm font-bold uppercase tracking-wide text-tinta-suave">{bloco}</h2>
+              <h2 className="text-rotulo font-medium uppercase text-tinta-fraca">{bloco}</h2>
               {visiveis.map((pergunta) => {
                 const valor = respostas[pergunta.id];
                 const texto = Array.isArray(valor) ? valor.join(", ") : String(valor);
@@ -62,7 +64,7 @@ function TelaConcluida({ abertura }: { abertura: AberturaFormularioPublico }) {
             </div>
           );
         })}
-      </div>
+      </CartaoPublico>
     </div>
   );
 }
@@ -139,7 +141,8 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
        */}
       <h1 className="sr-only">Formulário Estratégico — Olá, {abertura.primeiro_nome}</h1>
       <div className="flex flex-col gap-1">
-        <p className="text-sm text-tinta-suave">Olá, {abertura.primeiro_nome}. Leva cerca de 3 minutos.</p>
+        <RotuloPublico>Formulário Estratégico</RotuloPublico>
+        <p className="text-tinta-suave">Olá, {abertura.primeiro_nome}. Leva cerca de 3 minutos.</p>
       </div>
 
       <BarraProgresso atual={passo + 1} total={totalPassos} rotulo={blocoAtual ? blocoAtual.bloco : "Confirmação"} />
@@ -151,7 +154,7 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
       </div>
 
       {blocoAtual && (
-        <fieldset className="flex flex-col gap-6">
+        <fieldset className="flex flex-col gap-6 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
           <legend className="sr-only">{blocoAtual.bloco}</legend>
           {perguntasVisiveisDoBloco.map((pergunta) => (
             <div key={pergunta.id} className="flex flex-col gap-2">
@@ -171,29 +174,37 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
       )}
 
       {!blocoAtual && (
-        <fieldset className="flex flex-col gap-4">
-          <legend className="font-serif text-base font-bold text-tinta">Antes de enviar</legend>
-          {abertura.payload.consentimentos.map((consentimento) => (
-            <label key={consentimento.chave} className="flex items-start gap-3 rounded-md border border-linha-forte bg-papel-elevado px-4 py-3">
-              <input
-                type="checkbox"
-                checked={aceites.has(consentimento.chave)}
-                onChange={(e) =>
-                  setAceites((atual) => {
-                    const novo = new Set(atual);
-                    if (e.target.checked) novo.add(consentimento.chave);
-                    else novo.delete(consentimento.chave);
-                    return novo;
-                  })
-                }
-                className="mt-0.5 h-5 w-5 shrink-0 rounded-sm accent-[color:var(--latao)]"
-              />
-              <span className="text-sm leading-relaxed text-tinta">
-                <span className="block font-medium">{consentimento.titulo}</span>
-                {consentimento.texto}
-              </span>
-            </label>
-          ))}
+        <fieldset className="flex flex-col gap-4 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
+          <legend className="text-subtitulo font-bold text-tinta">Antes de enviar</legend>
+          {abertura.payload.consentimentos.map((consentimento) => {
+            const marcado = aceites.has(consentimento.chave);
+            return (
+              <label
+                key={consentimento.chave}
+                className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-controle border-2 px-4 py-3 transition-colors duration-[var(--transicao-rapida)] ${
+                  marcado ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={marcado}
+                  onChange={(e) =>
+                    setAceites((atual) => {
+                      const novo = new Set(atual);
+                      if (e.target.checked) novo.add(consentimento.chave);
+                      else novo.delete(consentimento.chave);
+                      return novo;
+                    })
+                  }
+                  className="mt-1 h-6 w-6 shrink-0 accent-[color:var(--latao-cta)]"
+                />
+                <span className="text-sm leading-relaxed text-tinta">
+                  <span className="block text-base font-bold">{consentimento.titulo}</span>
+                  {consentimento.texto}
+                </span>
+              </label>
+            );
+          })}
         </fieldset>
       )}
 
@@ -203,36 +214,20 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
         </p>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-col-reverse gap-3 sm:flex-row">
         {passo > 0 && (
-          <button
-            type="button"
-            onClick={() => setPasso((p) => p - 1)}
-            disabled={enviando}
-            className="flex-1 rounded-md border border-linha-forte bg-papel-elevado py-3 text-base font-medium text-tinta disabled:opacity-50"
-          >
+          <BotaoPublico variante="secundario" onClick={() => setPasso((p) => p - 1)} disabled={enviando} className="sm:flex-1">
             Voltar
-          </button>
+          </BotaoPublico>
         )}
         {blocoAtual ? (
-          <button
-            type="button"
-            onClick={() => setPasso((p) => p + 1)}
-            disabled={!blocoCompleto}
-            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-bold text-tinta disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <BotaoPublico variante="primario" onClick={() => setPasso((p) => p + 1)} disabled={!blocoCompleto} className="sm:flex-[2]">
             Continuar
-          </button>
+          </BotaoPublico>
         ) : (
-          <button
-            type="button"
-            onClick={enviar}
-            disabled={!podeEnviar || enviando}
-            aria-busy={enviando}
-            className="flex-1 rounded-md bg-[color:var(--latao)] py-3 text-base font-bold text-tinta disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <BotaoPublico variante="primario" onClick={enviar} disabled={!podeEnviar} carregando={enviando} className="sm:flex-[2]">
             {enviando ? "Enviando…" : "Enviar respostas"}
-          </button>
+          </BotaoPublico>
         )}
       </div>
     </div>

@@ -1,15 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import {
-  type CondicaoOferta,
-  type Oferta,
-  VALOR_INCENTIVO_RESOLVEDOR_CROQUI,
-  VALOR_PADRAO_CROQUI,
-} from "@/types/roteiro";
+import type { CondicaoOferta, Oferta } from "@/types/roteiro";
+import { CHAVE_PARAMETRO, type PrecoCroqui } from "@/types/cenario";
 import { ErroSessao, marcarOfertaAceita, registrarOferta } from "@/components/sessao/api";
 import { Botao } from "@/components/ui/Botao";
-import { Selo } from "@/components/ui/Selo";
+import { Cartao } from "@/components/ui/Cartao";
+import { Campo, Entrada, Opcao } from "@/components/ui/Campo";
+import { Selo, SeloStub } from "@/components/ui/Selo";
+import { useToast } from "@/hooks/useToast";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 
 const ROTULO_CONDICAO: Record<CondicaoOferta, string> = {
@@ -17,27 +16,28 @@ const ROTULO_CONDICAO: Record<CondicaoOferta, string> = {
   incentivo_resolvedor: "Incentivo do Resolvedor",
 };
 
-function valorPadraoDaCondicao(condicao: CondicaoOferta): number {
-  return condicao === "incentivo_resolvedor" ? VALOR_INCENTIVO_RESOLVEDOR_CROQUI : VALOR_PADRAO_CROQUI;
+const CHAVE_DA_CONDICAO: Record<CondicaoOferta, string> = {
+  padrao: CHAVE_PARAMETRO.croquiPadrao,
+  incentivo_resolvedor: CHAVE_PARAMETRO.croquiIncentivo,
+};
+
+/** Preço de tabela da condição — `null` quando o parâmetro não está cadastrado (B27: nunca um número de fallback). */
+function precoDaCondicao(preco: PrecoCroqui | null, condicao: CondicaoOferta): number | null {
+  if (!preco) return null;
+  return condicao === "padrao" ? preco.padrao : preco.incentivo;
 }
 
-function LinhaOferta({
-  jornadaId,
-  oferta,
-  aoAtualizar,
-}: {
-  jornadaId: string;
-  oferta: Oferta;
-  aoAtualizar: (oferta: Oferta) => void;
-}) {
+function LinhaOferta({ jornadaId, oferta, aoAtualizar }: { jornadaId: string; oferta: Oferta; aoAtualizar: (oferta: Oferta) => void }) {
   const [enviando, setEnviando] = useState<"sim" | "nao" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const { notificar } = useToast();
 
   async function decidir(aceita: boolean) {
     setErro(null);
     setEnviando(aceita ? "sim" : "nao");
     try {
       aoAtualizar(await marcarOfertaAceita(jornadaId, oferta.id, aceita));
+      notificar({ tom: "sucesso", titulo: aceita ? "Oferta aceita registrada" : "Recusa registrada" });
     } catch (e) {
       setErro(e instanceof ErroSessao ? e.message : "Não deu para registrar a decisão. Tente de novo.");
     } finally {
@@ -46,21 +46,19 @@ function LinhaOferta({
   }
 
   return (
-    <li className="flex flex-col gap-1.5 rounded-sm border border-linha bg-papel-elevado px-3 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+    <li className="flex flex-col gap-2 px-5 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-sm font-medium text-tinta">{ROTULO_CONDICAO[oferta.condicao]}</span>
-          <span className="font-serif text-base font-bold text-tinta">{formatarMoeda(oferta.valor_ofertado)}</span>
-          {oferta.condicao === "incentivo_resolvedor" && (
-            <span className="text-xs text-tinta-fraca line-through">{formatarMoeda(oferta.valor_padrao)}</span>
-          )}
+          <span className="text-subtitulo font-bold text-tinta">{formatarMoeda(oferta.valor_ofertado)}</span>
+          {oferta.condicao === "incentivo_resolvedor" && <span className="text-xs text-tinta-fraca line-through">{formatarMoeda(oferta.valor_padrao)}</span>}
         </div>
         {oferta.aceita === null ? (
-          <div className="flex items-center gap-1.5">
-            <Botao variante="primario" className="px-2.5 py-1 text-xs" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => decidir(true)}>
+          <div className="flex items-center gap-2">
+            <Botao variante="primario" tamanho="compacto" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => decidir(true)}>
               Sim, fechou
             </Botao>
-            <Botao variante="perigo" className="px-2.5 py-1 text-xs" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => decidir(false)}>
+            <Botao variante="perigo" tamanho="compacto" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => decidir(false)}>
               Não
             </Botao>
           </div>
@@ -75,7 +73,7 @@ function LinhaOferta({
           {erro}
         </p>
       )}
-      <p className="text-[11px] text-tinta-fraca">
+      <p className="text-xs text-tinta-fraca">
         Ofertada em {formatarDataHora(oferta.ofertada_em)}
         {oferta.valida_ate && ` · válida até ${formatarDataHora(oferta.valida_ate)}`}
       </p>
@@ -83,35 +81,64 @@ function LinhaOferta({
   );
 }
 
+/**
+ * Oferta do Croqui (PARTE 11/12 do roteiro). O preço de tabela vem de
+ * `parametros_metodo` pelo bloco `preco` de `GET /api/jornadas/[id]/ofertas`
+ * (B27) — sem parâmetro ativo não há número nenhum na tela, só o
+ * `SeloStub` dizendo onde cadastrar, e o botão de registrar fica desabilitado
+ * com o motivo. O servidor recusa com 409 `parametro_ausente` de qualquer
+ * jeito; a tela só evita a viagem.
+ */
 export function PainelOferta({
   jornadaId,
   ofertas,
+  preco,
   aoAtualizar,
 }: {
   jornadaId: string;
   ofertas: Oferta[];
+  /** `null` = a resposta não trouxe o bloco `preco` (servidor antigo) — tratado como parâmetro ausente. */
+  preco: PrecoCroqui | null;
   aoAtualizar: (ofertas: Oferta[]) => void;
 }) {
+  const { notificar } = useToast();
   const [mostrarFormulario, setMostrarFormulario] = useState(ofertas.length === 0);
   const [condicao, setCondicao] = useState<CondicaoOferta>("incentivo_resolvedor");
-  const [valorOfertado, setValorOfertado] = useState<number>(valorPadraoDaCondicao("incentivo_resolvedor"));
+  const [valorOfertado, setValorOfertado] = useState<string>(() => {
+    const inicial = precoDaCondicao(preco, "incentivo_resolvedor");
+    return inicial == null ? "" : String(inicial);
+  });
   const [registrando, setRegistrando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  const precoTabela = precoDaCondicao(preco, condicao);
+  const chaveAusente = precoTabela == null ? CHAVE_DA_CONDICAO[condicao] : null;
+  const valorNumerico = valorOfertado.trim() === "" ? null : Number(valorOfertado);
+  const valorInvalido = valorNumerico != null && (!Number.isFinite(valorNumerico) || valorNumerico < 0);
+  const podeRegistrar = chaveAusente == null && valorNumerico != null && !valorInvalido;
+
   function aoTrocarCondicao(nova: CondicaoOferta) {
     setCondicao(nova);
-    setValorOfertado(valorPadraoDaCondicao(nova));
+    const tabela = precoDaCondicao(preco, nova);
+    setValorOfertado(tabela == null ? "" : String(tabela));
+    setErro(null);
   }
 
   async function registrar() {
+    if (!podeRegistrar || valorNumerico == null) return;
     setErro(null);
     setRegistrando(true);
     try {
-      const nova = await registrarOferta(jornadaId, { condicao, valor_ofertado: valorOfertado });
+      const nova = await registrarOferta(jornadaId, { condicao, valor_ofertado: valorNumerico });
       aoAtualizar([nova, ...ofertas]);
       setMostrarFormulario(false);
+      notificar({ tom: "sucesso", titulo: "Oferta registrada", descricao: `${ROTULO_CONDICAO[condicao]} · ${formatarMoeda(valorNumerico)}` });
     } catch (e) {
-      setErro(e instanceof ErroSessao ? e.message : "Não deu para registrar a oferta. Tente de novo.");
+      if (e instanceof ErroSessao && e.codigo === "parametro_ausente") {
+        setErro(`O preço de tabela desta condição não está cadastrado (${CHAVE_DA_CONDICAO[condicao]}). Cadastre em Admin → Parâmetros e tente de novo.`);
+      } else {
+        setErro(e instanceof ErroSessao ? e.message : "Não deu para registrar a oferta. Tente de novo.");
+      }
     } finally {
       setRegistrando(false);
     }
@@ -121,21 +148,30 @@ export function PainelOferta({
     aoAtualizar(ofertas.map((o) => (o.id === atualizada.id ? atualizada : o)));
   }
 
-  return (
-    <section aria-labelledby="titulo-oferta" className="flex flex-col gap-2 rounded-sm border border-linha bg-papel px-3 py-3 sm:px-4">
-      <div className="flex items-center justify-between">
-        <h2 id="titulo-oferta" className="font-serif text-sm font-bold text-tinta">
-          Oferta do Croqui Estrutural — PARTE 11/12
-        </h2>
-        {ofertas.length > 0 && !mostrarFormulario && (
-          <Botao variante="fantasma" className="px-2 py-1 text-xs" onClick={() => setMostrarFormulario(true)}>
-            + Registrar outra oferta
-          </Botao>
-        )}
-      </div>
+  const motivoBloqueio = chaveAusente
+    ? `Sem preço de tabela cadastrado para ${ROTULO_CONDICAO[condicao]} (${chaveAusente}).`
+    : valorNumerico == null
+      ? "Informe o valor ofertado."
+      : valorInvalido
+        ? "O valor precisa ser um número maior ou igual a zero."
+        : null;
 
+  return (
+    <Cartao
+      rotulo="Parte 11 / 12"
+      titulo="Oferta do Croqui Estrutural"
+      descricao="Registre o que foi ofertado antes do pagamento chegar — é o que reconcilia a venda com o webhook."
+      preenchimento="sem"
+      acao={
+        ofertas.length > 0 && !mostrarFormulario ? (
+          <Botao variante="secundario" tamanho="compacto" onClick={() => setMostrarFormulario(true)}>
+            Registrar outra oferta
+          </Botao>
+        ) : undefined
+      }
+    >
       {ofertas.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="divide-y divide-linha">
           {ofertas.map((o) => (
             <LinhaOferta key={o.id} jornadaId={jornadaId} oferta={o} aoAtualizar={atualizarOfertaNaLista} />
           ))}
@@ -143,47 +179,57 @@ export function PainelOferta({
       )}
 
       {mostrarFormulario && (
-        <div className="flex flex-col gap-2.5 rounded-sm border border-dashed border-linha-forte px-3 py-3">
-          <div role="radiogroup" aria-label="Condição da oferta" className="flex flex-wrap gap-2">
-            {(["padrao", "incentivo_resolvedor"] as const).map((opcao) => (
-              <label
-                key={opcao}
-                className={`flex cursor-pointer items-center gap-2 rounded-sm border px-3 py-1.5 text-sm ${
-                  condicao === opcao ? "border-[color:var(--latao)] bg-latao-fraco text-tinta" : "border-linha-forte text-tinta-suave"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="condicao-oferta"
-                  className="sr-only"
-                  checked={condicao === opcao}
-                  onChange={() => aoTrocarCondicao(opcao)}
-                />
-                {ROTULO_CONDICAO[opcao]} · {formatarMoeda(valorPadraoDaCondicao(opcao))}
-              </label>
-            ))}
-          </div>
+        <div className={`flex flex-col gap-5 px-5 py-5 sm:px-6 ${ofertas.length > 0 ? "border-t border-linha" : ""}`}>
+          {preco?.parametro_ausente && preco.parametro_ausente.length > 0 && (
+            <SeloStub texto={`Honorário não cadastrado — Admin → Parâmetros (${preco.parametro_ausente.join(", ")}).`} />
+          )}
+          {!preco && <SeloStub texto="A API não devolveu o preço de tabela do Croqui — Admin → Parâmetros." />}
 
-          <label className="flex flex-col gap-1 text-xs text-tinta-fraca">
-            Valor ofertado (ajustável — negociação ao vivo)
-            <input
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-rotulo font-medium uppercase text-tinta-fraca">Condição da oferta</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(["padrao", "incentivo_resolvedor"] as const).map((opcao) => {
+                const tabela = precoDaCondicao(preco, opcao);
+                return (
+                  <Opcao
+                    key={opcao}
+                    name="condicao-oferta"
+                    checked={condicao === opcao}
+                    onChange={() => aoTrocarCondicao(opcao)}
+                    rotulo={ROTULO_CONDICAO[opcao]}
+                    descricao={tabela == null ? "sem preço de tabela cadastrado" : `tabela ${formatarMoeda(tabela)}`}
+                  />
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <Campo
+            rotulo="Valor ofertado"
+            ajuda={precoTabela != null ? `Ajustável na negociação ao vivo. O preço de tabela (${formatarMoeda(precoTabela)}) fica registrado como referência.` : "Sem preço de tabela, a oferta não pode ser registrada."}
+            erro={valorInvalido ? "O valor precisa ser um número maior ou igual a zero." : undefined}
+            obrigatorio
+          >
+            <Entrada
               type="number"
+              inputMode="decimal"
               min={0}
               step={100}
               value={valorOfertado}
-              onChange={(e) => setValorOfertado(Number(e.target.value))}
-              className="w-40 rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5 text-sm text-tinta"
+              disabled={chaveAusente != null}
+              onChange={(e) => setValorOfertado(e.target.value)}
+              className="w-48"
             />
-          </label>
+          </Campo>
 
           {erro && (
-            <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+            <p role="alert" className="text-sm text-[color:var(--vermelho)]">
               {erro}
             </p>
           )}
 
-          <div className="flex items-center gap-2">
-            <Botao variante="primario" carregando={registrando} onClick={registrar}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Botao variante="primario" carregando={registrando} disabled={!podeRegistrar} onClick={registrar} aria-describedby={motivoBloqueio ? "motivo-oferta-bloqueada" : undefined}>
               Registrar oferta
             </Botao>
             {ofertas.length > 0 && (
@@ -191,9 +237,14 @@ export function PainelOferta({
                 Cancelar
               </Botao>
             )}
+            {motivoBloqueio && (
+              <p id="motivo-oferta-bloqueada" className="text-xs text-tinta-fraca">
+                {motivoBloqueio}
+              </p>
+            )}
           </div>
         </div>
       )}
-    </section>
+    </Cartao>
   );
 }

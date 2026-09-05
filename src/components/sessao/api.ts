@@ -8,6 +8,7 @@
  * `buscarFicha360`/`listarJornadas`, que este módulo reusa por import.
  */
 
+import type { PrecoCroqui } from "@/types/cenario";
 import type {
   ChaveRoteiro,
   ConsentimentoGravacao,
@@ -107,8 +108,17 @@ export function registrarSim(sessaoId: string, sim: SimIdentificador, confirmado
 // Ofertas (0011/0030) — GET/POST /api/jornadas/[id]/ofertas, PATCH .../[ofertaId]
 // ---------------------------------------------------------------------------
 
-export function listarOfertas(jornadaId: string): Promise<Oferta[]> {
-  return chamar<{ itens: Oferta[] }>(`/api/jornadas/${jornadaId}/ofertas`).then((d) => d.itens);
+export interface RespostaOfertas {
+  itens: Oferta[];
+  /** Bloco `preco` (Fase 4, B27) — `null` quando o servidor ainda não o devolve. */
+  preco: PrecoCroqui | null;
+}
+
+export function listarOfertas(jornadaId: string): Promise<RespostaOfertas> {
+  return chamar<{ itens: Oferta[]; preco?: PrecoCroqui }>(`/api/jornadas/${jornadaId}/ofertas`).then((d) => ({
+    itens: d.itens ?? [],
+    preco: d.preco ?? null,
+  }));
 }
 
 export function registrarOferta(

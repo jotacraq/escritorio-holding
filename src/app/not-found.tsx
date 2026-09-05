@@ -35,8 +35,8 @@ export default function NaoEncontrado() {
   const rotulo = ROTAS_EM_CONSTRUCAO[rota];
 
   const conteudo = (
-    <div className="flex max-w-prose flex-col items-start gap-3 rounded-sm border border-linha bg-papel-elevado p-6">
-      <h1 className="font-serif text-xl font-bold text-tinta">
+    <div className="flex max-w-prose flex-col items-start gap-3 rounded-controle border border-linha bg-papel-elevado p-6">
+      <h1 className="text-xl font-bold text-tinta">
         {rotulo ? `${rotulo} está em construção` : "Página não encontrada"}
       </h1>
       <p className="text-sm leading-relaxed text-tinta-suave">
@@ -47,7 +47,7 @@ export default function NaoEncontrado() {
       {!ehAreaPublica && (
         <Link
           href="/esteira"
-          className="rounded-sm border border-linha-forte bg-latao-fraco px-3.5 py-2 text-sm font-medium text-tinta hover:border-latao"
+          className="rounded-controle border border-linha-forte bg-latao-fraco px-3.5 py-2 text-sm font-medium text-tinta hover:border-latao"
         >
           Ir para a Esteira
         </Link>

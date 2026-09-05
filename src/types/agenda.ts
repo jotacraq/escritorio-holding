@@ -46,6 +46,29 @@ export interface SlotDisponivel {
   fim_em: string;
 }
 
+/**
+ * Agendamento como a Agenda (`GET /api/agendamentos`) o vê — o `Agendamento`
+ * de `lib/api.ts` (fronteira travada) mais os campos de presença da Fase 4
+ * (0051, agente A). Opcionais: `undefined` = a rota ainda não devolve o campo
+ * (sem informação); `null` = devolve e o cliente ainda não confirmou.
+ */
+export type ViaPresenca = "link" | "whatsapp" | "email" | "equipe" | "ligacao_ia";
+export interface AgendamentoAgenda {
+  id: string;
+  sessao_id: string;
+  jornada_id?: string;
+  pessoa_nome?: string;
+  inicio_em: string;
+  fim_em: string;
+  status: StatusAgendamento;
+  origem: "equipe" | "cliente" | "ia";
+  observacoes: string | null;
+  advogada_id?: string | null;
+  presenca_confirmada_em?: string | null;
+  presenca_confirmada_via?: ViaPresenca | string | null;
+  link_sala?: string | null;
+}
+
 export interface AgendamentoSugestao {
   id: string;
   link_id: string;
@@ -130,6 +153,9 @@ export interface SessaoDoDiaLinha {
   advogada_id: string | null;
   advogada_nome: string | null;
   tem_briefing: boolean;
+  /** 0051/0052 (agente A) — opcional até a view ganhar a coluna. */
+  presenca_confirmada_em?: string | null;
+  presenca_confirmada_via?: string | null;
 }
 
 export interface PendenciaPreparoLinha {
@@ -152,7 +178,11 @@ export type TipoPendenciaSistema =
   | "webhook_falho"
   | "mensagem_falhou"
   | "link_expirando"
-  | "material_aguardando_aprovacao";
+  | "material_aguardando_aprovacao"
+  | "cron_parado"
+  | "sessao_sem_sala"
+  | "ligacao_ia_falhou"
+  | (string & {});
 
 export interface PendenciaSistemaLinha {
   id: string;

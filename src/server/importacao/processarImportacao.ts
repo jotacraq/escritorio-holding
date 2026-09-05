@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { CAMPOS_IMPORTAVEIS } from "@/types/importacao";
-import type { CampoImportavel, Importacao, MapaColunas } from "@/types/importacao";
+import type { CampoImportavel, Importacao, MapaColunas, PerguntasSeminario } from "@/types/importacao";
 import { classificarLinhas } from "./classificacao";
 import {
   CHAVE_LIMITE_LINHAS,
@@ -12,6 +12,7 @@ import {
 } from "./config";
 import { decodificarArquivo, parseCsv } from "./csv";
 import { ErroImportacao } from "./erros";
+import { validarPerguntasSeminario } from "./perguntas";
 
 const TAMANHO_LOTE_INSERT = 500;
 
@@ -70,10 +71,12 @@ export async function processarNovaImportacao(
     arquivo: File;
     edicaoId: string;
     mapaColunas: MapaColunas;
+    /** Cabeçalhos marcados como "Pergunta do seminário" (Fase 4, `./perguntas.ts`). Ausente = contrato antigo. */
+    perguntasSeminario?: PerguntasSeminario | null;
     criadoPor: string;
   },
 ): Promise<ResultadoProcessamento> {
-  const { arquivo, edicaoId, mapaColunas, criadoPor } = params;
+  const { arquivo, edicaoId, mapaColunas, perguntasSeminario, criadoPor } = params;
 
   const tamanhoMaximo = await lerConfiguracaoInt(supabase, CHAVE_TAMANHO_MAXIMO_BYTES, TAMANHO_MAXIMO_BYTES_PADRAO);
   const limiteLinhas = await lerConfiguracaoInt(supabase, CHAVE_LIMITE_LINHAS, LIMITE_LINHAS_PADRAO);
@@ -108,6 +111,11 @@ export async function processarNovaImportacao(
   }
 
   validarMapaColunas(mapaColunas, cabecalho);
+  // Perguntas do seminário ficam fora da classificação (que só conhece campo
+  // cadastral): a resposta já está em `dados.bruto[<cabeçalho>]` de toda
+  // linha, e é de lá que `confirmar_importacao` (0059) a lê, guiada pela
+  // lista salva em `importacoes.perguntas_seminario` abaixo.
+  const perguntasValidadas = validarPerguntasSeminario(perguntasSeminario, mapaColunas, cabecalho);
 
   const linhasClassificadas = await classificarLinhas(supabase, {
     cabecalho,
@@ -142,6 +150,7 @@ export async function processarNovaImportacao(
       edicao_id: edicaoId,
       arquivo_nome: arquivo.name.slice(0, 200),
       mapa_colunas: mapaColunas,
+      perguntas_seminario: perguntasValidadas,
       status: "previa",
       total_linhas: linhasClassificadas.length,
       ...contagem,

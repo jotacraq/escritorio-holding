@@ -2,42 +2,45 @@
 
 import { useCallback, useState } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
+import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
-import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
+import { Cartao } from "@/components/ui/Cartao";
+import { EsqueletoLista } from "@/components/ui/Esqueleto";
+import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { formatarDataHora } from "@/lib/formatar";
+import { LinkBotao } from "@/components/painel/LinkBotao";
 import type { AgendaBloqueio } from "@/types/agenda";
 import { ApiError, cancelarBloqueio, listarBloqueios } from "./api";
 import { FormularioBloqueio } from "./FormularioBloqueio";
 import { SeletorAdvogada, useMembrosComAgenda } from "./SeletorAdvogada";
 
 function LinhaBloqueio({ bloqueio, aoAtualizar }: { bloqueio: AgendaBloqueio; aoAtualizar: () => void }) {
+  const { notificar } = useToast();
   const [ocupado, setOcupado] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   async function cancelar() {
     setOcupado(true);
-    setErro(null);
     try {
       await cancelarBloqueio(bloqueio.id);
+      notificar({ tom: "sucesso", titulo: "Bloqueio cancelado", descricao: "O período volta a aparecer como horário livre." });
       aoAtualizar();
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : "Não foi possível cancelar este bloqueio.");
+      notificar({ tom: "erro", titulo: "Não foi possível cancelar este bloqueio", descricao: e instanceof ApiError ? e.message : "Confira a internet e tente de novo." });
     } finally {
       setOcupado(false);
     }
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-linha bg-papel-elevado p-3">
-      <div>
-        <p className="font-medium text-tinta">
+    <li className="flex min-h-11 flex-wrap items-center justify-between gap-3 px-5 py-3 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel sm:px-6">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-tinta">
           {formatarDataHora(bloqueio.inicio_em)} — {formatarDataHora(bloqueio.fim_em)}
         </p>
         <p className="text-xs text-tinta-suave">{bloqueio.motivo}</p>
-        {erro && <p role="alert" className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
       </div>
       {!bloqueio.cancelado_em ? (
-        <Botao variante="perigo" className="text-xs" carregando={ocupado} onClick={cancelar}>
+        <Botao variante="perigo" tamanho="compacto" carregando={ocupado} onClick={cancelar}>
           Cancelar bloqueio
         </Botao>
       ) : (
@@ -57,31 +60,50 @@ export function PainelBloqueios() {
   const buscar = useCallback(() => listarBloqueios({ advogada_id: efetiva || undefined }), [efetiva]);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, [efetiva]);
 
-  if (membros === null) return <EstadoCarregando rotulo="Carregando equipe…" />;
+  if (membros === null) return <EsqueletoLista linhas={2} rotulo="Carregando equipe…" />;
   if (membros.length === 0) {
-    return <EstadoVazio titulo="Nenhum membro de equipe cadastrado" descricao="Cadastre a advogada em Admin → Equipe antes de configurar bloqueios." />;
+    return (
+      <EstadoVazio
+        ilustracao="pasta"
+        titulo="Nenhum membro de equipe cadastrado"
+        descricao="Cadastre a advogada em Administração → Equipe antes de configurar bloqueios."
+        acao={<LinkBotao href="/admin" variante="cta" tamanho="normal">Abrir Administração</LinkBotao>}
+      />
+    );
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <SeletorAdvogada membros={membros} valor={efetiva} aoMudar={setAdvogadaId} id="bloq-advogada" />
 
       {efetiva && (
         <>
           <FormularioBloqueio advogadaId={efetiva} aoCriar={recarregar} />
 
-          {carregando && <EstadoCarregando rotulo="Carregando bloqueios…" />}
-          {!carregando && erro && <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não deu para carregar os bloqueios" />}
-          {!carregando && !erro && dados && dados.bloqueios.length === 0 && (
-            <EstadoVazio titulo="Nenhum bloqueio ativo" descricao="Toda a disponibilidade das janelas está de pé, sem exceção." />
-          )}
-          {!carregando && !erro && dados && dados.bloqueios.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {dados.bloqueios.map((b) => (
-                <LinhaBloqueio key={b.id} bloqueio={b} aoAtualizar={recarregar} />
-              ))}
-            </ul>
-          )}
+          <Cartao rotulo="Bloqueios" titulo="Períodos bloqueados" descricao="Cancelar um bloqueio devolve o período aos horários livres." preenchimento="sem">
+            {carregando && !dados && (
+              <div className="p-5 sm:p-6">
+                <EsqueletoLista linhas={2} rotulo="Carregando bloqueios…" />
+              </div>
+            )}
+            {Boolean(erro) && (
+              <div className="p-5 sm:p-6">
+                <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não deu para carregar os bloqueios" />
+              </div>
+            )}
+            {!erro && dados && dados.bloqueios.length === 0 && (
+              <div className="p-5 sm:p-6">
+                <EstadoVazio compacto titulo="Nenhum bloqueio ativo" descricao="Toda a disponibilidade das janelas está de pé, sem exceção." />
+              </div>
+            )}
+            {!erro && dados && dados.bloqueios.length > 0 && (
+              <ul className="divide-y divide-linha">
+                {dados.bloqueios.map((b) => (
+                  <LinhaBloqueio key={b.id} bloqueio={b} aoAtualizar={recarregar} />
+                ))}
+              </ul>
+            )}
+          </Cartao>
         </>
       )}
     </div>

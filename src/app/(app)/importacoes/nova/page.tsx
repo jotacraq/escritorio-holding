@@ -2,24 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { AssistenteImportacao } from "@/components/importacao/AssistenteImportacao";
 
 export default function PaginaNovaImportacao() {
   const router = useRouter();
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <Link href="/importacoes" className="text-xs font-medium text-[color:var(--latao)] hover:underline">
-          ← Todas as importações
-        </Link>
-        <h1 className="font-serif text-2xl font-bold text-tinta">Nova importação</h1>
-        <p className="text-sm text-tinta-suave">
-          Escolha a edição do seminário, suba o CSV e case cada coluna com um campo do sistema. O arquivo inteiro só é
-          processado depois deste mapeamento — e mesmo assim vira só uma PRÉVIA: pessoa e jornada só são gravadas
-          quando você confirmar na próxima tela.
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <CabecalhoPagina
+        rotulo="Administração · Importações"
+        acima={
+          <Link href="/importacoes" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+            ← Todas as importações
+          </Link>
+        }
+        titulo="Nova importação"
+        descricao="Quatro passos: enviar o arquivo, casar as colunas, conferir uma amostra e confirmar a prévia. Pessoas e jornadas só são gravadas no último passo."
+      />
 
       <AssistenteImportacao aoCriada={(importacao) => router.push(`/importacoes/${importacao.id}`)} />
     </div>

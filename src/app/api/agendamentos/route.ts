@@ -21,6 +21,7 @@ interface JornadaRelacionada {
 
 interface SessaoRelacionada {
   jornada_id: string;
+  link_sala: string | null;
   jornadas: JornadaRelacionada | JornadaRelacionada[] | null;
 }
 
@@ -33,6 +34,8 @@ interface AgendamentoLinha {
   origem: "equipe" | "cliente" | "ia";
   observacoes: string | null;
   advogada_id: string | null;
+  presenca_confirmada_em: string | null;
+  presenca_confirmada_via: string | null;
   sessoes_viabilidade: SessaoRelacionada | SessaoRelacionada[] | null;
 }
 
@@ -58,7 +61,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("agendamentos")
       .select(
-        "id, sessao_id, inicio_em, fim_em, status, origem, observacoes, advogada_id, sessoes_viabilidade(jornada_id, jornadas(pessoa_id, pessoas(nome)))",
+        "id, sessao_id, inicio_em, fim_em, status, origem, observacoes, advogada_id, presenca_confirmada_em, presenca_confirmada_via, sessoes_viabilidade(jornada_id, link_sala, jornadas(pessoa_id, pessoas(nome)))",
       )
       .in("status", ["agendado", "confirmado"])
       .gte("inicio_em", filtros.de ?? new Date().toISOString())
@@ -89,6 +92,10 @@ export async function GET(request: NextRequest) {
         origem: linha.origem,
         observacoes: linha.observacoes,
         advogada_id: linha.advogada_id,
+        // Fase 4 (0051): "Confirmou" / "Aguardando confirmação" na Agenda — C23.
+        presenca_confirmada_em: linha.presenca_confirmada_em,
+        presenca_confirmada_via: linha.presenca_confirmada_via,
+        tem_link_sala: Boolean(sessao?.link_sala),
       };
     });
 

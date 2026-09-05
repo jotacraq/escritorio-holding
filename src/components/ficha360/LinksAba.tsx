@@ -7,8 +7,8 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
 import { Selo } from "@/components/ui/Selo";
-import { AvisoInline } from "@/components/admin/AvisoInline";
-import { ConfirmarAcao } from "@/components/admin/ConfirmarAcao";
+import { AvisoInline } from "@/components/ui/AvisoInline";
+import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { formatarDataHora } from "@/lib/formatar";
 
 const ROTULOS_TIPO: Record<TipoLinkPublico, string> = {
@@ -128,12 +128,12 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
       </p>
 
       {linkRecemEmitido && (
-        <div role="alert" className="flex flex-col gap-2 rounded-sm border-2 border-ambar-borda bg-ambar-fraco px-3.5 py-3">
+        <div role="alert" className="flex flex-col gap-2 rounded-controle border-2 border-ambar-borda bg-ambar-fraco px-3.5 py-3">
           <p className="text-sm font-bold text-[color:var(--ambar)]">
             Link de {ROTULOS_TIPO[linkRecemEmitido.tipo]} emitido — copie agora, esta é a única vez que ele aparece.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <code className="flex-1 break-all rounded-sm bg-papel-elevado px-2 py-1.5 text-xs text-tinta">{linkRecemEmitido.url}</code>
+            <code className="flex-1 break-all rounded-controle bg-papel-elevado px-2 py-1.5 text-xs text-tinta">{linkRecemEmitido.url}</code>
             <Botao variante="secundario" className="text-xs" onClick={() => copiar(linkRecemEmitido.url)}>
               {copiado ? "Copiado!" : "Copiar"}
             </Botao>
@@ -201,7 +201,7 @@ export function LinksAba({ jornadaId }: { jornadaId: string }) {
       ) : (
         <ul className="flex flex-col gap-2">
           {links.map((link) => (
-            <li key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-linha bg-papel-fundo px-3 py-2 text-sm">
+            <li key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-sm">
               <div>
                 <p className="font-medium text-tinta">
                   {ROTULOS_TIPO[link.tipo]} <span className="font-mono text-xs text-tinta-fraca">({link.token_prefixo}…)</span>

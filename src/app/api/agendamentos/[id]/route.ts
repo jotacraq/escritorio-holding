@@ -11,9 +11,15 @@ import type { AgendamentoSessao } from "@/types/banco";
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
 const SQLSTATE_EXCLUSION_VIOLATION = "23P01";
+const SQLSTATE_CHECK_VIOLATION = "23514";
 
 const CorpoStatusSchema = z.object({
   status: z.enum(["agendado", "confirmado", "realizado", "nao_compareceu", "cancelado"]),
+});
+
+/** B34: a equipe confirma presença à mão (fallback do WhatsApp). Sempre `via='equipe'`, nome na timeline (trigger 0051). */
+const CorpoPresencaSchema = z.object({
+  presenca_confirmada: z.literal(true),
 });
 
 const CorpoRemarcarSchema = z
@@ -29,12 +35,15 @@ const CorpoRemarcarSchema = z
 /**
  * `{status}` muda o status do slot atual. `{inicio_em, fim_em}` remarca: o slot
  * atual vira `remarcado` (histórico preservado) e nasce um novo `agendado`.
+ * `{presenca_confirmada: true}` (Fase 4) grava o FATO "presença confirmada"
+ * com `via='equipe'` — o banco recusa qualquer outra via para usuário logado e
+ * torna a confirmação imutável (`app.protege_presenca_confirmada`, 0051).
  *
- * NOTA (gap conhecido, fora do escopo deste agente): remarcar/cancelar deveria
- * também cancelar as `mensagens_agendadas` pendentes do slot antigo e enfileirar
- * novas para o slot novo (ver ARQUITETURA §5.3). `mensagens_agendadas` é tabela
- * de outro agente (migration 0013) — este endpoint não a toca. Quem for fechar
- * B9 (régua) precisa fazer esse enfileiramento reagir a este UPDATE.
+ * NOTA (gap conhecido, C26): remarcação pela equipe continua em dois passos
+ * não atômicos; a Fase 5 migra este caminho para uma RPC irmã do núcleo
+ * `app.confirmar_horario_da_sugestao`. O trigger `app.regua_agendamento`
+ * (0013/0020/0051) já cancela as mensagens pendentes do slot antigo e o
+ * `app.revoga_link_confirmacao` (0051) mata o link de confirmação dele.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -56,13 +65,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const agendamentoAtual = atual as AgendamentoSessao;
 
+    const comoPresenca = CorpoPresencaSchema.safeParse(corpoBruto);
+    if (comoPresenca.success) {
+      if (agendamentoAtual.presenca_confirmada_em) {
+        // Idempotente: já confirmada — devolve como está, sem erro.
+        return NextResponse.json({ agendamento: agendamentoAtual, ja_confirmada: true });
+      }
+      if (agendamentoAtual.status !== "agendado" && agendamentoAtual.status !== "confirmado") {
+        throw erroConflito("agendamento_inativo", "Só agendamento ativo (agendado/confirmado) recebe confirmação de presença.");
+      }
+      const { data: confirmado, error: erroPresenca } = await supabase
+        .from("agendamentos")
+        .update({ presenca_confirmada_em: new Date().toISOString(), presenca_confirmada_via: "equipe" })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (erroPresenca) {
+        if (erroPresenca.code === SQLSTATE_CHECK_VIOLATION) {
+          throw erroConflito("presenca_recusada", "O banco recusou a confirmação (já confirmada ou agendamento inativo).");
+        }
+        registrarErro("api/agendamentos/[id] PATCH presenca", erroPresenca, { agendamento_id: id });
+        throw erroPresenca;
+      }
+      return NextResponse.json({ agendamento: confirmado as AgendamentoSessao });
+    }
+
     const comoRemarcacao = CorpoRemarcarSchema.safeParse(corpoBruto);
     if (comoRemarcacao.success) {
-      // Remarcação sem transação SQL dedicada (sem RPC próprio para isto no MVP):
-      // 1) marca o slot atual como remarcado; 2) cria o novo. Se o passo 2 falhar
-      // por conflito de horário, o passo 1 já aconteceu — aceitável para o MVP
-      // porque o card na tela mostra o histórico e a equipe pode tentar de novo
-      // (não há perda de dado, só um estado intermediário visível no log).
       const { error: erroMarcarRemarcado } = await supabase
         .from("agendamentos")
         .update({ status: "remarcado" })

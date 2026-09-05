@@ -1,47 +1,67 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------- */
-/* SIC-HF — sistema de tokens visuais                                      */
-/* Escritório de planejamento patrimonial: sóbrio, denso, imprimível.      */
-/* Papel + tinta + selo de latão. Nada de gradiente de startup.            */
+/* SIC-HF — sistema de tokens visuais (fundação V1, 04/09/2026)            */
+/*                                                                          */
+/* O sistema "é" o seminário (guardioesdolegado.com.br/ak1): creme de      */
+/* fundo, cartão branco de raio grande com sombra marrom difusa, tinta     */
+/* `#141b22`, laranja `#ff7400` só como fundo de CTA (texto escuro por     */
+/* cima), tons de areia nas linhas, fonte única Neuetra 400/500/700.       */
+/* Regra que vence a fidelidade: acessibilidade — todo par texto/fundo     */
+/* abaixo foi medido com a fórmula WCAG (docs/DESIGN-SYSTEM.md guarda os   */
+/* números). Nomes dos tokens preservados (`--papel*`, `--tinta*`,         */
+/* `--linha*`, `--latao*`) para não quebrar os 127 componentes.            */
 /* ---------------------------------------------------------------------- */
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --papel: #f6f4ee;
-  --papel-elevado: #fffdf8;
-  --papel-fundo: #efece2;
-  --tinta: #1b1c1f;
-  --tinta-suave: #52514c;
-  --tinta-fraca: #85837a;
-  --linha: #ded9c9;
-  --linha-forte: #c7c0aa;
+/* Tema claro. Declarado TAMBÉM em `.area-publica` (não só em `:root`): as
+   páginas públicas são sempre claras, e a forma mais barata e robusta de
+   garantir isso é redeclarar os tokens num ancestral mais próximo que o
+   `<html class="dark">` — propriedade customizada herda do ancestral mais
+   próximo, então `.dark` no html perde sem precisar de `!important` nem de
+   um segundo bloco duplicado com valores "quase iguais". */
+:root,
+.area-publica {
+  /* Superfícies — três camadas, do fundo para o cartão:
+     `--papel-fundo` creme do seminário (body) · `--papel` areia quente
+     (barra lateral, cabeçalhos, hover) · `--papel-elevado` BRANCO puro
+     (cartão, gaveta, diálogo — é o "cartão branco" da referência; é o
+     token que os 127 componentes já usam para cartão, por isso é ele que
+     vira branco, não `--papel`). */
+  --papel-fundo: #f1f1f0;
+  --papel: #faf7f3;
+  --papel-elevado: #ffffff;
 
-  /* Cor de marca — fidelidade total ao seminário (guardioesdolegado.com.br/ak1,
-     decisão do Marcio em 04/09/2026): mesmo matiz de `#ff7400` (H 27,29°) em
-     todo o sistema, claro e escuro. `--latao` (nome do token preservado —
-     era o "selo de latão" do design system original; agora carrega o laranja
-     da marca) é usado majoritariamente como TEXTO/borda/outline/accent sobre
-     fundo claro (ver Nav, Abas, links de Ficha 360, radio/checkbox) — por
-     isso aqui é a variante ESCURECIDA do laranja (mesmo H/S, V=0,72):
-     `#b85400` mede 4,80:1 sobre `--papel-elevado` (WCAG AA, fórmula oficial,
-     folga de +0,30 acima do mínimo 4,5). O laranja PURO do seminário
-     (`#ff7400`) mede só 2,66:1 aqui — reprovaria como texto/borda.
-     `--latao-cta` é token SEPARADO para fundo de botão/CTA (ver `Botao.tsx`),
-     mantido no laranja puro nos dois temas — ver comentário no bloco `.dark`. */
-  --latao: #b85400;
-  --latao-forte: #944300;
-  --latao-fraco: #ffc290;
+  /* Tinta — `--ink` e `--ink-suave` do seminário. `--tinta-fraca` é a
+     correção de acessibilidade desta rodada: o antigo `#85837a` media
+     3,74:1; `#66635d` mede 5,30:1 sobre o creme, 5,99:1 sobre o branco e
+     4,58:1 sobre `--linha` (chip). */
+  --tinta: #141b22;
+  --tinta-suave: #43454f;
+  --tinta-fraca: #66635d;
+
+  /* Linhas de areia (`#e8e0d6`/`#d8cec1` da referência). `--linha-controle`
+     é novo: borda de input/select/textarea precisa de 3:1 contra o fundo
+     (WCAG 1.4.11) — `#8f8880` mede 3,50:1 no branco e 3,10:1 no creme. */
+  --linha: #e8e0d6;
+  --linha-forte: #d8cec1;
+  --linha-controle: #8f8880;
+
+  /* Cor de marca. `--latao` (nome preservado) é o laranja da marca no papel
+     de TEXTO/borda/ícone — por isso escurecido: `#a84d00` mede 4,99:1 sobre
+     o creme e 5,64:1 sobre o branco (o `#b85400` anterior caía a 4,31:1
+     sobre o creme novo). `--latao-cta` é o laranja PURO do seminário, só
+     para FUNDO de CTA/nó ativo, sempre com `--latao-cta-texto` (escuro,
+     fixo nos dois temas: 6,41:1 sobre `#ff7400`). */
+  --latao: #a84d00;
+  --latao-forte: #8a3f00;
+  --latao-fraco: #ffe3cb;
   --latao-cta: #ff7400;
   --latao-cta-forte: #d46203;
-  /* Texto sobre fundo `--latao-cta`: FIXO e escuro nos dois temas — nunca
-     `--tinta` (que se inverte no dark e mede só 2,23:1 sobre o laranja).
-     `#141b22` é o `--ink` do seminário: 6,41:1 sobre `#ff7400` (AA/AAA).
-     Mesma regra de acessibilidade da Fase 1 (área pública): o site do
-     seminário usa texto CLARO sobre laranja (~2,6:1, reprova) — aqui não se
-     replica isso, só a forma. Ver `CONTINUAR-AQUI.md` / diário 04/09/2026. */
   --latao-cta-texto: #141b22;
+  --marrom: #612c00;
+
   --verde: #2f6b4f;
   --verde-fraco: #e4efe8;
   --vermelho: #9c3b2e;
@@ -52,7 +72,10 @@
   --azul: #395a80;
   --azul-fraco: #e5ecf3;
 
-  --sombra-cartao: 0 1px 2px rgba(27, 28, 31, 0.06), 0 1px 0 rgba(27, 28, 31, 0.04);
+  /* Sombra marrom difusa do seminário (`rgba(97,44,0,…)` — nunca cinza). */
+  --sombra-cartao: 0 0.625rem 1.5rem rgba(97, 44, 0, 0.08), 0 1px 2px rgba(97, 44, 0, 0.07);
+  --sombra-flutuante: 0 1.5rem 3rem rgba(97, 44, 0, 0.14), 0 2px 6px rgba(97, 44, 0, 0.08);
+  --veu: rgba(20, 27, 34, 0.45);
 
   /* Selo de demonstração (Fase 2, §3.4): fixos de propósito, NÃO redefinidos
      em .dark e nem em @media print. A faixa que avisa "isto não é análise
@@ -64,28 +87,47 @@
   --demo-fundo: #fbecc9;
 }
 
+/* Tokens que NÃO mudam com o tema: forma, ritmo, movimento, foco. */
+:root {
+  --raio-cartao: 1.25rem;
+  --raio-controle: 0.75rem;
+  --raio-pilula: 2.625rem;
+
+  --espaco-secao: 2.5rem;
+  --espaco-cartao: 1.5rem;
+  --alvo-minimo: 44px;
+
+  --transicao-rapida: 120ms;
+  --transicao-normal: 220ms;
+  --suavizacao: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Foco: halo translúcido + contorno sólido de 2px (WCAG 2.4.11 — o halo
+     sozinho some sobre fundo laranja; o contorno sozinho some sobre areia). */
+  --foco: 0 0 0 0.25rem rgba(255, 116, 0, 0.22);
+}
+
 .dark {
-  --papel: #16171a;
+  --papel-fundo: #111214;
+  --papel: #17181b;
   --papel-elevado: #1d1f23;
-  --papel-fundo: #0f1012;
   --tinta: #ece9df;
   --tinta-suave: #b3b0a3;
-  --tinta-fraca: #837f72;
+  /* `#9a9588` mede 5,52:1 sobre `--papel-elevado` e 6,27:1 sobre o fundo
+     (o `#837f72` anterior media 4,12:1). */
+  --tinta-fraca: #9a9588;
   --linha: #2d2f34;
   --linha-forte: #3c3e44;
-  /* Mesmo matiz de `#ff7400`; no escuro o laranja puro já bate AA como
-     texto/borda: 6,09:1 sobre `--papel-elevado` escuro (`#1d1f23`) — não
-     precisa escurecer como no claro. `--latao-forte` sobe um pouco mais
-     claro (S=0,80) para hover continuar distinguível: 7,30:1. */
+  --linha-controle: #6e6a62;
+  /* No escuro o laranja puro já bate AA como texto/borda: 6,09:1 sobre
+     `--papel-elevado`. `--latao-forte` mais claro para o hover continuar
+     distinguível: 7,30:1. */
   --latao: #ff7400;
   --latao-forte: #ff9033;
   --latao-fraco: #362c14;
-  /* CTA no escuro reusa o mesmo `--latao` (já é o puro do seminário) — só
-     redeclarado aqui para o token existir nos dois temas sem depender de
-     herança do `:root`. */
   --latao-cta: #ff7400;
   --latao-cta-forte: #ff9033;
   --latao-cta-texto: #141b22;
+  --marrom: #d9a06b;
   --verde: #5fa683;
   --verde-fraco: #163024;
   --vermelho: #e08979;
@@ -96,7 +138,10 @@
   --azul: #8fb0d6;
   --azul-fraco: #182430;
 
-  --sombra-cartao: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sombra-cartao: 0 0.625rem 1.5rem rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sombra-flutuante: 0 1.5rem 3rem rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.5);
+  --veu: rgba(0, 0, 0, 0.6);
+  --foco: 0 0 0 0.25rem rgba(255, 116, 0, 0.3);
 }
 
 @theme inline {
@@ -108,12 +153,14 @@
   --color-tinta-fraca: var(--tinta-fraca);
   --color-linha: var(--linha);
   --color-linha-forte: var(--linha-forte);
+  --color-linha-controle: var(--linha-controle);
   --color-latao: var(--latao);
   --color-latao-forte: var(--latao-forte);
   --color-latao-fraco: var(--latao-fraco);
   --color-latao-cta: var(--latao-cta);
   --color-latao-cta-forte: var(--latao-cta-forte);
   --color-latao-cta-texto: var(--latao-cta-texto);
+  --color-marrom: var(--marrom);
   --color-verde: var(--verde);
   --color-verde-fraco: var(--verde-fraco);
   --color-vermelho: var(--vermelho);
@@ -124,21 +171,54 @@
   --color-azul: var(--azul);
   --color-azul-fraco: var(--azul-fraco);
 
-  /* Fidelidade total ao seminário (decisão do Marcio, 04/09/2026): fonte
-     Neuetra em todo o sistema (corpo e títulos), pesos 400/500/700, fallback
-     de sistema. Substitui IBM Plex Serif/Sans — `--font-plex-*` continuam
-     carregados via `next/font` em `layout.tsx` só para não quebrar nada que
-     referencie a variável, mas não são mais a fonte ativa (ver comentário
-     no `@font-face` abaixo). */
-  --font-serif: "Neuetra", var(--font-plex-serif), "Segoe UI", system-ui, sans-serif;
-  --font-sans: "Neuetra", var(--font-plex-sans), "Segoe UI", system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), "SFMono-Regular", Consolas, monospace;
+  /* Raio. `rounded-sm`/`rounded-md`/`rounded-lg` do Tailwind são
+     REMAPEADOS para a escala do seminário — é o que dá o raio novo às
+     telas ainda não migradas sem tocar em cada uma. Os nomes semânticos
+     (`rounded-cartao`, `rounded-controle`, `rounded-pilula`) são os que a
+     migração deve usar daqui em diante. */
+  --radius-sm: 0.625rem;
+  --radius-md: 0.875rem;
+  --radius-lg: var(--raio-cartao);
+  --radius-cartao: var(--raio-cartao);
+  --radius-controle: var(--raio-controle);
+  --radius-pilula: var(--raio-pilula);
+
+  --shadow-cartao: var(--sombra-cartao);
+  --shadow-flutuante: var(--sombra-flutuante);
+  --shadow-foco: var(--foco);
+
+  /* Escala tipográfica (nenhum degrau abaixo de 12px). `text-xs`/`text-sm`
+     do Tailwind sobem para 13px/15px — o corpo interno inteiro usa
+     `text-sm`, e 14px é pequeno para quem usa o sistema o dia inteiro aos
+     60+. Degraus semânticos: `text-legenda` 12px é o mínimo absoluto. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-legenda: 0.75rem;
+  --text-legenda--line-height: 1.4;
+  --text-rotulo: 0.75rem;
+  --text-rotulo--line-height: 1.3;
+  --text-rotulo--letter-spacing: 0.08em;
+  --text-corpo: 1rem;
+  --text-corpo--line-height: 1.55;
+  --text-subtitulo: 1.125rem;
+  --text-subtitulo--line-height: 1.4;
+  --text-titulo: 1.5rem;
+  --text-titulo--line-height: 1.2;
+  --text-titulo--letter-spacing: -0.015em;
+  --text-display: 2.125rem;
+  --text-display--line-height: 1.12;
+  --text-display--letter-spacing: -0.02em;
+
+  --ease-suave: var(--suavizacao);
+
+  /* Fonte única Neuetra (mesmos arquivos do seminário), pesos 400/500/700. */
+  --font-serif: "Neuetra", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: "Neuetra", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
-/* Fonte Neuetra — mesmos arquivos do seminário (guardioesdolegado.com.br/ak1),
-   baixados para `public/fonts/`. Pesos 400/500/700 (a única variação que o
-   seminário usa — nunca 600/800). `font-display: swap` evita FOIT; fallback
-   de sistema no `--font-sans`/`--font-serif` acima cobre falha de rede. */
 @font-face {
   font-family: "Neuetra";
   font-style: normal;
@@ -176,24 +256,28 @@ body {
   background: var(--papel-fundo);
   color: var(--tinta);
   font-family: var(--font-sans);
-  /* Neuetra só declara os pesos 400/500/700 (@font-face acima) — sem isso,
-     qualquer peso não declarado (ex.: 600 de `font-semibold`, se reaparecer)
-     faz o navegador sintetizar um bold artificial que destoa visualmente do
-     resto da fonte (traços engrossados de forma desigual). Preferível cair
-     no peso real mais próximo do que inventar um. */
+  -webkit-font-smoothing: antialiased;
+  /* Neuetra só declara 400/500/700 — sem isto, `font-semibold` (600) faria o
+     navegador sintetizar um bold artificial. Preferível cair no peso real
+     mais próximo do que inventar um. */
   font-synthesis: none;
 }
 
 h1, h2, h3, h4 {
   font-family: var(--font-serif);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+h1 {
+  letter-spacing: -0.02em;
 }
 
-/* Foco visível — nunca removido, só redesenhado. */
+/* Foco visível — nunca removido, só redesenhado: contorno 2px + halo. */
 :focus-visible {
   outline: 2px solid var(--latao);
   outline-offset: 2px;
-  border-radius: 2px;
+  box-shadow: var(--foco);
+  border-radius: 0.375rem;
 }
 
 ::selection {
@@ -201,16 +285,13 @@ h1, h2, h3, h4 {
   color: var(--tinta);
 }
 
-/* Barra de rolagem discreta, consistente nos dois temas */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--linha-forte) transparent;
 }
 
-/* Trilha da esteira (kanban): rolagem própria na horizontal, sem levar o body
-   junto. O contraste do polegar é reforçado aqui — no resto da tela ele fica
-   discreto de propósito, mas numa faixa que é a única pista de "tem mais
-   coluna pra lá" ele precisa ser visto. */
+/* Trilha da esteira (kanban): rolagem própria na horizontal. O polegar é
+   reforçado aqui — é a única pista de "tem mais coluna pra lá". */
 .trilha-esteira {
   scrollbar-width: auto;
   scrollbar-color: var(--tinta-fraca) var(--linha);
@@ -228,65 +309,71 @@ h1, h2, h3, h4 {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Área pública — `src/app/(publico)/layout.tsx` (Fase 2, §2.5).           */
-/* Quem responde aqui é o cliente, no celular, muitas vezes sem ajuda por  */
-/* perto. Tipografia maior que o padrão interno e alvo de toque >= 44px.   */
-/*                                                                          */
-/* Identidade visual do seminário de vendas (guardioesdolegado.com.br/ak1) */
-/* — Fase 1 do plano do arquiteto (04/09/2026): continuidade visual entre  */
-/* "vi o seminário" e "recebi o link do formulário".                       */
-/*                                                                          */
-/* Correção de acessibilidade OBRIGATÓRIA em relação ao site do seminário: */
-/* lá o CTA usa texto claro sobre laranja (~2,6:1, reprova WCAG). Aqui o   */
-/* texto sobre elementos laranja é sempre ESCURO (`--tinta`, mapeado do    */
-/* `--ink` do seminário), medido em 6,41:1 (#141b22 sobre #ff7400) — passa */
-/* AA e AAA para qualquer tamanho de texto.                                */
-/*                                                                          */
-/* NÃO duplica os tokens globais (Fase 2, 04/09/2026 — fidelidade total    */
-/* também no interno): os valores aqui continuam DIFERENTES de propósito.  */
-/* `--papel-elevado` público é `#ffffff` puro (não `#fffdf8`), e `--latao` */
-/* público é o laranja PURO `#ff7400` (não `#b85400`) porque, neste        */
-/* escopo, `--latao` só é usado como FUNDO de CTA com `text-tinta` fixo    */
-/* escuro por cima — nunca como texto/borda sobre fundo claro. O interno   */
-/* usa `--latao` também como texto/borda/outline em dezenas de lugares     */
-/* (`Nav`, `Abas`, links de Ficha 360), o que exige o tom mais escuro para */
-/* bater 4,5:1 — por isso lá o fundo de CTA tem token PRÓPRIO,             */
-/* `--latao-cta` (ver `:root`/`.dark`), separado de `--latao`. Manter os   */
-/* dois blocos de tokens é a correção certa, não redundância.              */
-/* `color-scheme: light` continua forçado abaixo — regra à parte ("sempre  */
-/* claro", não "cor de marca") que não muda com nada disto.                */
+/* Animações de entrada (motion só onde responde a uma ação: abrir gaveta, */
+/* diálogo, toast, paleta). `prefers-reduced-motion` zera tudo abaixo.    */
+/* ---------------------------------------------------------------------- */
+@keyframes surgir {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes deslizar-da-direita {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes deslizar-da-esquerda {
+  from { transform: translateX(-24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes esmaecer {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes deslizar-indeterminado {
+  from { left: -33%; }
+  to { left: 100%; }
+}
+@keyframes brilho-esqueleto {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.anim-surgir { animation: surgir var(--transicao-normal) var(--suavizacao) both; }
+.anim-deslizar-direita { animation: deslizar-da-direita var(--transicao-normal) var(--suavizacao) both; }
+.anim-deslizar-esquerda { animation: deslizar-da-esquerda var(--transicao-normal) var(--suavizacao) both; }
+.anim-esmaecer { animation: esmaecer var(--transicao-rapida) linear both; }
+
+/* Esqueleto: bloco de areia com brilho lento passando — "está vindo", não
+   "travou". */
+.esqueleto {
+  background: linear-gradient(90deg, var(--linha) 0%, var(--papel) 40%, var(--linha) 80%);
+  background-size: 200% 100%;
+  animation: brilho-esqueleto 1.6s linear infinite;
+  border-radius: 0.5rem;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Área pública — `src/app/(publico)/layout.tsx`. Os tokens claros já      */
+/* vêm do bloco `:root, .area-publica` acima; aqui fica SÓ o que diverge  */
+/* de verdade do sistema interno:                                          */
+/* 1. tema sempre claro (o cliente não tem toggle);                        */
+/* 2. `--latao` = laranja PURO, porque neste escopo ele só é usado como    */
+/*    FUNDO de CTA com texto escuro por cima, nunca como texto/borda;      */
+/* 3. tipografia maior e alvo de toque 44px em todo controle (quem         */
+/*    responde é o cliente, no celular, muitas vezes com 60+ anos);        */
+/* 4. dois seletores de compatibilidade (`.rounded-md`, CTA por classe)    */
+/*    para os componentes públicos, que ficam fora desta onda de migração. */
 /* ---------------------------------------------------------------------- */
 .area-publica {
-  /* Tema sempre claro, independente de `.dark`/`prefers-color-scheme`     */
-  /* herdado do <html> — o cliente final não tem toggle de tema.           */
   color-scheme: light;
-
-  --papel-fundo: #f1f1f0;
-  --papel: #f1f1f0;
-  --papel-elevado: #ffffff;
-  --tinta: #141b22;
-  --tinta-suave: #43454f;
-  --tinta-fraca: #6b6d76;
-  --linha: #e2e0da;
-  --linha-forte: #cfccc3;
-
-  --latao: #ff7400;
-  --latao-forte: #d46203;
+  --papel: #ffffff;
+  --latao: var(--latao-cta);
+  --latao-forte: var(--latao-cta-forte);
   --latao-fraco: #ffc290;
-
-  --sombra-cartao: 0 0.625rem 1.5rem rgba(97, 44, 0, 0.08), 0 1px 2px rgba(97, 44, 0, 0.07);
 
   font-size: 1.0625rem;
   line-height: 1.65;
   background: var(--papel-fundo);
   color: var(--tinta);
 }
-/* Pesos do seminário: só 400/500/700, nunca 600/800. `font-semibold`     */
-/* padrão do Tailwind é 600 — por isso os componentes públicos usam       */
-/* `font-bold` (700) em vez de `font-semibold`, direto na classe JSX,     */
-/* não redefinido aqui (evita depender de especificidade CSS frágil       */
-/* contra a camada de utilities do Tailwind). */
-
 .area-publica h1 {
   font-size: 1.5rem;
   line-height: 1.25;
@@ -296,7 +383,7 @@ h1, h2, h3, h4 {
 .area-publica select,
 .area-publica textarea,
 .area-publica a.botao {
-  min-height: 44px;
+  min-height: var(--alvo-minimo);
   font-size: 1rem;
 }
 @media (min-width: 640px) {
@@ -304,29 +391,15 @@ h1, h2, h3, h4 {
     font-size: 1.75rem;
   }
 }
-
-/* Cartão público: raio e sombra do seminário — marrom difuso, não cinza. */
-/* Raio vale para todo `rounded-md` (inputs, opções, botões, cartões —    */
-/* mesmo raio dominante do seminário em qualquer elemento retangular).    */
 .area-publica .rounded-md {
-  border-radius: 1.25rem;
+  border-radius: var(--raio-cartao);
 }
-/* Sombra só nos cartões-container reais (`border-linha` + `bg-papel`,    */
-/* o padrão dos 4 blocos de conteúdo público) — não em cada opção de      */
-/* rádio/checkbox ou botão secundário, que também usam `rounded-md` mas   */
-/* usam `border-linha-forte`/`bg-papel-elevado` e não devem ganhar sombra */
-/* própria (ruído visual: uma sombra por linha de formulário). */
 .area-publica .rounded-md.border-linha.bg-papel {
   box-shadow: var(--sombra-cartao);
 }
-
-/* CTA/botão principal público: laranja chapado, pílula, aresta inferior  */
-/* sólida de 4px + halo — sem gradiente. Cor do texto (escura, a11y) é    */
-/* responsabilidade de cada componente (`text-tinta` na classe JSX) — só  */
-/* forma aqui, não cor, para não duplicar fonte de verdade. */
 .area-publica button[class*="bg-[color:var(--latao)]"],
 .area-publica a[class*="bg-[color:var(--latao)]"] {
-  border-radius: 2.625rem;
+  border-radius: var(--raio-pilula);
   box-shadow:
     0 4px 0 0 var(--latao-forte),
     0 0.625rem 1.5rem rgba(255, 116, 0, 0.28);
@@ -335,22 +408,16 @@ h1, h2, h3, h4 {
   box-shadow: none;
 }
 
-/* Foco visível: halo translúcido + contorno sólido — WCAG 2.4.11 exige   */
-/* indicador que não desapareça sobre qualquer fundo; o halo sozinho não  */
-/* basta. */
-.area-publica :focus-visible {
-  outline: 2px solid var(--latao-forte);
-  outline-offset: 2px;
-  border-radius: 2px;
-  box-shadow: 0 0 0 0.25rem rgba(255, 116, 0, 0.14);
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+  .esqueleto {
+    animation: none;
+    background: var(--linha);
   }
 }
 
@@ -373,10 +440,6 @@ h1, h2, h3, h4 {
 
 /* ---------------------------------------------------------------------- */
 /* Marca d'água do modo demonstração da IA (Fase 2, §3.4).                 */
-/* Aplicar `.marca-dagua-demonstracao` no contêiner de qualquer conteúdo   */
-/* gerado sem IA (o `<SeloDemonstracao>` já carrega a classe sozinho).     */
-/* A folha impressa e o modo apresentação não podem sair "limpos" — por    */
-/* isso a marca aparece na TELA também, não só em @media print.           */
 /* ---------------------------------------------------------------------- */
 .marca-dagua-demonstracao {
   position: relative;
@@ -396,7 +459,7 @@ h1, h2, h3, h4 {
   transform: rotate(-30deg);
   font-family: var(--font-sans);
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--demo-faixa);
   opacity: 0.14;
@@ -404,7 +467,6 @@ h1, h2, h3, h4 {
   user-select: none;
 }
 
-/* Conteúdo real do bloco fica acima da marca d'água. */
 .marca-dagua-demonstracao > * {
   position: relative;
   z-index: 1;
@@ -418,8 +480,7 @@ h1, h2, h3, h4 {
 
   /* Rodapé carimbado em toda folha impressa que contiver um bloco de
      demonstração — `position: fixed` em @media print se repete em cada
-     página no Chromium, que é o motor por trás do "Salvar como PDF" do
-     navegador (o caminho real de impressão desta tela). */
+     página no Chromium ("Salvar como PDF"). */
   .marca-dagua-demonstracao::after {
     content: "EXEMPLO DE DEMONSTRAÇÃO — nenhum dado deste cliente foi analisado por IA. Documento sem valor de análise real.";
     position: fixed;

@@ -33,7 +33,7 @@ export function GraficoIndisponivel({ titulo, itensFaltantes, tema = "claro", mo
     <div
       role="status"
       aria-label={`Gráfico "${titulo}" ainda não pode ser desenhado — dado incompleto.`}
-      className={`flex min-h-[220px] flex-col justify-center gap-3 rounded-sm border border-dashed px-5 py-6 ${className}`}
+      className={`flex min-h-[220px] flex-col justify-center gap-3 rounded-controle border border-dashed px-5 py-6 ${className}`}
       style={{ borderColor: cores.linhaForte, background: cores.superficieElevada }}
     >
       <div className="flex items-start gap-2.5" style={{ color: cores.tintaSuave }}>

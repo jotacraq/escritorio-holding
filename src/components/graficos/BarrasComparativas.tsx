@@ -1,18 +1,26 @@
 import { GraficoIndisponivel } from "./GraficoIndisponivel";
-import { Moldura } from "./Moldura";
+import { LegendaProcedencia, Moldura } from "./Moldura";
 import { formatarMoeda, formatarPercentual, PALETA_GRAFICO } from "./paleta";
-import type { GraficoBaseProps, ItemFaltante } from "./tipos";
+import type { GraficoBaseProps, ItemFaltante, ResumoProcedencia } from "./tipos";
 
 export interface BarrasComparativasProps extends GraficoBaseProps {
-  /** `ideia_custo_inventario` — o que a família pagaria sem estrutura. */
+  /** Custo de NÃO agir (cenário `inventario` da grade, ou digitado). `null` = não computável. */
   custoInventario: number | null | undefined;
-  /** `relatorios_sessao.tributos` — custo projetado da estrutura, digitado pela advogada. */
+  /** Custo projetado da estrutura recomendada. `null` = não computável. */
   custoEstrutura: number | null | undefined;
   rotuloInventario?: string;
   rotuloEstrutura?: string;
-  /** Proveniência — quem digitou e quando. Regra dura: nenhum cálculo automático de imposto. */
+  /** Proveniência — quem digitou e quando / qual alíquota e versão de parâmetro. Regra dura: nenhum cálculo automático de imposto. */
   fonte?: string;
   titulo?: string;
+  /**
+   * Fase 4 (§4.5): quantas rubricas ainda estão `ausente` em cada cenário.
+   * `null` = o cenário nem foi iniciado. Quando um total falta, o estado
+   * explicativo diz "cenário incompleto — faltam N rubricas", nunca barra zero.
+   */
+  rubricasAusentes?: { inventario: number | null; estrutura: number | null };
+  /** Contagem por procedência (digitado / calculado / ausente) — vira a legenda com glifo + texto. */
+  procedencia?: { inventario: ResumoProcedencia | null; estrutura: ResumoProcedencia | null };
 }
 
 const LARGURA_PLOTAVEL = 520;
@@ -21,19 +29,28 @@ const ALTURA_ROTULO = 22;
 const ALTURA_BARRA = 40;
 const ESPACO = 20;
 
+function descreverFalta(rotulo: string, ausentes: number | null | undefined, onde: string): ItemFaltante {
+  if (ausentes == null) return { campo: `${rotulo} — cenário ainda não iniciado`, onde };
+  if (ausentes === 0) return { campo: `${rotulo} — cenário sem total (confira as rubricas)`, onde };
+  return { campo: `${rotulo} — cenário incompleto: falta${ausentes === 1 ? "" : "m"} ${ausentes} rubrica${ausentes === 1 ? "" : "s"}`, onde };
+}
+
 /**
  * Slide 11 · Economia (§3.4) — CONFLITO C18. O único gráfico que o sistema
- * NÃO calcula: os dois números vêm de digitação da advogada
- * (`relatorios_sessao.tributos`) e da ideia de custo de inventário. Se
- * qualquer um faltar, não desenha — nenhuma suposição de imposto.
+ * NÃO calcula: os dois totais vêm da grade do Cenário Patrimonial (0057) —
+ * rubricas digitadas pela advogada ou multiplicadas de base × alíquota que
+ * ela digitou (o trigger do banco faz a conta, nunca a tela). Se qualquer
+ * total faltar, não desenha — nenhuma suposição de imposto.
  */
 export function BarrasComparativas({
   custoInventario,
   custoEstrutura,
   rotuloInventario = "Custo do inventário",
   rotuloEstrutura = "Custo da estrutura",
-  fonte = "Fonte: digitado pela advogada no Relatório da Sessão",
+  fonte = "Fonte: Cenário Patrimonial (digitado pela advogada)",
   titulo = "Custo de agir × custo de não agir",
+  rubricasAusentes,
+  procedencia,
   tema = "claro",
   modoApresentacao = false,
   className = "",
@@ -42,8 +59,8 @@ export function BarrasComparativas({
 
   if (custoInventario == null || custoEstrutura == null) {
     const faltando: ItemFaltante[] = [];
-    if (custoInventario == null) faltando.push({ campo: "Estimativa de custo do inventário", onde: "Relatório da Sessão" });
-    if (custoEstrutura == null) faltando.push({ campo: "Custo projetado da estrutura (tributos)", onde: "Relatório da Sessão" });
+    if (custoInventario == null) faltando.push(descreverFalta(rotuloInventario, rubricasAusentes?.inventario, "Relatório › Cenário Patrimonial"));
+    if (custoEstrutura == null) faltando.push(descreverFalta(rotuloEstrutura, rubricasAusentes?.estrutura, "Relatório › Cenário Patrimonial"));
     return <GraficoIndisponivel titulo={titulo} itensFaltantes={faltando} tema={tema} modoApresentacao={modoApresentacao} className={className} />;
   }
 
@@ -66,31 +83,37 @@ export function BarrasComparativas({
 
   const rotuloAria = `${rotuloInventario}: ${formatarMoeda(custoInventario)}. ${rotuloEstrutura}: ${formatarMoeda(custoEstrutura)}. ${fraseDiferenca}.`;
 
+  const somaProcedencia = somar(procedencia?.inventario, procedencia?.estrutura);
+
   return (
     <Moldura
       titulo={titulo}
       tema={tema}
       fonte={fonte}
+      legenda={somaProcedencia ? <LegendaProcedencia resumo={somaProcedencia} tema={tema} /> : undefined}
       tabela={
         <div className="sr-only">
           <table>
-          <caption>{rotuloAria}</caption>
-          <thead>
-            <tr>
-              <th scope="col">Cenário</th>
-              <th scope="col">Custo</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{rotuloInventario}</td>
-              <td>{formatarMoeda(custoInventario)}</td>
-            </tr>
-            <tr>
-              <td>{rotuloEstrutura}</td>
-              <td>{formatarMoeda(custoEstrutura)}</td>
-            </tr>
-          </tbody>
+            <caption>{rotuloAria}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Cenário</th>
+                <th scope="col">Custo</th>
+                <th scope="col">Procedência</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{rotuloInventario}</td>
+                <td>{formatarMoeda(custoInventario)}</td>
+                <td>{descreverProcedencia(procedencia?.inventario)}</td>
+              </tr>
+              <tr>
+                <td>{rotuloEstrutura}</td>
+                <td>{formatarMoeda(custoEstrutura)}</td>
+                <td>{descreverProcedencia(procedencia?.estrutura)}</td>
+              </tr>
+            </tbody>
           </table>
         </div>
       }
@@ -102,7 +125,7 @@ export function BarrasComparativas({
           const larguraBarra = Math.max(4, (linha.valor / maior) * LARGURA_PLOTAVEL);
           return (
             <g key={linha.rotulo}>
-              <text x={MARGEM_ESQUERDA} y={y + 16} fontSize="15" fontWeight={600} fill={cores.tinta}>
+              <text x={MARGEM_ESQUERDA} y={y + 16} fontSize="15" fontWeight={700} fill={cores.tinta}>
                 {linha.rotulo}
               </text>
               {/* Valor sempre ancorado na margem direita fixa — nunca "persegue" a ponta
@@ -116,10 +139,25 @@ export function BarrasComparativas({
             </g>
           );
         })}
-        <text x={MARGEM_ESQUERDA} y={altura - 14} fontSize="14" fontWeight={600} fill={estruturaMenor ? cores.bom : cores.ruim}>
+        <text x={MARGEM_ESQUERDA} y={altura - 14} fontSize="14" fontWeight={700} fill={estruturaMenor ? cores.bom : cores.ruim}>
           {fraseDiferenca}
         </text>
       </svg>
     </Moldura>
   );
+}
+
+function somar(a?: ResumoProcedencia | null, b?: ResumoProcedencia | null): ResumoProcedencia | null {
+  if (!a && !b) return null;
+  return {
+    digitado: (a?.digitado ?? 0) + (b?.digitado ?? 0),
+    calculado: (a?.calculado ?? 0) + (b?.calculado ?? 0),
+    ausente: (a?.ausente ?? 0) + (b?.ausente ?? 0),
+    total: (a?.total ?? 0) + (b?.total ?? 0),
+  };
+}
+
+function descreverProcedencia(resumo?: ResumoProcedencia | null): string {
+  if (!resumo) return "sem rubricas";
+  return `${resumo.digitado} digitada(s), ${resumo.calculado} calculada(s), ${resumo.ausente} ausente(s)`;
 }

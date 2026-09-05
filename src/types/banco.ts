@@ -84,6 +84,8 @@ export interface PerfilEquipe {
   criado_em: string;
   atualizado_em: string;
   criado_por: string | null;
+  /** 0052 — quando a pessoa dispensou o tour de primeira vez. `null` = ainda não. */
+  onboarding_visto_em?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +314,8 @@ export interface PatrimonioItem {
 // 0008 — sessão, agendamento, relatório
 // ---------------------------------------------------------------------------
 
+export type OrigemLinkSala = "manual" | "n8n";
+
 export interface SessaoViabilidade {
   id: string;
   jornada_id: string;
@@ -323,7 +327,15 @@ export interface SessaoViabilidade {
   motivo_resultado: string | null;
   criado_em: string;
   atualizado_em: string;
+  /** 0051 — de onde veio `link_sala`. */
+  link_sala_origem: OrigemLinkSala;
+  link_sala_atualizado_em: string | null;
+  /** 0051 — quando o cron pediu a sala ao n8n pela última vez. */
+  sala_solicitada_em: string | null;
 }
+
+/** 0051 — como a presença foi confirmada (fato sobre o agendamento, não status). */
+export type ViaPresencaConfirmada = "link" | "whatsapp" | "email" | "equipe" | "ligacao_ia";
 
 export interface AgendamentoSessao {
   id: string;
@@ -337,6 +349,9 @@ export interface AgendamentoSessao {
   criado_em: string;
   atualizado_em: string;
   criado_por: string | null;
+  /** 0051 — `null` = aguardando confirmação do cliente (C23: não confundir com `status='confirmado'`). */
+  presenca_confirmada_em: string | null;
+  presenca_confirmada_via: ViaPresencaConfirmada | null;
 }
 
 export interface RelatorioSessao {
@@ -387,7 +402,10 @@ export type TipoEventoTimeline =
   | "patrimonio"
   | "familia"
   | "relatorio"
-  | "nota";
+  | "nota"
+  | "importacao"
+  | "cenario"
+  | "diagnostico";
 
 export interface EventoTimeline {
   id: string;
@@ -429,6 +447,21 @@ export interface JornadaKanbanLinha {
   tem_ligacao: boolean;
   tem_briefing: boolean;
   proxima_sessao_em: string | null;
+  // --- 0052: sinais de "próximo passo" (F6 §6.2). Campo ausente = view antiga; nunca inventar. ---
+  /** Presença do PRÓXIMO agendamento ativo (o mesmo de `proxima_sessao_em`). */
+  presenca_confirmada_em?: string | null;
+  sessao_realizada_em?: string | null;
+  tem_relatorio?: boolean;
+  croqui_status?: StatusCroqui | null;
+  material_estado?: EstadoMaterialKanban;
+  tarefas_abertas?: TarefaAbertaKanban[];
+}
+
+export type EstadoMaterialKanban = "nenhum" | "rascunho" | "aprovado";
+
+export interface TarefaAbertaKanban {
+  tipo: string | null;
+  responsavel_papel: PapelEquipe | null;
 }
 
 export interface IndicadorEsteiraLinha {
@@ -479,3 +512,54 @@ export interface DocumentoMetadado {
   tamanho_bytes: number;
   criado_em: string;
 }
+
+// ---------------------------------------------------------------------------
+// 0027 + 0051 — tarefas (POP 07 + tarefa assistida "Enviar link do croqui")
+// ---------------------------------------------------------------------------
+
+/** Chaves de máquina conhecidas; `tipo` no banco é texto livre `^[a-z_]{3,60}$` (outros agentes podem criar as suas). */
+export type TipoTarefaConhecido = "enviar_link_croqui" | "ligar_para_agendar";
+
+export interface Tarefa {
+  id: string;
+  jornada_id: string;
+  tipo: string | null;
+  titulo: string;
+  descricao: string | null;
+  responsavel_id: string | null;
+  vence_em: string | null;
+  concluida_em: string | null;
+  concluida_por: string | null;
+  origem: "manual" | "sistema";
+  criado_em: string;
+  criado_por: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Tabelas de OUTROS agentes da Fase 4 (podem não existir ainda no banco) —
+// shape mínimo que a Ficha 360 lê. `montarFicha360` é tolerante: tabela
+// ausente vira `null`/`[]`, nunca derruba a ficha.
+// ---------------------------------------------------------------------------
+
+/** `ligacoes_ia` (0053, agente B) — só o que a Ficha mostra; sem transcrição. */
+export interface LigacaoIaResumo {
+  id: string;
+  jornada_id: string;
+  provedor: "n8n" | "manual";
+  status: "na_fila" | "discando" | "em_ligacao" | "concluida" | "sem_resposta" | "falhou" | "cancelada";
+  tentativa: number;
+  resultado: "agendou" | "recusou" | "pediu_retorno" | "caixa_postal" | "numero_invalido" | "manual" | null;
+  horario_escolhido: string | null;
+  agendamento_id: string | null;
+  disparada_em: string | null;
+  encerrada_em: string | null;
+  resumo: string | null;
+  erro: string | null;
+  criado_em: string;
+}
+
+/**
+ * `diagnosticos_sv` (0058) e Cenário Patrimonial (0057) são do agente D: os
+ * tipos vivem em `src/types/cenario.ts` (`DiagnosticoSv`, `CenarioPatrimonial`,
+ * `CenarioRubrica`, `CenarioTotais`) — `Ficha360` importa de lá.
+ */

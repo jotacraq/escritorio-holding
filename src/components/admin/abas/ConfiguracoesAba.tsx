@@ -2,187 +2,267 @@
 
 import { useCallback, useState } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
-import { ApiError } from "@/lib/api";
+import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
-import { EstadoCarregando, EstadoErro } from "@/components/ui/Estado";
-import { formatarDataHora } from "@/lib/formatar";
+import { AreaTexto, Campo, Entrada, Opcao, Selecao } from "@/components/ui/Campo";
+import { Cartao } from "@/components/ui/Cartao";
+import { EsqueletoCartao } from "@/components/ui/Esqueleto";
+import { EstadoErro } from "@/components/ui/Estado";
+import { Selo } from "@/components/ui/Selo";
+import { formatarDataHora, formatarRelativo } from "@/lib/formatar";
 import { atualizarConfiguracao, listarConfiguracoes } from "../adminApi";
-import { AvisoInline } from "../AvisoInline";
+import { mensagemDeErro } from "../http";
+import { IntroAba, TRACO } from "../comum";
 import type { ConfiguracaoAdmin, ValidadeLinksDias } from "@/types/admin";
 
-/** `descricao` vem do banco (0027) — quando carrega "VALOR INICIAL", é chute
- * operacional ajustável, não regra do método da Dra. Elaine (BLOQUEIO B12). */
+/** Nome humano, unidade e (para enum) as opções. Chave fora do mapa cai no editor genérico. */
+const META: Record<string, { rotulo: string; sufixo?: string; opcoes?: { valor: string; rotulo: string }[]; grupo: string }> = {
+  "link.validade_dias": { rotulo: "Validade dos links públicos", grupo: "Links públicos" },
+  "link.limite_por_minuto": { rotulo: "Limite de aberturas por minuto", sufixo: "requisições/minuto", grupo: "Links públicos" },
+  "link.limite_por_dia": { rotulo: "Limite de aberturas por dia", sufixo: "requisições/dia", grupo: "Links públicos" },
+  "ia.cooldown_segundos": { rotulo: "Intervalo mínimo entre gerações", sufixo: "segundos", grupo: "IA" },
+  "ia.teto_execucoes_dia_por_usuario": { rotulo: "Teto de gerações por pessoa por dia", sufixo: "execuções/dia", grupo: "IA" },
+  "agenda.duracao_padrao_minutos": { rotulo: "Duração padrão da sessão", sufixo: "minutos", grupo: "Agenda" },
+  "agenda.slots_ofertados_ao_cliente": { rotulo: "Horários oferecidos ao cliente", sufixo: "horários", grupo: "Agenda" },
+  "croqui.exige_revisao_para_pronto": { rotulo: "Exigir os 13 slides revisados antes de marcar o croqui como pronto", grupo: "Croqui" },
+  "sala.provedor": {
+    rotulo: "Como a sala é criada",
+    grupo: "Integrações",
+    opcoes: [
+      { valor: "manual", rotulo: "Colar o link à mão" },
+      { valor: "n8n", rotulo: "n8n cria sozinho" },
+    ],
+  },
+  "regua.canal_whatsapp": {
+    rotulo: "Como o WhatsApp sai",
+    grupo: "Integrações",
+    opcoes: [
+      { valor: "manual", rotulo: "Fila manual" },
+      { valor: "chatwoot", rotulo: "Chatwoot (API)" },
+    ],
+  },
+  "regua.ultimo_cron_em": { rotulo: "Última passagem do cron da régua", grupo: "Integrações" },
+  "ligacao_ia.provedor": {
+    rotulo: "Quem faz a ligação de agendamento",
+    grupo: "Ligação por IA",
+    opcoes: [
+      { valor: "manual", rotulo: "Equipe liga (tarefa)" },
+      { valor: "n8n", rotulo: "IA via n8n" },
+    ],
+  },
+  "ligacao_ia.automatica": { rotulo: "Ligar por IA sozinho após cada compra (decisão LGPD B33)", grupo: "Ligação por IA" },
+  "ligacao_ia.max_tentativas": { rotulo: "Tentativas por cliente", sufixo: "tentativas", grupo: "Ligação por IA" },
+  "ligacao_ia.intervalo_retentativa_minutos": { rotulo: "Intervalo entre tentativas", sufixo: "minutos", grupo: "Ligação por IA" },
+  "ligacao_ia.timeout_minutos": { rotulo: "Tempo máximo de uma ligação antes de desistir", sufixo: "minutos", grupo: "Ligação por IA" },
+  "material.anexar_pdf": { rotulo: "Anexar o PDF do material no e-mail pós-sessão", grupo: "Material" },
+  "material.rodape_juridico": { rotulo: "Rodapé jurídico do PDF", grupo: "Material" },
+  "cenario.rubricas": { rotulo: "Rubricas do Cenário Patrimonial", grupo: "Método" },
+};
+
+const SOMENTE_LEITURA = new Set(["regua.ultimo_cron_em"]);
+const ORDEM_GRUPOS = ["Integrações", "Ligação por IA", "Material", "Método", "Croqui", "Agenda", "Links públicos", "IA", "Outras"];
+
+/** `descricao` com "VALOR INICIAL" = chute operacional, não regra do método (B12). */
 function ehValorInicial(descricao: string): boolean {
   return descricao.toLowerCase().includes("valor inicial");
 }
 
-function ValidadeLinksEditor({ valor, onChange }: { valor: ValidadeLinksDias; onChange: (v: ValidadeLinksDias) => void }) {
-  const CAMPOS: { chave: keyof ValidadeLinksDias; rotulo: string }[] = [
-    { chave: "formulario", rotulo: "Formulário" },
-    { chave: "agendamento", rotulo: "Agendamento" },
-    { chave: "documentos", rotulo: "Documentos" },
-    { chave: "material", rotulo: "Material" },
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {CAMPOS.map((campo) => (
-        <label key={campo.chave} className="flex flex-col gap-1 text-xs">
-          {campo.rotulo} (dias)
-          <input
-            type="number"
-            min={1}
-            value={valor[campo.chave]}
-            onChange={(e) => onChange({ ...valor, [campo.chave]: Number(e.target.value) })}
-            className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1"
-          />
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function NumeroEditor({ valor, sufixo, onChange }: { valor: number; sufixo?: string; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        min={0}
-        value={valor}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-32 rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1"
-      />
-      {sufixo && <span className="text-xs text-tinta-fraca">{sufixo}</span>}
-    </div>
-  );
-}
-
 function isValidadeLinksDias(valor: unknown): valor is ValidadeLinksDias {
-  return (
-    typeof valor === "object" &&
-    valor !== null &&
-    "formulario" in valor &&
-    "agendamento" in valor &&
-    "documentos" in valor &&
-    "material" in valor
-  );
+  return typeof valor === "object" && valor !== null && "formulario" in valor && "agendamento" in valor && "documentos" in valor && "material" in valor;
 }
-
-const SUFIXO: Record<string, string> = {
-  "link.limite_por_minuto": "requisições/minuto",
-  "link.limite_por_dia": "requisições/dia",
-  "ia.cooldown_segundos": "segundos",
-  "ia.teto_execucoes_dia_por_usuario": "execuções/dia",
-  "agenda.duracao_padrao_minutos": "minutos",
-  "agenda.slots_ofertados_ao_cliente": "horários",
-};
 
 export function ConfiguracoesAba() {
   const buscar = useCallback(() => listarConfiguracoes(), []);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, []);
 
-  const [rascunhos, setRascunhos] = useState<Record<string, unknown>>({});
-  const [salvandoChave, setSalvandoChave] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<{ tom: "sucesso" | "erro"; texto: string } | null>(null);
-
   if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar as configurações" />;
-  if (carregando && !dados) return <EstadoCarregando rotulo="Carregando configurações…" />;
+  if (carregando && !dados) return <EsqueletoCartao quantidade={4} rotulo="Carregando configurações…" />;
   if (!dados) return null;
 
-  function valorAtual(config: ConfiguracaoAdmin) {
-    return Object.prototype.hasOwnProperty.call(rascunhos, config.chave) ? rascunhos[config.chave] : config.valor;
+  const grupos = new Map<string, ConfiguracaoAdmin[]>();
+  for (const c of dados.itens) {
+    const grupo = META[c.chave]?.grupo ?? "Outras";
+    if (!grupos.has(grupo)) grupos.set(grupo, []);
+    grupos.get(grupo)!.push(c);
   }
+  const ordenados = [...ORDEM_GRUPOS.filter((g) => grupos.has(g)), ...Array.from(grupos.keys()).filter((g) => !ORDEM_GRUPOS.includes(g))];
 
-  function estaAlterado(config: ConfiguracaoAdmin) {
-    return Object.prototype.hasOwnProperty.call(rascunhos, config.chave) && JSON.stringify(rascunhos[config.chave]) !== JSON.stringify(config.valor);
-  }
+  return (
+    <div className="flex flex-col gap-6">
+      <IntroAba>Ajustes que valem na hora, sem deploy. Chave nova é migration — esta tela só muda o valor de chave que já existe.</IntroAba>
+      {ordenados.map((grupo) => (
+        <Cartao key={grupo} preenchimento="sem" rotulo={grupo} titulo={`${grupos.get(grupo)!.length} ${grupos.get(grupo)!.length === 1 ? "ajuste" : "ajustes"}`}>
+          <ul className="divide-y divide-linha">
+            {grupos.get(grupo)!.map((config) => (
+              <li key={config.chave} className="px-5 py-5 sm:px-6">
+                <LinhaConfiguracao config={config} aoSalvar={recarregar} />
+              </li>
+            ))}
+          </ul>
+        </Cartao>
+      ))}
+    </div>
+  );
+}
 
-  async function salvar(config: ConfiguracaoAdmin) {
-    setSalvandoChave(config.chave);
-    setAviso(null);
+function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; aoSalvar: () => void }) {
+  const { notificar } = useToast();
+  const [rascunho, setRascunho] = useState<unknown>(config.valor);
+  const [textoJson, setTextoJson] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const meta = META[config.chave] ?? { rotulo: config.chave, grupo: "Outras" };
+  const somenteLeitura = SOMENTE_LEITURA.has(config.chave);
+  const alterado = JSON.stringify(rascunho) !== JSON.stringify(config.valor);
+
+  async function salvar(valorParaSalvar: unknown = rascunho) {
+    setSalvando(true);
     try {
-      await atualizarConfiguracao(config.chave, valorAtual(config));
-      setAviso({ tom: "sucesso", texto: `"${config.chave}" atualizada.` });
-      setRascunhos((atual) => {
-        const proximo = { ...atual };
-        delete proximo[config.chave];
-        return proximo;
-      });
-      recarregar();
+      await atualizarConfiguracao(config.chave, valorParaSalvar);
+      notificar({ tom: "sucesso", titulo: "Configuração salva", descricao: meta.rotulo });
+      aoSalvar();
     } catch (e) {
-      setAviso({ tom: "erro", texto: e instanceof ApiError ? e.message : "Não foi possível salvar esta configuração." });
+      notificar({ tom: "erro", titulo: "Não foi possível salvar", descricao: mensagemDeErro(e, "Confira o valor e tente de novo.") });
     } finally {
-      setSalvandoChave(null);
+      setSalvando(false);
     }
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-xs text-tinta-fraca">
-        Prazo de link, cooldown de IA e duração de sessão. Chave nova é migration — esta tela só ajusta valor de chave que já
-        existe.
-      </p>
-
-      {aviso && <AvisoInline tom={aviso.tom}>{aviso.texto}</AvisoInline>}
-
-      <div className="flex flex-col gap-3">
-        {dados.itens.map((config) => {
-          const valor = valorAtual(config);
-          const alterado = estaAlterado(config);
-          return (
-            <div key={config.chave} className="rounded-sm border border-linha bg-papel-elevado p-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="font-mono text-sm font-medium text-tinta">{config.chave}</p>
-                  <p className="text-xs text-tinta-suave">{config.descricao}</p>
-                </div>
-                {ehValorInicial(config.descricao) && (
-                  <span className="whitespace-nowrap rounded-sm border border-ambar-borda bg-ambar-fraco px-1.5 py-0.5 text-[11px] font-medium text-[color:var(--ambar)]">
-                    valor inicial — não vem do método
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-                {isValidadeLinksDias(valor) ? (
-                  <ValidadeLinksEditor valor={valor} onChange={(v) => setRascunhos({ ...rascunhos, [config.chave]: v })} />
-                ) : typeof valor === "number" ? (
-                  <NumeroEditor
-                    valor={valor}
-                    sufixo={SUFIXO[config.chave]}
-                    onChange={(v) => setRascunhos({ ...rascunhos, [config.chave]: v })}
-                  />
-                ) : (
-                  <textarea
-                    value={JSON.stringify(valor)}
-                    onChange={(e) => {
-                      try {
-                        setRascunhos({ ...rascunhos, [config.chave]: JSON.parse(e.target.value) });
-                      } catch {
-                        /* mantém o texto digitado até ficar JSON válido */
-                      }
-                    }}
-                    rows={2}
-                    className="w-full rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1 font-mono text-xs"
-                  />
-                )}
-
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-tinta-fraca">atualizada em {formatarDataHora(config.atualizado_em)}</span>
-                  <Botao
-                    variante="primario"
-                    className="text-xs"
-                    disabled={!alterado}
-                    carregando={salvandoChave === config.chave}
-                    onClick={() => salvar(config)}
-                  >
-                    Salvar
-                  </Botao>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+  const cabecalho = (
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <p className="text-sm font-bold text-tinta">{meta.rotulo}</p>
+        <p className="text-xs text-tinta-suave">{config.descricao}</p>
+        <p className="mt-0.5 text-legenda text-tinta-fraca">
+          <code>{config.chave}</code> · atualizada {formatarRelativo(config.atualizado_em)}
+        </p>
       </div>
+      {ehValorInicial(config.descricao) && <Selo tom="ambar">valor inicial — não vem do método</Selo>}
     </div>
   );
+
+  if (somenteLeitura) {
+    const iso = typeof config.valor === "string" ? config.valor : null;
+    return (
+      <div className="flex flex-col gap-2">
+        {cabecalho}
+        <p className="text-sm text-tinta">
+          {iso ? (
+            <>
+              {formatarRelativo(iso)} <span className="text-tinta-fraca">({formatarDataHora(iso)})</span>
+            </>
+          ) : (
+            <span className="text-[color:var(--ambar)]">nunca — o cron da Hostinger ainda não chamou /api/cron/regua</span>
+          )}
+        </p>
+        <p className="text-xs text-tinta-fraca">Escrita pelo sistema a cada passagem do cron. Só leitura.</p>
+      </div>
+    );
+  }
+
+  // Boolean: salva no clique (é um interruptor).
+  if (typeof config.valor === "boolean") {
+    return (
+      <div className="flex flex-col gap-3">
+        {cabecalho}
+        <Opcao tipo="checkbox" rotulo={config.valor ? "Ligado" : "Desligado"} descricao="Vale na hora." checked={config.valor} disabled={salvando} onChange={(e) => salvar(e.target.checked)} />
+      </div>
+    );
+  }
+
+  // Enum: salva na troca.
+  if (meta.opcoes) {
+    return (
+      <div className="flex flex-col gap-3">
+        {cabecalho}
+        <Campo rotulo="Valor">
+          <Selecao value={String(config.valor)} disabled={salvando} onChange={(e) => salvar(e.target.value)}>
+            {meta.opcoes.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.rotulo}
+              </option>
+            ))}
+          </Selecao>
+        </Campo>
+      </div>
+    );
+  }
+
+  let editor: React.ReactNode;
+  if (isValidadeLinksDias(rascunho)) {
+    const CAMPOS: { chave: keyof ValidadeLinksDias; rotulo: string }[] = [
+      { chave: "formulario", rotulo: "Formulário" },
+      { chave: "agendamento", rotulo: "Agendamento" },
+      { chave: "documentos", rotulo: "Documentos" },
+      { chave: "material", rotulo: "Material" },
+    ];
+    editor = (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {CAMPOS.map((campo) => (
+          <Campo key={campo.chave} rotulo={`${campo.rotulo} (dias)`}>
+            <Entrada type="number" min={1} value={rascunho[campo.chave]} onChange={(e) => setRascunho({ ...rascunho, [campo.chave]: Number(e.target.value) })} />
+          </Campo>
+        ))}
+      </div>
+    );
+  } else if (typeof rascunho === "number") {
+    editor = (
+      <Campo rotulo="Valor" extra={meta.sufixo}>
+        <Entrada type="number" min={0} className="sm:max-w-xs" value={rascunho} onChange={(e) => setRascunho(Number(e.target.value))} />
+      </Campo>
+    );
+  } else if (typeof rascunho === "string") {
+    editor = (
+      <Campo rotulo="Texto">
+        <AreaTexto rows={3} value={rascunho} onChange={(e) => setRascunho(e.target.value)} />
+      </Campo>
+    );
+  } else if (Array.isArray(rascunho) && rascunho.every((x) => typeof x === "string")) {
+    editor = (
+      <Campo rotulo="Lista" ajuda="Um item por linha.">
+        <AreaTexto rows={4} value={(rascunho as string[]).join("\n")} onChange={(e) => setRascunho(e.target.value.split("\n").map((s) => s.trim()).filter(Boolean))} />
+      </Campo>
+    );
+  } else {
+    const texto = textoJson ?? JSON.stringify(rascunho, null, 2);
+    editor = (
+      <Campo rotulo="Valor (JSON)" erro={textoJson !== null && !ehJsonValido(textoJson) ? "JSON inválido — corrija antes de salvar." : undefined}>
+        <AreaTexto
+          rows={4}
+          className="font-mono text-sm"
+          value={texto}
+          onChange={(e) => {
+            setTextoJson(e.target.value);
+            if (ehJsonValido(e.target.value)) setRascunho(JSON.parse(e.target.value));
+          }}
+        />
+      </Campo>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {cabecalho}
+      {editor}
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {alterado && (
+          <Botao variante="fantasma" tamanho="compacto" onClick={() => setRascunho(config.valor)}>
+            Desfazer
+          </Botao>
+        )}
+        <Botao variante="secundario" tamanho="compacto" disabled={!alterado} carregando={salvando} onClick={() => salvar()}>
+          Salvar
+        </Botao>
+      </div>
+      {config.valor === null && <p className="text-xs text-tinta-fraca">Valor atual: {TRACO}</p>}
+    </div>
+  );
+}
+
+function ehJsonValido(texto: string): boolean {
+  try {
+    JSON.parse(texto);
+    return true;
+  } catch {
+    return false;
+  }
 }

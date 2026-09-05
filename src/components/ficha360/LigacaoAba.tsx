@@ -67,7 +67,7 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
       </span>
       <ul className="flex flex-col gap-1.5">
         {itens.map((frase, indice) => (
-          <li key={indice} className="flex items-start gap-2 rounded-sm bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
+          <li key={indice} className="flex items-start gap-2 rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
             <span className="flex-1 italic">&ldquo;{frase}&rdquo;</span>
             <button type="button" onClick={() => aoMudar(itens.filter((_, i) => i !== indice))} className="text-xs text-tinta-fraca hover:text-[color:var(--vermelho)]" aria-label={`Remover frase: ${frase}`}>
               Remover
@@ -82,7 +82,7 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
             onChange={(e) => setNovo(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), adicionar())}
             placeholder={placeholder}
-            className="flex-1 rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
+            className="flex-1 rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
           />
           <Botao variante="secundario" className="text-xs" onClick={adicionar}>
             Adicionar
@@ -102,29 +102,39 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
  * simplificado aqui porque isto é registro pós-ligação, não leitura ao vivo.
  */
 function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chave: ChaveRoteiro; rotuloPop: string; respostas: Record<string, string>; aoMudarResposta: (id: string, valor: string) => void }) {
-  const [bloco, setBloco] = useState<RoteiroBloco | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-  const [carregando, setCarregando] = useState(true);
+  // Estado guarda a `chave` que ele reflete. Quando a prop muda, o próprio
+  // corpo do componente (fase de render, não um effect) reseta para
+  // "carregando" — padrão React de "ajustar estado quando uma prop muda"
+  // (evita setState síncrono dentro do efeito, que dispara render em cascata).
+  const [estado, setEstado] = useState<{ chave: ChaveRoteiro; carregando: boolean; bloco: RoteiroBloco | null; erro: string | null }>(() => ({
+    chave,
+    carregando: true,
+    bloco: null,
+    erro: null,
+  }));
+
+  if (estado.chave !== chave) {
+    setEstado({ chave, carregando: true, bloco: null, erro: null });
+  }
 
   useEffect(() => {
     let vivo = true;
-    setCarregando(true);
-    setErro(null);
     buscarRoteiroAtivo(chave)
       .then((roteiro) => {
         if (!vivo) return;
-        setBloco(roteiro.definicao.blocos[0] ?? null);
+        setEstado((atual) => (atual.chave === chave ? { ...atual, carregando: false, bloco: roteiro.definicao.blocos[0] ?? null, erro: null } : atual));
       })
       .catch((e) => {
-        if (vivo) setErro(e instanceof ErroFicha360Api ? e.message : `Não foi possível carregar o roteiro do ${rotuloPop}.`);
-      })
-      .finally(() => {
-        if (vivo) setCarregando(false);
+        if (!vivo) return;
+        const mensagem = e instanceof ErroFicha360Api ? e.message : `Não foi possível carregar o roteiro do ${rotuloPop}.`;
+        setEstado((atual) => (atual.chave === chave ? { ...atual, carregando: false, erro: mensagem } : atual));
       });
     return () => {
       vivo = false;
     };
   }, [chave, rotuloPop]);
+
+  const { carregando, erro, bloco } = estado;
 
   if (carregando) return <EstadoCarregando rotulo={`Carregando roteiro do ${rotuloPop}…`} />;
   if (erro) return <p role="alert" className="text-sm text-[color:var(--vermelho)]">{erro}</p>;
@@ -142,12 +152,12 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
             rows={2}
             value={respostas[campo.id] ?? ""}
             onChange={(e) => aoMudarResposta(campo.id, e.target.value)}
-            className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
+            className="rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
           />
         </div>
       ))}
       {bloco.observar.length > 0 && (
-        <div className="rounded-sm border border-azul bg-azul-fraco px-3 py-2.5">
+        <div className="rounded-controle border border-azul bg-azul-fraco px-3 py-2.5">
           <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--azul)]">Observar na resposta</p>
           <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--azul)]">
             {bloco.observar.map((item, i) => (
@@ -157,7 +167,7 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
         </div>
       )}
       {bloco.proibido.length > 0 && (
-        <div role="alert" className="rounded-sm border-2 border-vermelho bg-vermelho-fraco px-3 py-2.5">
+        <div role="alert" className="rounded-controle border-2 border-vermelho bg-vermelho-fraco px-3 py-2.5">
           <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Proibido nesta ligação</p>
           <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--vermelho)]">
             {bloco.proibido.map((item, i) => (
@@ -200,7 +210,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       </p>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">
+        <legend className="text-base font-bold text-tinta">
           {pop03b ? "Roteiro do POP 03-B (sem seminário)" : "Roteiro do POP 03"}
         </legend>
         <RoteiroDeBanco
@@ -212,25 +222,25 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Registro obrigatório</legend>
+        <legend className="text-base font-bold text-tinta">Registro obrigatório</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <label htmlFor="expectativa" className="text-sm font-medium text-tinta">Expectativa principal</label>
-            <input id="expectativa" value={ligacao.expectativa_principal ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, expectativa_principal: e.target.value }))} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+            <input id="expectativa" value={ligacao.expectativa_principal ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, expectativa_principal: e.target.value }))} className="rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="preocupacao" className="text-sm font-medium text-tinta">Preocupação percebida</label>
-            <input id="preocupacao" value={ligacao.preocupacao_principal ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, preocupacao_principal: e.target.value }))} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+            <input id="preocupacao" value={ligacao.preocupacao_principal ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, preocupacao_principal: e.target.value }))} className="rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
           </div>
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="assunto-atencao" className="text-sm font-medium text-tinta">Assunto que merece atenção especial</label>
-          <input id="assunto-atencao" value={ligacao.assunto_atencao_especial ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, assunto_atencao_especial: e.target.value }))} className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+          <input id="assunto-atencao" value={ligacao.assunto_atencao_especial ?? ""} onChange={(e) => setLigacao((l) => ({ ...l, assunto_atencao_especial: e.target.value }))} className="rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
         </div>
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Observação comportamental (objetiva)</legend>
+        <legend className="text-base font-bold text-tinta">Observação comportamental (objetiva)</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div role="radiogroup" aria-label="Ritmo da fala">
             <span className="text-sm font-medium text-tinta">Ritmo</span>
@@ -310,7 +320,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
             type="checkbox"
             checked={ligacao.decisores_presentes_na_sessao ?? false}
             onChange={(e) => setLigacao((l) => ({ ...l, decisores_presentes_na_sessao: e.target.checked }))}
-            className="h-4 w-4 rounded-sm accent-[color:var(--latao)]"
+            className="h-4 w-4 rounded-controle accent-[color:var(--latao)]"
           />
           Todos os decisores estarão presentes na sessão
         </label>

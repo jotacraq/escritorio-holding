@@ -14,11 +14,14 @@ const CorpoSchema = z
   .object({
     nome: z.string().trim().min(2).max(200).optional(),
     hotmart_produto_id: z.string().trim().min(1).max(100).nullish(),
+    /** 0051: link de pagamento; só https (o CHECK do banco é a segunda trava). */
+    url_checkout: z.string().trim().url().max(500).startsWith("https://", "O link de pagamento precisa começar com https://").nullish(),
     ativo: z.boolean().optional(),
   })
   .refine(
-    (corpo) => corpo.nome !== undefined || corpo.hotmart_produto_id !== undefined || corpo.ativo !== undefined,
-    { message: "Informe ao menos um campo: nome, hotmart_produto_id ou ativo." },
+    (corpo) =>
+      corpo.nome !== undefined || corpo.hotmart_produto_id !== undefined || corpo.url_checkout !== undefined || corpo.ativo !== undefined,
+    { message: "Informe ao menos um campo: nome, hotmart_produto_id, url_checkout ou ativo." },
   );
 
 interface ErroPostgrest {
@@ -46,6 +49,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const patch: Record<string, unknown> = {};
     if (corpo.nome !== undefined) patch.nome = corpo.nome;
     if (corpo.hotmart_produto_id !== undefined) patch.hotmart_produto_id = corpo.hotmart_produto_id ?? null;
+    if (corpo.url_checkout !== undefined) patch.url_checkout = corpo.url_checkout ?? null;
     if (corpo.ativo !== undefined) patch.ativo = corpo.ativo;
 
     const { data: atualizado, error } = await supabase

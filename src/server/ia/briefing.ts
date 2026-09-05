@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { montarContextoBriefing, type ContextoBriefing } from "./contexto-briefing";
-import { BriefingSchema, type Briefing } from "./schema-briefing";
+import { schemaBriefingParaVersao, type Briefing } from "./schema-briefing";
 import { erroServicoIndisponivel, erroNaoEncontrado, erroDadosInsuficientes, ErroIa } from "./erros";
 import { resolverModoIa, gerarBriefingDemonstracao } from "./demonstracao";
 import { executarComAuditoria } from "./executar";
@@ -52,6 +52,10 @@ export interface ResultadoBriefingSemGravar {
   custoUsd: number | null;
   completude: ResultadoCompletude;
   verificacao: ResultadoFidelidade;
+  /** Versão de `prompts_versoes` usada (a ativa, ou `versaoPrompt` da bancada). */
+  promptVersao: number;
+  /** `JSON.stringify(contexto).length` — o que a bancada mede antes/depois das fontes novas (§5.2). */
+  bytesContexto: number;
 }
 
 /**
@@ -93,7 +97,7 @@ export async function gerarBriefingSemGravar(
 
   const orcamentoEscritaAtivo = await lerConfiguracaoBool(supabaseAdmin, CHAVE_ORCAMENTO_ESCRITA_ATIVO, true);
 
-  const { execucaoId, saida: briefing, custoUsd } = await executarComAuditoria(supabaseAdmin, {
+  const { execucaoId, saida: briefing, custoUsd, promptVersao } = await executarComAuditoria(supabaseAdmin, {
     chavePrompt: CHAVE_PROMPT,
     versaoPrompt,
     jornadaId,
@@ -103,7 +107,9 @@ export async function gerarBriefingSemGravar(
       "Contexto da família e da jornada (JSON, allowlist — nunca contém valor absoluto de " +
       "patrimônio, CPF ou endereço completo):",
     extraSistema: orcamentoEscritaAtivo ? BLOCO_ORCAMENTO_ESCRITA : undefined,
-    schema: BriefingSchema,
+    // Bi-versão (schema-briefing.ts): v1/v2 → BriefingV2Schema; v3 → exige
+    // `linguagem_do_cliente`. A versão ativa decide — sem deploy.
+    schema: schemaBriefingParaVersao,
     nomeSchema: "protocolo_01_briefing",
     maxTokens: 16000,
     effortOverride,
@@ -113,7 +119,18 @@ export async function gerarBriefingSemGravar(
 
   const verificacao = calcularFidelidade(contexto, briefing);
 
-  return { execucaoId, briefing, contexto, fontesUsadas, modoReduzido, custoUsd, completude, verificacao };
+  return {
+    execucaoId,
+    briefing,
+    contexto,
+    fontesUsadas,
+    modoReduzido,
+    custoUsd,
+    completude,
+    verificacao,
+    promptVersao,
+    bytesContexto: JSON.stringify(contexto).length,
+  };
 }
 
 /**

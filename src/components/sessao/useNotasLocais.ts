@@ -20,12 +20,17 @@ export function useNotaLocal(sessaoId: string, blocoId: string) {
   const [valor, setValor] = useState("");
 
   useEffect(() => {
+    // Leitura de um sistema externo (localStorage) depois de montar — o
+    // servidor renderiza "" e o cliente corrige uma vez, sem mismatch de
+    // hidratação (mesmo padrão de `hooks/useTema.ts`). Não é fetch.
+    let lido = "";
     try {
-      setValor(window.localStorage.getItem(chave(sessaoId, blocoId)) ?? "");
+      lido = window.localStorage.getItem(chave(sessaoId, blocoId)) ?? "";
     } catch {
-      setValor("");
+      lido = "";
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValor(lido);
   }, [sessaoId, blocoId]);
 
   const salvar = useCallback(

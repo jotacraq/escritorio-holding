@@ -31,6 +31,20 @@ export type CampoImportavel = (typeof CAMPOS_IMPORTAVEIS)[number];
  * para reuso num upload futuro (mesma edição ou outra, mesmo layout de planilha). */
 export type MapaColunas = Record<string, CampoImportavel>;
 
+/**
+ * Fase 4, §5.2 (`docs/ARQUITETURA-FASE-4.md`): qualquer coluna do arquivo que
+ * NÃO alimenta campo cadastral pode virar "Pergunta do seminário: <cabeçalho>"
+ * — a resposta de cada linha é gravada em `respostas_seminario` ligada à
+ * pessoa e à edição. O front envia a lista de cabeçalhos no campo
+ * `perguntas_seminario` do `multipart/form-data` (JSON `string[]`), SEPARADO
+ * de `mapa_colunas`, para o contrato antigo continuar válido: um servidor
+ * que ainda não conhece o campo simplesmente o ignora, e a coluna continua
+ * guardada em `dados.bruto` da linha (nada se perde). Quando o servidor
+ * expuser `perguntas_seminario`/`respostas_seminario` na `Importacao`, a
+ * tela de detalhe mostra o que foi gravado.
+ */
+export type PerguntasSeminario = string[];
+
 export type StatusImportacao = "previa" | "confirmada" | "cancelada";
 
 export type ResultadoLinhaImportacao =
@@ -56,6 +70,13 @@ export interface Importacao {
   confirmada_por: string | null;
   criado_em: string;
   criado_por: string | null;
+  /** Cabeçalhos mapeados como "Pergunta do seminário" (§5.2). Ausente em
+   * servidor que ainda não grava respostas; `null` quando nenhuma coluna
+   * foi marcada. Tolerante nos dois casos. */
+  perguntas_seminario?: PerguntasSeminario | null;
+  /** Quantidade de respostas do seminário gravadas ao confirmar (§5.2).
+   * Ausente/`null` = o servidor ainda não conta isso — a tela mostra "—". */
+  respostas_seminario?: number | null;
 }
 
 /** Valores já normalizados (trim, e-mail minúsculo, telefone em E.164, etc.) —

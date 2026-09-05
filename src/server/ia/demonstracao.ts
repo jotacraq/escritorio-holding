@@ -130,6 +130,9 @@ const RASCUNHO_EXEMPLO_BRIEFING: Briefing = {
   estrategia_fechamento: "Exemplo fixo de demonstração — nunca use este texto com um cliente real.",
   grau_confianca: 0,
   lacunas: ["Este texto é um exemplo fixo. Nenhuma informação deste cliente foi analisada."],
+  // v3 (linguagem-cliente.ts): formato fixo de 3 linhas; listas vazias de
+  // propósito — exemplo não tem fala real de cliente para citar.
+  linguagem_do_cliente: "PALAVRAS: \nEXPRESSÕES: \nREGISTRO: exemplo fixo de demonstração, sem fala real de cliente.",
 };
 
 /** Validado contra o schema real na carga do módulo — divergência falha alto, não em produção. */
@@ -329,6 +332,7 @@ export async function gerarAnaliseCroquiDemonstracao(
     execucaoId: execucao.id,
     analiseId: analiseGravada.id,
     analise: EXEMPLO_CROQUI_ANALISE,
+    schemaVersao: 1, // o exemplo fixo é v1 (`CroquiAnaliseSchema`); `registrar_croqui_analise` grava o default 1
     custoUsd: 0,
   };
 }

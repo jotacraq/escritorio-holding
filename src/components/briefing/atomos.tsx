@@ -47,7 +47,7 @@ const TONS_CHIP: Record<TomChip, string> = {
 /** Chip genérico para enum do briefing (DISC, tom, probabilidade, ritmo…). */
 export function Chip({ tom = "neutro", children }: { tom?: TomChip; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-medium leading-none ${TONS_CHIP[tom]}`}>
+    <span className={`inline-flex items-center rounded-controle border px-2 py-0.5 text-xs font-medium leading-none ${TONS_CHIP[tom]}`}>
       {children}
     </span>
   );
@@ -58,7 +58,7 @@ export function BadgeConfianca({ valor }: { valor: number | null }) {
   const tom = valor >= 70 ? "var(--verde)" : valor >= 40 ? "var(--ambar)" : "var(--vermelho)";
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-sm font-medium"
+      className="inline-flex items-center gap-1.5 rounded-controle border px-2 py-1 text-sm font-medium"
       style={{ borderColor: tom, color: tom }}
     >
       Confiança: {valor}%
@@ -69,7 +69,7 @@ export function BadgeConfianca({ valor }: { valor: number | null }) {
 export function Hipotese({ evidencias }: { evidencias?: string[] }) {
   if (evidencias && evidencias.length > 0) return null;
   return (
-    <span className="ml-2 rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--ambar)]">
+    <span className="ml-2 rounded-controle bg-ambar-fraco px-1.5 py-0.5 text-legenda font-bold uppercase tracking-wide text-[color:var(--ambar)]">
       Hipótese — sem evidência direta
     </span>
   );
@@ -99,7 +99,7 @@ export function FraseComFidelidade({ frase, status }: { frase: string; status?: 
       {status === "nao_localizada" && (
         <span
           title="Esta frase não foi localizada no material de origem (formulário, ligação ou transcrição) usado para gerar o briefing."
-          className="rounded-sm bg-vermelho-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--vermelho)]"
+          className="rounded-controle bg-vermelho-fraco px-1.5 py-0.5 text-legenda font-bold uppercase tracking-wide text-[color:var(--vermelho)]"
         >
           Não localizada na fonte
         </span>
@@ -111,7 +111,7 @@ export function FraseComFidelidade({ frase, status }: { frase: string; status?: 
 function BlocoCompacto({ titulo, tom = "neutro", children }: { titulo: string; tom?: "neutro" | "vermelho"; children: ReactNode }) {
   const bordas = tom === "vermelho" ? "border-vermelho/40" : "border-linha";
   return (
-    <section className={`rounded-sm border ${bordas} px-3 py-2.5`}>
+    <section className={`rounded-controle border ${bordas} px-3 py-2.5`}>
       <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       <div className="text-tinta">{children}</div>
     </section>
@@ -135,7 +135,7 @@ export function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: 
       <div className="flex flex-wrap items-center gap-2">
         <BadgeConfianca valor={briefing.grau_confianca} />
         {briefing.modo_reduzido && (
-          <span className="rounded-sm bg-ambar-fraco px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--ambar)]">
+          <span className="rounded-controle bg-ambar-fraco px-1.5 py-0.5 text-legenda font-bold uppercase tracking-wide text-[color:var(--ambar)]">
             Sem transcrição
           </span>
         )}
@@ -218,7 +218,7 @@ export function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: 
       )}
 
       {c.lacunas.length > 0 && (
-        <p role="note" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
+        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
           Lacunas nesta análise: {c.lacunas.join(" · ")}
         </p>
       )}

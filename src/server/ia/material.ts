@@ -6,16 +6,24 @@ import { resolverModoIa } from "./demonstracao";
 import { executarComAuditoria } from "./executar";
 import { exigirPepper, gerarToken, hashToken } from "@/server/publico/pepper";
 import { APP_URL } from "@/lib/config-publica";
-import type { ConteudoMaterial, FonteDorMaterial, OrigemDadoMaterial } from "@/types/material";
+import { escolherModeloMaterial, type ModeloMaterialCatalogo } from "@/server/material/escolher";
+import { buscarModelosAtivos, buscarSinaisMaterial, type ConclusaoSessao } from "@/server/material/sinais";
+import type { ConteudoMaterial, FonteDorMaterial, MotivoModelo, OrigemDadoMaterial } from "@/types/material";
 
 /**
  * Material pós-sessão personalizado pela dor do cliente (ARQUITETURA-FASE-2.md
- * §4.4, CONFLITO C11/C12, BLOQUEIO B14). Mesmo padrão de `briefing.ts`/
+ * §4.4, CONFLITO C11/C12, BLOQUEIO B14; Fase 4 §3.4 — catálogo por dor/arquétipo
+ * e `conclusao_sessao` na entrada). Mesmo padrão de `briefing.ts`/
  * `croqui-analise.ts`: modo demonstração (`resolverModoIa`) quando a IA não
  * está configurada, 503 honesto sem a flag. NÃO edita `demonstracao.ts`
  * (fora da minha fronteira) — o caminho de demonstração deste módulo é
  * self-contained mais abaixo, pelo mesmo motivo que aquele arquivo não pôde
  * antecipar um exemplo de material: a tabela só nasce nesta migration (0031).
+ *
+ * Fase 4: a cascata da dor e os sinais do briefing/relatório/análise vivem em
+ * `src/server/material/sinais.ts`; a escolha do modelo é `escolherModeloMaterial`
+ * (função pura, zero IA) — o regex hardcoded virou `materiais_modelos.dores`
+ * (0055). Continua sendo UMA chamada de IA por material, zero quando sem dor.
  */
 
 // ===========================================================================
@@ -43,6 +51,7 @@ export interface ResultadoMaterial {
   fonteDor: FonteDorMaterial;
   dorPrincipal: string | null;
   chaveModelo: string;
+  motivoModelo: MotivoModelo;
   origemDado: OrigemDadoMaterial;
   custoUsd: number | null;
 }
@@ -50,107 +59,44 @@ export interface ResultadoMaterial {
 const CHAVE_PROMPT = "material_pos_sessao";
 const MARCADOR_EXEMPLO_MATERIAL = "Cliente Exemplo da Silva Demonstração";
 
-// ===========================================================================
-// Cascata da dor (CONFLITO C11 — "dor" não é campo do método; as fontes reais
-// são estas três, nesta ordem, e SÓ estas). Sem nenhuma: fonte_dor='nenhuma',
-// material vira o modelo 'padrao' — nunca uma dor inventada.
-// ===========================================================================
-interface CascataDor {
-  dorPrincipal: string | null;
-  fonteDor: FonteDorMaterial;
-}
-
-async function buscarDorPrincipal(supabaseAdmin: SupabaseClient, jornadaId: string): Promise<CascataDor> {
-  // 1) ligacoes_estrategicas.preocupacao_principal (POP 03) — a mais recente,
-  // mesmo critério de desempate de `contexto-briefing.ts` (pode haver remarcação).
-  const { data: ligacao } = await supabaseAdmin
-    .from("ligacoes_estrategicas")
-    .select("preocupacao_principal")
-    .eq("jornada_id", jornadaId)
-    .order("realizada_em", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ preocupacao_principal: string | null }>();
-  const dorLigacao = ligacao?.preocupacao_principal?.trim();
-  if (dorLigacao) {
-    return { dorPrincipal: dorLigacao, fonteDor: "ligacao" };
-  }
-
-  // 2) formularios_respostas.respostas->>'p16' (POP 02).
-  const { data: formulario } = await supabaseAdmin
-    .from("formularios_respostas")
-    .select("respostas")
-    .eq("jornada_id", jornadaId)
-    .maybeSingle<{ respostas: Record<string, unknown> | null }>();
-  const p16 = formulario?.respostas?.["p16"];
-  if (typeof p16 === "string" && p16.trim().length > 0) {
-    return { dorPrincipal: p16.trim(), fonteDor: "formulario" };
-  }
-
-  // 3) relatorios_sessao.preocupacao_predominante (via sessoes_viabilidade, 1:1 com a jornada).
-  const { data: sessao } = await supabaseAdmin
-    .from("sessoes_viabilidade")
-    .select("id")
-    .eq("jornada_id", jornadaId)
-    .maybeSingle<{ id: string }>();
-  if (sessao) {
-    const { data: relatorio } = await supabaseAdmin
-      .from("relatorios_sessao")
-      .select("preocupacao_predominante")
-      .eq("sessao_id", sessao.id)
-      .maybeSingle<{ preocupacao_predominante: string | null }>();
-    const dorRelatorio = relatorio?.preocupacao_predominante?.trim();
-    if (dorRelatorio) {
-      return { dorPrincipal: dorRelatorio, fonteDor: "relatorio" };
-    }
-  }
-
-  return { dorPrincipal: null, fonteDor: "nenhuma" };
-}
-
 /**
- * Roteamento para um modelo-base curado (`materiais_modelos`, 0031) — NUNCA uma
- * classificação apresentada como análise: é só "qual artigo já escrito é o mais
- * próximo do tema", equivalente a escolher uma pasta. A dor de verdade (texto
- * literal) só entra no conteúdo final via a IA (quando disponível) ou fica de
- * fora (quando o modelo é usado sem personalização).
+ * Teto da entrada da IA (§3.4): se passar de ~6 000 tokens, corta o
+ * `resumo_executivo` da análise (o campo mais longo e o menos essencial —
+ * o resultado da sessão e as considerações da advogada ficam). Estimativa
+ * conservadora para português: ~3,5 caracteres por token.
  */
-const PALAVRAS_POR_CHAVE: Record<string, RegExp> = {
-  empresa: /empres|s[óo]ci[ao]|neg[óo]cio/i,
-  inventario: /invent[áa]rio|herd|heran[çc]a|partilha|sucess/i,
-  conflito_familiar: /conflito|desentend|briga|divergênc|desaven[çc]a|desunião/i,
-  itcmd: /itcmd|itbi|tribut|imposto/i,
-};
+const TETO_TOKENS_ENTRADA = 6000;
+const CARACTERES_POR_TOKEN = 3.5;
 
-function classificarChaveModelo(dor: string | null): string {
-  if (!dor) return "padrao";
-  for (const [chave, regex] of Object.entries(PALAVRAS_POR_CHAVE)) {
-    if (regex.test(dor)) return chave;
-  }
-  return "padrao";
+function estimarTokens(objeto: unknown): number {
+  return Math.ceil(JSON.stringify(objeto).length / CARACTERES_POR_TOKEN);
 }
 
-interface ModeloMaterial {
-  id: string;
-  chave: string;
-  conteudo: ConteudoMaterial;
+function montarEntradaIa(params: {
+  primeiroNome: string;
+  dorPrincipal: string;
+  fonteDor: FonteDorMaterial;
+  modelo: ModeloMaterialCatalogo;
+  conclusaoSessao: ConclusaoSessao | undefined;
+}) {
+  const base = {
+    primeiro_nome: params.primeiroNome,
+    dor_principal: params.dorPrincipal,
+    fonte_dor: params.fonteDor,
+    modelo_base: params.modelo.conteudo,
+  };
+  if (!params.conclusaoSessao) return base;
+
+  const completa = { ...base, conclusao_sessao: params.conclusaoSessao };
+  if (estimarTokens(completa) <= TETO_TOKENS_ENTRADA) return completa;
+
+  const { resumo_executivo: _cortado, ...semResumo } = params.conclusaoSessao;
+  void _cortado;
+  return Object.keys(semResumo).length > 0 ? { ...base, conclusao_sessao: semResumo } : base;
 }
 
-async function buscarModeloAtivo(supabaseAdmin: SupabaseClient, chave: string): Promise<ModeloMaterial> {
-  const tentativas = chave === "padrao" ? ["padrao"] : [chave, "padrao"];
-  for (const candidata of tentativas) {
-    const { data } = await supabaseAdmin
-      .from("materiais_modelos")
-      .select("id, chave, conteudo")
-      .eq("chave", candidata)
-      .eq("ativo", true)
-      .maybeSingle<{ id: string; chave: string; conteudo: unknown }>();
-    if (data) {
-      return { id: data.id, chave: data.chave, conteudo: MaterialConteudoSchema.parse(data.conteudo) };
-    }
-  }
-  // Só acontece se o seed de 0031 (modelo 'padrao') tiver sido apagado — erro de
-  // infraestrutura, não caso de negócio esperado.
-  throw new Error("modelo_padrao_de_material_nao_encontrado: seed ausente (0031)");
+function validarConteudoModelo(conteudo: unknown): ConteudoMaterial {
+  return MaterialConteudoSchema.parse(conteudo);
 }
 
 // ===========================================================================
@@ -200,19 +146,22 @@ export async function gerarMaterial(
     .maybeSingle<{ nome: string }>();
   const primeiroNome = (pessoa?.nome ?? "").trim().split(/\s+/)[0] ?? "";
 
-  const { dorPrincipal, fonteDor } = await buscarDorPrincipal(supabaseAdmin, jornadaId);
-  const chaveModelo = classificarChaveModelo(dorPrincipal);
-  const modelo = await buscarModeloAtivo(supabaseAdmin, chaveModelo);
+  const [sinais, modelos] = await Promise.all([
+    buscarSinaisMaterial(supabaseAdmin, jornadaId),
+    buscarModelosAtivos(supabaseAdmin, validarConteudoModelo),
+  ]);
+  const { dorPrincipal, fonteDor, conclusaoSessao } = sinais;
+  const { modelo, motivo_modelo: motivoModelo } = escolherModeloMaterial(sinais, modelos);
 
   if (modoIa === "demonstracao") {
-    return gerarMaterialDemonstracao(supabaseAdmin, { jornadaId, criadoPor, modelo, dorPrincipal, fonteDor });
+    return gerarMaterialDemonstracao(supabaseAdmin, { jornadaId, criadoPor, modelo, motivoModelo, dorPrincipal, fonteDor });
   }
 
   // Sem dor nenhuma: o material É o modelo padrão, sem chamar a IA. Mandar "sem
   // dado nenhum" para a Anthropic personalizar geraria personalização fabricada
   // do nada — exatamente o que C11 proíbe. Mesmo princípio do `modoReduzido` do
   // Briefing, aplicado aqui: menos dado, menos IA, nunca dado inventado no lugar.
-  if (fonteDor === "nenhuma") {
+  if (fonteDor === "nenhuma" || dorPrincipal === null) {
     const { data: gravado, error: erroGravar } = await supabaseAdmin
       .rpc("registrar_material_gerado", {
         p_jornada_id: jornadaId,
@@ -221,6 +170,7 @@ export async function gerarMaterial(
         p_dor_principal: null,
         p_fonte_dor: "nenhuma",
         p_conteudo: modelo.conteudo,
+        p_motivo_modelo: motivoModelo,
       })
       .single<{ id: string }>();
     if (erroGravar || !gravado) {
@@ -233,24 +183,21 @@ export async function gerarMaterial(
       fonteDor: "nenhuma",
       dorPrincipal: null,
       chaveModelo: modelo.chave,
+      motivoModelo,
       origemDado: "real",
       custoUsd: null,
     };
   }
 
-  const entrada = {
-    primeiro_nome: primeiroNome,
-    dor_principal: dorPrincipal,
-    fonte_dor: fonteDor,
-    modelo_base: modelo.conteudo,
-  };
+  const entrada = montarEntradaIa({ primeiroNome, dorPrincipal, fonteDor, modelo, conclusaoSessao });
 
   const { execucaoId, saida: material, custoUsd } = await executarComAuditoria(supabaseAdmin, {
     chavePrompt: CHAVE_PROMPT,
     jornadaId,
     criadoPor,
     entrada,
-    prefixoUsuario: "Dor/preocupação real do cliente e material-base a personalizar (JSON):",
+    prefixoUsuario:
+      "Dor/preocupação real do cliente, conclusão da Sessão de Viabilidade (quando houver) e material-base a personalizar (JSON):",
     schema: MaterialConteudoSchema,
     nomeSchema: CHAVE_PROMPT,
     maxTokens: 4000,
@@ -264,6 +211,7 @@ export async function gerarMaterial(
       p_dor_principal: dorPrincipal,
       p_fonte_dor: fonteDor,
       p_conteudo: material,
+      p_motivo_modelo: motivoModelo,
     })
     .single<{ id: string }>();
   if (erroGravar || !gravado) {
@@ -277,6 +225,7 @@ export async function gerarMaterial(
     fonteDor,
     dorPrincipal,
     chaveModelo: modelo.chave,
+    motivoModelo,
     origemDado: "real",
     custoUsd,
   };
@@ -295,7 +244,8 @@ async function gerarMaterialDemonstracao(
   params: {
     jornadaId: string;
     criadoPor: string | null;
-    modelo: ModeloMaterial;
+    modelo: ModeloMaterialCatalogo;
+    motivoModelo: MotivoModelo;
     dorPrincipal: string | null;
     fonteDor: FonteDorMaterial;
   },
@@ -365,6 +315,7 @@ async function gerarMaterialDemonstracao(
       p_dor_principal: params.dorPrincipal,
       p_fonte_dor: params.fonteDor,
       p_conteudo: materialExemplo,
+      p_motivo_modelo: params.motivoModelo,
     })
     .single<{ id: string }>();
   if (erroGravar || !gravado) {
@@ -378,6 +329,7 @@ async function gerarMaterialDemonstracao(
     fonteDor: params.fonteDor,
     dorPrincipal: params.dorPrincipal,
     chaveModelo: params.modelo.chave,
+    motivoModelo: params.motivoModelo,
     origemDado: "exemplo",
     custoUsd: 0,
   };

@@ -1,26 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
 import "./globals.css";
 import { SCRIPT_TEMA_INICIAL } from "@/hooks/useTema";
+import { ToastProvider } from "@/components/ui/Toast";
 
-const fonteSerifa = IBM_Plex_Serif({
-  variable: "--font-plex-serif",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
-});
-
-const fonteSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const fonteMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
+/* Fonte única: Neuetra, servida de `public/fonts/` via `@font-face` em
+   `globals.css` (mesmos arquivos do seminário). As famílias IBM Plex que
+   viviam aqui via `next/font/google` foram removidas na fundação V1 do
+   design system — não eram mais a fonte ativa e custavam 3 downloads a mais
+   por visita (e uma ida ao Google no build). */
 
 export const metadata: Metadata = {
   title: "SIC-HF — Sistema de Inteligência para Conversão em Holding Familiar",
@@ -29,18 +16,20 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f4ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#16171a" },
+    { media: "(prefers-color-scheme: light)", color: "#f1f1f0" },
+    { media: "(prefers-color-scheme: dark)", color: "#111214" },
   ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" className={`${fonteSerifa.variable} ${fonteSans.variable} ${fonteMono.variable} h-full`} suppressHydrationWarning>
+    <html lang="pt-BR" className="h-full" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA_INICIAL }} />
       </head>
-      <body className="flex h-full min-h-screen flex-col antialiased">{children}</body>
+      <body className="flex h-full min-h-screen flex-col antialiased">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

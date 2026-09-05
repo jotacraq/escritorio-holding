@@ -1,25 +1,58 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useEquipe, useEtapasOrdem, useJornadas } from "@/hooks/useJornadas";
-import { atualizarEtapa, ApiError, listarJornadas, type EtapaJornada, type FiltrosJornadas, type JornadaKanban } from "@/lib/api";
-import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
+import { useToast } from "@/hooks/useToast";
+import { atualizarEtapa, ApiError, listarJornadas, type EtapaJornada, type EtapaOrdem, type FiltrosJornadas, type JornadaKanban } from "@/lib/api";
+import { Botao } from "@/components/ui/Botao";
+import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
+import { EsqueletoCartao } from "@/components/ui/Esqueleto";
+import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { CartaoJornada } from "./CartaoJornada";
-import { FiltrosEsteira, type OpcaoEdicao } from "./FiltrosEsteira";
+import { FiltrosEsteira, haFiltroAtivo, type OpcaoEdicao } from "./FiltrosEsteira";
+import { ListaPorEtapa } from "./ListaPorEtapa";
+import { CHAVE_VISAO_ESTEIRA, corDaEtapa, type VisaoEsteira } from "./etapas";
 
+const ICONE_QUADRO = (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
+    <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h3A1.5 1.5 0 0 1 9 4.5v11A1.5 1.5 0 0 1 7.5 17h-3A1.5 1.5 0 0 1 3 15.5v-11Zm8 0A1.5 1.5 0 0 1 12.5 3h3A1.5 1.5 0 0 1 17 4.5v6a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 11 10.5v-6Z" />
+  </svg>
+);
+const ICONE_LISTA = (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
+    <path d="M3 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm1 4a1 1 0 1 0 0 2h12a1 1 0 1 0 0-2H4Z" />
+  </svg>
+);
+
+/**
+ * Esteira — do seminário à holding. Duas visões da mesma lista, sem fetch a
+ * mais: o QUADRO (8 colunas; as vazias colapsam numa faixa estreita com
+ * contagem, para o que importa caber na tela) e a LISTA POR ETAPA (cartões
+ * empilhados — o caminho natural no celular e para quem não gosta de rolar
+ * de lado). A faixa "resumo por etapa" responde "quantas pessoas em cada
+ * etapa, agora?" e leva ao lugar certo com um clique.
+ *
+ * Mover de etapa: otimista (o cartão troca de coluna na hora), toast com
+ * "Desfazer", e volta ao lugar com o motivo se o servidor recusar.
+ */
 export function KanbanEsteira() {
+  const { notificar } = useToast();
   const [filtrosDigitados, setFiltrosDigitados] = useState<FiltrosJornadas>({});
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const buscaDebatida = useDebounce(filtrosDigitados.busca, 350);
   const filtros = useMemo<FiltrosJornadas>(
-    () => ({ ...filtrosDigitados, busca: buscaDebatida, incluir_fechadas: mostrarFechadas }),
+    () => ({
+      ...filtrosDigitados,
+      busca: buscaDebatida,
+      incluir_fechadas: mostrarFechadas,
+    }),
     [filtrosDigitados, buscaDebatida, mostrarFechadas],
   );
 
   const { etapas, carregando: carregandoEtapas, erro: erroEtapas, recarregar: recarregarEtapas } = useEtapasOrdem();
   const equipe = useEquipe();
-  const { itens, carregando: carregandoJornadas, erro: erroJornadas, recarregar: recarregarJornadas, setItens } = useJornadas(filtros);
+  const { itens, total, carregando: carregandoJornadas, erro: erroJornadas, recarregar: recarregarJornadas, setItens } = useJornadas(filtros);
 
   const [opcoesEdicoes, setOpcoesEdicoes] = useState<OpcaoEdicao[]>([]);
   useEffect(() => {
@@ -35,22 +68,46 @@ export function KanbanEsteira() {
       .catch(() => setOpcoesEdicoes([]));
   }, []);
 
+  // Visão: preferência de tela, guardada no navegador. No celular, a lista é o padrão.
+  const [visao, setVisao] = useState<VisaoEsteira>("quadro");
+  useEffect(() => {
+    // Leitura do navegador após montar (mesmo padrão de `useTema`): evita mismatch de hidratação.
+    const salva = window.localStorage.getItem(CHAVE_VISAO_ESTEIRA);
+    if (salva === "quadro" || salva === "lista") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVisao(salva);
+    } else if (window.matchMedia("(max-width: 767px)").matches) {
+      setVisao("lista");
+    }
+  }, []);
+  function escolherVisao(nova: VisaoEsteira) {
+    setVisao(nova);
+    window.localStorage.setItem(CHAVE_VISAO_ESTEIRA, nova);
+  }
+
+  // Colunas colapsadas: por padrão as vazias; a pessoa pode abrir/fechar qualquer uma.
+  const [colapsoManual, setColapsoManual] = useState<Partial<Record<EtapaJornada, boolean>>>({});
+  const colunaColapsada = useCallback((etapa: EtapaJornada, quantidade: number) => colapsoManual[etapa] ?? quantidade === 0, [colapsoManual]);
+  function alternarColuna(etapa: EtapaJornada, quantidade: number) {
+    setColapsoManual((atual) => ({
+      ...atual,
+      [etapa]: !colunaColapsada(etapa, quantidade),
+    }));
+  }
+
   const [idArrastando, setIdArrastando] = useState<string | null>(null);
   const [idEmMovimento, setIdEmMovimento] = useState<string | null>(null);
-  const [erroMovimento, setErroMovimento] = useState<{ jornadaId: string; mensagem: string } | null>(null);
 
-  // A esteira tem mais colunas do que cabem em 1440px — a trilha rola na horizontal,
-  // isolada do body, e os degradês nas bordas avisam que há mais coluna fora da vista.
   const trilhaRef = useRef<HTMLDivElement>(null);
   const [podeRolarEsquerda, setPodeRolarEsquerda] = useState(false);
   const [podeRolarDireita, setPodeRolarDireita] = useState(false);
 
-  function atualizarSombrasDeRolagem() {
+  const atualizarSombrasDeRolagem = useCallback(() => {
     const el = trilhaRef.current;
     if (!el) return;
     setPodeRolarEsquerda(el.scrollLeft > 1);
     setPodeRolarDireita(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-  }
+  }, []);
 
   function rolarTrilha(direcao: 1 | -1) {
     trilhaRef.current?.scrollBy({ left: direcao * 320, behavior: "smooth" });
@@ -67,158 +124,322 @@ export function KanbanEsteira() {
       observador.disconnect();
       window.removeEventListener("resize", atualizarSombrasDeRolagem);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, etapas]);
+  }, [itens, etapas, visao, colapsoManual, atualizarSombrasDeRolagem]);
 
-  async function moverJornada(jornada: JornadaKanban, etapaDestino: EtapaJornada) {
+  const etapasOrdenadas = useMemo(() => (etapas ? [...etapas].sort((a, b) => a.ordem - b.ordem) : []), [etapas]);
+  const contagemPorEtapa = useMemo(() => {
+    const mapa = new Map<EtapaJornada, number>();
+    for (const j of itens) mapa.set(j.etapa, (mapa.get(j.etapa) ?? 0) + 1);
+    return mapa;
+  }, [itens]);
+
+  function irParaEtapa(etapa: EtapaOrdem) {
+    if (visao === "quadro") {
+      setColapsoManual((atual) => ({ ...atual, [etapa.etapa]: false }));
+      window.setTimeout(() => {
+        document.getElementById(`coluna-${etapa.etapa}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "center",
+        });
+      }, 50);
+    } else {
+      document.getElementById(`etapa-${etapa.etapa}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  async function moverJornada(jornada: JornadaKanban, etapaDestino: EtapaJornada, ehDesfazer = false) {
     if (etapaDestino === jornada.etapa) return;
-    setErroMovimento(null);
+    const etapaAnterior = jornada.etapa;
+    const rotuloDestino = etapasOrdenadas.find((e) => e.etapa === etapaDestino)?.rotulo ?? etapaDestino;
     setIdEmMovimento(jornada.id);
-    // Move visualmente para dar feedback imediato, mas o estado só se confirma com o servidor.
+    // Otimista: troca de coluna na hora; o estado só se confirma com o servidor.
     setItens((atual) => atual.map((j) => (j.id === jornada.id ? { ...j, etapa: etapaDestino } : j)));
     try {
-      await atualizarEtapa(jornada.id, { etapa: etapaDestino });
-      recarregarJornadas();
+      const { jornada: atualizada } = await atualizarEtapa(jornada.id, {
+        etapa: etapaDestino,
+      });
+      setItens((atual) => atual.map((j) => (j.id === jornada.id ? { ...j, ...atualizada } : j)));
+      notificar({
+        tom: "sucesso",
+        titulo: ehDesfazer ? "Movimento desfeito" : `Movido para ${rotuloDestino}`,
+        descricao: jornada.nome,
+        acao: ehDesfazer
+          ? undefined
+          : {
+              rotulo: "Desfazer",
+              aoClicar: () => moverJornada({ ...jornada, etapa: etapaDestino }, etapaAnterior, true),
+            },
+      });
     } catch (erro) {
-      // Servidor recusou (ex.: 409 transicao_invalida) — o card volta ao lugar, com o motivo escrito.
-      setItens((atual) => atual.map((j) => (j.id === jornada.id ? { ...j, etapa: jornada.etapa } : j)));
-      const mensagem = erro instanceof ApiError ? erro.message : "Não foi possível mover o card. Tente de novo.";
-      setErroMovimento({ jornadaId: jornada.id, mensagem });
+      // Servidor recusou (ex.: 409 transicao_invalida) — o cartão volta ao lugar, com o motivo escrito.
+      setItens((atual) => atual.map((j) => (j.id === jornada.id ? { ...j, etapa: etapaAnterior } : j)));
+      notificar({
+        tom: "erro",
+        titulo: `Não foi possível mover ${jornada.nome}`,
+        descricao: erro instanceof ApiError ? erro.message : "Confira a internet e tente de novo.",
+      });
     } finally {
       setIdEmMovimento(null);
     }
   }
 
-  if (carregandoEtapas) return <EstadoCarregando rotulo="Carregando as colunas da esteira…" />;
-  if (erroEtapas) return <EstadoErro erro={erroEtapas} tentarNovamente={recarregarEtapas} titulo="Não foi possível carregar as colunas da esteira" />;
-  if (!etapas || etapas.length === 0) {
-    return (
-      <EstadoVazio
-        titulo="Nenhuma etapa cadastrada"
-        descricao="A esteira depende da tabela etapas_jornada_ordem. Sem linhas lá, não há coluna para desenhar — e é assim mesmo: nenhuma coluna é inventada na tela."
-      />
-    );
+  const filtroAtivo = haFiltroAtivo(filtrosDigitados, mostrarFechadas);
+  function limparFiltros() {
+    setFiltrosDigitados({});
+    setMostrarFechadas(false);
   }
 
-  const etapasOrdenadas = [...etapas].sort((a, b) => a.ordem - b.ordem);
+  const alternadorVisao = (
+    <div role="group" aria-label="Como ver a esteira" className="inline-flex rounded-controle border border-linha-controle bg-papel-elevado p-0.5">
+      {(
+        [
+          ["quadro", "Quadro", ICONE_QUADRO],
+          ["lista", "Lista por etapa", ICONE_LISTA],
+        ] as const
+      ).map(([valor, rotulo, icone]) => (
+        <button
+          key={valor}
+          type="button"
+          aria-pressed={visao === valor}
+          onClick={() => escolherVisao(valor)}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-[calc(var(--raio-controle)-2px)] px-3.5 text-sm font-medium transition-colors duration-[var(--transicao-rapida)] ${
+            visao === valor ? "bg-latao-fraco text-tinta" : "text-tinta-suave hover:text-tinta"
+          }`}
+        >
+          {icone}
+          {rotulo}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="font-serif text-2xl font-bold text-tinta">Esteira</h1>
-        <p className="text-sm text-tinta-suave">Do seminário à holding contratada — cada card é uma jornada.</p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <CabecalhoPagina
+        rotulo="Dia a dia"
+        titulo="Esteira"
+        descricao="Do seminário à holding contratada — cada cartão é uma pessoa, cada coluna é uma etapa. O chip diz o próximo passo e de quem é."
+        acoes={alternadorVisao}
+        meta={
+          !carregandoJornadas && !erroJornadas ? (
+            <span>
+              {total} {total === 1 ? "jornada" : "jornadas"}
+              {filtroAtivo ? " com os filtros atuais" : mostrarFechadas ? " (abertas e fechadas)" : " abertas"}
+            </span>
+          ) : undefined
+        }
+      />
 
       <FiltrosEsteira
         filtros={filtrosDigitados}
         aoMudar={(parcial) => setFiltrosDigitados((atual) => ({ ...atual, ...parcial }))}
+        aoLimpar={limparFiltros}
         opcoesEdicoes={opcoesEdicoes}
         equipe={equipe}
         mostrarFechadas={mostrarFechadas}
         aoAlternarFechadas={setMostrarFechadas}
       />
 
-      {erroMovimento && (
-        <div role="alert" className="rounded-sm border border-vermelho bg-vermelho-fraco px-3 py-2 text-sm text-[color:var(--vermelho)]">
-          O card não pôde ser movido: {erroMovimento.mensagem}
-        </div>
+      {carregandoEtapas && <EsqueletoCartao quantidade={6} rotulo="Carregando as colunas da esteira…" />}
+      {Boolean(erroEtapas) && <EstadoErro erro={erroEtapas} tentarNovamente={recarregarEtapas} titulo="Não foi possível carregar as colunas da esteira" />}
+      {!carregandoEtapas && !erroEtapas && etapasOrdenadas.length === 0 && (
+        <EstadoVazio
+          ilustracao="lista"
+          titulo="Nenhuma etapa cadastrada"
+          descricao="A esteira depende da tabela etapas_jornada_ordem. Sem linhas lá, não há coluna para desenhar — e é assim mesmo: nenhuma coluna é inventada na tela."
+        />
       )}
 
-      {erroJornadas ? <EstadoErro erro={erroJornadas} tentarNovamente={recarregarJornadas} /> : null}
-
-      {carregandoJornadas && itens.length === 0 && !erroJornadas && <EstadoCarregando rotulo="Carregando jornadas…" />}
-
-      {!carregandoJornadas && !erroJornadas && itens.length === 0 && (
-        <EstadoVazio titulo="Nenhuma jornada encontrada" descricao="Ajuste os filtros ou verifique se já há captação nesta edição." />
-      )}
-
-      {itens.length > 0 && (
-        <div className="relative">
-          <div
-            ref={trilhaRef}
-            onScroll={atualizarSombrasDeRolagem}
-            tabIndex={0}
-            role="group"
-            aria-label="Colunas da esteira. Use as setas do teclado ou os botões ao lado para rolar na horizontal."
-            className="trilha-esteira flex gap-4 overflow-x-auto pb-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--latao)]"
-          >
+      {etapasOrdenadas.length > 0 && (
+        <>
+          {/* Resumo por etapa — "quantas pessoas em cada etapa, agora?" + atalho para a coluna/seção. */}
+          <nav aria-label="Resumo por etapa" className="flex flex-wrap gap-2">
             {etapasOrdenadas.map((etapa) => {
-              const cartoes = itens.filter((j) => j.etapa === etapa.etapa);
+              const quantidade = contagemPorEtapa.get(etapa.etapa) ?? 0;
               return (
-                <div
+                <button
                   key={etapa.etapa}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const jornada = itens.find((j) => j.id === idArrastando);
-                    setIdArrastando(null);
-                    if (jornada) moverJornada(jornada, etapa.etapa);
-                  }}
-                  className="flex w-72 shrink-0 flex-col gap-3 rounded-sm border border-linha bg-papel-fundo/60 p-2"
+                  type="button"
+                  onClick={() => irParaEtapa(etapa)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-pilula border border-linha-forte bg-papel-elevado px-3.5 text-sm text-tinta transition-[border-color,box-shadow] duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:shadow-cartao"
                 >
-                  <div className="flex items-baseline justify-between px-1.5 pt-1">
-                    <h2 className="font-serif text-sm font-bold text-tinta">{etapa.rotulo}</h2>
-                    <span className="font-mono text-xs text-tinta-fraca">{cartoes.length}</span>
-                  </div>
-                  <div className="flex flex-col gap-2 min-h-[80px]">
-                    {cartoes.map((jornada) => (
-                      <CartaoJornada
-                        key={jornada.id}
-                        jornada={jornada}
-                        etapas={etapasOrdenadas}
-                        arrastando={idArrastando === jornada.id}
-                        emMovimento={idEmMovimento === jornada.id}
-                        aoIniciarArrasto={(e) => {
-                          setIdArrastando(jornada.id);
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        aoMoverParaEtapa={(destino) => moverJornada(jornada, destino)}
-                      />
-                    ))}
-                  </div>
-                </div>
+                  <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: corDaEtapa(etapa.cor) }} />
+                  <span className="font-medium">{etapa.rotulo}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${quantidade > 0 ? "bg-latao-fraco text-tinta" : "bg-papel text-tinta-fraca"}`}
+                  >
+                    {quantidade}
+                  </span>
+                </button>
               );
             })}
-          </div>
+          </nav>
 
-          {/* Degradês + botões: avisam e permitem rolar quando há coluna fora da vista. */}
-          <div
-            aria-hidden="true"
-            className={`pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-papel-fundo to-transparent transition-opacity duration-150 ${
-              podeRolarEsquerda ? "opacity-100" : "opacity-0"
-            }`}
-          />
-          <div
-            aria-hidden="true"
-            className={`pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-papel-fundo to-transparent transition-opacity duration-150 ${
-              podeRolarDireita ? "opacity-100" : "opacity-0"
-            }`}
-          />
-          {podeRolarEsquerda && (
-            <button
-              type="button"
-              onClick={() => rolarTrilha(-1)}
-              aria-label="Rolar colunas para a esquerda"
-              className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full border border-linha-forte bg-papel-elevado p-1.5 text-tinta shadow-[var(--sombra-cartao)] hover:border-latao hover:text-latao"
-            >
-              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
-                <path d="M12.7 15.3a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 1 1 1.4 1.4L8.42 9.6l4.3 4.3a1 1 0 0 1 0 1.4Z" />
-              </svg>
-            </button>
+          {erroJornadas ? <EstadoErro erro={erroJornadas} tentarNovamente={recarregarJornadas} titulo="Não foi possível carregar as jornadas" /> : null}
+
+          {carregandoJornadas && itens.length === 0 && !erroJornadas && <EsqueletoCartao quantidade={6} rotulo="Carregando jornadas…" />}
+
+          {!carregandoJornadas && !erroJornadas && itens.length === 0 && (
+            <EstadoVazio
+              ilustracao="busca"
+              titulo="Nenhuma jornada encontrada"
+              descricao={
+                filtroAtivo
+                  ? "Nenhuma pessoa bate com estes filtros."
+                  : "Ainda não há captação registrada. As jornadas entram pela importação da planilha do seminário ou pelo pagamento na Hotmart."
+              }
+              acao={
+                filtroAtivo ? (
+                  <Botao variante="primario" onClick={limparFiltros}>
+                    Limpar filtros
+                  </Botao>
+                ) : undefined
+              }
+            />
           )}
-          {podeRolarDireita && (
-            <button
-              type="button"
-              onClick={() => rolarTrilha(1)}
-              aria-label="Rolar colunas para a direita"
-              className="absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full border border-linha-forte bg-papel-elevado p-1.5 text-tinta shadow-[var(--sombra-cartao)] hover:border-latao hover:text-latao"
-            >
-              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
-                <path d="M7.3 4.7a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 1 1-1.4-1.4l4.3-4.3-4.3-4.3a1 1 0 0 1 0-1.4Z" />
-              </svg>
-            </button>
+
+          {itens.length > 0 && visao === "lista" && (
+            <ListaPorEtapa etapas={etapasOrdenadas} itens={itens} idEmMovimento={idEmMovimento} aoMover={moverJornada} />
           )}
-        </div>
+
+          {itens.length > 0 && visao === "quadro" && (
+            <div className="relative">
+              <div
+                ref={trilhaRef}
+                onScroll={atualizarSombrasDeRolagem}
+                tabIndex={0}
+                role="group"
+                aria-label="Colunas da esteira. Use as setas do teclado ou os botões ao lado para rolar na horizontal."
+                className="trilha-esteira relative flex gap-4 overflow-x-auto pb-4"
+              >
+                {etapasOrdenadas.map((etapa) => {
+                  const cartoes = itens.filter((j) => j.etapa === etapa.etapa);
+                  const colapsada = colunaColapsada(etapa.etapa, cartoes.length);
+                  const idColuna = `coluna-${etapa.etapa}`;
+                  const idTitulo = `${idColuna}-titulo`;
+                  return (
+                    <section
+                      key={etapa.etapa}
+                      id={idColuna}
+                      aria-labelledby={idTitulo}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const jornada = itens.find((j) => j.id === idArrastando);
+                        setIdArrastando(null);
+                        if (jornada) moverJornada(jornada, etapa.etapa);
+                      }}
+                      className={`flex shrink-0 flex-col rounded-cartao border border-linha bg-papel transition-[width] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] ${
+                        colapsada ? "w-14" : "w-80"
+                      }`}
+                      style={{
+                        borderTopColor: corDaEtapa(etapa.cor),
+                        borderTopWidth: 4,
+                      }}
+                    >
+                      {colapsada ? (
+                        <button
+                          type="button"
+                          onClick={() => alternarColuna(etapa.etapa, cartoes.length)}
+                          aria-expanded={false}
+                          aria-controls={`${idColuna}-cartoes`}
+                          className="flex min-h-[220px] flex-1 flex-col items-center gap-3 px-2 py-4 text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:bg-papel-elevado hover:text-tinta"
+                        >
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${cartoes.length > 0 ? "bg-latao-fraco text-tinta" : "bg-papel-elevado text-tinta-fraca"}`}
+                          >
+                            {cartoes.length}
+                          </span>
+                          <span id={idTitulo} className="text-sm font-bold [writing-mode:vertical-rl]">
+                            {etapa.rotulo}
+                          </span>
+                          <span className="sr-only">— abrir coluna</span>
+                        </button>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between gap-2 px-3 pt-3">
+                            <h2 id={idTitulo} className="flex items-center gap-2 text-sm font-bold text-tinta">
+                              {etapa.rotulo}
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${cartoes.length > 0 ? "bg-latao-fraco" : "bg-papel-elevado text-tinta-fraca"}`}
+                              >
+                                {cartoes.length}
+                              </span>
+                            </h2>
+                            <button
+                              type="button"
+                              onClick={() => alternarColuna(etapa.etapa, cartoes.length)}
+                              aria-expanded
+                              aria-controls={`${idColuna}-cartoes`}
+                              className="grid h-11 w-11 place-items-center rounded-controle text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:bg-papel-elevado hover:text-tinta"
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
+                                <path d="M12.7 15.3a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 1 1 1.4 1.4L8.42 9.6l4.3 4.3a1 1 0 0 1 0 1.4Z" />
+                              </svg>
+                              <span className="sr-only">Recolher a coluna {etapa.rotulo}</span>
+                            </button>
+                          </div>
+                          <div id={`${idColuna}-cartoes`} className="flex min-h-[120px] flex-col gap-3 p-3">
+                            {cartoes.length === 0 && <EstadoVazio compacto titulo="Nenhuma jornada aqui" descricao="Arraste um cartão ou use “Mover”." />}
+                            {cartoes.map((jornada) => (
+                              <CartaoJornada
+                                key={jornada.id}
+                                jornada={jornada}
+                                etapas={etapasOrdenadas}
+                                arrastando={idArrastando === jornada.id}
+                                emMovimento={idEmMovimento === jornada.id}
+                                aoIniciarArrasto={(e) => {
+                                  setIdArrastando(jornada.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
+                                aoMoverParaEtapa={(destino) => moverJornada(jornada, destino)}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+
+              {/* Degradês + botões: avisam e permitem rolar quando há coluna fora da vista. */}
+              <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-papel-fundo to-transparent transition-opacity duration-[var(--transicao-rapida)] ${podeRolarEsquerda ? "opacity-100" : "opacity-0"}`}
+              />
+              <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-papel-fundo to-transparent transition-opacity duration-[var(--transicao-rapida)] ${podeRolarDireita ? "opacity-100" : "opacity-0"}`}
+              />
+              {podeRolarEsquerda && (
+                <button
+                  type="button"
+                  onClick={() => rolarTrilha(-1)}
+                  aria-label="Rolar colunas para a esquerda"
+                  className="absolute left-1 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-linha-forte bg-papel-elevado text-tinta shadow-flutuante transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 fill-current">
+                    <path d="M12.7 15.3a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 1 1 1.4 1.4L8.42 9.6l4.3 4.3a1 1 0 0 1 0 1.4Z" />
+                  </svg>
+                </button>
+              )}
+              {podeRolarDireita && (
+                <button
+                  type="button"
+                  onClick={() => rolarTrilha(1)}
+                  aria-label="Rolar colunas para a direita"
+                  className="absolute right-1 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-linha-forte bg-papel-elevado text-tinta shadow-flutuante transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 fill-current">
+                    <path d="M7.3 4.7a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 1 1-1.4-1.4l4.3-4.3-4.3-4.3a1 1 0 0 1 0-1.4Z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

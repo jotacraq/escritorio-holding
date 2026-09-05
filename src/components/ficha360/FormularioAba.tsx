@@ -31,11 +31,11 @@ function CampoPergunta({
   const idCampo = `pergunta-${pergunta.id}`;
   switch (pergunta.tipo) {
     case "texto":
-      return <input id={idCampo} type="text" value={(valor as string) ?? ""} onChange={(e) => aoMudar(e.target.value)} className="w-full rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
+      return <input id={idCampo} type="text" value={(valor as string) ?? ""} onChange={(e) => aoMudar(e.target.value)} className="w-full rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
     case "numero":
-      return <input id={idCampo} type="number" value={(valor as number) ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? null : Number(e.target.value))} className="w-40 rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
+      return <input id={idCampo} type="number" value={(valor as number) ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? null : Number(e.target.value))} className="w-40 rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
     case "texto_longo":
-      return <textarea id={idCampo} rows={3} value={(valor as string) ?? ""} onChange={(e) => aoMudar(e.target.value)} className="w-full rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
+      return <textarea id={idCampo} rows={3} value={(valor as string) ?? ""} onChange={(e) => aoMudar(e.target.value)} className="w-full rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
     case "sim_nao":
       return (
         <div role="radiogroup" aria-labelledby={`${idCampo}-rotulo`} className="flex gap-4">
@@ -68,7 +68,7 @@ function CampoPergunta({
                 type="checkbox"
                 checked={selecionadas.includes(opcao)}
                 onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
-                className="h-4 w-4 rounded-sm accent-[color:var(--latao)]"
+                className="h-4 w-4 rounded-controle accent-[color:var(--latao)]"
               />
               {opcao}
             </label>
@@ -116,13 +116,13 @@ function FormularioConteudo({ jornadaId, dados }: { jornadaId: string; dados: Fo
           {dados.resposta && ` · respondido em ${formatarDataHora(dados.resposta.respondido_em)}`}
         </p>
         {dados.resposta?.origem === "typeform" && (
-          <span className="rounded-sm border border-linha bg-papel-fundo px-2 py-0.5 text-[11px] text-tinta-suave">Importado do Typeform</span>
+          <span className="rounded-controle border border-linha bg-papel-fundo px-2 py-0.5 text-legenda text-tinta-suave">Importado do Typeform</span>
         )}
       </div>
 
       {Array.from(blocos.entries()).map(([bloco, perguntas]) => (
         <fieldset key={bloco} className="flex flex-col gap-4 border-t border-linha pt-4 first:border-t-0 first:pt-0">
-          <legend className="font-serif text-base font-bold text-tinta">{bloco}</legend>
+          <legend className="text-base font-bold text-tinta">{bloco}</legend>
           {perguntas.map((pergunta) => (
             <div key={pergunta.id} className="flex flex-col gap-1.5">
               <label id={`pergunta-${pergunta.id}-rotulo`} htmlFor={`pergunta-${pergunta.id}`} className="text-sm font-medium text-tinta">

@@ -6,6 +6,10 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
 import { formatarCidadeUf, formatarData, formatarMoeda, SEM_DADO } from "@/lib/formatar";
+import { Cartao } from "@/components/ui/Cartao";
+import { Selo } from "@/components/ui/Selo";
+import { CenarioPatrimonialGaveta } from "@/components/ficha360/CenarioPatrimonialGaveta";
+import { extrasDaFicha } from "@/components/ficha360/api-extras";
 
 /**
  * Relatório da Sessão de Viabilidade — espelha, campo a campo,
@@ -17,6 +21,17 @@ import { formatarCidadeUf, formatarData, formatarMoeda, SEM_DADO } from "@/lib/f
  * são exatamente os dela. Nenhum cálculo de imposto acontece aqui: alíquota
  * e link de legislação são digitados pela advogada (ver nota daquela rota).
  */
+
+/** Régua local só para banco ANTES da 0060 (`rubricas_faltantes` ausente): as 7 rubricas do seed `configuracoes['cenario.rubricas']` (0057/B37). */
+const RUBRICAS_PADRAO_UI = ["itcmd", "itbi", "custas_cartorio", "honorarios_advocaticios", "honorarios_croqui", "honorarios_holding", "manutencao_anual"];
+
+const ROTULO_CENARIO_RESUMO: Record<string, string> = {
+  inventario: "Inventário",
+  doacao: "Doação",
+  holding_1_celula: "Holding 1 célula",
+  holding_2_celulas: "Holding 2 células",
+  holding_3_celulas: "Holding 3 células",
+};
 
 // ---------------------------------------------------------------------------
 // Tipos do formulário (o backend guarda `relatorios_sessao` como registro
@@ -148,7 +163,7 @@ function Campo({ id, rotulo, children, valorImpresso }: { id: string; rotulo: st
 function Texto({ id, rotulo, valor, aoMudar, placeholder }: { id: string; rotulo: string; valor: string; aoMudar: (v: string) => void; placeholder?: string }) {
   return (
     <Campo id={id} rotulo={rotulo} valorImpresso={valor.trim() || SEM_DADO}>
-      <input id={id} value={valor} onChange={(e) => aoMudar(e.target.value)} placeholder={placeholder} className="nao-imprimir rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+      <input id={id} value={valor} onChange={(e) => aoMudar(e.target.value)} placeholder={placeholder} className="nao-imprimir min-h-11 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2 text-sm" />
     </Campo>
   );
 }
@@ -156,7 +171,7 @@ function Texto({ id, rotulo, valor, aoMudar, placeholder }: { id: string; rotulo
 function AreaTexto({ id, rotulo, valor, aoMudar, rows = 2 }: { id: string; rotulo: string; valor: string; aoMudar: (v: string) => void; rows?: number }) {
   return (
     <Campo id={id} rotulo={rotulo} valorImpresso={valor.trim() || SEM_DADO}>
-      <textarea id={id} rows={rows} value={valor} onChange={(e) => aoMudar(e.target.value)} className="nao-imprimir rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+      <textarea id={id} rows={rows} value={valor} onChange={(e) => aoMudar(e.target.value)} className="nao-imprimir min-h-11 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2 text-sm" />
     </Campo>
   );
 }
@@ -164,7 +179,7 @@ function AreaTexto({ id, rotulo, valor, aoMudar, rows = 2 }: { id: string; rotul
 function CampoData({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string; valor: string; aoMudar: (v: string) => void }) {
   return (
     <Campo id={id} rotulo={rotulo} valorImpresso={valor ? formatarData(valor) : SEM_DADO}>
-      <input id={id} type="date" value={valor} onChange={(e) => aoMudar(e.target.value)} className="nao-imprimir rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+      <input id={id} type="date" value={valor} onChange={(e) => aoMudar(e.target.value)} className="nao-imprimir min-h-11 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2 text-sm" />
     </Campo>
   );
 }
@@ -172,7 +187,7 @@ function CampoData({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string;
 function CampoMoeda({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string; valor: number | undefined; aoMudar: (v: number | undefined) => void }) {
   return (
     <Campo id={id} rotulo={rotulo} valorImpresso={formatarMoeda(valor ?? null)}>
-      <input id={id} type="number" min={0} step="0.01" value={valor ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? undefined : Number(e.target.value))} className="nao-imprimir rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+      <input id={id} type="number" min={0} step="0.01" value={valor ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? undefined : Number(e.target.value))} className="nao-imprimir min-h-11 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2 text-sm" />
     </Campo>
   );
 }
@@ -180,14 +195,14 @@ function CampoMoeda({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string
 function CampoNumero({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string; valor: number | undefined; aoMudar: (v: number | undefined) => void }) {
   return (
     <Campo id={id} rotulo={rotulo} valorImpresso={valor === undefined ? SEM_DADO : String(valor)}>
-      <input id={id} type="number" min={1} step="1" value={valor ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? undefined : Number(e.target.value))} className="nao-imprimir rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />
+      <input id={id} type="number" min={1} step="1" value={valor ?? ""} onChange={(e) => aoMudar(e.target.value === "" ? undefined : Number(e.target.value))} className="nao-imprimir min-h-11 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2 text-sm" />
     </Campo>
   );
 }
 
 function CampoBooleano({ id, rotulo, valor, aoMudar }: { id: string; rotulo: string; valor: boolean | undefined; aoMudar: (v: boolean | undefined) => void }) {
   const pill = (ativo: boolean) =>
-    `rounded-full border px-2.5 py-1 text-xs font-medium ${ativo ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)] text-tinta" : "border-linha-forte text-tinta-suave hover:text-tinta"}`;
+    `inline-flex min-h-11 items-center rounded-pilula border px-4 text-sm font-medium ${ativo ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)] text-tinta" : "border-linha-forte text-tinta-suave hover:text-tinta"}`;
   return (
     <div className="flex flex-col gap-1">
       <span id={`${id}-rotulo`} className="text-sm font-medium text-tinta">{rotulo}</span>
@@ -230,7 +245,7 @@ function SecaoPatrimonial({ patrimonio }: { patrimonio: PatrimonioItem[] }) {
           <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">{ROTULOS_TIPO_PATRIMONIO[tipo]}</p>
           <ul className="flex flex-col gap-1">
             {itens.map((item) => (
-              <li key={item.id} className="rounded-sm bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
+              <li key={item.id} className="rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
                 <span className="font-medium">{item.descricao}</span>
                 <span className="text-tinta-suave">
                   {item.ano_aquisicao ? ` · aquisição ${item.ano_aquisicao}` : ""}
@@ -306,7 +321,7 @@ function SecaoFamiliar({ jornadaId, familiares, aoAtualizar }: { jornadaId: stri
               f.observacoes,
             ].filter(Boolean);
             return (
-              <li key={f.id} className="rounded-sm bg-papel-fundo px-2.5 py-1.5 text-sm">
+              <li key={f.id} className="rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm">
                 <span className="font-medium text-tinta">{f.nome || f.parentesco}</span>
                 <span className="text-tinta-fraca"> — {f.parentesco}</span>
                 {partes.length > 0 && <p className="text-xs text-tinta-suave">{partes.join(" · ")}</p>}
@@ -317,35 +332,35 @@ function SecaoFamiliar({ jornadaId, familiares, aoAtualizar }: { jornadaId: stri
       )}
 
       {novo ? (
-        <div className="nao-imprimir flex flex-col gap-3 rounded-sm border border-linha bg-papel-fundo p-3">
+        <div className="nao-imprimir flex flex-col gap-3 rounded-controle border border-linha bg-papel-fundo p-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="flex flex-col gap-1 text-sm">
               Parentesco
-              <input value={novo.parentesco} onChange={(e) => setNovo({ ...novo, parentesco: e.target.value })} placeholder="Ex.: cônjuge, filho, neto…" className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input value={novo.parentesco} onChange={(e) => setNovo({ ...novo, parentesco: e.target.value })} placeholder="Ex.: cônjuge, filho, neto…" className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Nome
-              <input value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Idade
-              <input type="number" min={0} value={novo.idade} onChange={(e) => setNovo({ ...novo, idade: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input type="number" min={0} value={novo.idade} onChange={(e) => setNovo({ ...novo, idade: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Ocupação
-              <input value={novo.ocupacao} onChange={(e) => setNovo({ ...novo, ocupacao: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input value={novo.ocupacao} onChange={(e) => setNovo({ ...novo, ocupacao: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Regime de casamento
-              <input value={novo.regime_casamento} onChange={(e) => setNovo({ ...novo, regime_casamento: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input value={novo.regime_casamento} onChange={(e) => setNovo({ ...novo, regime_casamento: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Ano do casamento
-              <input type="number" min={1900} max={2100} value={novo.ano_casamento} onChange={(e) => setNovo({ ...novo, ano_casamento: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input type="number" min={1900} max={2100} value={novo.ano_casamento} onChange={(e) => setNovo({ ...novo, ano_casamento: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm sm:col-span-3">
               Observações (ex.: netos)
-              <input value={novo.observacoes} onChange={(e) => setNovo({ ...novo, observacoes: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input value={novo.observacoes} onChange={(e) => setNovo({ ...novo, observacoes: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
           </div>
           {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
@@ -376,6 +391,11 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
   const [salvando, setSalvando] = useState(false);
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  // Fase 4 §4.3 — gaveta "Cenário Patrimonial" (grade rubrica × cenário com
+  // procedência). O resumo do cartão lê `ficha.cenarios` (payload da Ficha,
+  // tolerante a tabela ausente); a gaveta busca a grade completa ao abrir.
+  const [cenarioAberto, setCenarioAberto] = useState(false);
+  const cenariosDaFicha = extrasDaFicha(ficha).cenarios;
 
   const formAtual = form ?? (dados ? paraFormulario(dados.relatorio) : null);
 
@@ -423,15 +443,56 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
 
   const t = formAtual.tributos;
 
+  // Com a 0060 a view já trava o total (rubrica da config nunca gravada conta
+  // como ausente) e diz quais faltam em `rubricas_faltantes`. Sem ela, a
+  // régua local das 7 rubricas — mesma conta de `CenarioPatrimonialGaveta`.
+  const totaisCenario = (cenariosDaFicha?.totais ?? []).map((t) => {
+    if (t.rubricas_faltantes) return t;
+    const gravadas = (cenariosDaFicha?.rubricas ?? []).filter((r) => r.cenario_id === t.cenario_id);
+    const faltam = RUBRICAS_PADRAO_UI.filter((chave) => (gravadas.find((r) => r.rubrica === chave)?.procedencia ?? "ausente") === "ausente").length;
+    return faltam > 0 ? { ...t, total: null, rubricas_ausentes: faltam } : t;
+  });
+  const cenariosCompletos = totaisCenario.filter((t) => t.total !== null).length;
+
   return (
     <div className="flex flex-col gap-8">
       <div className="nao-imprimir flex items-center justify-between gap-3">
         <p className="text-xs text-tinta-fraca">Relatório da Sessão de Viabilidade — espelha o formulário em papel, campo a campo.</p>
-        <Botao variante="secundario" className="text-xs" onClick={() => window.print()}>Imprimir relatório</Botao>
+        <Botao variante="secundario" tamanho="compacto" onClick={() => window.print()}>Imprimir relatório</Botao>
       </div>
 
+      <Cartao
+        rotulo="Números da sessão"
+        titulo="Cenário Patrimonial"
+        descricao="Custo de cada caminho (inventário, doação, holding) rubrica por rubrica — com a origem de cada número. O sistema não calcula imposto sozinho."
+        realce="latao"
+        acao={
+          <Botao variante="primario" tamanho="compacto" onClick={() => setCenarioAberto(true)}>
+            Abrir cenário
+          </Botao>
+        }
+      >
+        {cenariosDaFicha === null ? (
+          <p className="text-sm text-tinta-suave">Ainda não disponível neste ambiente ou sem cenário iniciado — abra para começar.</p>
+        ) : totaisCenario.length === 0 ? (
+          <p className="text-sm text-tinta-suave">Nenhum cenário preenchido ainda. Abra a grade e digite ou calcule a primeira rubrica.</p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {totaisCenario.map((t) => (
+              <Selo key={t.cenario_id} tom={t.total !== null ? "verde" : "ambar"}>
+                {ROTULO_CENARIO_RESUMO[t.cenario] ?? t.cenario}: {t.total !== null ? formatarMoeda(t.total) : `faltam ${t.rubricas_ausentes}`}
+              </Selo>
+            ))}
+            <span className="text-xs text-tinta-suave">
+              {cenariosCompletos} de {totaisCenario.length} {totaisCenario.length === 1 ? "cenário completo" : "cenários completos"}
+            </span>
+          </div>
+        )}
+      </Cartao>
+      <CenarioPatrimonialGaveta jornadaId={jornadaId} aberta={cenarioAberto} aoFechar={() => setCenarioAberto(false)} nomeCliente={ficha.pessoa.nome} uf={ficha.pessoa.uf} aoAtualizar={aoAtualizar} />
+
       <header className="flex flex-col gap-3">
-        <h2 className="font-serif text-lg font-bold text-tinta">Relatório da Sessão de Viabilidade</h2>
+        <h2 className="text-lg font-bold text-tinta">Relatório da Sessão de Viabilidade</h2>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
           <div><dt className="text-tinta-fraca">Cliente</dt><dd className="text-tinta">{ficha.pessoa.nome}</dd></div>
           <div><dt className="text-tinta-fraca">Cidade em que reside</dt><dd className="text-tinta">{formatarCidadeUf(ficha.pessoa.cidade, ficha.pessoa.uf)}</dd></div>
@@ -445,7 +506,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </header>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Sessão acompanhada</legend>
+        <legend className="text-base font-bold text-tinta">Sessão acompanhada</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <CampoBooleano id="acompanhado" rotulo="Participará da sessão de viabilidade acompanhado" valor={formAtual.acompanhado} aoMudar={(v) => mudar("acompanhado", v)} />
           <CampoData id="data-contratacao" rotulo="Data da contratação da sessão" valor={formAtual.data_contratacao} aoMudar={(v) => mudar("data_contratacao", v)} />
@@ -462,24 +523,24 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Motivação do cliente em realizar a sessão</legend>
+        <legend className="text-base font-bold text-tinta">Motivação do cliente em realizar a sessão</legend>
         <AreaTexto id="motivacao-cliente" rotulo="Motivação" valor={formAtual.motivacao_cliente} aoMudar={(v) => mudar("motivacao_cliente", v)} rows={3} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Composição familiar</legend>
+        <legend className="text-base font-bold text-tinta">Composição familiar</legend>
         <p className="text-xs text-tinta-fraca">Casal — idade, ocupação, regime de casamento, ano do casamento. Filhos — idade, ocupação, regime de casamento, netos.</p>
         <SecaoFamiliar jornadaId={jornadaId} familiares={familiares} aoAtualizar={aoAtualizar} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Composição patrimonial</legend>
+        <legend className="text-base font-bold text-tinta">Composição patrimonial</legend>
         <p className="nao-imprimir text-xs text-tinta-fraca">Mesma fonte da aba Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
         <SecaoPatrimonial patrimonio={patrimonio} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Situação financeira e percepção de risco</legend>
+        <legend className="text-base font-bold text-tinta">Situação financeira e percepção de risco</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <CampoMoeda id="receita-familiar" rotulo="Receita familiar mensal" valor={formAtual.receita_familiar_mensal} aoMudar={(v) => mudar("receita_familiar_mensal", v)} />
           <CampoBooleano id="ciente-itcmd" rotulo="Está ciente da proposta de aumento do ITCMD?" valor={formAtual.ciente_itcmd} aoMudar={(v) => mudar("ciente_itcmd", v)} />
@@ -489,7 +550,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-4 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Aprofundamento</legend>
+        <legend className="text-base font-bold text-tinta">Aprofundamento</legend>
         <AreaTexto id="preocupacao-predominante" rotulo="Entre a pandemia e o risco do ITCMD aumentar, o que te preocupa mais?" valor={formAtual.preocupacao_predominante} aoMudar={(v) => mudar("preocupacao_predominante", v)} />
         <AreaTexto id="como-organizar" rotulo="Hoje, como você gostaria de deixar organizado o patrimônio para os seus filhos?" valor={formAtual.como_deseja_organizar} aoMudar={(v) => mudar("como_deseja_organizar", v)} />
         <AreaTexto id="motiva-evitar-inventario" rotulo="A ideia de seu filho não precisar passar por Inventário te motiva a realizar um sistema de planejamento sucessório?" valor={formAtual.motiva_evitar_inventario} aoMudar={(v) => mudar("motiva_evitar_inventario", v)} />
@@ -501,8 +562,8 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-4 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Dados para início da execução do croqui</legend>
-        <p className="nao-imprimir rounded-sm border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
+        <legend className="text-base font-bold text-tinta">Dados para início da execução do croqui</legend>
+        <p className="nao-imprimir rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
           Alíquota e link de legislação são digitados pela advogada — o sistema não calcula tributo nenhum.
         </p>
 
@@ -548,7 +609,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
-        <legend className="font-serif text-base font-bold text-tinta">Registro das considerações relevantes observadas durante a apresentação do croqui</legend>
+        <legend className="text-base font-bold text-tinta">Registro das considerações relevantes observadas durante a apresentação do croqui</legend>
         <AreaTexto id="consideracoes-croqui" rotulo="Considerações" valor={formAtual.consideracoes_apresentacao_croqui} aoMudar={(v) => mudar("consideracoes_apresentacao_croqui", v)} rows={3} />
       </fieldset>
 

@@ -10,12 +10,15 @@ import type {
   FormularioResposta,
   Jornada,
   LigacaoEstrategica,
+  LigacaoIaResumo,
   PatrimonioItem,
   Pessoa,
   RelatorioSessao,
   SessaoViabilidade,
+  Tarefa,
 } from "@/types/banco";
 import type { MaterialGeradoResumo } from "@/types/material";
+import type { CenarioPatrimonial, CenarioRubrica, CenarioTotais, DiagnosticoSv } from "@/types/cenario";
 
 /**
  * Espelha `etapas_jornada_ordem` e `transicoes_permitidas` (migration 0004).
@@ -168,6 +171,89 @@ export interface Ficha360 {
    * "Pasta do Cliente", Diário 2026-09-04.
    */
   materialAtual: Omit<MaterialGeradoResumo, "chave_modelo"> | null;
+  // --- Fase 4 (Onda 1). Tabelas de outros agentes podem não existir ainda no
+  // banco: cada campo abaixo é carregado de forma TOLERANTE — tabela ausente
+  // vira `null`/`[]`, nunca derruba a ficha. ---
+  /** `diagnosticos_sv` atual (0058, agente D) — mesma forma de `GET /api/jornadas/[id]/diagnostico`.atual. Só com `podeVerPatrimonio`. */
+  diagnosticoAtual: DiagnosticoSv | null;
+  /** Cenário Patrimonial (0057, agente D) — mesma forma de `GET /api/jornadas/[id]/cenario` (sem `rubricas_padrao`/`parametros`). `null` = sem permissão ou tabela ausente. */
+  cenarios: CenariosDaFicha | null;
+  /** Última `ligacoes_ia` da jornada (0053, agente B), sem transcrição. */
+  ligacaoIaAtual: LigacaoIaResumo | null;
+  /** `tarefas` abertas (0027 + `tipo` 0051) — ex.: 'enviar_link_croqui' para a aba Sessão. */
+  tarefasAbertas: Tarefa[];
+}
+
+export interface CenariosDaFicha {
+  cenarios: CenarioPatrimonial[];
+  rubricas: CenarioRubrica[];
+  totais: CenarioTotais[];
+}
+
+/** Códigos de "relação não existe" (Postgres 42P01; PostgREST sem a tabela no cache do schema). */
+const CODIGOS_TABELA_AUSENTE = new Set(["42P01", "PGRST205", "PGRST200", "PGRST204"]);
+
+/**
+ * Executa uma consulta opcional: erro de tabela/coluna ausente vira o
+ * `padrao` em silêncio; qualquer outro erro é registrado (nunca lançado —
+ * campo secundário não derruba a Ficha 360).
+ */
+async function consultaTolerante<T>(
+  contexto: string,
+  jornadaId: string,
+  consulta: PromiseLike<{ data: T | null; error: { code?: string; message: string } | null }>,
+  padrao: T,
+): Promise<T> {
+  try {
+    const { data, error } = await consulta;
+    if (error) {
+      if (!CODIGOS_TABELA_AUSENTE.has(error.code ?? "")) {
+        registrarErro(`server/jornadas.montarFicha360#${contexto}`, error, { jornada_id: jornadaId });
+      }
+      return padrao;
+    }
+    return data ?? padrao;
+  } catch (erro) {
+    registrarErro(`server/jornadas.montarFicha360#${contexto}`, erro, { jornada_id: jornadaId });
+    return padrao;
+  }
+}
+
+/**
+ * Cenário Patrimonial (0057, agente D) na mesma forma da rota
+ * `GET /api/jornadas/[id]/cenario`: cabeçalhos → rubricas (por `cenario_id`) →
+ * totais (`vw_cenarios_totais`). Tolerante: tabela/view ausente vira `null`.
+ */
+async function carregarCenarios(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  jornadaId: string,
+): Promise<CenariosDaFicha | null> {
+  const cabecalhos = await consultaTolerante<CenarioPatrimonial[] | null>(
+    "cenarios_patrimoniais",
+    jornadaId,
+    supabase.from("cenarios_patrimoniais").select("*").eq("jornada_id", jornadaId).order("cenario").returns<CenarioPatrimonial[]>(),
+    null,
+  );
+  if (cabecalhos === null) return null;
+  const ids = cabecalhos.map((c) => c.id);
+  const [rubricas, totais] = await Promise.all([
+    ids.length === 0
+      ? Promise.resolve([] as CenarioRubrica[])
+      : consultaTolerante<CenarioRubrica[]>(
+          "cenario_rubricas",
+          jornadaId,
+          supabase.from("cenario_rubricas").select("*").in("cenario_id", ids).order("ordem").returns<CenarioRubrica[]>(),
+          [],
+        ),
+    consultaTolerante<CenarioTotais[]>(
+      "vw_cenarios_totais",
+      jornadaId,
+      supabase.from("vw_cenarios_totais").select("*").eq("jornada_id", jornadaId).returns<CenarioTotais[]>(),
+      [],
+    ),
+  ]);
+  return { cenarios: cabecalhos, rubricas, totais };
 }
 
 /**
@@ -266,14 +352,53 @@ export async function montarFicha360(
 
   let patrimonio: PatrimonioItem[] | null = null;
   let familiares: Familiar[] | null = null;
+  let diagnosticoAtual: DiagnosticoSv | null = null;
+  let cenarios: CenariosDaFicha | null = null;
   if (podeVerPatrimonio) {
-    const [{ data: patrimonioData }, { data: familiaresData }] = await Promise.all([
+    const [{ data: patrimonioData }, { data: familiaresData }, diagnosticoData, cenariosData] = await Promise.all([
       supabase.from("patrimonio_itens").select("*").eq("pessoa_id", jornadaTipada.pessoa_id),
       supabase.from("familiares").select("*").eq("pessoa_id", jornadaTipada.pessoa_id),
+      // `.eq("jornada_id").eq("atual")` casa com `uniq_diagnostico_atual` (0058).
+      consultaTolerante<DiagnosticoSv | null>(
+        "diagnosticos_sv",
+        jornadaId,
+        supabase.from("diagnosticos_sv").select("*").eq("jornada_id", jornadaId).eq("atual", true).maybeSingle<DiagnosticoSv>(),
+        null,
+      ),
+      carregarCenarios(supabase, jornadaId),
     ]);
     patrimonio = (patrimonioData as PatrimonioItem[] | null) ?? [];
     familiares = (familiaresData as Familiar[] | null) ?? [];
+    diagnosticoAtual = diagnosticoData;
+    cenarios = cenariosData;
   }
+
+  const [ligacaoIaAtual, tarefasAbertas] = await Promise.all([
+    consultaTolerante<LigacaoIaResumo | null>(
+      "ligacoes_ia",
+      jornadaId,
+      supabase
+        .from("ligacoes_ia")
+        .select("id, jornada_id, provedor, status, tentativa, resultado, horario_escolhido, agendamento_id, disparada_em, encerrada_em, resumo, erro, criado_em")
+        .eq("jornada_id", jornadaId)
+        .order("criado_em", { ascending: false })
+        .limit(1)
+        .maybeSingle<LigacaoIaResumo>(),
+      null,
+    ),
+    consultaTolerante<Tarefa[]>(
+      "tarefas",
+      jornadaId,
+      supabase
+        .from("tarefas")
+        .select("*")
+        .eq("jornada_id", jornadaId)
+        .is("concluida_em", null)
+        .order("vence_em", { ascending: true, nullsFirst: false })
+        .returns<Tarefa[]>(),
+      [],
+    ),
+  ]);
 
   return {
     jornada: jornadaTipada,
@@ -289,6 +414,10 @@ export async function montarFicha360(
     patrimonio,
     familiares,
     materialAtual: (materialAtual as Omit<MaterialGeradoResumo, "chave_modelo"> | null) ?? null,
+    diagnosticoAtual,
+    cenarios,
+    ligacaoIaAtual,
+    tarefasAbertas,
   };
 }
 

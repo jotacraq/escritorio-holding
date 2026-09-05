@@ -163,7 +163,7 @@ function BlocoEmpresa({ item, jornadaId, aoAtualizarItem }: { item: PatrimonioIt
 
   if (!cnpjSalvo) {
     return (
-      <div className="flex flex-col gap-2 rounded-sm border border-linha bg-papel-fundo p-3">
+      <div className="flex flex-col gap-2 rounded-controle border border-linha bg-papel-fundo p-3">
         <p className="text-sm font-medium text-tinta">{item.descricao || "Empresa sem descrição"}</p>
         <label className="flex flex-col gap-1 text-sm" htmlFor={`cnpj-novo-${item.id}`}>
           CNPJ (para consultar dados públicos)
@@ -176,7 +176,7 @@ function BlocoEmpresa({ item, jornadaId, aoAtualizarItem }: { item: PatrimonioIt
               placeholder="00.000.000/0000-00"
               aria-invalid={cnpjIncompleto || (cnpjDigitando.length > 0 && !cnpjDigitosValidos && !cnpjIncompleto)}
               aria-describedby={`cnpj-novo-erro-${item.id}`}
-              className="w-56 rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono text-sm"
+              className="w-56 rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono text-sm"
             />
             <Botao variante="secundario" className="text-xs" carregando={salvandoCnpj} disabled={!cnpjDigitosValidos} onClick={salvarCnpj}>
               Salvar CNPJ
@@ -239,7 +239,7 @@ function BlocoEmpresaComCnpj({ item, cnpj, jornadaId }: { item: PatrimonioItem; 
     temDadoBom && !!consulta?.falha_em && (!consulta?.consultado_em || new Date(consulta.falha_em) > new Date(consulta.consultado_em));
 
   return (
-    <div className="flex flex-col gap-3 rounded-sm border border-linha bg-papel-fundo p-3">
+    <div className="flex flex-col gap-3 rounded-controle border border-linha bg-papel-fundo p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-tinta">{consulta?.razao_social || item.descricao || "Empresa"}</p>
@@ -274,7 +274,7 @@ function BlocoEmpresaComCnpj({ item, cnpj, jornadaId }: { item: PatrimonioItem; 
       )}
 
       {(atualizacaoFalhouAgora || atualizacaoFalhouNoCache) && temDadoBom && (
-        <p role="status" className="rounded-sm border border-ambar-borda bg-ambar-fraco px-2.5 py-1.5 text-xs text-[color:var(--ambar)]">
+        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-1.5 text-xs text-[color:var(--ambar)]">
           Não foi possível atualizar agora{dados?.falha_motivo || consulta?.falha_motivo ? `: ${traduzirFalhaMotivo(dados?.falha_motivo ?? consulta?.falha_motivo)}` : ""}. Mostrando o dado consultado em {formatarData(consulta?.consultado_em)}.
         </p>
       )}
@@ -423,11 +423,11 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
       )}
 
       {novo ? (
-        <div className="nao-imprimir flex flex-col gap-3 rounded-sm border border-linha bg-papel-fundo p-3">
+        <div className="nao-imprimir flex flex-col gap-3 rounded-controle border border-linha bg-papel-fundo p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               Tipo
-              <select value={novo.tipo} onChange={(e) => { setNovo({ ...novo, tipo: e.target.value as PatrimonioItem["tipo"], detalhes: {} }); setCnpjNovoDigitado(""); setAvisoCnpjNovo(null); }} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5">
+              <select value={novo.tipo} onChange={(e) => { setNovo({ ...novo, tipo: e.target.value as PatrimonioItem["tipo"], detalhes: {} }); setCnpjNovoDigitado(""); setAvisoCnpjNovo(null); }} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5">
                 {Object.entries(ROTULOS_TIPO).map(([v, r]) => (
                   <option key={v} value={v}>{r}</option>
                 ))}
@@ -435,31 +435,31 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Descrição
-              <input value={novo.descricao} onChange={(e) => setNovo({ ...novo, descricao: e.target.value })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" placeholder={novo.tipo === "empresa" ? "Razão social" : novo.tipo === "investimento" ? "Ex.: poupança, VGBL, ações…" : undefined} />
+              <input value={novo.descricao} onChange={(e) => setNovo({ ...novo, descricao: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" placeholder={novo.tipo === "empresa" ? "Razão social" : novo.tipo === "investimento" ? "Ex.: poupança, VGBL, ações…" : undefined} />
             </label>
             {(novo.tipo === "imovel" || novo.tipo === "veiculo") && (
               <label className="flex flex-col gap-1 text-sm">
                 Ano de aquisição
-                <input type="number" value={novo.ano_aquisicao ?? ""} onChange={(e) => setNovo({ ...novo, ano_aquisicao: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                <input type="number" value={novo.ano_aquisicao ?? ""} onChange={(e) => setNovo({ ...novo, ano_aquisicao: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
               </label>
             )}
             <label className="flex flex-col gap-1 text-sm">
               Valor histórico
-              <input type="number" value={novo.valor_historico ?? ""} onChange={(e) => setNovo({ ...novo, valor_historico: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input type="number" value={novo.valor_historico ?? ""} onChange={(e) => setNovo({ ...novo, valor_historico: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               {novo.tipo === "investimento" || novo.tipo === "previdencia" ? "Valor atual" : "Valor de mercado"}
-              <input type="number" value={novo.valor_mercado ?? ""} onChange={(e) => setNovo({ ...novo, valor_mercado: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+              <input type="number" value={novo.valor_mercado ?? ""} onChange={(e) => setNovo({ ...novo, valor_mercado: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
             {novo.tipo === "imovel" && (
               <>
                 <label className="flex flex-col gap-1 text-sm">
                   Destinação (moradia, aluguel, vazio…)
-                  <input value={novo.destinacao ?? ""} onChange={(e) => setNovo({ ...novo, destinacao: e.target.value || null })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input value={novo.destinacao ?? ""} onChange={(e) => setNovo({ ...novo, destinacao: e.target.value || null })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   Valor de locação mensal
-                  <input type="number" value={novo.valor_locacao_mensal ?? ""} onChange={(e) => setNovo({ ...novo, valor_locacao_mensal: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input type="number" value={novo.valor_locacao_mensal ?? ""} onChange={(e) => setNovo({ ...novo, valor_locacao_mensal: e.target.value === "" ? null : Number(e.target.value) })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
               </>
             )}
@@ -478,7 +478,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
                     inputMode="numeric"
                     placeholder="00.000.000/0000-00"
                     aria-describedby="cnpj-novo-item-ajuda"
-                    className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono"
+                    className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono"
                   />
                 </label>
                 <p id="cnpj-novo-item-ajuda" className="text-xs text-tinta-fraca sm:col-span-2">
@@ -488,27 +488,27 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
                 </p>
                 <label className="flex flex-col gap-1 text-sm sm:col-span-2">
                   Objeto social
-                  <input value={detalhesEmpresa(novo).objeto ?? ""} onChange={(e) => mudarDetalheEmpresa("objeto", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input value={detalhesEmpresa(novo).objeto ?? ""} onChange={(e) => mudarDetalheEmpresa("objeto", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm sm:col-span-2">
                   Composição societária
-                  <input value={detalhesEmpresa(novo).composicao_societaria ?? ""} onChange={(e) => mudarDetalheEmpresa("composicao_societaria", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" placeholder="Ex.: 50% pai, 25% cada filho" />
+                  <input value={detalhesEmpresa(novo).composicao_societaria ?? ""} onChange={(e) => mudarDetalheEmpresa("composicao_societaria", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" placeholder="Ex.: 50% pai, 25% cada filho" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   Capital social
-                  <input type="number" value={detalhesEmpresa(novo).capital_social ?? ""} onChange={(e) => mudarDetalheEmpresa("capital_social", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input type="number" value={detalhesEmpresa(novo).capital_social ?? ""} onChange={(e) => mudarDetalheEmpresa("capital_social", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   Número de empregados
-                  <input type="number" value={detalhesEmpresa(novo).numero_empregados ?? ""} onChange={(e) => mudarDetalheEmpresa("numero_empregados", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input type="number" value={detalhesEmpresa(novo).numero_empregados ?? ""} onChange={(e) => mudarDetalheEmpresa("numero_empregados", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   Patrimônio líquido (PL)
-                  <input type="number" value={detalhesEmpresa(novo).pl ?? ""} onChange={(e) => mudarDetalheEmpresa("pl", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input type="number" value={detalhesEmpresa(novo).pl ?? ""} onChange={(e) => mudarDetalheEmpresa("pl", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   Faturamento
-                  <input type="number" value={detalhesEmpresa(novo).faturamento ?? ""} onChange={(e) => mudarDetalheEmpresa("faturamento", e.target.value)} className="rounded-sm border border-linha-forte bg-papel-elevado px-2 py-1.5" />
+                  <input type="number" value={detalhesEmpresa(novo).faturamento ?? ""} onChange={(e) => mudarDetalheEmpresa("faturamento", e.target.value)} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
                 </label>
               </div>
             </fieldset>

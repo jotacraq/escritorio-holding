@@ -17,10 +17,10 @@ export function TimelineAba({ eventos }: { eventos: EventoTimeline[] }) {
           <div className="flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-medium text-tinta">{evento.titulo}</p>
-              <span className="font-mono text-[11px] text-tinta-fraca">{formatarDataHora(evento.ocorrido_em)}</span>
+              <span className="font-mono text-legenda text-tinta-fraca">{formatarDataHora(evento.ocorrido_em)}</span>
             </div>
             {evento.descricao && <p className="text-sm text-tinta-suave">{evento.descricao}</p>}
-            <span className="text-[11px] uppercase tracking-wide text-tinta-fraca">{ROTULOS_ATOR[evento.ator_tipo]}</span>
+            <span className="text-legenda uppercase tracking-wide text-tinta-fraca">{ROTULOS_ATOR[evento.ator_tipo]}</span>
           </div>
         </li>
       ))}

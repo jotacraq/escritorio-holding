@@ -14,6 +14,11 @@ const CHAVES_REMOVIDAS = new Set([
   "maximum",
   "exclusiveMinimum",
   "exclusiveMaximum",
+  // `default` não é validação nem forma — é anotação (vem de `.default()` no
+  // Zod, usado em `valor_declarado` do croqui v2 para aceitar conteúdo antigo
+  // sem o campo). Fora do guia enviado ao modelo: uma chave desconhecida a
+  // menos para o modo estrito recusar.
+  "default",
 ]);
 
 function removerChavesRecursivo(valor: unknown): unknown {

@@ -10,9 +10,11 @@ import type { ChaveItemPasta } from "./catalogo";
 /**
  * `abaId` de cada item da Pasta do Cliente — para onde o clique (chip
  * "Próxima ação" ou cartão da Pasta) deve apontar via hash (`Abas`,
- * `deepLinkHash`). `transcricao`/`diagnostico_sv` não têm aba própria hoje —
- * apontam para a aba mais próxima (`sessao`) ou ficam sem link
- * (`diagnostico_sv` nunca chega a um estado clicável na prática).
+ * `deepLinkHash`). `transcricao` não tem aba própria hoje — aponta para a
+ * mais próxima (`sessao`). `diagnostico_sv` ganhou página própria na Fase 4
+ * (`jornadas/[id]/diagnostico`, agente H) — não é hash de `Abas` da Ficha,
+ * mas o mesmo campo serve de âncora para `ConteudoPastaOuAbas` decidir a
+ * navegação (ver uso em `PastaDoCliente.tsx`).
  */
 export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   formulario: "formulario",
@@ -22,7 +24,7 @@ export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   sessao: "sessao",
   transcricao: "sessao",
   analise_sessao: "analise-sessao",
-  diagnostico_sv: "sessao",
+  diagnostico_sv: "diagnostico",
   relatorio_sv: "relatorio",
   croqui: "croqui",
   material: "material",
@@ -44,7 +46,7 @@ export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   sessao: "Agendar a Sessão de Viabilidade",
   transcricao: "Registrar a Transcrição da Sessão",
   analise_sessao: "Gerar a Análise da Sessão",
-  diagnostico_sv: "Aguardar recurso ainda não disponível",
+  diagnostico_sv: "Montar o Diagnóstico da SV",
   relatorio_sv: "Preencher o Relatório da Sessão",
   croqui: "Iniciar o Croqui",
   material: "Gerar o Material pós-sessão",
@@ -75,3 +77,14 @@ export const ITENS_EM_GAVETA: ReadonlySet<ChaveItemPasta> = new Set([
   "documentos",
   "patrimonio",
 ]);
+
+/**
+ * Hash de navegação de um item da Pasta/faixa vital para dentro das abas da
+ * Ficha 360 (`diagnostico_sv` → `#diagnostico`, aba que existe sempre que
+ * `podeVerPatrimonio`, ver `jornadas/[id]/page.tsx`). Função em vez de acesso
+ * direto ao record só para dar um único ponto de leitura — mesma razão de
+ * `ABA_POR_ITEM_PASTA` existir.
+ */
+export function caminhoItemPasta(chave: ChaveItemPasta): string {
+  return `#${ABA_POR_ITEM_PASTA[chave]}`;
+}

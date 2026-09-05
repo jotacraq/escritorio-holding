@@ -90,3 +90,9 @@ Rodada contra o banco real e o app de pé, com PostgREST direto para cada papel.
 | `app.registrar_evento_timeline` com grant para `anon` (0038) — desvio do desenho "só 4 funções públicas". Inerte enquanto o schema `app` não for exposto. | Quando alguém mexer nos grants de novo. |
 | Acessibilidade formal das telas novas: conhecimento, públicas e conduzir sessão. | Antes de cliente real usar. |
 | Emissão de link de material antes da aprovação: não vaza, mas a tela não avisa. | Junto com a próxima mexida na Ficha 360. |
+
+## Fase 4 (05/09/2026) — pentest + hardening 0061
+
+Pentest da Fase 4 (Fable): 0 crítico/alto no relatório, 4 BAIXO, 3 INFO. O SQL de prova rodado no banco pelo orquestrador achou **1 ALTO real**: `app.ve_patrimonio()`/`app.eh_admin()` (0001) devolviam **NULL** para usuário autenticado sem perfil, e `if not NULL` não levanta — `registrar_diagnostico_sv` gravava linha para um intruso. Corrigido na origem (`coalesce(..., false)`) na `0061_hardening_pentest_fase4.sql`, que também fechou: CHECK https em `sessoes_viabilidade.link_sala`; `n8n/ligacao` sem ocupação de `id_evento` por tentativa inválida (`src/server/integracoes/livro-razao.ts`, mesmo padrão do Hotmart/sala); `mensagens_recebidas` com revoke de `jornada_id/vinculada_*` + trigger de coerência e carimbo; `cenario_rubricas` só aceita parâmetro ativo e da UF do cliente; `presenca_confirmada_em` carimbado pelo servidor; `diagnosticos_sv.atual` só muda pela RPC e aprovação leva o próprio perfil. Provado com `scripts/verificacao-0061.sql` (8/8) e `scripts/verificacao-fase4.sql` (17/17), ambos transacionais.
+
+**Lição:** gate de papel tem de devolver `false`, nunca `NULL` — todo `if not gate()` silencia com NULL. Reteste do BAIXO antigo (erro de provedor ecoando prompt): sem regressão nos caminhos novos. Achados INFO fora do repo: `callback_url` do n8n vem do `metadata` da Vapi (aceitável, mas o WEBHOOK poderia fixar a URL); pepper de produção; senha do admin de teste.

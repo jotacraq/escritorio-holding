@@ -120,12 +120,6 @@ export interface ConsentimentoGravacao {
 
 export type CondicaoOferta = "padrao" | "incentivo_resolvedor";
 
-/** Preço padrão e "Incentivo do Resolvedor" — literais do script (PARTE 11),
- * nunca inventados. Ponto de partida de `valor_ofertado`; a advogada pode
- * ajustar no ato (negociação real), `valor_padrao` fica sempre como referência. */
-export const VALOR_PADRAO_CROQUI = 7200;
-export const VALOR_INCENTIVO_RESOLVEDOR_CROQUI = 4500;
-
 export interface Oferta {
   id: string;
   jornada_id: string;

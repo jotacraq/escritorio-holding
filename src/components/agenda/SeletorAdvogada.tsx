@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listarEquipe, type MembroEquipe } from "@/lib/api";
+import { Campo, Selecao } from "@/components/ui/Campo";
 
 /**
  * Quem tem agenda de disponibilidade. Filtra por papel `advogada` (é quem
@@ -44,21 +45,15 @@ export function SeletorAdvogada({
   id?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm" htmlFor={id}>
-      Advogada
-      <select
-        id={id}
-        value={valor}
-        onChange={(e) => aoMudar(e.target.value)}
-        className="rounded-sm border border-linha-forte bg-papel-elevado px-2.5 py-1.5"
-      >
+    <Campo rotulo="Advogada" id={id} ajuda="De quem é esta agenda." className="max-w-sm">
+      <Selecao value={valor} onChange={(e) => aoMudar(e.target.value)}>
         <option value="">Selecione…</option>
         {membros.map((m) => (
           <option key={m.id} value={m.id}>
             {m.nome}
           </option>
         ))}
-      </select>
-    </label>
+      </Selecao>
+    </Campo>
   );
 }
