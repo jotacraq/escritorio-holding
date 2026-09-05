@@ -43,3 +43,13 @@ Holding contratada
 - Esta pessoa: de qual seminário veio, o que respondeu, o que disse na ligação, quanto tem, o que teme, quem decide junto com ela, e qual é o briefing?
 - Quais sessões acontecem nos próximos 7 dias e quais já confirmaram presença?
 - Quem comprou e ainda não foi contatado? (é o furo que mais dói — dinheiro pago sem atendimento)
+
+## A espinha dorsal são três sessões (João, 05/09/2026)
+
+O produto gira em torno de **três sessões principais** — tudo o mais é micro-tarefa em volta delas:
+
+1. **Sessão de Viabilidade** — micro-tarefas: boas-vindas, formulário, ligação de agendamento (dias definidos pela equipe; a IA sugere primeiro o melhor horário da equipe), contato preliminar humano (a equipe registra como o lead fala, o que respondeu no seminário, dados públicos), confirmação D-7, link da sala no dia, briefing.
+2. **Croqui estrutural** — micro-tarefas: material pós-sessão pela dor, link de pagamento + data da apresentação enviados pessoalmente pela Dra. Elaine, IR e contrato social recebidos, cálculo do croqui, apresentação em HTML dentro do sistema.
+3. **Entrega da holding** — micro-tarefas: contrato de prestação, minutas por célula × regime, qualificação dos envolvidos, pasta/cartas de entrega, marcos da execução.
+
+Regra de UI que decorre disso: toda tela de cliente responde **quem é · em qual das três sessões está · o que já aconteceu · o que falta · qual é a próxima ação (com o botão dela)**. Quem opera não entende de sistemas: passo a passo visual, zero jargão, nada que exija "caçar" onde está a coisa.

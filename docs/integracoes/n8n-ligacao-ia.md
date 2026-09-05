@@ -255,15 +255,25 @@ aceito (ou null); resultado = agendou | recusou | pediu_retorno.
 - `ligacoes_ia`: RLS `eh_interno` para SELECT; sem INSERT para authenticated; UPDATE só na coluna `status` (cancelar). `custo_usd`/`transcricao` não são graváveis por quem está logado.
 - Transcrição: armazenada, não vai para a IA sem `tratamento_ia` (gate no contexto do briefing).
 
-## 7) Estado real no n8n (05/09/2026)
+## 7) Estado real no n8n (05/09/2026 à noite) — PUBLICADO
 
-Workflows criados via MCP (não publicados; código SDK em `tmp/squad/n8n-ligacao-*.js` na máquina do orquestrador):
+| Workflow | id | webhook | estado |
+|---|---|---|---|
+| `SIC-HF · LIGAÇÃO · LANCADOR → Vapi` | `zh5tjDcSoHaPaRRL` | `POST https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-lancador` | **ativo** (sem assinatura → 401, provado por curl) |
+| `SIC-HF · LIGAÇÃO · WEBHOOK Vapi → SIC-HF` | `OXetB37jgJgmif3d` | `POST https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-vapi` | **ativo** |
+| `SIC-HF · SETUP · descoberta Vapi` · `sonda $env/$vars` · `sonda require(crypto)` · `criar assistente Vapi` | `0FQNV8uSDipmr4a4` · `dtJhA8hcIdFNY2SG` · `UnNhufl2tqaGMhCL` · `a3cZCtEAaNfMl0Wx` | — | utilitários de setup, só leitura/execução manual; podem ser apagados |
 
-| Workflow | id | webhook |
-|---|---|---|
-| `SIC-HF · LIGAÇÃO · LANCADOR → Vapi` | `zh5tjDcSoHaPaRRL` | `POST /webhook/sichf-ligacao-lancador` |
-| `SIC-HF · LIGAÇÃO · WEBHOOK Vapi → SIC-HF` | `OXetB37jgJgmif3d` | `POST /webhook/sichf-ligacao-vapi` |
+**Assistente Vapi criada** (org "nova", a mesma do RSVP v3): `SIC-HF · Ana · agendamento da SV`, id **`036cdf43-4549-4251-bc6a-55b71b3f51b4`** → `VAPI_ASSISTENTE_ID`. Número de saída: `+55 21 3828-0635` (Twilio, id `5c1efeed-6303-4c11-a792-76543a69cf33`, fixo no LANCADOR — não é segredo). Server URL já aponta para o WEBHOOK acima; `serverMessages = status-update + end-of-call-report`. Prompt versionado em `docs/integracoes/vapi-assistente-sichf.md`. Voz/transcritor/planos de fala clonados da `RSVP Participa - Ana v2`.
 
-Diferenças em relação ao §5: o LANCADOR já chama a Vapi na mesma execução (não há fila intermediária no n8n); o `metadata` da chamada leva `callback_url`, `ligacao_id`, `tentativa` e `horarios` (os 4 `inicio_em` ofertados) — o WEBHOOK valida `horario_escolhido` contra essa lista antes de assinar; HMAC é feito pelo nó Crypto lendo `$vars.LIGACAO_IA_WEBHOOK_SECRET` (ou `$env`). Pendente de configuração: `LIGACAO_IA_WEBHOOK_SECRET` e `VAPI_PHONE_NUMBER_ID` no n8n; credencial `Vapi API - RSVP` no nó HTTP; Server URL do assistente na Vapi; structured data `{horario_escolhido, resultado}`.
+**Diferenças em relação ao §4/§5 (o que mudou ao construir):**
+- A assistente devolve `opcao_escolhida` (1 = melhor horário, 2–4 = alternativas na ordem oferecida) em vez de um ISO — a LLM de extração só vê a transcrição, e ninguém fala ISO ao telefone. O WEBHOOK converte pelo `metadata.horarios` (mesma ordem em que o LANCADOR montou `[melhor, ...alternativas]`). `horario_escolhido` ISO continua aceito como fallback.
+- `resultado` da Vapi (`agendou|recusou|pediu_retorno|pessoa_errada|caixa_postal|incerto`) é reduzido ao contrato do SIC-HF: com horário → `null`; `recusou` → `recusou`; `caixa_postal` → evento `sem_resposta`; o resto → `pediu_retorno`. `observacao` da assistente entra no `resumo` como "Pedido à equipe: …".
+- HMAC nos dois sentidos é feito em **nó Code** (`require('crypto')` está liberado nesta instância; `$env` está BLOQUEADO — `N8N_BLOCK_ENV_ACCESS_IN_NODE`), lendo **`$vars.LIGACAO_IA_WEBHOOK_SECRET`** (Settings → Variables). O nó Crypto do n8n exige credencial própria nesta versão e foi abandonado. Sem a variável: LANCADOR responde 401 `variavel_LIGACAO_IA_WEBHOOK_SECRET_ausente`; WEBHOOK lança erro (não entrega nada sem assinar).
+- `variableValues` enviados à Vapi: `nome`, `primeiro_nome`, `melhor_horario_rotulo`, `alternativas_rotulos` ("2) … · 3) … · 4) …").
+
+**Configuração que só o João faz (nada disso é código):**
+1. n8n → Settings → Variables → `LIGACAO_IA_WEBHOOK_SECRET` = o valor de `tmp/squad/segredos-producao.txt` (máquina do João; não versionado).
+2. Hostinger (hPanel → Node.js app → variáveis): `N8N_WEBHOOK_LIGACAO_URL=https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-lancador`, `LIGACAO_IA_WEBHOOK_SECRET` (o mesmo), `VAPI_ASSISTENTE_ID=036cdf43-4549-4251-bc6a-55b71b3f51b4`, e `CRON_SECRET` igual ao do cron do hPanel (uid `JuunyNk4od`, `*/5 * * * *`, criado em 05/09).
+3. `configuracoes`: `ligacao_ia.provedor='n8n'` e `ligacao_ia.automatica=true` **já aplicados** em 05/09 (decisão do João: ele quer receber a ligação no teste do zero; B33/LGPD fica registrado como decisão do dono do produto).
 
 **Reentrega (0061):** uma tentativa com assinatura inválida NÃO ocupa mais o `id_evento` — a entrega válida seguinte substitui o registro e é processada (`src/server/integracoes/livro-razao.ts`).

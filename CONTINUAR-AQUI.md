@@ -4,6 +4,24 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
+> **Sessão de 05/09 (noite) — FASE 6 "fechar o produto" em andamento.** O João vai testar DO ZERO com a própria
+> pessoa (seed `scripts/seed-exemplo-completo.ts`, todos os outros exemplos apagados) e quer RECEBER A LIGAÇÃO.
+> Plano: `docs/ARQUITETURA-FASE-6.md` (3 sessões como espinha, densidade, menu de 5, barra "Enviar",
+> "Contato da equipe", "Disponibilidade da equipe"). Chat/Chatwoot = **backlog** (decisão do João).
+> **Ligação por IA PRONTA do lado do n8n/Vapi** (05/09 ~19:40): workflows `zh5tjDcSoHaPaRRL` e `OXetB37jgJgmif3d`
+> publicados, assistente `SIC-HF · Ana · agendamento da SV` criada (`036cdf43-4549-4251-bc6a-55b71b3f51b4`), cron
+> do hPanel criado (`*/5`), `ligacao_ia.provedor='n8n'` + `automatica=true` aplicados. Detalhe em
+> `docs/integracoes/n8n-ligacao-ia.md` §7.
+>
+> **Para a ligação acontecer, só falta o João (valores em `tmp/squad/segredos-producao.txt`, fora do git):**
+> 1. n8n → Settings → Variables → `LIGACAO_IA_WEBHOOK_SECRET`.
+> 2. Hostinger → Node.js app → variáveis: `N8N_WEBHOOK_LIGACAO_URL=https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-lancador`,
+>    `LIGACAO_IA_WEBHOOK_SECRET` (o mesmo), `VAPI_ASSISTENTE_ID=036cdf43-4549-4251-bc6a-55b71b3f51b4`,
+>    `CRON_SECRET` (o do arquivo — o cron do hPanel já manda esse valor). Reiniciar a app.
+> 3. Para receber E-MAIL (boas-vindas, link da sala): `RESEND_API_KEY` + `EMAIL_FROM` (domínio verificado no Resend).
+> 4. Compra real pela Hotmart precisa de `HOTMART_WEBHOOK_SECRET` + ids de produto; no teste do zero o pagamento
+>    pode ser simulado com `npx tsx scripts/seed-exemplo-completo.ts --etapa <pago>` (ver `tmp/squad/mock-exemplo.md`).
+
 > **Sessão de 05/09 (dia/noite) — FASE 5 fechada, trava final do Fable APROVADA (2 rodadas + item cirúrgico) e publicada.**
 > Leia `brain/Diário/2026-09-05.md` (entradas 02:40 em diante), `docs/ARQUITETURA-FASE-5.md` e
 > `brain/06 - Materiais/Processo real do escritorio (Drive).md` (o método real, lido da pasta de um
