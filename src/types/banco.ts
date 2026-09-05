@@ -406,7 +406,7 @@ export type TipoEventoTimeline =
   | "croqui"
   /** Versão do motor determinístico gravada em `croqui_calculos` (trigger `app.timeline_croqui_calculo`, 0063/0070). Sem `status`: NÃO é estado de croqui. */
   | "croqui_calculo"
-  /** Relatório do croqui exportado em `.docx`/Drive (`api/croquis/[id]/docx`, 0070). Sem `status`: NÃO é estado de croqui. */
+  /** Relatório do croqui baixado em `.docx` (`api/croquis/[id]/docx`, 0070). Sem `status`: NÃO é estado de croqui. */
   | "croqui_exportacao"
   /** Narrativa v3 da IA gravada em `croqui_narrativas` (trigger `app.timeline_croqui_narrativa`, 0070). */
   | "croqui_narrativa"

@@ -564,8 +564,7 @@ function cabecalhoPagina(origemDado: "real" | "exemplo"): Header | undefined {
 
 /**
  * Monta o `.docx` do relatório. **Puro**: entrada → `Buffer`. Não fala com
- * banco, não conhece rota, não sabe se o arquivo vai para download ou Drive —
- * quem decide isso é `./destino.ts`.
+ * banco e não conhece rota — quem devolve o arquivo é `api/croquis/[id]/docx`.
  */
 export async function montarDocxCroqui(
   resultado: ResultadoCroqui,
@@ -692,8 +691,5 @@ export async function montarDocxCroqui(
 
   return Packer.toBuffer(documento);
 }
-
-/** Nome do arquivo no Drive — o mesmo do processo manual do escritório. */
-export const NOME_ARQUIVO_DRIVE = "3) RELATÓRIO DO CROQUI.docx";
 
 export const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

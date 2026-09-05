@@ -1,8 +1,7 @@
 /**
  * Teto de exportação por usuário. Montar um `.docx` de 19 tabelas custa CPU no
- * mesmo processo que serve as telas, e o caminho do Drive é rede externa — sem
- * teto, um clique preso ou um laço no front derruba o Node App da Hostinger,
- * que roda em UM processo.
+ * mesmo processo que serve as telas — sem teto, um clique preso ou um laço no
+ * front derruba o Node App da Hostinger, que roda em UM processo.
  *
  * Em memória de propósito: o deploy é processo único (`output: 'standalone'`,
  * sem Edge, sem serverless) e o repositório não tem Redis. Reiniciou, zerou —

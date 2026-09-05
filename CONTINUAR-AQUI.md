@@ -21,7 +21,7 @@ Se você é uma IA abrindo este repositório pela primeira vez: **leia este arqu
 > **Configuração pendente com o João / Dra. Elaine (nada é código):**
 > 1. **Nenhum croqui fecha até cadastrar** em Admin → Parâmetros: alíquotas de ITCMD (herança e doação) e ITBI por UF/município **em faixas** com base legal, cartório de notas/imóveis por UF, e `configuracoes['croqui.horas_por_ato']` (21 atos × 50/47/35 h). Por desenho: a tela mostra a falta, nunca zero.
 > 2. **Reconciliar divergências do material do escritório** (Painel do admin → "Parâmetros em divergência"): certidões R$ 2.000 × 7.000; membership 750/1.350/2.000; crédito IBS/CBS 26,5% × 36,92%; junta da 2ª célula 500 × 511. Confirmar base do ITCMD por modelo (mercado em 1/2, DIRPF em 3) e `croqui.uf_domicilio_vantajoso`.
-> 3. Drive: `GOOGLE_SA_JSON` + `DRIVE_PASTA_RAIZ_ID` na Hostinger + pasta raiz compartilhada com a service account + regra de nome da pasta do cliente (hoje `HOLDING DRIVE - <nome>`; põe nome fora do sistema — decidir).
+> 3. ~~Drive~~ — **removido** (05/09 à noite, ordem do João): a pasta do Drive era referência do método, não padrão; o `.docx` é só download, nenhuma env de Drive existe mais.
 > 4. `SUPABASE_SERVICE_ROLE_KEY` em produção já existe; sem ela `/p/d` cai no fallback de 3 tipos.
 > 5. `LIMITE_ARQUIVOS_POR_LINK = 5` × radar com 10+ documentos — decisão de produto.
 > 6. Ativar `agente_croqui_narrativa` v1 só após sonda + bancada (`docs/ARQUITETURA-FASE-4-VERIFICACAO.md` tem o roteiro).

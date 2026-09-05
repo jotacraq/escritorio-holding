@@ -6,25 +6,20 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirVePatrimonio, type UsuarioAtual } from "@/server/auth";
 import { ErroApi, erroConflito, erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
-import {
-  MIME_DOCX,
-  NOME_ARQUIVO_DRIVE,
-  montarDocxCroqui,
-  type CabecalhoDocxCroqui,
-} from "@/server/exportacao/docx-croqui";
-import { adaptadorDe, destinosDisponiveis, ErroDrive, type DestinoExportacao } from "@/server/exportacao/destino";
+import { MIME_DOCX, montarDocxCroqui, type CabecalhoDocxCroqui } from "@/server/exportacao/docx-croqui";
 import { consumir } from "@/server/exportacao/limite";
 import type { ResultadoCroqui } from "@/types/croqui-calculo";
 
 /**
- * `GET|POST /api/croquis/[id]/docx` — o Relatório do Croqui em `.docx`.
+ * `GET /api/croquis/[id]/docx` — o Relatório do Croqui em `.docx`, para download.
  *
- * - `GET` baixa o arquivo (anexo). `GET ?info=1` devolve JSON com os destinos
- *   disponíveis e se há cálculo — é o que a UI consulta para decidir se
- *   renderiza o botão "Enviar ao Drive" (§10.1: sem env, o botão não existe).
- * - `POST ?destino=drive` sobe ao Drive; sem `GOOGLE_SA_JSON` +
- *   `DRIVE_PASTA_RAIZ_ID`, devolve **503 rotulado** dizendo qual variável falta.
- *   `POST ?destino=download` (default) devolve o arquivo, igual ao GET.
+ * `GET ?info=1` devolve JSON dizendo se há cálculo fixado (e qual versão) — é
+ * o que a UI consulta, barato, para decidir se renderiza o botão.
+ *
+ * Só download. Houve um destino "Google Drive" (service account, pasta por
+ * cliente) que foi REMOVIDO em 05/09/2026: a pasta do Drive de um cliente
+ * serviu de referência para entender o método, não de padrão a replicar — o
+ * sistema é a fonte, e o advogado guarda o arquivo onde quiser.
  *
  * Trava de papel: `ve_patrimonio` (admin/advogada) — o relatório é o croqui
  * inteiro, com patrimônio, imposto e composição familiar. `relacionamento` não
@@ -33,12 +28,9 @@ import type { ResultadoCroqui } from "@/types/croqui-calculo";
  */
 
 const ParamsSchema = z.object({ id: z.string().uuid() });
-const DestinoSchema = z.enum(["download", "drive"]).default("download");
 
 /** Um relatório pesa ~19 tabelas de render; 20 por 5 min por pessoa é folgado. */
 const TETO_EXPORTACAO = 20;
-/** O Drive é rede externa e cria/atualiza arquivo — teto menor. */
-const TETO_DRIVE = 10;
 const JANELA_MS = 5 * 60_000;
 
 interface CroquiDaRota {
@@ -169,14 +161,14 @@ function exigirLimite(usuario: UsuarioAtual, operacao: string, teto: number) {
  */
 async function registrarNaTimeline(
   supabase: Cliente,
-  args: { jornadaId: string; croquiId: string; usuario: UsuarioAtual; destino: DestinoExportacao; versao: number },
+  args: { jornadaId: string; croquiId: string; usuario: UsuarioAtual; versao: number },
 ) {
   const { error } = await supabase.from("eventos_timeline").insert({
     jornada_id: args.jornadaId,
     tipo: "croqui_exportacao",
     titulo: "Relatório exportado",
-    descricao: args.destino === "drive" ? "Enviado ao Google Drive" : "Baixado em .docx",
-    dados: { croqui_id: args.croquiId, destino: args.destino, versao_calculo: args.versao },
+    descricao: "Baixado em .docx",
+    dados: { croqui_id: args.croquiId, destino: "download", versao_calculo: args.versao },
     ator_perfil_id: args.usuario.id,
     ator_tipo: "humano",
   });
@@ -191,7 +183,6 @@ async function montar(
 ): Promise<{
   bytes: Buffer;
   nomeArquivo: string;
-  nomeCliente: string;
   jornadaId: string;
   versao: number;
 }> {
@@ -215,7 +206,6 @@ async function montar(
   return {
     bytes,
     nomeArquivo: nomeArquivoDownload(jornada.pessoas?.nome ?? null, calculo.versao),
-    nomeCliente,
     jornadaId: croqui.jornada_id,
     versao: calculo.versao,
   };
@@ -238,11 +228,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         .eq("jornada_id", croqui.jornada_id)
         .maybeSingle<{ versao: number; criado_em: string }>();
       return NextResponse.json(
-        {
-          destinos: destinosDisponiveis(),
-          drive_indisponivel: adaptadorDe("drive").motivoIndisponivel(),
-          calculo: data ? { versao: data.versao, criado_em: data.criado_em } : null,
-        },
+        { calculo: data ? { versao: data.versao, criado_em: data.criado_em } : null },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -254,82 +240,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       jornadaId: montado.jornadaId,
       croquiId: id,
       usuario,
-      destino: "download",
       versao: montado.versao,
     });
     return respostaArquivo(montado.bytes, montado.nomeArquivo);
-  } catch (erro) {
-    return respostaErro(contexto, erro);
-  }
-}
-
-export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const contexto = "POST /api/croquis/[id]/docx";
-  try {
-    const usuario = await exigirVePatrimonio();
-    const { id } = ParamsSchema.parse(await context.params);
-    const destino = DestinoSchema.parse(request.nextUrl.searchParams.get("destino") ?? undefined);
-    const adaptador = adaptadorDe(destino);
-
-    // Falha FECHADA e ANTES de montar: sem env, nem gasta CPU desenhando um
-    // documento que não tem para onde ir.
-    if (!adaptador.disponivel()) {
-      throw new ErroApi(
-        503,
-        "destino_indisponivel",
-        adaptador.motivoIndisponivel() ?? "Destino de exportação indisponível.",
-        { destino },
-      );
-    }
-
-    exigirLimite(usuario, destino === "drive" ? "docx-drive" : "docx", destino === "drive" ? TETO_DRIVE : TETO_EXPORTACAO);
-
-    const supabase = await criarClienteServidor();
-    const montado = await montar(supabase, id);
-
-    if (destino === "download") {
-      await registrarNaTimeline(supabase, {
-        jornadaId: montado.jornadaId,
-        croquiId: id,
-        usuario,
-        destino,
-        versao: montado.versao,
-      });
-      return respostaArquivo(montado.bytes, montado.nomeArquivo);
-    }
-
-    let envio;
-    try {
-      envio = await adaptador.enviar({
-        nome: NOME_ARQUIVO_DRIVE,
-        bytes: montado.bytes,
-        nomeCliente: montado.nomeCliente,
-        jornadaId: montado.jornadaId,
-      });
-    } catch (erroEnvio) {
-      if (erroEnvio instanceof ErroDrive) {
-        registrarErro(`${contexto}#drive`, erroEnvio, { croqui_id: id, etapa: erroEnvio.etapa });
-        // 502: quem falhou foi o Drive, não o pedido. A mensagem não carrega
-        // corpo de erro do Google (pode trazer e-mail da service account).
-        throw new ErroApi(502, "drive_falhou", "O envio ao Google Drive falhou. O download continua disponível.", {
-          etapa: erroEnvio.etapa,
-        });
-      }
-      throw erroEnvio;
-    }
-
-    await registrarNaTimeline(supabase, {
-      jornadaId: montado.jornadaId,
-      croquiId: id,
-      usuario,
-      destino,
-      versao: montado.versao,
-    });
-
-    return NextResponse.json(
-      { destino: envio.destino, url: envio.url ?? null, arquivo_id: envio.arquivoId ?? null, versao: montado.versao },
-      { headers: { "Cache-Control": "no-store" } },
-    );
   } catch (erro) {
     return respostaErro(contexto, erro);
   }

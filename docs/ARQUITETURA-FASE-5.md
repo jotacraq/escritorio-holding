@@ -492,15 +492,7 @@ grep -rn "POP 0\|DISC\|régua\|regua\|esteira\|briefing\|Briefing\|cron\|n8n\|Va
 ### 10.1 Relatório do croqui (Onda 2, M6)
 `src/server/exportacao/docx-croqui.ts`: `montarDocxCroqui({ resultado, narrativa, pessoa, gerado_em }): Promise<Uint8Array>` — capa, T1, T2, texto do método, T3–T5, T6, T7–T9 com diagrama, T11 payback, T13, T14, T15–T16, T12, T17, T18, T19. Célula `ausente` sai como "—" com nota de rodapé dizendo o que falta; **nunca R$ 0,00 num documento que vai para o cliente** (é a regressão do §4.8 C).
 
-```ts
-export type DestinoExportacao = "download" | "drive";
-export interface AdaptadorExportacao {
-  disponivel(): boolean;
-  enviar(nome: string, bytes: Uint8Array, jornadaId: string): Promise<{ url?: string }>;
-}
-```
-
-`manual` (default, e o único que esta rodada entrega funcionando): `POST /api/croquis/[id]/docx?destino=download`. Sem env, o botão "Enviar ao Drive" **não é renderizado**. `drive`: service account — **BLOQUEIO 5** (`GOOGLE_SA_JSON`, `DRIVE_PASTA_RAIZ_ID`). Falha **fechada**: sem env completa, `disponivel()` é `false`. Nada de `if (env && …)`.
+Só **download**: `GET /api/croquis/[id]/docx` (e `?info=1` para a UI saber se há cálculo fixado). O desenho original previa um segundo destino, Google Drive por service account com pasta `HOLDING DRIVE - <cliente>` — foi implementado e **removido em 05/09/2026 à noite** por ordem do João: a pasta do Drive de um cliente foi dada como *referência* para entender o método, não como padrão a replicar. O sistema é a fonte; o advogado guarda o arquivo onde quiser. Nenhuma env de Drive é esperada.
 
 Dependência: o pacote `docx` (o repo tem `pdfkit`, que não serve). `npm install` no Windows poda o lockfile — o M6 confere o diff de `package-lock.json` e reporta as linhas alteradas.
 
@@ -574,7 +566,7 @@ export function gerarMinuta(jornada, modelo: MinutaModelo, valores: Record<strin
 2. **Base do ITCMD: mercado em 1 e 2 células, DIRPF só em 3.** Está assim na planilha e muda drasticamente o preço apresentado. Confirmar que é intencional, não resquício.
 3. **Membership: 1 plano (contrato, R$ 2.000) × 3 planos (slide 37: LEGACY R$ 750 · PRIME R$ 2.000 · INFINITY R$ 1.350).** A ordem de preço do slide parece trocada. Trava T19.
 4. **Crédito de IBS/CBS: 26,5% (aba 10) × 36,92% (aba 8).** Duas versões do mesmo modelo na mesma planilha. Trava T10 e T12.
-5. **Google Drive:** faltam `GOOGLE_SA_JSON`, `DRIVE_PASTA_RAIZ_ID` e a regra de nome da pasta ("HOLDING DRIVE - <cliente>" põe nome de pessoa fora do sistema). Sem isso, só download.
+5. ~~**Google Drive**~~ — resolvido por remoção (05/09 à noite): não há envio ao Drive; o relatório é só download. O Drive era referência, não padrão.
 6. **Junta comercial da 2ª célula usa unitário R$ 500, as outras R$ 511** — diferença de R$ 77 que parece digitação. Semeado como está (3.500), com `notas` registrando a suspeita.
 
 **Resolvidos pelo recon (eram BLOQUEIO na rev. 1):** incentivo de 10% é **sobre o saldo** (`B18 = B17 × 0,1`); o sinal é **10% do novo saldo do modelo de 3 células**, igual para os três (`B22 = 10% × D19`, `B24 = B19 − $B$22`) — o rótulo "maior valor" da planilha está errado, já que 3 células é o mais barato; fica registrado em `configuracoes['croqui.sinal_modelo_referencia']` para a Dra. Elaine trocar sem migration.
