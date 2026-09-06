@@ -1,8 +1,33 @@
 # Continuar daqui — SIC-HF
 
-Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — Fase 3),
-para retomar o projeto em outra máquina sem perder contexto.
+Escrito em **03/09/2026**; o bloco mais recente fica sempre no TOPO (último: Fase 7, 06/09/2026).
+Para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
+
+> **FASE 7 — "PRONTO PARA APRESENTAR" — 06/09/2026 (dia inteiro), publicada em `9bf5ed6` nos dois remotes.**
+> Ordem do João: *"deixa tudo polido, 100% feito, sem nada pendente da sua parte; o que só eu posso fazer, me lista."*
+> Orquestrador Fable; 3 rodadas de agentes Opus; pentest e trava do Fable em cada rodada (0 crítico; 1 ALTO fechado).
+> Detalhe por agente em `tmp/squad/fase7-brief.md` e `fase7-rodada2.md` (fora do git — cópia do essencial no diário `brain/Diário/2026-09-06.md`).
+>
+> **O que mudou, em uma linha por tema:**
+> - **Ligação por IA (Ana/Vapi/n8n) — madura e testada de forma determinística:** janela de discagem (seg–sex 9h–19h SP, editável em Admin → Configurações), telefone E.164 na entrada, token do link do sistema cifrado (nunca revoga link que a equipe mandou), retenção de voz (desligada até a decisão B19), nós do n8n **versionados em `n8n/ligacao/*.js` e republicados** (LANCADOR `a4d10e8b…`, WEBHOOK `9361f30d…`), bug real do nó publicado corrigido (ligação longa → 422 e horário escolhido perdido), achado ALTO do pentest fechado (webhook Vapi→n8n agora exige `x-vapi-secret`; destino do callback fixo em Variable; LANCADOR não disca sem caminho de volta). Roteiro de validação real: `docs/integracoes/n8n-ligacao-ia.md` §8.
+> - **Banco:** 0073/0073b/0074/0075/0076/0077 aplicadas e provadas (`scripts/verificacao-007x.sql`). 0077 = `for update` no link de escrita (TOCTOU do teto de upload) + briefing só com execução da própria jornada. 0076 = drift real: `registrar_briefing` tinha perdido na 0042 a derivação de `origem_dado` — todo briefing em modo demonstração falhava desde 04/09.
+> - **Qualidade:** suíte vitest **0 → 469 testes** (`npm test`; motor do croqui 149, trilho 75, envios 39, ligação, upload, vocabulário); `.github/workflows/ci.yml` (tipos · lint · testes · build) em push/PR para `main`; `package.json#engines` Node 22.
+> - **Segurança/back:** rate limit por perfil na emissão de links e no disparo da ligação; `criado_por` em todo link do sistema; grant de `anon` inerte revogado; 7 rotas mortas removidas; limite de arquivos por link com **fonte única** (`app.limite_arquivos_por_link()`, editável em Admin — o 5→10 de 06/09 era inerte no banco); pré-checagem do upload pelo mesmo denominador do banco (uma query a menos).
+> - **Frente:** Ficha em estado avançado 1.503 → 900 px; repertório paginado (1.684 → 959 px); trilho com `sr-only` "passo N de 9"; `text-xs`→`text-legenda` (80 arquivos); mobile 390 px sem overflow em 31 telas; `/p/*` com rodapé de contato e foco/aria; opções do formulário com rótulo humano ("Viúvo(a)", "União estável"); 2 promessas sem `.catch` corrigidas.
+> - **Apresentação:** `npx tsx scripts/seed-demo.ts` cria 4 famílias fictícias em etapas diferentes (telefones que a ligação recusa; sem custo de IA; `--limpar` desfaz) e **`docs/APRESENTACAO.md`** é o roteiro de 20 minutos com os números reais das telas. O banco FICOU com a demo.
+>
+> **SÓ O JOÃO (nada disso é código) — na ordem:**
+> 1. **Hostinger → Node.js App → variáveis:** colar `C:\Users\João\Downloads\sic-hf-producao.env` (`CRON_SECRET`, `N8N_WEBHOOK_LIGACAO_URL`, `LIGACAO_IA_WEBHOOK_SECRET`, `VAPI_ASSISTENTE_ID`, Resend, Hotmart, OpenRouter, `NEXT_PUBLIC_CONTATO_*` — sem estes dois o rodapé público diz "fale com quem te enviou"). Reiniciar a app. Admin → Integrações tem de ficar verde.
+> 2. **n8n → Settings → Variables (3):** `LIGACAO_IA_WEBHOOK_SECRET`, `VAPI_SERVER_SECRET`, `SICHF_CALLBACK_URL` — valores em `tmp/squad/segredos-producao.txt` (e no `.env` de Downloads, bloco "FORA DA HOSTINGER").
+> 3. **Vapi → assistant `036cdf43…` → Server URL + Server Secret** (= `VAPI_SERVER_SECRET`; credencial Bearer com header `X-Vapi-Secret`). E abrir o nó `DISPARO · Vapi POST /call` do LANCADOR no n8n e confirmar a credencial `Vapi API - RSVP (org nova)` selecionada (a republicação por API pode ter desanexado — a API não devolve credenciais, não deu para provar).
+> 4. **Primeira ligação real com o SEU telefone:** `docs/integracoes/n8n-ligacao-ia.md` §8.2 (10 minutos). Só depois disso considere a ligação "validada" — o código está pronto e testado; a Vapi discando de verdade só o João ouve.
+> 5. **GitHub, nos dois remotes:** ruleset em `main` exigindo PR + status check `tipos · lint · testes · build` (aparece após a 1ª execução do CI).
+> 6. **Depois de colar tudo:** apagar `Downloads\sic-hf-producao.env` e `tmp/squad/segredos-producao.txt`. Trocar a senha da Dra. Elaine no 1º acesso.
+> 7. **Com a Dra. Elaine (decisões de produto, a tela já cobra cada uma):** alíquotas ITCMD/ITBI por UF em faixas (sem isso croqui não fecha — por desenho); parâmetros em divergência; janela/tentativas/retenção da ligação (B19); prompt da Ana; B13 (IA sobre transcrição — rota `POST /api/admin/decisoes-juridicas`); B15 (qual roteiro é o oficial); formulário estratégico tem 17 perguntas e 0 obrigatórias; POPs 04–08.
+> 8. **Opcional:** Chatwoot (5 envs — o código está pronto), sala automática (escolher Meet/Zoom → workflow n8n novo).
+>
+> **Risco residual conhecido:** `ligacao_ia.automatica=true` em produção com B33 pendente — quando as envs e Variables existirem, toda compra da SV disca sozinha dentro da janela. Se preferir testar antes: `update configuracoes set valor='false' where chave='ligacao_ia.automatica'` (o botão "Ligar por IA agora" continua funcionando).
 
 > **FECHAMENTO DE SESSÃO — 06/09/2026, madrugada.** O João: "ficou bom da forma que está; próxima fase é melhorar a partir daqui; mantenha o que você decidiu". Sistema em produção. **Para colocar em prática (só configuração, nada de código):** o arquivo **`C:\Users\João\Downloads\sic-hf-producao.env`** tem TODAS as variáveis — [PRONTO] é só colar, [VOCÊ] é conta que só ele cria (Resend, Hotmart, OpenRouter), [MANTER] = `LINK_PUBLICO_PEPPER` (não trocar). Mais a Variable `LIGACAO_IA_WEBHOOK_SECRET` no n8n. Depois: reiniciar a app, abrir Admin → Integrações e ver tudo verde; simular a compra (`npx tsx scripts/seed-exemplo-completo.ts --etapa sessao_contratada`) e esperar a ligação da Ana. Apagar `tmp/squad/segredos-producao.txt` e o `.env` de Downloads quando terminar. **Acesso admin da Dra. Elaine:** `elaine@advmais.com` (criado em 06/09; senha entregue ao João — trocar no primeiro acesso).
 > **Decisões delegadas e tomadas pelo orquestrador (06/09):** (1) Hotmart abre jornada NOVA quando a atual está `ganha` — **mantido** (novo ciclo; a origem fica na pessoa); (2) `LIMITE_ARQUIVOS_POR_LINK` **5 → 10** (radar pede 10+ documentos); (3) blocos da Ficha em estado avançado continuam nascendo abertos — item da próxima fase, não regressão.
