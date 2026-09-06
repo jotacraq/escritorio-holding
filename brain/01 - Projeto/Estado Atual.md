@@ -14,7 +14,7 @@ Nome e método vêm do documento institucional da própria advogada — [[02 - M
 |---|---|
 | **Produção** | `escritorio.grupoparticipa.app.br`, Hostinger Node.js App, deploy automático por push no remote `infra` (`origin` = backup; empurrar nos dois). Versão publicada em `/versao.txt`. |
 | **Banco** | Supabase `fcfsnqqaphtamhrpuyoh` (sa-east-1), migrations até **0077** aplicadas e provadas (`scripts/verificacao-*.sql`). RLS em toda tabela; links públicos só por RPC (0072). |
-| **Dados** | Só a pessoa do próprio João (`origem_dado='exemplo'`), controlada por `scripts/seed-exemplo-completo.ts`. As 70 transcrições de clientes vivem só no banco (sigilo). **Nenhum cliente real passou pelo sistema ainda.** |
+| **Dados** | A pessoa do próprio João (`origem_dado='exemplo'`, `scripts/seed-exemplo-completo.ts`) + 4 famílias fictícias de demonstração (`scripts/seed-demo.ts`, `--limpar` desfaz). As 70 transcrições de clientes vivem só no banco (sigilo). **Nenhum cliente real passou pelo sistema ainda.** |
 | **Fases fechadas** | MVP · 2 · 3 (IA via OpenRouter) · 4 (esteira automatizada, design system) · 5 (Motor do Croqui) · 6 (3 sessões, menu de 5, Ficha em uma tela). Todas com trava do Fable aprovada. |
 | **Fase 7 (fechada 06/09)** | "Pronto para apresentar": ligação por IA madura (n8n republicado, pentest ALTO fechado), 0073–0077, vitest 470 testes + CI no GitHub, seed de demo (4 famílias) + `docs/APRESENTACAO.md`, mobile/a11y/consistência. Próximo passo é configuração do João (topo do `CONTINUAR-AQUI.md`). |
 | **Acessos** | `elaine@advmais.com` (admin, criado 06/09 — trocar senha no 1º acesso) · `juliano.alfredo86@gmail.com` (admin de teste). |
