@@ -1,9 +1,16 @@
 # Continuar daqui — SIC-HF
 
-Escrito em **03/09/2026**; o bloco mais recente fica sempre no TOPO (último: Fase 7, 06/09/2026).
+Escrito em **03/09/2026**; o bloco mais recente fica sempre no TOPO (último: Fase 7 rodada 3, 06/09/2026).
 Para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
+> **FASE 7 · RODADA 3 — 06/09/2026 (tarde/noite), publicada em `8fce0e6` nos dois remotes.** Ordem do João: "segue, mete marcha".
+> Arquiteto (Opus) desenhou (`docs/ARQUITETURA-FASE-7.md`), back ‖ front Opus implementaram, pentest e trava do Fable.
+> - **Admin → Método → Formulário e roteiros** (capacidade sem botão virou botão): a Dra. Elaine edita o Formulário Estratégico (rótulo, tipo, opções com valor + rótulo humano, obrigatória, ordem, bloco, condicional), pré-visualiza como cliente (390 px, sem link real) e **publica versão N+1** (nunca edita a atual — respostas antigas presas à versão); roteiros da sessão: lista, diff lado a lado e **"Ativar esta"** (B15 com autoria). Banco: 0078 (`publicar_formulario_versao`/`ativar_*` atômicas, validação da definição no banco, `formularios` só por RPC), 0081 (`publicar_roteiro_versao`, `roteiros_versoes` só por RPC, `responder_formulario_publico` aplica `obrigatoria` e recusa opção fora da lista, teto de 30 opções).
+> - **Admin → Cadastro → Direitos do titular (LGPD art. 18):** exportar dossiê (JSON + PDF, 27 seções + "anotações internas do escritório" separadas) com registro ANTES de sair; **anonimizar** (não apaga: 36 tabelas viram marcador, dinheiro/etapas/consentimentos ficam, links revogados, ligações canceladas, jornada `anonimizada`), confirmação digitada com o nome conferida no servidor, trilha imutável em `titulares_solicitacoes`, expurgo do Storage em 3 tempos com pendência visível no Painel se ficar pela metade. Recusa dado de demonstração, titular com login e holding em execução (B41). Banco: 0079 (enum), 0080, 0081 (trigger que protege o carimbo, `confirmar_expurgo_storage` só `service_role` e só caminhos da lista, webhook órfão limpo pelo e-mail).
+> - **Performance/manutenção:** `src/lib/api.ts` (787 linhas) virou barril de 13 módulos por domínio; 11 gavetas da Ficha e 15 abas do Admin por `dynamic()` (Ficha −31,6 % de JS, INP da gaveta 88→40 ms); 7 `loading.tsx`; regra nova no DS §11 (`next/dynamic` exige opções em objeto literal).
+> - Vitest **470 → 575**. Pentest r3: 0 crítico/alto, 3 médios + 5 baixos fechados na 0081.
+> - **Decisões que só a Dra. Elaine/João tomam (hipótese conservadora já aplicada):** B40 quem publica (hoje só admin) · B41 anonimizar com holding em execução (hoje recusa) · B42 retenção mínima legal/`webhooks_eventos` (hoje sem expurgo por idade) · B43 ZIP (não) · B44 familiar como titular próprio (fora) · B46 apagar a gravação na **Vapi** quando houver anonimização real (operação manual) · **B47** o dossiê entrega as anotações internas do escritório (briefing, objeções, sinais) numa seção separada — decidir se ficam.
 > **FASE 7 — "PRONTO PARA APRESENTAR" — 06/09/2026 (dia inteiro), publicada em `9bf5ed6` nos dois remotes.**
 > Ordem do João: *"deixa tudo polido, 100% feito, sem nada pendente da sua parte; o que só eu posso fazer, me lista."*
 > Orquestrador Fable; 3 rodadas de agentes Opus; pentest e trava do Fable em cada rodada (0 crítico; 1 ALTO fechado).
