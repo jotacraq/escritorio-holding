@@ -13,7 +13,6 @@ import { Selo, SeloStub } from "@/components/ui/Selo";
 import { formatarDataHora, formatarRelativo } from "@/lib/formatar";
 import { buscarPendencias, reenfileirarMensagem, reprocessarWebhook } from "../adminApi";
 import { mensagemDeErro } from "../http";
-import { IntroAba } from "../comum";
 import type { PendenciaSistema, TipoPendenciaSistema } from "@/types/admin";
 
 const ROTULO_TIPO: Record<TipoPendenciaSistema, { titulo: string; descricao: string }> = {
@@ -86,8 +85,13 @@ export function PendenciasAba() {
 
   return (
     <div className="flex flex-col gap-bloco">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <IntroAba>O que travou e depende de alguém. Cada linha leva à ação que resolve.</IntroAba>
+      {/* Fase 7 — a `IntroAba` daqui repetia, PALAVRA POR PALAVRA, a
+          `descricao` da aba em `AdminApp.tsx:108` ("O que travou e depende de
+          alguém. Cada linha leva à ação que resolve."). A linha de propósito
+          da aba já é renderizada pelo `Abas`; a segunda cópia era 46 px de
+          eco. As outras abas mantêm a intro porque ela ACRESCENTA (a de Custo
+          de IA diz que só execução real conta, por exemplo). */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Botao variante="secundario" tamanho="compacto" carregando={carregando} onClick={recarregar}>
           Atualizar
         </Botao>

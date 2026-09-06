@@ -137,12 +137,10 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // `null` quando não há croqui na timeline.
   const estadoCroqui = useCroquiDaJornada({ jornadaId: id, ficha, timeline: ficha.timeline });
 
-  // A Pasta, menos o cartao "Links": a barra "Enviar" ficou responsavel por
-  // todo link publico e esta SEMPRE na tela. Manter o cartao seria dois lugares
-  // dizendo coisas diferentes sobre o mesmo link (um deles "Ainda nao", com a
-  // barra logo acima ja oferecendo o botao). O hash `#links` continua chegando
-  // aqui: `ALIAS_HASH` o manda para a barra.
-  const pasta = derivarPasta(ficha, podeVerPatrimonio).filter((item) => item.chave !== "links");
+  // O catalogo nao tem mais item "Links" (ver `lib/pasta/derivar.ts`): a barra
+  // "Enviar" esta SEMPRE na tela e responde por todo link publico. O hash
+  // `#links` continua chegando aqui: `ALIAS_HASH` o manda para a barra.
+  const pasta = derivarPasta(ficha, podeVerPatrimonio);
 
   // Qual das 3 sessoes esta acesa — a mesma derivacao do trilho, para a Pasta
   // abrir o grupo certo. `sinaisDaFicha` e puro e ja e chamado pelo trilho;
@@ -200,10 +198,10 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       // O croqui não é gaveta: é cartão + botão para `/croquis/[id]`. Um
       // `#croqui` vindo da Pasta ou de um link antigo leva ao cartão.
       if (chave === "croqui") {
-        // O cartao do croqui vive dentro de um `<details>` que nasce fechado
-        // quando a jornada ainda esta na sessao 1. Abrir antes de rolar, senao
-        // o link leva a um titulo e o cartao continua escondido.
-        croquiRef.current?.closest("details")?.setAttribute("open", "");
+        // O cartao do croqui vive dentro de um `<details>` que nasce SEMPRE
+        // fechado (Fase 7). Abrir antes de rolar, senao o link leva a um
+        // titulo e o cartao continua escondido.
+        croquiRef.current?.querySelector("details")?.setAttribute("open", "");
         croquiRef.current?.scrollIntoView({ block: "center" });
         return;
       }
@@ -249,23 +247,20 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       {/* A sessão 2 (Croqui estrutural) é onde IR e contrato social vivem — o
           radar de documentos e o croqui pertencem a ela, não a blocos soltos
           no meio da ficha. O radar lê patrimônio e família: fora do recorte,
-          nem é montado (a rota recusaria). */}
+          nem é montado (a rota recusaria).
+
+          Fase 7: os dois nascem RECOLHIDOS, um `<details>` cada, com o que há
+          dentro no cabeçalho ("15 de 18 prontos · 3 a pedir", "Croqui
+          Estrutural"). Na Fase 6 eles abriam sozinhos a partir da segunda
+          sessão e a Ficha avançada media 1.503 px — o dobro da dobra útil de
+          quem trabalha a 1440×900. Nada some: espera ser pedido. */}
       {podeVerPatrimonio && (
-        <details open={sessaoAtual === "croqui" || sessaoAtual === "entrega"} className="group flex flex-col gap-item">
-          <summary className="mb-item flex min-h-11 cursor-pointer list-none items-center justify-between gap-item marker:content-none">
-            <span className="text-subtitulo font-bold text-tinta">Documentos e croqui</span>
-            <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
-              <span aria-hidden="true" className="group-open:hidden">ver</span>
-              <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
-            </span>
-          </summary>
-          <div className="flex flex-col gap-item">
-            <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} />
-            <div ref={croquiRef} id="croqui">
-              <CartaoCroqui estadoCroqui={estadoCroqui} />
-            </div>
+        <div className="grid items-start gap-x-cartao gap-y-item sm:grid-cols-2">
+          <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} recolhivel />
+          <div ref={croquiRef} id="croqui">
+            <CartaoCroqui estadoCroqui={estadoCroqui} recolhivel />
           </div>
-        </details>
+        </div>
       )}
 
       {/* ---------------------------------------------------------------- */}

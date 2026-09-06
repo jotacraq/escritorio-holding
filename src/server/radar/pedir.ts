@@ -3,6 +3,7 @@ import { APP_URL } from "@/lib/config-publica";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { ErroApi, erroValidacao, registrarErro } from "@/server/erros";
 import { exigirPepper, gerarToken, hashToken } from "@/server/publico/pepper";
+import { registrarLinkNaTimeline } from "@/server/publico/timeline-links";
 import type { ItemRadar, RespostaRadarPedir } from "@/types/jornada-automacoes";
 import { montarRadar } from "./index";
 
@@ -31,6 +32,12 @@ export async function pedirDocumentos(
   supabase: SupabaseClient<any, any, any>,
   jornadaId: string,
   chavesPedidas: string[],
+  /**
+   * `perfis_equipe.id` de quem clicou em "Pedir agora". Serve só para o evento
+   * de timeline do link `/p/d` — o `criado_por` do link em si já sai de
+   * `auth.uid()` dentro de `emitir_link_publico` (0028:829-836).
+   */
+  atorPerfilId?: string | null,
 ): Promise<RespostaRadarPedir> {
   const unicas = [...new Set(chavesPedidas.map((c) => c.trim()).filter((c) => c.length > 0))];
   if (unicas.length === 0) throw erroValidacao(null, "Informe ao menos um documento para pedir.");
@@ -94,6 +101,17 @@ export async function pedirDocumentos(
     registrarErro("server/radar.pedirDocumentos#link", erroLink, { jornada_id: jornadaId });
     return { pedidos, enfileiradas: 0, motivo: "Documentos marcados como pedidos, mas o link seguro não pôde ser emitido." };
   }
+
+  // Timeline: sem isto o item `links` da Pasta do Cliente continuaria cego
+  // para os links que saem por aqui, e mostraria "nada enviado" a um cliente
+  // que já recebeu o pedido de documentos.
+  await registrarLinkNaTimeline(supabase, {
+    jornadaId,
+    tipo: "documentos",
+    linkId: link.id,
+    atorPerfilId: atorPerfilId ?? null,
+    contexto: "server/radar.pedirDocumentos",
+  });
 
   // 3) A mensagem. RPC `security definer` (0065): `mensagens_agendadas` não
   // aceita INSERT de `authenticated`, e a rota nunca escreve a fila direto.

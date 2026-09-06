@@ -25,7 +25,18 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
 };
 
 export const TAMANHO_MAXIMO_DOCUMENTO_PUBLICO_BYTES = 20 * 1024 * 1024; // 20 MB, §2.4
-export const LIMITE_ARQUIVOS_POR_LINK = 10; // §2.4 · 5→10 em 06/09/2026: o radar pede 10+ documentos por família (decisão delegada ao orquestrador pelo João)
+/**
+ * FALLBACK, não a verdade. A verdade é `configuracoes['link.limite_arquivos']`,
+ * lida por `limiteArquivosPorLink()` aqui e por `app.limite_arquivos_por_link()`
+ * no banco (0075) — a mesma chave alimenta o número que a página do cliente
+ * MOSTRA (`app.payload_link_documentos`) e o que a RPC APLICA
+ * (`registrar_documento_publico`).
+ *
+ * Este número só vale quando a chave não existe ou é inválida. Foi exatamente a
+ * divergência que a 0075 corrige: em 06/09 o 5→10 foi feito SÓ aqui, e o banco
+ * continuou recusando o 6º arquivo enquanto a tela dizia "até 5". §2.4.
+ */
+export const LIMITE_ARQUIVOS_POR_LINK = 10;
 
 export function mimeSuportadoPublico(mime: string): boolean {
   return mime in ASSINATURAS_MIME_PUBLICO;
@@ -153,28 +164,92 @@ export function sha256DeBytes(bytes: Buffer): string {
 /** Espelha o default de `link.limite_por_minuto` na 0028. Lido de `configuracoes` quando existe. */
 const LIMITE_ACESSOS_POR_MINUTO_PADRAO = 10;
 
-/** O teto é configurável no banco; reler a cada upload seria trocar uma consulta por outra. */
+/**
+ * Os dois tetos de link público que a rota de upload consulta vivem na MESMA
+ * tabela, então vão na MESMA consulta: `link.limite_por_minuto` (portão de taxa)
+ * e `link.limite_arquivos` (teto de arquivos, 0075). Ler as duas chaves de uma
+ * vez, com o mesmo cache, é o motivo de o limite de arquivos ter deixado de ser
+ * constante SEM custar uma consulta a mais por upload.
+ *
+ * TTL de 60 s: o teto é configurável no banco, mas reler a cada upload seria
+ * trocar uma consulta por outra. Uma mudança em Admin vale no minuto seguinte.
+ */
 const TTL_LIMITE_MS = 60_000;
-let limiteEmCache: { valor: number; expiraEm: number } | null = null;
+
+interface TetosDeLink {
+  porMinuto: number;
+  arquivos: number;
+}
+
+let tetosEmCache: { valor: TetosDeLink; expiraEm: number } | null = null;
+
+/** `configuracoes.valor` é jsonb: um número vem como `number`, não string. */
+function inteiroNaFaixa(bruto: unknown, minimo: number, maximo: number, padrao: number): number {
+  const numero = typeof bruto === "number" ? bruto : Number(bruto);
+  if (!Number.isInteger(numero) || numero < minimo || numero > maximo) return padrao;
+  return numero;
+}
+
+async function tetosDeLink(supabaseAdmin: SupabaseClient): Promise<TetosDeLink> {
+  const agora = Date.now();
+  if (tetosEmCache && tetosEmCache.expiraEm > agora) return tetosEmCache.valor;
+
+  const padrao: TetosDeLink = {
+    porMinuto: LIMITE_ACESSOS_POR_MINUTO_PADRAO,
+    arquivos: LIMITE_ARQUIVOS_POR_LINK,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["link.limite_por_minuto", "link.limite_arquivos"]);
+
+  // Falha (ou banco sem a 0075) mantém os defaults e NÃO envenena o cache com
+  // um valor que veio de erro — a próxima tentativa relê.
+  if (error || !data) {
+    registrarErro("server/publico.tetosDeLink", error ?? new Error("configuracoes ilegivel"));
+    return padrao;
+  }
+
+  const linhas = data as Array<{ chave: string; valor: unknown }>;
+  const bruto = (chave: string) => linhas.find((l) => l.chave === chave)?.valor;
+
+  const valor: TetosDeLink = {
+    porMinuto: inteiroNaFaixa(bruto("link.limite_por_minuto"), 1, Number.MAX_SAFE_INTEGER, padrao.porMinuto),
+    // Mesma faixa 1..50 de `app.limite_arquivos_por_link()` (0075). Divergir aqui
+    // faria a pré-checagem barata recusar o que o banco aceitaria, ou o contrário.
+    arquivos: inteiroNaFaixa(bruto("link.limite_arquivos"), 1, 50, padrao.arquivos),
+  };
+
+  tetosEmCache = { valor, expiraEm: agora + TTL_LIMITE_MS };
+  return valor;
+}
 
 async function limitePorMinuto(supabaseAdmin: SupabaseClient): Promise<number> {
-  const agora = Date.now();
-  if (limiteEmCache && limiteEmCache.expiraEm > agora) return limiteEmCache.valor;
+  return (await tetosDeLink(supabaseAdmin)).porMinuto;
+}
 
-  let valor = LIMITE_ACESSOS_POR_MINUTO_PADRAO;
-  const { data } = await supabaseAdmin
-    .from("configuracoes")
-    .select("valor")
-    .eq("chave", "link.limite_por_minuto")
-    .maybeSingle();
-
-  // `configuracoes.valor` é jsonb; um número vem como number, não string.
-  const bruto = (data as { valor?: unknown } | null)?.valor;
-  const numero = typeof bruto === "number" ? bruto : Number(bruto);
-  if (Number.isInteger(numero) && numero > 0) valor = numero;
-
-  limiteEmCache = { valor, expiraEm: agora + TTL_LIMITE_MS };
-  return valor;
+/**
+ * Teto de arquivos por link, do banco — a MESMA fonte que
+ * `app.limite_arquivos_por_link()` (0075) usa para o número que a página do
+ * cliente mostra e para a recusa dentro de `registrar_documento_publico`.
+ *
+ * Sem a 0075 aplicada, a chave não existe e isto devolve o fallback
+ * `LIMITE_ARQUIVOS_POR_LINK` (10) — mas o banco continua recusando no 6º
+ * arquivo, porque lá o literal ainda é 5. O comportamento nesse estado é o de
+ * antes desta mudança (upload gasto, RPC recusa, objeto apagado), nunca pior;
+ * quem fecha a divergência é aplicar a migration.
+ *
+ * Nunca lança: erro de leitura vira o fallback, porque este é o portão barato,
+ * não a trava. A trava é a RPC.
+ */
+export async function limiteArquivosPorLink(supabaseAdmin: SupabaseClient): Promise<number> {
+  try {
+    return (await tetosDeLink(supabaseAdmin)).arquivos;
+  } catch (erro) {
+    registrarErro("server/publico.limiteArquivosPorLink", erro);
+    return LIMITE_ARQUIVOS_POR_LINK;
+  }
 }
 
 /**

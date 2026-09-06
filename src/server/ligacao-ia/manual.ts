@@ -21,6 +21,15 @@ export const MOTIVOS_MANUAL: Record<string, string> = {
   sem_link: "Não foi possível emitir o link de agendamento (LINK_PUBLICO_PEPPER ausente?).",
   fallback_sem_link:
     "A ligação por IA não agendou e não foi possível enviar o link de agendamento. Ligue e marque à mão.",
+  // Fase 7 · entrega 2
+  telefone_invalido:
+    "O telefone cadastrado não é um número discável (DDD inexistente, dígitos a mais/menos ou formato irreconhecível). A IA não liga em número inválido. Corrija o cadastro da pessoa e peça a ligação de novo — ou ligue você mesmo.",
+  // Fase 7 · entrega 3
+  link_humano_ativo:
+    "Enviar link de agendamento ao cliente: já existe um link de agendamento ATIVO emitido por alguém da equipe. O sistema NÃO o revogou (o cliente pode já tê-lo recebido) e por isso não conseguiu mandar a mensagem sozinho. Reenvie esse link pela barra “Enviar” da Ficha, ou emita um novo por lá.",
+  // Fase 7 · entrega 1
+  fora_da_janela:
+    "Fora da janela de discagem configurada (Admin → Configurações → Ligação por IA → janela). A ligação espera a próxima abertura.",
 };
 
 function descricaoTarefa(ctx: ContextoDisparo): string {

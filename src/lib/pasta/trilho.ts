@@ -195,7 +195,6 @@ export const PASSO_POR_CHAVE: Record<ChavePasso, ChaveTrilho | null> = {
   // Itens da Pasta (`catalogo.ts`)
   formulario: "sessao", // preparo da sessão
   ligacao: "ligacao",
-  links: "agendou",
   briefing: "sessao",
   sessao: "sessao",
   transcricao: "sessao",

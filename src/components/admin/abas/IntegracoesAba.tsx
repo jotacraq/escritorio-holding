@@ -210,6 +210,7 @@ function CartaoIntegracao({ item, aoMudar }: { item: IntegracaoEstado; aoMudar: 
               <dd className="text-tinta">{item.extras.modo === "real" ? "real" : "demonstração (rotulado)"}</dd>
             </>
           )}
+          {item.chave === "ligacao_ia" && <DetalhesLigacaoIa extras={item.extras} />}
         </dl>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -228,6 +229,94 @@ function CartaoIntegracao({ item, aoMudar }: { item: IntegracaoEstado; aoMudar: 
         </div>
       </div>
     </Cartao>
+  );
+}
+
+/**
+ * As regras de operação da ligação por IA que NÃO são env var: janela de
+ * discagem, retenção de voz e política de retentativa (Fase 7). Ficam aqui, no
+ * mesmo cartão das variáveis que faltam, porque é aqui que se pergunta "por que
+ * essa ligação não saiu?". Cada uma diz se veio do banco ou é o padrão do
+ * código — nunca deixa parecer que alguém configurou o que ninguém configurou.
+ */
+const DIAS_CURTOS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+function DetalhesLigacaoIa({ extras }: { extras: Record<string, unknown> }) {
+  const janela = extras.janela as { dias: number[]; inicio: string; fim: string; fuso: string } | undefined;
+  const configurada = extras.janela_configurada === true;
+  const aberta = extras.janela_aberta === true;
+  const proxima = typeof extras.janela_proxima_abertura === "string" ? extras.janela_proxima_abertura : null;
+  const retencao = typeof extras.retencao_dias === "number" ? extras.retencao_dias : null;
+  const retencaoConfigurada = extras.retencao_configurada === true;
+  const tentativas = typeof extras.max_tentativas === "number" ? extras.max_tentativas : null;
+  const intervalo = typeof extras.intervalo_retentativa_minutos === "number" ? extras.intervalo_retentativa_minutos : null;
+
+  return (
+    <>
+      <dt className="text-tinta-fraca">Janela de discagem</dt>
+      <dd className="text-tinta">
+        {janela ? (
+          <>
+            {janela.dias.map((d) => DIAS_CURTOS[d]).join(" · ")}, {janela.inicio}–{janela.fim}{" "}
+            <span className="text-tinta-fraca">({janela.fuso})</span>
+            {!configurada && <span className="text-[color:var(--ambar)]"> · padrão do código (migração 0073 não aplicada)</span>}
+            <br />
+            {aberta ? (
+              <span className="text-[color:var(--verde)]">aberta agora</span>
+            ) : (
+              <span className="text-[color:var(--ambar)]">fechada agora{proxima ? ` · abre ${proxima}` : ""}</span>
+            )}
+          </>
+        ) : (
+          <span className="text-tinta-fraca">{TRACO}</span>
+        )}
+      </dd>
+
+      <dt className="text-tinta-fraca">Retenção de voz</dt>
+      <dd className="text-tinta">
+        {retencao ? (
+          <>
+            transcrição e gravação apagadas {retencao} dias depois da ligação
+          </>
+        ) : (
+          <span className="text-[color:var(--ambar)]">
+            não expurga {retencaoConfigurada ? "(desligado)" : "(chave ainda não existe — decisão de LGPD pendente)"}
+          </span>
+        )}
+      </dd>
+
+      <dt className="text-tinta-fraca">Tentativas</dt>
+      <dd className="text-tinta">
+        {tentativas === null ? (
+          <span className="text-tinta-fraca">{TRACO}</span>
+        ) : (
+          <>
+            até {tentativas} por cliente
+            {intervalo === null ? "" : `, com ${intervalo} min entre elas`}
+          </>
+        )}
+      </dd>
+
+      {/*
+        Desde 06/09/2026 o n8n só devolve o resultado da ligação para o endereço
+        que está na Variable `SICHF_CALLBACK_URL` — antes ele vinha dentro da
+        mensagem da Vapi, o que deixava um estranho escolher o destino de um POST
+        assinado. Como agora é configuração, o valor exato precisa estar à vista:
+        ninguém adivinha um endereço que o sistema conhece e não mostra.
+      */}
+      <dt className="text-tinta-fraca">Endereço de retorno</dt>
+      <dd className="break-all text-tinta">
+        {typeof extras.callback_url === "string" ? (
+          <>
+            <code className="text-xs">{extras.callback_url}</code>
+            <br />
+            <span className="text-tinta-fraca">cole em Settings → Variables do n8n, na chave SICHF_CALLBACK_URL</span>
+          </>
+        ) : (
+          <span className="text-tinta-fraca">{TRACO}</span>
+        )}
+      </dd>
+    </>
   );
 }
 

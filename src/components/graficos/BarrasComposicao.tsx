@@ -65,7 +65,7 @@ export function BarrasComposicao({ itens, titulo = "Composição patrimonial por
     <Moldura
       titulo={titulo}
       tema={tema}
-      fonte="Fonte: valor de mercado (ou histórico) declarado na aba Patrimônio"
+      fonte="Fonte: valor de mercado (ou histórico) declarado em Patrimônio"
       legenda={linhas.map((l) => (
         <ItemLegenda key={l.tipo} cor={cores.categorica[l.tipo]} rotulo={`${ROTULO_TIPO_BEM[l.tipo]} — ${formatarPercentual(l.valor / total)}`} tema={tema} />
       ))}

@@ -106,6 +106,9 @@ export type ConfiguracaoChave =
   | "link.validade_dias"
   | "link.limite_por_minuto"
   | "link.limite_por_dia"
+  | "link.limite_global_por_minuto"
+  // 0075 — teto de arquivos por link de documentos (`app.limite_arquivos_por_link()`).
+  | "link.limite_arquivos"
   | "ia.cooldown_segundos"
   | "ia.teto_execucoes_dia_por_usuario"
   | "agenda.duracao_padrao_minutos"
@@ -119,6 +122,9 @@ export type ConfiguracaoChave =
   | "ligacao_ia.max_tentativas"
   | "ligacao_ia.intervalo_retentativa_minutos"
   | "ligacao_ia.timeout_minutos"
+  // Fase 7 (0073): janela de discagem e retenção de voz (LGPD B19).
+  | "ligacao_ia.janela"
+  | "ligacao_ia.retencao_dias"
   | "material.anexar_pdf"
   | "material.rodape_juridico"
   | "cenario.rubricas";
@@ -237,6 +243,10 @@ export interface PendenciasResposta {
 // Decisões jurídicas (0048) — substitui o boolean solto de
 // configuracoes['conhecimento.analise_ia_habilitada']. Só um escopo hoje;
 // escopo novo é migration (mesmo raciocínio de ConfiguracaoChave acima).
+// A rota `/api/admin/decisoes-juridicas` não tem botão de propósito: é o
+// caminho documentado (CONTINUAR-AQUI §B13) para a Dra. Elaine registrar a
+// decisão LGPD com autoria e base legal validadas — mantida na auditoria de
+// rotas da Fase 7 pelo mesmo critério de `/api/roteiros/[id]/ativar` (B15).
 // ---------------------------------------------------------------------------
 
 export type EscopoDecisaoJuridica = "conhecimento.analise_ia_transcricoes";

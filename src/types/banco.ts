@@ -567,6 +567,14 @@ export interface LigacaoIaResumo {
   resumo: string | null;
   erro: string | null;
   criado_em: string;
+  /**
+   * Fase 7. OPCIONAIS porque dependem de duas coisas independentes:
+   * `nao_antes_de` já existe na tabela desde a 0053 mas ainda não é selecionada
+   * em `server/jornadas.ts`; `expurgado_em` nasce na 0073. Ausente = o campo
+   * não veio; a tela simplesmente não mostra a linha (nunca inventa "agora").
+   */
+  nao_antes_de?: string | null;
+  expurgado_em?: string | null;
 }
 
 /**

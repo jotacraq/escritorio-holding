@@ -39,19 +39,41 @@ export interface LinkConfirmacaoEmitido {
 export async function emitirLinkConfirmacaoSistema(
   supabaseAdmin: SupabaseClient,
   agendamentoId: string,
+  /**
+   * `perfis_equipe.id` de quem emitiu, quando o ato é HUMANO (barra "Enviar" da
+   * Ficha). A régua/cron continua chamando sem este argumento — ali o autor é o
+   * sistema mesmo, e `null` é a verdade. Achado BAIXO do pentest da Fase 6
+   * (CWE-778/OWASP A09): até aqui, link emitido por advogada/relacionamento
+   * ficava com `criado_por = null` e a trilha não dizia quem mandou.
+   */
+  criadoPor?: string | null,
 ): Promise<LinkConfirmacaoEmitido> {
   const pepper = exigirPepper();
   const token = gerarToken();
   const tokenHash = hashToken(token, pepper);
   const tokenPrefixo = token.slice(0, 6);
 
-  const { data, error } = await supabaseAdmin
-    .rpc("emitir_link_confirmacao_sistema", {
-      p_agendamento_id: agendamentoId,
-      p_token_hash: tokenHash,
-      p_token_prefixo: tokenPrefixo,
-    })
+  const argumentos = {
+    p_agendamento_id: agendamentoId,
+    p_token_hash: tokenHash,
+    p_token_prefixo: tokenPrefixo,
+  };
+
+  let { data, error } = await supabaseAdmin
+    .rpc("emitir_link_confirmacao_sistema", criadoPor ? { ...argumentos, p_criado_por: criadoPor } : argumentos)
     .single<LinhaLinkConfirmacao>();
+
+  // A 0074 é quem cria a assinatura de 4 argumentos (com `drop` da de 3, para
+  // não deixar sobrecarga ambígua). Enquanto ela NÃO estiver aplicada, o
+  // PostgREST não acha a função com `p_criado_por` e devolve PGRST202 — e o
+  // link tem de sair assim mesmo, sem autor, como saía antes. É a regra da
+  // casa: o código funciona sem a migration; o que a falta da migration muda é
+  // o dado (link sem autor), nunca a disponibilidade do sistema.
+  if (error?.code === "PGRST202" && criadoPor) {
+    ({ data, error } = await supabaseAdmin
+      .rpc("emitir_link_confirmacao_sistema", argumentos)
+      .single<LinhaLinkConfirmacao>());
+  }
 
   if (error || !data) {
     // A mensagem do Postgres pode nomear o agendamento; o TOKEN nunca entra

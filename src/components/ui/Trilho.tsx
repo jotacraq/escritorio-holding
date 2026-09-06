@@ -153,8 +153,22 @@ function tituloDoPasso(passo: PassoTrilho): string {
   return passo.motivo ? `${nome} — ${passo.motivo}` : nome;
 }
 
+/**
+ * O que o leitor de tela ouve em cada marcador — a ÚNICA leitura possível dele
+ * (o glifo é `aria-hidden`, o rótulo visível também, e ele some abaixo de
+ * `sm`). Fase 7: era `"3. Sessão: agora"`, que não diz de quantos passos é a
+ * jornada nem usa o nome inteiro. Passa a ser **"passo 3 de 9: Sessão de
+ * Viabilidade — agora"**: posição, tamanho do todo, nome de negócio e estado,
+ * na ordem em que a pergunta se faz.
+ */
+function leituraDoPasso(passo: PassoTrilho, indice: number, total: number): string {
+  const nome = TITULO_TRILHO[passo.chave] ?? passo.rotulo;
+  const motivo = passo.motivo ? ` (${passo.motivo})` : "";
+  return `passo ${indice + 1} de ${total}: ${nome} — ${TEXTO_ESTADO[passo.estado]}${motivo}`;
+}
+
 /** Um marcador de passo — extraído para `completo` e `sessoes` desenharem o MESMO passo. */
-function MarcadorPasso({ passo, indice, ultimo }: { passo: PassoTrilho; indice: number; ultimo: boolean }) {
+function MarcadorPasso({ passo, indice, total, ultimo }: { passo: PassoTrilho; indice: number; total: number; ultimo: boolean }) {
   const fechado = passo.estado === "feito" || passo.estado === "pulado";
   return (
     <li aria-current={passo.estado === "atual" ? "step" : undefined} className="relative flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -166,7 +180,7 @@ function MarcadorPasso({ passo, indice, ultimo }: { passo: PassoTrilho; indice: 
       >
         <Glifo estado={passo.estado} />
       </span>
-      <span className="sr-only">{`${indice + 1}. ${passo.rotulo}: ${TEXTO_ESTADO[passo.estado]}${passo.motivo ? ` (${passo.motivo})` : ""}`}</span>
+      <span className="sr-only">{leituraDoPasso(passo, indice, total)}</span>
       <span aria-hidden="true" className={`hidden max-w-full truncate px-0.5 text-legenda leading-tight sm:block ${ESTILO_ROTULO[passo.estado]}`}>
         {passo.rotulo}
       </span>
@@ -223,7 +237,13 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
           .map((bloco) => (
             <ol key={bloco.chave} aria-label={`Passos de ${bloco.rotulo}`} className="flex items-start">
               {bloco.passos.map((passo, i) => (
-                <MarcadorPasso key={passo.chave} passo={passo} indice={i} ultimo={i === bloco.passos.length - 1} />
+                <MarcadorPasso
+                  key={passo.chave}
+                  passo={passo}
+                  indice={passos.findIndex((p) => p.chave === passo.chave)}
+                  total={passos.length}
+                  ultimo={i === bloco.passos.length - 1}
+                />
               ))}
             </ol>
           ))}
@@ -256,7 +276,7 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
               className="min-w-0 flex-1"
             >
               <span aria-hidden="true" className={`block h-1.5 w-full rounded-full ${ESTILO_PONTO[passo.estado]}`} />
-              <span className="sr-only">{`${i + 1}. ${passo.rotulo}: ${TEXTO_ESTADO[passo.estado]}`}</span>
+              <span className="sr-only">{leituraDoPasso(passo, i, passos.length)}</span>
             </li>
           ))}
         </ol>
@@ -290,7 +310,7 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
               >
                 <Glifo estado={passo.estado} />
               </span>
-              <span className="sr-only">{`${i + 1}. ${passo.rotulo}: ${TEXTO_ESTADO[passo.estado]}${passo.motivo ? ` (${passo.motivo})` : ""}`}</span>
+              <span className="sr-only">{leituraDoPasso(passo, i, passos.length)}</span>
               <span aria-hidden="true" className={`hidden max-w-full truncate px-0.5 text-xs leading-tight sm:block ${ESTILO_ROTULO[passo.estado]}`}>
                 {passo.rotulo}
               </span>

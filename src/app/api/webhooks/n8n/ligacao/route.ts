@@ -14,7 +14,30 @@ export const dynamic = "force-dynamic";
 
 const ORIGEM = "n8n_ligacao";
 const LIMITE_CORPO_BYTES = 1_000_000;
-const limiteExcedido = criarLimitador(60);
+/** Tentativa NÃO autenticada só rende este tanto de corpo no livro-razão (I3). */
+const LIMITE_BRUTO_INVALIDO = 2_000;
+
+/**
+ * Rate limit em DUAS chaves (achado A1 do pentest, 06/09/2026).
+ *
+ * O limite era 60/min por IP. Só que TODO callback legítimo chega do MESMO IP
+ * (a VPS do n8n): quem forjasse 60 requisições por minuto contra este endereço
+ * consumia a cota do n8n e punha os callbacks de verdade em 429 — o
+ * `retryOnFail` do nó HTTP esgota e o agendamento que o cliente acabou de dar
+ * ao telefone se perde. Limitar o remetente conhecido a 60 era proteger o
+ * atacante.
+ *
+ * Agora:
+ *  - por IP, teto ALTO (600/min) — continua contendo inundação bruta, mas não é
+ *    mais alcançável por um forjador de volume moderado;
+ *  - por `ligacao_id`, teto BAIXO (20/min) — uma ligação real gera 3 ou 4
+ *    eventos (`discando`, `em_ligacao`, `end-of-call-report` e algum retry).
+ *    20 já é folgado, e é o limite que de fato importa: martelar a máquina de
+ *    estados de UMA ligação exige conhecer o UUID dela.
+ * Corpo sem `ligacao_id` legível cai na chave `ip:sem-id`, que é a mais apertada.
+ */
+const limitePorIp = criarLimitador(600);
+const limitePorLigacao = criarLimitador(20);
 
 const EventoEnum = z.enum(["discando", "em_ligacao", "concluida", "sem_resposta", "falhou"]);
 const ResultadoEnum = z.enum(["recusou", "pediu_retorno", "caixa_postal", "numero_invalido"]);
@@ -42,15 +65,17 @@ const CorpoSchema = z
  * POST /api/webhooks/n8n/ligacao — retorno do n8n (WEBHOOK Vapi → VPS, padrão
  * RSVP) sobre uma ligação por IA. Contrato em docs/integracoes/n8n-ligacao-ia.md.
  *
- * Ordem obrigatória (§2.4, mesma classe do Hotmart): rate limit → tamanho →
- * fail-CLOSED sem segredo (503) → janela de tempo + HMAC em tempo constante
+ * Ordem obrigatória (§2.4, mesma classe do Hotmart): rate limit por IP →
+ * tamanho → fail-CLOSED sem segredo (503) → rate limit por `ligacao_id` →
+ * janela de tempo + HMAC em tempo constante
  * (401 e REGISTRA a tentativa) → Zod → livro-razão `webhooks_eventos`
  * (idempotente por id_evento; tentativa inválida NÃO ocupa o id — a entrega
  * válida substitui e processa, `server/integracoes/livro-razao.ts`) →
  * máquina de estados → 500 em erro real (o n8n reentrega; a idempotência protege).
  */
 export async function POST(request: NextRequest) {
-  if (limiteExcedido(ipDaRequisicao(request.headers))) {
+  const ip = ipDaRequisicao(request.headers);
+  if (limitePorIp(ip)) {
     return NextResponse.json({ erro: "rate_limited" }, { status: 429 });
   }
   if (Number(request.headers.get("content-length") ?? "0") > LIMITE_CORPO_BYTES) {
@@ -68,6 +93,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ erro: "payload_muito_grande" }, { status: 413 });
   }
 
+  let bruto: unknown = null;
+  try {
+    bruto = corpoTexto ? JSON.parse(corpoTexto) : null;
+  } catch {
+    bruto = null;
+  }
+  const brutoObj = (bruto && typeof bruto === "object" ? bruto : {}) as Record<string, unknown>;
+
+  // Segunda chave do limite: a ligação. Antes de qualquer trabalho de banco, e
+  // sem confiar no corpo — `ligacao_id` aqui é só material de chave, não dado.
+  const chaveLigacao = typeof brutoObj.ligacao_id === "string" && brutoObj.ligacao_id.length <= 64 ? brutoObj.ligacao_id : `${ip}:sem-id`;
+  if (limitePorLigacao(chaveLigacao)) {
+    return NextResponse.json({ erro: "rate_limited" }, { status: 429 });
+  }
+
   let supabaseAdmin;
   try {
     supabaseAdmin = criarClienteAdmin();
@@ -83,23 +123,24 @@ export async function POST(request: NextRequest) {
     corpo: corpoTexto,
   });
 
-  let bruto: unknown = null;
-  try {
-    bruto = corpoTexto ? JSON.parse(corpoTexto) : null;
-  } catch {
-    bruto = null;
-  }
-  const brutoObj = (bruto && typeof bruto === "object" ? bruto : {}) as Record<string, unknown>;
-
   if (!verificacao.valida) {
     // Tentativa inválida é sinal de segurança: fica registrada, sem processar e
     // sem sobrescrever (nem "ocupar") o id de um evento válido.
     const idEvento = typeof brutoObj.id_evento === "string" && brutoObj.id_evento ? brutoObj.id_evento.slice(0, 200) : `invalida:${randomUUID()}`;
+    // I3 do pentest: só o TEXTO do corpo, cortado em 2 000 — nunca o objeto
+    // inteiro. O corpo de uma tentativa NÃO AUTENTICADA é escolhido pelo
+    // remetente: guardar até 1 MB dele por requisição faz de `webhooks_eventos`
+    // um depósito grátis (e enche a tabela que a equipe usa para diagnosticar).
+    // 2 000 caracteres bastam para ver quem tentou o quê.
     await registrarTentativaInvalida(supabaseAdmin, {
       origem: ORIGEM,
       idEvento,
-      tipoEvento: typeof brutoObj.evento === "string" ? brutoObj.evento : null,
-      bruto: { motivo: verificacao.motivo, corpo: bruto ?? corpoTexto.slice(0, 2000) },
+      tipoEvento: typeof brutoObj.evento === "string" ? brutoObj.evento.slice(0, 100) : null,
+      bruto: {
+        motivo: verificacao.motivo,
+        corpo: corpoTexto.slice(0, LIMITE_BRUTO_INVALIDO),
+        truncado: corpoTexto.length > LIMITE_BRUTO_INVALIDO,
+      },
       erro: verificacao.motivo,
       encerrar: true,
     });

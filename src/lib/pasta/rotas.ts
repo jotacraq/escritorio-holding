@@ -20,7 +20,6 @@ import type { ChaveItemPasta } from "./catalogo";
 export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   formulario: "formulario",
   ligacao: "ligacao",
-  links: "links",
   briefing: "briefing",
   sessao: "sessao",
   transcricao: "sessao",
@@ -47,7 +46,6 @@ export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
 export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   formulario: "Preencher o formulário",
   ligacao: "Registrar o contato",
-  links: "Emitir os links",
   briefing: "Gerar o Briefing",
   sessao: "Agendar a sessão",
   transcricao: "Registrar a transcrição",
@@ -83,8 +81,8 @@ export const TITULO_ACAO_ITEM_PASTA: Partial<Record<ChaveItemPasta, string>> = {
 /**
  * Camada 2 (Gaveta) x Camada 3 (aba/hash) — arquitetura de informação, Fase 3
  * (`brain/Diário/2026-09-04.md`, "a regra das três camadas"). Primeira leva de
- * migração: 5 dos itens candidatos (Formulário, Ligação, Links, Documentos,
- * Patrimônio) — os mais simples e de menor risco. `familiares` NÃO entra: não
+ * migração: os itens candidatos mais simples e de menor risco (Formulário,
+ * Ligação, Documentos, Patrimônio). `familiares` NÃO entra: não
  * tem aba/componente próprio hoje (`ABA_POR_ITEM_PASTA.familiares` já aponta
  * para `patrimonio`, que é quem lista os familiares na prática); Relatório,
  * Briefing, Análise da Sessão e Material ficam de fora nesta rodada por
@@ -98,7 +96,6 @@ export const TITULO_ACAO_ITEM_PASTA: Partial<Record<ChaveItemPasta, string>> = {
 export const ITENS_EM_GAVETA: ReadonlySet<ChaveItemPasta> = new Set([
   "formulario",
   "ligacao",
-  "links",
   "documentos",
   "patrimonio",
 ]);

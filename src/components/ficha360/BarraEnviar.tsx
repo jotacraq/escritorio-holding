@@ -265,7 +265,16 @@ export function BarraEnviar({ jornadaId, ficha }: { jornadaId: string; ficha: Fi
                 </a>
               </p>
             )}
-            {resultado.tipo === "documentos" && <p className="text-xs text-tinta-suave">O cliente pode anexar até 5 arquivos por link.</p>}
+            {/* Fase 7 — a frase dizia "até 5 arquivos por link", um número
+                CRAVADO aqui. Desde a 0075 o limite é UM só, e vem do banco:
+                `configuracoes['link.limite_arquivos']`, lido por
+                `app.limite_arquivos_por_link()` — o mesmo número que a RPC
+                aplica e que viaja no `limite_arquivos` do payload até a página
+                do cliente. Uma tela da equipe não pode afirmar um número que
+                ela não mede, e a Dra. Elaine pode mudá-lo em Admin sem deploy:
+                quem sabe o limite é a página do cliente, que o recebe do
+                servidor a cada abertura. */}
+            {resultado.tipo === "documentos" && <p className="text-xs text-tinta-suave">O limite de arquivos aparece para o cliente na própria página de envio.</p>}
           </div>
         )}
       </div>

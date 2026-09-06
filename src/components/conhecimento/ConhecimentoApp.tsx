@@ -13,9 +13,8 @@ import {
 import { Botao } from "@/components/ui/Botao";
 import { Cartao } from "@/components/ui/Cartao";
 import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
-import { EsqueletoCartao, EsqueletoLista } from "@/components/ui/Esqueleto";
+import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { Kpi } from "@/components/ui/Kpi";
 import { Selo, SeloStub } from "@/components/ui/Selo";
 import { formatarData } from "@/lib/formatar";
 import { nomeDoSlug } from "@/components/conhecimento/rotulo";
@@ -26,8 +25,13 @@ export const ROTULO_TIPO: Record<TipoTranscricao, string> = {
   apresentacao_croqui: "Apresentação de croqui",
 };
 
-/** Quantos casos a lista mostra antes do botão "Ver os N casos". */
-const LIMITE_CASOS_VISIVEIS = 8;
+/**
+ * Quantos casos cabem numa página. Fase 7: a lista deixou de ser "8 + botão
+ * que despeja os 52" e virou paginação — despejar os 52 fazia a aba medir
+ * 4.900 px, e o botão "Ver os 52 casos" era um convite a isso. Com página o
+ * teto de altura é constante, não depende do tamanho da base.
+ */
+const CASOS_POR_PAGINA = 10;
 
 const TAMANHO_MINIMO_TERMO = 2;
 const ATRASO_BUSCA_MS = 350;
@@ -65,7 +69,10 @@ function IconeSeta() {
 export function ConhecimentoApp() {
   const { dados: lista, carregando: carregandoLista, erro: erroLista, recarregar: carregarLista } = useRecurso<ListaCasos>(listarCasos, []);
   const [filtroCasos, setFiltroCasos] = useState<DesfechoObservado | "">("");
-  const [mostrarTodos, setMostrarTodos] = useState(false);
+  /** Filtro por texto sobre o NOME da família — não confundir com a busca
+      dentro das conversas, acima: aqui só se procura de quem é o caso. */
+  const [filtroNome, setFiltroNome] = useState("");
+  const [pagina, setPagina] = useState(1);
 
   const [termo, setTermo] = useState("");
   const [tipo, setTipo] = useState<TipoTranscricao | "">("");
@@ -147,9 +154,19 @@ export function ConhecimentoApp() {
 
   const casosFiltrados = useMemo(() => {
     const casos = lista?.casos ?? [];
-    if (!filtroCasos) return casos;
-    return casos.filter((c) => c.desfecho_observado === filtroCasos);
-  }, [lista, filtroCasos]);
+    const nome = filtroNome.trim().toLowerCase();
+    return casos.filter(
+      (c) => (!filtroCasos || c.desfecho_observado === filtroCasos) && (!nome || nomeDoSlug(c.rotulo).toLowerCase().includes(nome)),
+    );
+  }, [lista, filtroCasos, filtroNome]);
+
+  const totalPaginas = Math.max(1, Math.ceil(casosFiltrados.length / CASOS_POR_PAGINA));
+  /* Trocar de filtro com a página 7 aberta mostrava uma lista vazia sobre uma
+     base cheia. A página é derivada, não guardada: se saiu do intervalo, é a
+     última que existe. Sem efeito, sem setState em render. */
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const inicio = (paginaAtual - 1) * CASOS_POR_PAGINA;
+  const casosDaPagina = casosFiltrados.slice(inicio, inicio + CASOS_POR_PAGINA);
 
   const semAcesso = erroLista instanceof ErroConhecimento && (erroLista.status === 401 || erroLista.status === 403);
   const baseVazia = !carregandoLista && !erroLista && (lista?.casos.length ?? 0) === 0;
@@ -170,17 +187,11 @@ export function ConhecimentoApp() {
           `h1` é o da página (Admin) e a frase que explica o que isto é vive
           na `descricao` da aba — o João pediu que ficasse REGISTRADO na tela
           que este é o repertório da IA. Aqui sobra só o estado. */}
-      {lista && lista.casos.length > 0 && (
-        <p className="text-xs text-tinta-fraca">
-          {lista.casos.length} caso{lista.casos.length === 1 ? "" : "s"} com transcrição
-        </p>
-      )}
-
       {/* ------------------------------------------------ trava de IA (LGPD) */}
       {/* Era um cartão de 5 linhas em toda visita. O fato é um só e cabe numa
           linha; o porquê (dado pessoal sensível, decisão jurídica) vive no
           `title` e na página de Pendências, que é onde a decisão mora. */}
-      <div className="flex min-h-11 flex-wrap items-center gap-item rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-tinta">
+      <div className="flex min-h-11 flex-wrap items-center gap-item rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-1 text-sm text-tinta">
         <SeloStub texto="A IA ainda não lê estas conversas" />
         <span
           className="text-tinta-suave"
@@ -193,59 +204,24 @@ export function ConhecimentoApp() {
         </Link>
       </div>
 
-      {/* -------------------------------------------------- contagem por desfecho */}
-      <section aria-labelledby="titulo-desfecho" className="flex flex-col gap-item">
-        <div>
-          <h2 id="titulo-desfecho" className="text-subtitulo font-bold text-tinta">
-            O que se sabe sobre o desfecho
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm text-tinta-suave">
-            “Sem desfecho conhecido” não é perda: a sessão é recente ou o croqui não foi gravado. Por isso não vira taxa.
-          </p>
-        </div>
-        {carregandoLista ? (
-          <EsqueletoCartao quantidade={2} rotulo="Carregando os casos…" />
-        ) : erroLista ? (
-          <EstadoErro erro={erroLista} tentarNovamente={carregarLista} />
-        ) : (
-          <div className="grid gap-cartao sm:grid-cols-2">
-            <Kpi
-              rotulo="Avançaram para o croqui"
-              valor={baseVazia ? null : contagem?.avancou}
-              unidade={contagem?.avancou === 1 ? "caso" : "casos"}
-              motivoVazio="nenhuma transcrição na base ainda"
-              acao={
-                contagem && contagem.avancou > 0 ? (
-                  <button type="button" onClick={() => setFiltroCasos("avancou_para_croqui")} className="inline-flex min-h-11 items-center font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
-                    Ver esses casos
-                  </button>
-                ) : undefined
-              }
-            />
-            <Kpi
-              rotulo="Sem desfecho conhecido"
-              valor={baseVazia ? null : contagem?.indefinido}
-              unidade={contagem?.indefinido === 1 ? "caso" : "casos"}
-              motivoVazio="nenhuma transcrição na base ainda"
-              acao={
-                contagem && contagem.indefinido > 0 ? (
-                  <button type="button" onClick={() => setFiltroCasos("indefinido")} className="inline-flex min-h-11 items-center font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
-                    Ver esses casos
-                  </button>
-                ) : undefined
-              }
-            />
-          </div>
-        )}
-      </section>
-
       {/* ------------------------------------------------------------------ busca */}
-      <Cartao
-        rotulo="Buscar no que já foi dito"
-        titulo="Que palavra a família usou?"
-        descricao="Digite e os trechos aparecem sozinhos — “inventário”, “ITCMD”, “brigar”, “empresa”. Bom para lembrar como uma objeção surgiu na boca do cliente."
-        como="section"
-      >
+      {/* A busca dentro das conversas é seção de CONSULTA: quem abre a aba
+          quer, na maioria das vezes, a lista de casos. Fica um `<details>`
+          nativo (DS §3.1) — Tab, Enter e Ctrl+F de graça —, fechado por
+          padrão e aberto sozinho quando já há termo digitado. Eram 215 px
+          de formulário parado em toda visita. */}
+      <details open={termo.trim().length > 0} className="group rounded-cartao border border-linha bg-papel-elevado px-5 shadow-cartao sm:px-6">
+        <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 py-2 marker:content-none">
+          <h2 className="text-subtitulo font-bold text-tinta">Buscar no que já foi dito</h2>
+          <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+            <span title="Digite e os trechos aparecem sozinhos — “inventário”, “ITCMD”, “brigar”, “empresa”. Bom para lembrar como uma objeção surgiu na boca do cliente.">
+              que palavra a família usou
+            </span>
+            <span aria-hidden="true" className="group-open:hidden">ver</span>
+            <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
+          </span>
+        </summary>
+        <div className="pb-cartao">
         <form role="search" onSubmit={(e) => e.preventDefault()} className="grid gap-cartao sm:grid-cols-[1fr_auto_auto]" noValidate>
           <Campo rotulo="Termo" ajuda={termo.trim().length > 0 && termo.trim().length < TAMANHO_MINIMO_TERMO ? "Digite ao menos duas letras." : undefined}>
             <Entrada
@@ -315,40 +291,81 @@ export function ConhecimentoApp() {
             </div>
           )}
         </div>
-      </Cartao>
+        </div>
+      </details>
 
       {/* ------------------------------------------------------------------ casos */}
-      <Cartao
-        preenchimento="sem"
-        rotulo="Casos"
-        titulo="Uma família por linha"
-        descricao="Cada caso junta a Sessão de Viabilidade e, quando houve, a apresentação do croqui da mesma pessoa — lado a lado."
-        como="section"
-      >
+      {/* O rótulo "CASOS" e a frase que explicava o agrupamento saíram do
+          fluxo: o título já diz o que é a lista, a contagem está nos chips e
+          a explicação vive no `title` do título (lei de texto, DS §2.2). */}
+      <Cartao preenchimento="sem" como="section" aria-label="Casos com transcrição">
         {lista && lista.casos.length > 0 && (
-          <div role="group" aria-label="Filtrar casos por desfecho" className="flex flex-wrap gap-2 border-b border-linha px-5 py-4 sm:px-6">
-            {(
-              [
-                { id: "", rotulo: "Todos" },
-                { id: "avancou_para_croqui", rotulo: "Com croqui apresentado" },
-                { id: "indefinido", rotulo: "Sem desfecho conhecido" },
-              ] as { id: DesfechoObservado | ""; rotulo: string }[]
-            ).map((f) => {
-              const ativo = filtroCasos === f.id;
-              return (
-                <button
-                  key={f.id || "todos"}
-                  type="button"
-                  aria-pressed={ativo}
-                  onClick={() => setFiltroCasos(f.id)}
-                  className={`inline-flex min-h-11 items-center rounded-pilula border px-4 text-sm font-medium transition-colors duration-[var(--transicao-rapida)] ${
-                    ativo ? "border-[color:var(--latao)] bg-latao-fraco text-tinta" : "border-linha-forte bg-papel-elevado text-tinta-suave hover:border-[color:var(--latao)] hover:text-tinta"
-                  }`}
-                >
-                  {f.rotulo}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center gap-x-cartao gap-y-item border-b border-linha px-5 py-2 sm:px-6">
+            {/* Título, contagem e filtros na MESMA barra. Em duas faixas
+                (cabeçalho do cartão + barra de filtros) custavam 134 px para
+                dizer o que cabe em 76. */}
+            <h2
+              title="Cada caso junta a Sessão de Viabilidade e, quando houve, a apresentação do croqui da mesma pessoa — lado a lado."
+              className="text-subtitulo font-bold text-tinta"
+            >
+              Uma família por linha
+            </h2>
+            {/* O número de cada desfecho vive AQUI, no filtro que o aplica.
+                Antes eram dois KPIs grandes no topo com um link "Ver esses
+                casos" que fazia exatamente o que estes chips já fazem — 225 px
+                para repetir um controle que existia logo abaixo. */}
+            <div role="group" aria-label="Filtrar casos por desfecho" className="flex flex-wrap gap-item">
+              {(
+                [
+                  { id: "", rotulo: "Todos", total: lista.casos.length, title: undefined },
+                  { id: "avancou_para_croqui", rotulo: "Com croqui apresentado", total: contagem?.avancou, title: "A mesma família teve a Sessão de Viabilidade e depois a apresentação do croqui." },
+                  {
+                    id: "indefinido",
+                    rotulo: "Sem desfecho conhecido",
+                    total: contagem?.indefinido,
+                    title: "Não é perda: a sessão é recente ou o croqui não foi gravado. Por isso não vira taxa.",
+                  },
+                ] as { id: DesfechoObservado | ""; rotulo: string; total: number | undefined; title?: string }[]
+              ).map((f) => {
+                const ativo = filtroCasos === f.id;
+                return (
+                  <button
+                    key={f.id || "todos"}
+                    type="button"
+                    aria-pressed={ativo}
+                    title={f.title}
+                    onClick={() => {
+                      setFiltroCasos(f.id);
+                      setPagina(1);
+                    }}
+                    className={`inline-flex min-h-11 items-center gap-1.5 rounded-pilula border px-3.5 text-sm font-medium transition-colors duration-[var(--transicao-rapida)] ${
+                      ativo ? "border-[color:var(--latao)] bg-latao-fraco text-tinta" : "border-linha-forte bg-papel-elevado text-tinta-suave hover:border-[color:var(--latao)] hover:text-tinta"
+                    }`}
+                  >
+                    {f.rotulo}
+                    {typeof f.total === "number" && <span className="tabular-nums text-tinta-fraca">{f.total}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="ms-auto flex min-w-[13rem] flex-1 items-center sm:max-w-xs">
+              <label htmlFor="filtro-nome-caso" className="sr-only">
+                Filtrar casos por nome da família
+              </label>
+              <input
+                id="filtro-nome-caso"
+                type="search"
+                value={filtroNome}
+                onChange={(e) => {
+                  setFiltroNome(e.target.value);
+                  setPagina(1);
+                }}
+                autoComplete="off"
+                placeholder="Filtrar por nome…"
+                className="min-h-11 w-full rounded-controle border border-linha-controle bg-papel-elevado px-3 text-sm text-tinta placeholder:text-tinta-fraca"
+              />
+            </div>
           </div>
         )}
         {carregandoLista ? (
@@ -374,19 +391,26 @@ export function ConhecimentoApp() {
           </div>
         ) : casosFiltrados.length === 0 ? (
           <div className="p-5 sm:p-6">
-            <EstadoVazio compacto titulo="Nenhum caso neste filtro" descricao="Troque o filtro para ver as demais famílias." />
+            <EstadoVazio
+              compacto
+              titulo={filtroNome.trim() ? `Nenhuma família com “${filtroNome.trim()}”` : "Nenhum caso neste filtro"}
+              descricao="Apague o texto do filtro ou volte para “Todos” para ver as demais famílias."
+            />
           </div>
         ) : (
           <ul className="divide-y divide-linha" aria-live="polite">
-            {casosFiltrados.slice(0, mostrarTodos ? undefined : LIMITE_CASOS_VISIVEIS).map((caso) => (
+            {casosDaPagina.map((caso) => (
               <li key={caso.caso_id}>
                 <Link
                   href={`/conhecimento/casos/${caso.caso_id}`}
-                  className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-4 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel focus-visible:bg-papel sm:px-6"
+                  className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-0.5 px-5 py-1.5 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel focus-visible:bg-papel sm:px-6"
                 >
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="font-medium text-tinta">{nomeDoSlug(caso.rotulo)}</span>
-                    <span className="text-xs text-tinta-suave">
+                  {/* Uma linha por caso, de verdade: nome e quando, lado a
+                      lado. Em duas linhas, dez casos custavam 580 px — mais
+                      que a dobra inteira de quem trabalha a 1440×900. */}
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                    <span className="truncate font-medium text-tinta">{nomeDoSlug(caso.rotulo)}</span>
+                    <span className="truncate text-xs text-tinta-suave">
                       Sessão em {formatarData(caso.sv_data_reuniao)}
                       {caso.sv_consultor ? ` · ${caso.sv_consultor}` : ""}
                       {caso.croqui_data_reuniao ? ` · croqui em ${formatarData(caso.croqui_data_reuniao)}` : ""}
@@ -401,16 +425,28 @@ export function ConhecimentoApp() {
             ))}
           </ul>
         )}
-        {/* A base tem ~70 conversas. Listar todas de uma vez fazia a tela medir
-            mais de 5.000 px — quem procura um caso usa a busca acima, quem
-            navega quer os mais recentes. O botão continua dando acesso à lista
-            inteira, com o número na frente (lei de texto: número primeiro). */}
-        {!carregandoLista && !erroLista && casosFiltrados.length > LIMITE_CASOS_VISIVEIS && (
-          <div className="border-t border-linha px-cartao py-item">
-            <Botao variante="secundario" tamanho="compacto" onClick={() => setMostrarTodos((v) => !v)} aria-expanded={mostrarTodos}>
-              {mostrarTodos ? `Mostrar só os ${LIMITE_CASOS_VISIVEIS} primeiros` : `Ver os ${casosFiltrados.length} casos`}
-            </Botao>
-          </div>
+        {/* Paginação. A base tem 52 casos e cresce a cada reunião transcrita:
+            despejar a lista inteira fazia a aba medir ~4.900 px e o teto da
+            tela passava a depender do tamanho do banco. Com página, o teto é
+            constante. `aria-live` na lista anuncia a troca; o rodapé diz onde
+            se está, não só para onde dá para ir. */}
+        {!carregandoLista && !erroLista && casosFiltrados.length > 0 && (
+          <nav aria-label="Páginas de casos" className="flex flex-wrap items-center justify-between gap-x-cartao gap-y-item border-t border-linha px-5 py-2 sm:px-6">
+            <p className="text-xs text-tinta-suave">
+              {inicio + 1}–{Math.min(inicio + CASOS_POR_PAGINA, casosFiltrados.length)} de {casosFiltrados.length} {casosFiltrados.length === 1 ? "caso" : "casos"}
+              {totalPaginas > 1 ? ` · página ${paginaAtual} de ${totalPaginas}` : ""}
+            </p>
+            {totalPaginas > 1 && (
+              <div className="flex items-center gap-item">
+                <Botao variante="secundario" tamanho="compacto" onClick={() => setPagina(paginaAtual - 1)} disabled={paginaAtual <= 1}>
+                  Anterior
+                </Botao>
+                <Botao variante="secundario" tamanho="compacto" onClick={() => setPagina(paginaAtual + 1)} disabled={paginaAtual >= totalPaginas}>
+                  Próxima
+                </Botao>
+              </div>
+            )}
+          </nav>
         )}
       </Cartao>
     </div>

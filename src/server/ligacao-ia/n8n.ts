@@ -23,6 +23,16 @@ export function n8nLigacaoConfigurado(): boolean {
   return faltamN8nLigacao().length === 0;
 }
 
+/**
+ * A URL que o n8n usa para devolver o resultado da ligação.
+ *
+ * NÃO vai mais no payload do disparo (achado A1 do pentest, 06/09/2026): o
+ * WEBHOOK lia esse valor de volta do `metadata` da Vapi, o que fazia do destino
+ * de um POST assinado uma ENTRADA DE REDE. Hoje o destino é
+ * `$vars.SICHF_CALLBACK_URL` no n8n. Esta função continua existindo para o
+ * Admin → Integrações mostrar ao João qual valor colar na Variable — e é por
+ * isso que ela é a mesma expressão de sempre.
+ */
 export function callbackUrlLigacao(): string {
   return `${APP_URL}/api/webhooks/n8n/ligacao`;
 }
@@ -31,6 +41,15 @@ export function montarPayloadSaida(ctx: ContextoDisparo): PayloadLigacaoIaSaida 
   if (!ctx.oferta || ctx.oferta.horarios.length === 0) {
     throw new Error("sem_horarios_ofertados");
   }
+  // Fase 7 · entrega 4: `assistente_id` NUNCA sai como null. O LANCADOR
+  // repassaria `assistantId: null` à Vapi, que responderia 400 — a ligação
+  // "falharia" por um motivo que na verdade é env var faltando no servidor.
+  // Sem a env, a ligação cai no caminho manual como as outras duas
+  // (`faltamN8nLigacao` já lista VAPI_ASSISTENTE_ID); este `throw` é a trava de
+  // quem chamar `montarPayloadSaida` por fora de `provedorN8n.configurado()`.
+  const assistenteId = process.env.VAPI_ASSISTENTE_ID?.trim();
+  if (!assistenteId) throw new Error("n8n_nao_configurado: VAPI_ASSISTENTE_ID ausente");
+
   const [melhor, ...resto] = ctx.oferta.horarios;
   return {
     ligacao_id: ctx.ligacao.id,
@@ -38,10 +57,9 @@ export function montarPayloadSaida(ctx: ContextoDisparo): PayloadLigacaoIaSaida 
     nome: ctx.nome,
     primeiro_nome: ctx.nome.trim().split(/\s+/)[0] ?? ctx.nome,
     telefone: ctx.ligacao.telefone,
-    assistente_id: process.env.VAPI_ASSISTENTE_ID?.trim() || null,
+    assistente_id: assistenteId,
     melhor_horario: melhor,
     alternativas: resto.slice(0, 3),
-    callback_url: callbackUrlLigacao(),
     emitido_em: new Date().toISOString(),
   };
 }
@@ -88,9 +106,16 @@ export async function testarN8nLigacao(): Promise<{ ok: boolean; detalhe: string
   const faltam = faltamN8nLigacao();
   if (faltam.length > 0) return { ok: false, detalhe: `faltam: ${faltam.join(", ")}` };
   try {
-    const corpo = JSON.stringify({ teste: true, ligacao_id: null, callback_url: callbackUrlLigacao(), emitido_em: new Date().toISOString() });
-    const { status } = await postarNoLancador(corpo);
-    return { ok: status >= 200 && status < 300, detalhe: `LANCADOR respondeu HTTP ${status}` };
+    const corpo = JSON.stringify({ teste: true, ligacao_id: null, emitido_em: new Date().toISOString() });
+    const { status, texto } = await postarNoLancador(corpo);
+    // 401 aqui é informação, não ruído: desde 06/09 o LANCADOR recusa o ping
+    // enquanto faltar qualquer das três Variables do n8n (o `motivo` vem no
+    // corpo). Mostrar o motivo é o que faz o cartão do Admin servir para algo.
+    const motivo = texto.match(/"motivo"\s*:\s*"([a-zA-Z0-9_]{1,80})"/)?.[1];
+    return {
+      ok: status >= 200 && status < 300,
+      detalhe: `LANCADOR respondeu HTTP ${status}${motivo ? ` (${motivo})` : ""}`,
+    };
   } catch (erro) {
     return { ok: false, detalhe: erro instanceof Error ? erro.message.slice(0, 200) : "erro desconhecido" };
   }

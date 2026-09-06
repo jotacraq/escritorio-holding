@@ -86,24 +86,30 @@ ou na hora pelo botão **"Ligar por IA agora"** (Ficha → Sessão →
     { "inicio_em": "2026-09-11T17:00:00.000+00:00", "fim_em": "2026-09-11T18:00:00.000+00:00", "rotulo": "sexta-feira, 11 de setembro, às 14h" },
     { "inicio_em": "2026-09-14T14:00:00.000+00:00", "fim_em": "2026-09-14T15:00:00.000+00:00", "rotulo": "segunda-feira, 14 de setembro, às 11h" }
   ],
-  "callback_url": "https://escritorio.grupoparticipa.app.br/api/webhooks/n8n/ligacao",
   "emitido_em": "2026-09-04T21:30:00.000Z"
 }
 ```
+
+> **`callback_url` SAIU do payload em 06/09/2026** (achado A1 do pentest). O
+> endereço de retorno é agora a Variable `SICHF_CALLBACK_URL` do n8n. Antes ele
+> viajava daqui até a Vapi, voltava dentro de `message.call.metadata` e o nó do
+> WEBHOOK POSTava o payload **assinado** exatamente onde esse campo mandasse —
+> quem descobrisse a URL pública do webhook escolhia o destino (SSRF a partir da
+> VPS do n8n + oráculo de assinatura). Destino de POST assinado é configuração.
 
 - `rotulo` já está em `America/Sao_Paulo`, por extenso — é o que a assistente fala.
 - `inicio_em` é o que a assistente **devolve** (copiar literalmente; não reformatar).
 - Resposta esperada do LANCADOR: `2xx`. Se o JSON de resposta trouxer
   `id_externo` (ou `call_id`/`id`) ele é gravado; senão vem depois no evento `discando`.
 - Evento de **teste** (botão "Testar" em Admin → Integrações): mesmo endpoint,
-  corpo `{"teste": true, "ligacao_id": null, "callback_url": "...", "emitido_em": "..."}` —
+  corpo `{"teste": true, "ligacao_id": null, "emitido_em": "..."}` —
   o LANCADOR deve responder `2xx` **sem ligar** quando `teste === true`.
 
 `curl` equivalente (bash):
 
 ```bash
 SECRET='...'; TS=$(date +%s)
-BODY='{"ligacao_id":"0d5d2f1e-6a2c-4b8e-9d6a-2f5b7e1c9a10","tentativa":1,"nome":"Maria","primeiro_nome":"Maria","telefone":"+5511987654321","assistente_id":"asst_xxx","melhor_horario":{"inicio_em":"2026-09-10T18:00:00.000+00:00","fim_em":"2026-09-10T19:00:00.000+00:00","rotulo":"quinta-feira, 10 de setembro, às 15h"},"alternativas":[],"callback_url":"https://escritorio.grupoparticipa.app.br/api/webhooks/n8n/ligacao","emitido_em":"2026-09-04T21:30:00.000Z"}'
+BODY='{"ligacao_id":"0d5d2f1e-6a2c-4b8e-9d6a-2f5b7e1c9a10","tentativa":1,"nome":"Maria","primeiro_nome":"Maria","telefone":"+5511987654321","assistente_id":"asst_xxx","melhor_horario":{"inicio_em":"2026-09-10T18:00:00.000+00:00","fim_em":"2026-09-10T19:00:00.000+00:00","rotulo":"quinta-feira, 10 de setembro, às 15h"},"alternativas":[],"emitido_em":"2026-09-04T21:30:00.000Z"}'
 SIG="sha256=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')"
 curl -sS -X POST "$N8N_WEBHOOK_LIGACAO_URL" -H "content-type: application/json" -H "x-sichf-timestamp: $TS" -H "x-sichf-assinatura: $SIG" --data-binary "$BODY"
 ```
@@ -240,8 +246,9 @@ aceito (ou null); resultado = agendou | recusou | pediu_retorno.
 ## 5) Workflow no n8n — nós, na ordem do RSVP
 
 1. **LANCADOR** — Webhook (POST, raw body). Verifica HMAC (§assinatura). Se `teste === true` → responde 200 e para. Senão grava na fila do n8n (ou chama o DISPARO direto).
-2. **DISPARO** — chama `POST https://api.vapi.ai/call` com `assistantId` = `assistente_id`, `customer.number` = `telefone`, `assistantOverrides.variableValues` = `{primeiro_nome, nome, melhor_horario, alternativas}`; `metadata` = `{ligacao_id}`. Responde ao LANCADOR com `{id_externo: call.id}`.
-3. **WEBHOOK** — Server URL da Vapi. Lê `message.type` e `message.call.metadata.ligacao_id`; monta o evento (§mapeamento), assina, `POST callback_url`. Em 500, reentrega com o mesmo `id_evento` (backoff). Em 4xx não reentrega.
+   Desde 06/09/2026 o LANCADOR também recusa (401) quando faltar `VAPI_SERVER_SECRET` ou `SICHF_CALLBACK_URL` nas Variables — **nunca discar sem caminho de volta** (senão a ligação acontece, o resultado se perde, o reaper marca `timeout` e o sistema redisca para o cliente).
+2. **DISPARO** — chama `POST https://api.vapi.ai/call` com `assistantId` = `assistente_id`, `customer.number` = `telefone`, `assistantOverrides.variableValues` = `{primeiro_nome, nome, melhor_horario, alternativas}`; `metadata` = `{ligacao_id, tentativa, horarios}`. Responde ao LANCADOR com `{id_externo: call.id}`. Corpo versionado em `n8n/ligacao/disparo-vapi.jsonbody.js`.
+3. **WEBHOOK** — Server URL da Vapi. **Confere `x-vapi-secret` contra `$vars.VAPI_SERVER_SECRET`** (`n8n/ligacao/verificar-vapi.js`); header ausente/errado → `return []`, nada é assinado. Só então lê `message.type` e `message.call.metadata.ligacao_id`; monta o evento (§mapeamento), assina, `POST $vars.SICHF_CALLBACK_URL`. Em 500, reentrega com o mesmo `id_evento` (backoff). Em 4xx não reentrega.
 4. **REAPER** — não é obrigatório: o SIC-HF tem o seu (`reaperLigacoesIa`, `ligacao_ia.timeout_minutos`). Se existir no n8n, basta mandar `evento:'falhou', motivo_falha:'timeout_n8n'`.
 
 ## 6) Segurança (resumo para o pentester)
@@ -249,7 +256,11 @@ aceito (ou null); resultado = agendou | recusou | pediu_retorno.
 - Sem `LIGACAO_IA_WEBHOOK_SECRET` → 503. Sem `SUPABASE_SERVICE_ROLE_KEY` → 503.
 - HMAC + janela de 5 min + tempo constante; inválida → 401 **e** registro.
 - Idempotência por `id_evento`; reentrega de processado → 200 sem efeito; estado terminal ignora evento novo (TS + trigger).
-- Corpo > 1 MB → 413. Rate limit 60/min/IP.
+- Corpo > 1 MB → 413. Rate limit em **duas chaves**: 600/min por IP e 20/min por `ligacao_id` (06/09/2026). O teto por IP sozinho era exploit: todo callback legítimo chega do MESMO IP (a VPS do n8n), então 60 forjados/min punham os callbacks de verdade em 429 e o agendamento se perdia.
+- Tentativa não autenticada grava no máximo 2 000 caracteres do corpo em `webhooks_eventos` (o corpo é escolhido pelo remetente).
+- `POST /api/jornadas/[id]/ligacoes-ia` ("Ligar por IA agora"): 5 pedidos por 10 min **por perfil**, 429 com `tente_em_s` e `Retry-After`. Cada chamada disca de verdade.
+- Evento com `id_externo` diferente do já carimbado na ligação → `ignorado: id_externo_divergente`, nada muda (defesa em profundidade além do HMAC).
+- `ligacoes_ia.token_link_cifrado`: AES-256-GCM `v2` com **AAD = `ligacoes_ia.id`** — o blob de uma ligação não decifra em outra. Retentativa herda o token **reselando** para a linha nova.
 - `ligacao_id` inexistente → 404 sem dizer mais nada. O payload não carrega `jornada_id`.
 - Horário só entra pelo núcleo do banco; a rota nunca insere em `agendamentos`.
 - `ligacoes_ia`: RLS `eh_interno` para SELECT; sem INSERT para authenticated; UPDATE só na coluna `status` (cancelar). `custo_usd`/`transcricao` não são graváveis por quem está logado.
@@ -272,8 +283,150 @@ aceito (ou null); resultado = agendou | recusou | pediu_retorno.
 - `variableValues` enviados à Vapi: `nome`, `primeiro_nome`, `melhor_horario_rotulo`, `alternativas_rotulos` ("2) … · 3) … · 4) …").
 
 **Configuração que só o João faz (nada disso é código):**
-1. n8n → Settings → Variables → `LIGACAO_IA_WEBHOOK_SECRET` = o valor de `tmp/squad/segredos-producao.txt` (máquina do João; não versionado).
+1. n8n → Settings → Variables → `LIGACAO_IA_WEBHOOK_SECRET`, `VAPI_SERVER_SECRET` e `SICHF_CALLBACK_URL` = os valores de `tmp/squad/segredos-producao.txt` (máquina do João; não versionado). As duas últimas nasceram em 06/09 — ver §8.2 e §8.4.
 2. Hostinger (hPanel → Node.js app → variáveis): `N8N_WEBHOOK_LIGACAO_URL=https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-lancador`, `LIGACAO_IA_WEBHOOK_SECRET` (o mesmo), `VAPI_ASSISTENTE_ID=036cdf43-4549-4251-bc6a-55b71b3f51b4`, e `CRON_SECRET` igual ao do cron do hPanel (uid `JuunyNk4od`, `*/5 * * * *`, criado em 05/09).
 3. `configuracoes`: `ligacao_ia.provedor='n8n'` e `ligacao_ia.automatica=true` **já aplicados** em 05/09 (decisão do João: ele quer receber a ligação no teste do zero; B33/LGPD fica registrado como decisão do dono do produto).
 
 **Reentrega (0061):** uma tentativa com assinatura inválida NÃO ocupa mais o `id_evento` — a entrega válida seguinte substitui o registro e é processada (`src/server/integracoes/livro-razao.ts`).
+
+---
+
+## 8) Estado em 06/09/2026 e roteiro de validação real (Fase 7 · agente LIG)
+
+### 8.1 O que o código passou a fazer (e não fazia até 05/09)
+
+| # | O que mudou | Onde | Sem a 0073 aplicada |
+|---|---|---|---|
+| 1 | **Janela de discagem.** A fila do cron não disca fora do horário, e a retentativa cai na próxima abertura. O botão "Ligar por IA agora" continua ligando fora do horário (é ordem de gente) e a Ficha avisa. | `src/server/ligacao-ia/janela.ts`, `processar.ts`, `resultado.ts` | vale o default do código: **seg–sex, 09:00–19:00, America/Sao_Paulo** |
+| 2 | **Telefone E.164 estrito.** DDD inexistente / formato irreconhecível não entra na fila: vira tarefa com o número como está. Celular de 8 dígitos ganha o nono. O payload sai sempre em E.164. | `src/server/integracoes/telefone.ts`, `fila.ts`, `processar.ts` | igual |
+| 3 | **O sistema nunca mais revoga link de agendamento emitido por gente.** Antes de emitir, reusa o link ativo da jornada; o token do link do sistema é guardado cifrado e sobrevive a restart. Sem token recuperável e com link humano ativo, cria tarefa "Enviar link de agendamento ao cliente" em vez de matar o link do cliente. | `fila.ts`, `token-cifrado.ts` | reuso e tarefa funcionam; só a sobrevivência do token a restart depende da coluna |
+| 4 | **`VAPI_ASSISTENTE_ID` obrigatório.** Ausente → `n8n_nao_configurado` e caminho manual; nunca `assistantId: null` para a Vapi. | `n8n.ts` | igual |
+| 5 | **Retenção de voz.** Etapa nova no cron apaga `transcricao` e `gravacao_url` de ligações encerradas há mais de N dias, mantendo resumo, custo, duração e resultado. **Default: não apaga nada.** | `expurgo.ts`, `api/cron/regua` | etapa se declara `pulada: 'coluna_ausente'` e não apaga nada |
+| 6 | **Código dos nós do n8n versionado**, com 35 + 6 testes de contrato. | `n8n/ligacao/*`, `n8n/README.md` | igual |
+
+**Configurações novas** (`configuracoes`, editáveis em Admin → Configurações → Ligação por IA):
+
+| Chave | Default | O que faz |
+|---|---|---|
+| `ligacao_ia.janela` | `{"dias":[1,2,3,4,5],"inicio":"09:00","fim":"19:00","fuso":"America/Sao_Paulo"}` | `dias`: 0 = domingo … 6 = sábado. `fim` é exclusivo. Vale para a fila e a retentativa, não para o botão. |
+| `ligacao_ia.retencao_dias` | `null` (não expurga) | Dias após o fim da ligação em que transcrição e gravação são apagadas. `0` também vale "desligado" (a coluna é `jsonb NOT NULL`, então a tela envia `0`, nunca `null`). |
+
+**Correção obrigatória a publicar no n8n** (nó "Mapear Vapi → evento SIC-HF e assinar",
+workflow `OXetB37jgJgmif3d`): o código publicado **não trunca** `transcript`, `summary` e
+`endedReason`, e manda `recordingUrl: ""` quando a gravação está desligada. O Zod da rota
+limita a 200 000 / 4 000 / 500 e exige URL válida — medido em 06/09 contra o servidor local:
+um corpo assim volta **HTTP 422 `validacao_invalida`** e o evento inteiro se perde, inclusive
+quando ele carrega o horário que o cliente acabou de escolher no telefone. O arquivo
+`n8n/ligacao/mapear-vapi.js` já corrige (F1–F7 no cabeçalho dele); os mesmos seis payloads,
+passados pelo arquivo corrigido, voltam **404 `ligacao_nao_encontrada`** — ou seja, o corpo
+passou pela validação e chegou na máquina de estados. **Cole o bloco "COLA NO NÓ" do arquivo
+no nó antes da primeira ligação real.**
+
+### 8.2 Roteiro de validação real — 10 minutos, para o João
+
+Nada aqui é código: é configuração, e sem ela nenhuma ligação acontece.
+
+1. **n8n → Settings → Variables**: criar as **TRÊS** (valores em
+   `tmp/squad/segredos-producao.txt`, fora do git):
+
+   | Variable | Valor | O que acontece sem ela |
+   |---|---|---|
+   | `LIGACAO_IA_WEBHOOK_SECRET` | o mesmo segredo da env da Hostinger | LANCADOR responde 401 `variavel_LIGACAO_IA_WEBHOOK_SECRET_ausente` — é o que ele responde hoje |
+   | `VAPI_SERVER_SECRET` | 64 hex novos (`openssl rand -hex 32`) | LANCADOR responde 401 `variavel_VAPI_SERVER_SECRET_ausente` e **não disca**; o nó do WEBHOOK lança |
+   | `SICHF_CALLBACK_URL` | `https://escritorio.grupoparticipa.app.br/api/webhooks/n8n/ligacao` | LANCADOR responde 401 `variavel_SICHF_CALLBACK_URL_ausente` e **não disca** |
+
+   As duas últimas nasceram em 06/09 com o achado A1 do pentest. O LANCADOR se
+   recusa a discar sem elas de propósito: sem caminho de volta a Vapi liga para o
+   cliente, ele escolhe o horário, e nada disso chega ao sistema — o reaper marca
+   `timeout`, conta a tentativa e o sistema **redisca para a mesma pessoa**.
+   O valor de `SICHF_CALLBACK_URL` também aparece pronto em **Admin → Integrações**,
+   no cartão "Ligação por IA", campo "Endereço de retorno".
+2. **Vapi → assistant `036cdf43-4549-4251-bc6a-55b71b3f51b4` → Advanced / Server**:
+   - **Server URL** = já aponta para o webhook do workflow `OXetB37jgJgmif3d`
+     (`https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-vapi`) — só conferir;
+   - **Server Secret** = o MESMO valor de `VAPI_SERVER_SECRET`. Na Vapi de hoje isso
+     é uma credencial *Bearer Token* com header `X-Vapi-Secret` e **sem** o prefixo
+     `Bearer` (docs.vapi.ai/server-url/server-authentication).
+
+   Sem este passo a Vapi não manda o header e **toda** mensagem cai no `return []`
+   do nó: as ligações acontecem e o resultado nunca chega. Detalhes e a razão de o
+   segredo ficar no assistant (e não em `assistantOverrides.server`) em
+   `n8n/ligacao/disparo-vapi.jsonbody.js`.
+3. **n8n → workflows** — colar os blocos "COLA NO NÓ" versionados e salvar/ativar:
+   - `zh5tjDcSoHaPaRRL` → nó "Ler corpo cru e verificar HMAC" ← `n8n/ligacao/verificar-hmac.js`;
+   - `zh5tjDcSoHaPaRRL` → nó "DISPARO · Vapi", campo `jsonBody` ← `n8n/ligacao/disparo-vapi.jsonbody.js`;
+   - `OXetB37jgJgmif3d` → nó "Mapear Vapi → evento SIC-HF e assinar" ←
+     `n8n/ligacao/mapear-vapi.js` **+** o trecho de `n8n/ligacao/verificar-vapi.js`.
+4. **Hostinger → hPanel → Node.js app → variáveis**, colar as quatro:
+   `N8N_WEBHOOK_LIGACAO_URL=https://infra-csm-n8n.nfpbgs.easypanel.host/webhook/sichf-ligacao-lancador`,
+   `LIGACAO_IA_WEBHOOK_SECRET` (o MESMO do passo 1), `VAPI_ASSISTENTE_ID=036cdf43-4549-4251-bc6a-55b71b3f51b4`,
+   `CRON_SECRET` (o mesmo que o cron do hPanel já manda). **Reiniciar a app** — variável nova
+   só vale depois do restart.
+5. **Abrir Admin → Integrações.** O cartão "Ligação por IA (Vapi via n8n)" tem de ficar
+   **verde/Ligada**, sem nenhuma variável na lista "Falta no servidor", e mostrar a janela de
+   discagem, a retenção e as tentativas. Clicar em **Testar**: o LANCADOR tem de responder
+   HTTP 200. O cartão "Régua (cron da Hostinger)" tem de sair de "atrasado" em até 5 minutos.
+6. **Simular a compra**: `npx tsx scripts/seed-exemplo-completo.ts --etapa sessao_contratada`.
+   Confirme na Ficha que a Sessão tem **advogada responsável** e que há **horários** — sem
+   advogada ou sem disponibilidade a IA não liga (por desenho: não há o que oferecer) e vira
+   tarefa rotulada.
+7. **Esperar a ligação** (até 5 min, pelo cron) ou apertar **"Ligar por IA agora"** na
+   Ficha → Sessão. Fora do horário da janela o botão liga assim mesmo e a tela avisa.
+8. **O que olhar depois:**
+   - `select status, resultado, tentativa, horario_escolhido, agendamento_id, duracao_segundos, custo_usd, erro from ligacoes_ia order by criado_em desc limit 5;`
+     — atendeu e escolheu → `concluida`/`agendou` com `agendamento_id`; não atendeu →
+     `sem_resposta` e uma linha NOVA `na_fila` com `nao_antes_de` dentro da janela.
+   - `select origem, evento_externo_id, assinatura_valida, processado_em, erro from webhooks_eventos where origem='n8n_ligacao' order by recebido_em desc limit 10;`
+     — tem de haver `discando`, `em_ligacao` e o relatório final, todos com
+     `assinatura_valida = true` e `processado_em` preenchido.
+   - n8n → Executions dos dois workflows: nenhuma execução vermelha.
+   - Ficha → Sessão: o cartão da ligação conta a história em português, e a agenda mostra a
+     sessão marcada.
+9. **Limpar**: `npx tsx scripts/seed-exemplo-completo.ts --limpar`.
+
+Se algo não sair como acima, `npx tsx scripts/simular-webhook-ligacao.ts --ajuda` lista os
+cenários que reproduzem cada caminho (inclusive os de ataque: sem assinatura, timestamp
+velho, corpo adulterado, e `vapi-callback-forjado`, a PoC do A1) sem precisar de uma ligação
+de verdade.
+
+### 8.4 Correções do pentest de 06/09 (achado A1 e vizinhos)
+
+| # | O que era | O que é agora | Onde |
+|---|---|---|---|
+| A1 | O destino do POST **assinado** vinha de `message.call.metadata.callback_url` — corpo recebido pela internet. SSRF a partir da VPS do n8n + oráculo de assinatura. | `mapear(mensagem, callbackUrl)`; o nó lê `$vars.SICHF_CALLBACK_URL` e lança se faltar. O SIC-HF nem manda mais o campo. | `n8n/ligacao/mapear-vapi.js` (F8), `src/server/ligacao-ia/n8n.ts` |
+| A1 | O webhook `Vapi → n8n` não autenticava nada: qualquer um POSTava uma "mensagem da Vapi". | `x-vapi-secret` conferido com `timingSafeEqual` antes de mapear; ausente/errado → `return []`; variável ausente → `throw`. | `n8n/ligacao/verificar-vapi.js` |
+| A1 | Rate limit 60/min **por IP** — e todo callback legítimo vem do IP do n8n. | 600/min por IP **+** 20/min por `ligacao_id`. | `src/app/api/webhooks/n8n/ligacao/route.ts` |
+| A1 | Evento com outro `id_externo` dirigia a máquina de estados. | `ignorado: id_externo_divergente`, nada muda. | `src/server/ligacao-ia/resultado.ts` |
+| B1 | AES-GCM sem AAD: blob de uma ligação decifrava em outra. | `v2` com AAD = `ligacoes_ia.id`. O `v1` deixou de existir (a coluna nasce na 0073, ainda não aplicada — não há dado). | `src/server/ligacao-ia/token-cifrado.ts` |
+| B2 | Retentativa não herdava o token e reemitia/revogava o link do sistema. | Herda **reselando** para a linha nova. | `src/server/ligacao-ia/resultado.ts` |
+| B3 | "Ligar por IA agora" sem teto — e cada clique disca. | 5 por 10 min por perfil; 429 com `tente_em_s`. | `src/app/api/jornadas/[id]/ligacoes-ia/route.ts` |
+| B4 | A tela dizia "Fora do horário de ligação" também para espera de retentativa dentro da janela. | "Aguardando · próxima tentativa …". A causa só aparece quando o servidor a manda. | `src/components/ficha360/SessaoLigacaoIa.tsx` |
+| I2 | Sem Raw Body no nó, o HMAC falhava como "assinatura inválida". | `motivo: corpo_cru_ausente`. | `n8n/ligacao/verificar-hmac.js` |
+| I3 | Corpo de até 1 MB de tentativa **não autenticada** gravado inteiro. | 2 000 caracteres, com `truncado: true`. | `src/app/api/webhooks/n8n/ligacao/route.ts` |
+
+### 8.5 Republicação no n8n — feita em 06/09/2026 pelo orquestrador (Fable)
+
+Os dois workflows foram reconstruídos pela API do n8n a partir dos arquivos de `n8n/ligacao/` e
+ativados: **WEBHOOK** `OXetB37jgJgmif3d` → `activeVersionId 9361f30d…` · **LANCADOR** `zh5tjDcSoHaPaRRL`
+→ `activeVersionId a4d10e8b…`. Sondas reais depois da publicação:
+
+- `POST /webhook/sichf-ligacao-vapi` forjado, sem `x-vapi-secret` → execução termina em erro fatal
+  `Variável VAPI_SERVER_SECRET ausente` (nada assinado, nada entregue) — comportamento fail-closed esperado
+  até o João criar a Variable.
+- `POST /webhook/sichf-ligacao-lancador` assinado com o segredo de produção → `401 variavel_LIGACAO_IA_WEBHOOK_SECRET_ausente`.
+
+**Conferir antes da 1ª ligação real (a API não devolve credenciais, então não deu para provar):** abrir o nó
+`DISPARO · Vapi POST /call` no LANCADOR e confirmar que a credencial **`Vapi API - RSVP (org nova)`**
+(`httpHeaderAuth`) está selecionada. A republicação por API foi feita referenciando essa credencial pelo id,
+mas o n8n avisou "credentials must be configured manually" para nós HTTP. Se estiver vazia, selecionar e
+salvar — sem isso a Vapi responde 401 e a ligação cai em `falhou` (visível na Ficha, nunca silencioso).
+
+### 8.3 O que a Dra. Elaine decide (nada disso é código)
+
+| Decisão | Onde se aplica | Estado hoje |
+|---|---|---|
+| **Janela de discagem** — em que dias e horas é aceitável ligar para um cliente do escritório. | Admin → Configurações → `ligacao_ia.janela` | seg–sex 9h–19h (chute operacional, rotulado "VALOR INICIAL") |
+| **Tentativas e intervalo** — quantas vezes insistir antes de mandar o link por e-mail/WhatsApp. | `ligacao_ia.max_tentativas` (2) e `ligacao_ia.intervalo_retentativa_minutos` (240) | chute operacional |
+| **Retenção de voz (B19)** — por quanto tempo a transcrição e a gravação de uma ligação com um cliente ficam guardadas. | `ligacao_ia.retencao_dias` | **`null` = guarda para sempre.** É a decisão de LGPD que falta. |
+| **`ligacao_ia.automatica` (B33)** — se toda compra dispara uma ligação sem ninguém olhar. | Admin → Integrações | ligado em 05/09 por decisão do João (dono do produto) |
+| **Prompt da Ana** — o que a assistente pode e não pode falar. | Vapi, versionado em `docs/integracoes/vapi-assistente-sichf.md` | v1 |

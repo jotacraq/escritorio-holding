@@ -11,6 +11,7 @@ import type { EstadoItemRadar, ItemRadar } from "@/types/jornada-automacoes";
 import { Botao } from "@/components/ui/Botao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { Selo, type TomSelo } from "@/components/ui/Selo";
+import { BlocoRecolhivel } from "./BlocoRecolhivel";
 import { buscarRadar, pedirDocumentos } from "./api-fase5";
 
 /**
@@ -66,7 +67,21 @@ function IconeEstado({ estado }: { estado: EstadoItemRadar }) {
   );
 }
 
-export function RadarDocumentos({ jornadaId, aoAtualizar }: { jornadaId: string; aoAtualizar?: () => void }) {
+export function RadarDocumentos({
+  jornadaId,
+  aoAtualizar,
+  recolhivel = false,
+}: {
+  jornadaId: string;
+  aoAtualizar?: () => void;
+  /**
+   * Fase 7: na Ficha o radar vive dentro de um `<details>` que nasce fechado
+   * (o bloco media ~380 px aberto e empurrava a Ficha avançada para 1.503 px).
+   * O cabeçalho do recolhido diz a contagem — ninguém abre para descobrir se
+   * há o que fazer. Fora da Ficha o componente continua solto, como era.
+   */
+  recolhivel?: boolean;
+}) {
   const { notificar } = useToast();
   const { usuario } = useUsuarioAtual();
   const buscar = useCallback(() => buscarRadar(jornadaId), [jornadaId]);
@@ -78,6 +93,12 @@ export function RadarDocumentos({ jornadaId, aoAtualizar }: { jornadaId: string;
   const coleta = useMemo(() => itens.filter((i) => i.lado === "coleta"), [itens]);
   const entrega = useMemo(() => itens.filter((i) => i.lado === "entrega"), [itens]);
   const aPedir = useMemo(() => coleta.filter((i) => i.estado === "a_pedir"), [coleta]);
+
+  const resumoColeta = resumoDoRadar(itens, "coleta");
+  const resumoRecolhido =
+    resumoColeta.total === 0
+      ? null
+      : `${resumoColeta.prontos} de ${resumoColeta.total} prontos${aPedir.length > 0 ? ` · ${aPedir.length} a pedir` : ""}`;
 
   if (carregando || !dados) return null;
 
@@ -121,11 +142,11 @@ export function RadarDocumentos({ jornadaId, aoAtualizar }: { jornadaId: string;
     }
   }
 
-  return (
+  const corpo = (
     <section aria-labelledby="radar-titulo" className="flex flex-col gap-cartao rounded-cartao border border-linha bg-papel-elevado px-4 py-3.5">
       <BlocoLado
         id="radar-titulo"
-        titulo="Documentos"
+        titulo={recolhivel ? "A pedir e a conferir" : "Documentos"}
         itens={coleta}
         lado="coleta"
         acao={
@@ -151,6 +172,13 @@ export function RadarDocumentos({ jornadaId, aoAtualizar }: { jornadaId: string;
         aoCancelar={() => setConfirmando(false)}
       />
     </section>
+  );
+
+  if (!recolhivel) return corpo;
+  return (
+    <BlocoRecolhivel titulo="Documentos" resumo={resumoRecolhido}>
+      {corpo}
+    </BlocoRecolhivel>
   );
 }
 

@@ -207,6 +207,7 @@ function AgendaDeSaidas({
         <EstadoVazio
           ilustracao="sucesso"
           titulo="Nada na fila"
+          descricao="Nenhuma mensagem esperando para sair. A fila enche sozinha quando alguém paga, agenda ou recebe um pedido de documento."
           acao={
             <Botao variante="secundario" onClick={recarregar}>
               Atualizar
@@ -218,6 +219,7 @@ function AgendaDeSaidas({
         <EstadoVazio
           compacto
           titulo="Nada neste canal"
+          descricao="Há mensagens na fila, mas em outro canal."
           acao={
             <Botao variante="secundario" tamanho="compacto" onClick={() => aoMudarCanal("todos")}>
               Ver todos os canais

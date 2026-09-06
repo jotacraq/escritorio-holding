@@ -7,6 +7,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirPapel } from "@/server/auth";
 import { erroConflito, erroNaoEncontrado, respostaErro } from "@/server/erros";
 import type { LigacaoIa, RespostaLigacaoIa } from "@/types/integracoes";
+import { COLUNAS_LIGACAO_IA_EQUIPE } from "@/server/ligacao-ia/tipos";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
@@ -40,8 +41,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       .update({ status: "cancelada" })
       .eq("id", id)
       .in("status", ["na_fila", "discando"])
-      .select("*")
-      .maybeSingle();
+      .select(COLUNAS_LIGACAO_IA_EQUIPE)
+      .maybeSingle<LigacaoIa>();
     if (error) {
       if (error.code === "23514" || error.code === "42501") {
         throw erroConflito("ligacao_nao_cancelavel", "A ligação mudou de estado e não pode mais ser cancelada.");
@@ -50,7 +51,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     }
     if (!data) throw erroConflito("ligacao_nao_cancelavel", "A ligação mudou de estado e não pode mais ser cancelada.");
 
-    const resposta: RespostaLigacaoIa = { ligacao: data as LigacaoIa };
+    const resposta: RespostaLigacaoIa = { ligacao: data };
     return NextResponse.json(resposta);
   } catch (erro) {
     return respostaErro("POST /api/ligacoes-ia/[id]/cancelar", erro);

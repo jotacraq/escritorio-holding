@@ -2,12 +2,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverModoIa } from "@/server/ia/demonstracao";
 import { resendConfigurado } from "@/server/regua/email";
 import { faltamChatwoot, testarChatwoot } from "@/server/chatwoot/cliente";
-import { faltamN8nLigacao, testarN8nLigacao } from "@/server/ligacao-ia/n8n";
+import { callbackUrlLigacao, faltamN8nLigacao, testarN8nLigacao } from "@/server/ligacao-ia/n8n";
+import { dentroDaJanela, proximaAbertura, rotuloAbertura, sanitizarJanela } from "@/server/ligacao-ia/janela";
 import { cabecalhosAssinados } from "./assinatura";
 import {
   CHAVE_CANAL_WHATSAPP,
   CHAVE_LIGACAO_AUTOMATICA,
+  CHAVE_LIGACAO_INTERVALO_MIN,
+  CHAVE_LIGACAO_JANELA,
+  CHAVE_LIGACAO_MAX_TENTATIVAS,
   CHAVE_LIGACAO_PROVEDOR,
+  CHAVE_LIGACAO_RETENCAO_DIAS,
   CHAVE_SALA_PROVEDOR,
   CHAVE_ULTIMO_CRON,
   lerConfiguracoes,
@@ -80,6 +85,10 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
   const cfg = await lerConfiguracoes(admin, [
     CHAVE_LIGACAO_AUTOMATICA,
     CHAVE_LIGACAO_PROVEDOR,
+    CHAVE_LIGACAO_JANELA,
+    CHAVE_LIGACAO_RETENCAO_DIAS,
+    CHAVE_LIGACAO_MAX_TENTATIVAS,
+    CHAVE_LIGACAO_INTERVALO_MIN,
     CHAVE_CANAL_WHATSAPP,
     CHAVE_SALA_PROVEDOR,
     CHAVE_ULTIMO_CRON,
@@ -106,6 +115,18 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
   const faltamSala = faltam(VARIAVEIS_SALA);
   const faltamChat = faltamChatwoot();
   const iaReal = resolverModoIa() === "real";
+
+  // Fase 7: a janela e a retenção vêm do MESMO `lerConfiguracoes` de sempre —
+  // nenhuma query nova. Quando a 0073 não está aplicada, `cfg` não traz as
+  // chaves e o cartão mostra o default do código, rotulado como tal.
+  const janelaConfigurada = cfg.has(CHAVE_LIGACAO_JANELA);
+  const janela = sanitizarJanela(cfg.get(CHAVE_LIGACAO_JANELA)?.valor);
+  const agora = new Date();
+  const janelaAberta = dentroDaJanela(agora, janela);
+  const retencaoBruta = cfg.get(CHAVE_LIGACAO_RETENCAO_DIAS)?.valor;
+  const retencaoDias = typeof retencaoBruta === "number" && Number.isInteger(retencaoBruta) && retencaoBruta > 0 ? retencaoBruta : null;
+  const maxTentativas = typeof cfg.get(CHAVE_LIGACAO_MAX_TENTATIVAS)?.valor === "number" ? (cfg.get(CHAVE_LIGACAO_MAX_TENTATIVAS)!.valor as number) : null;
+  const intervaloMin = typeof cfg.get(CHAVE_LIGACAO_INTERVALO_MIN)?.valor === "number" ? (cfg.get(CHAVE_LIGACAO_INTERVALO_MIN)!.valor as number) : null;
 
   const ultimoCron = typeof cfg.get(CHAVE_ULTIMO_CRON)?.valor === "string" ? (cfg.get(CHAVE_ULTIMO_CRON)!.valor as string) : null;
   const cronAtrasado = !ultimoCron || Date.now() - new Date(ultimoCron).getTime() > CRON_ATRASADO_MIN * 60_000;
@@ -152,7 +173,23 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
       pendencia: faltamLigacao.length > 0 ? faltamLigacao.map((n) => PENDENCIAS[n]).filter(Boolean).join(" ") : null,
       ultimo_evento_em: evLigacao ?? ligacao,
       toggles: [...toggle(CHAVE_LIGACAO_AUTOMATICA), ...toggle(CHAVE_LIGACAO_PROVEDOR)],
-      extras: { automatica: cfg.get(CHAVE_LIGACAO_AUTOMATICA)?.valor === true, provedor: cfg.get(CHAVE_LIGACAO_PROVEDOR)?.valor ?? "manual" },
+      extras: {
+        automatica: cfg.get(CHAVE_LIGACAO_AUTOMATICA)?.valor === true,
+        provedor: cfg.get(CHAVE_LIGACAO_PROVEDOR)?.valor ?? "manual",
+        janela,
+        janela_configurada: janelaConfigurada,
+        janela_aberta: janelaAberta,
+        janela_proxima_abertura: janelaAberta ? null : rotuloAbertura(proximaAbertura(agora, janela), janela.fuso),
+        retencao_dias: retencaoDias,
+        retencao_configurada: cfg.has(CHAVE_LIGACAO_RETENCAO_DIAS),
+        max_tentativas: maxTentativas,
+        intervalo_retentativa_minutos: intervaloMin,
+        // O valor exato que precisa estar na Variable `SICHF_CALLBACK_URL` do
+        // n8n. Desde 06/09 (achado A1) o destino do retorno é configuração do
+        // n8n, não campo do payload — e ninguém adivinha um valor que o
+        // sistema conhece e não mostra.
+        callback_url: callbackUrlLigacao(),
+      },
       testavel: true,
     },
     {

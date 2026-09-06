@@ -56,9 +56,15 @@ export function ChipProximoPasso({ proximo, jornadaId, tamanho = "normal", class
       <svg aria-hidden="true" viewBox="0 0 20 20" className={`h-5 w-5 shrink-0 ${estilo.icone}`} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         {ICONE_DONO[proximo.dono]}
       </svg>
-      <span className={`flex min-w-0 flex-1 ${compacto ? "flex-row items-center gap-2" : "flex-col gap-0.5"}`}>
-        <span className={`min-w-0 truncate text-sm font-medium leading-tight ${compacto ? "" : "whitespace-normal"}`}>{proximo.passo}</span>
-        <span className="shrink-0 text-legenda font-medium uppercase tracking-wide">
+      {/* Fase 7 — o `compacto` era `flex-row` com o verbo em `truncate` e o
+          par dono·urgência em `shrink-0`: num cartão de kanban de ~220 px o
+          verbo perdia a disputa e virava "Ag…", que não é informação
+          nenhuma, enquanto "CLIENTE · QUANDO DER" ficava inteiro. Quem lê o
+          quadro precisa saber O QUE fazer; de quem e quando são o contexto.
+          Agora as duas medidas empilham — o compacto só é mais apertado. */}
+      <span className={`flex min-w-0 flex-1 flex-col ${compacto ? "gap-0" : "gap-0.5"}`}>
+        <span className="min-w-0 whitespace-normal text-sm font-medium leading-tight">{proximo.passo}</span>
+        <span className="text-legenda font-medium uppercase tracking-wide">
           <span className="sr-only">de quem: </span>
           <span className={proximo.dono === "ninguem" ? "text-tinta-fraca" : "text-tinta-suave"}>{ROTULO_DONO[proximo.dono]}</span>
           <span aria-hidden="true" className="mx-1 text-tinta-fraca">
@@ -73,7 +79,7 @@ export function ChipProximoPasso({ proximo, jornadaId, tamanho = "normal", class
 
   const clicavel = Boolean(jornadaId && proximo.rota);
   // Alvo ≥ 44px sempre que for clicável; o chip só encolhe (36px) quando é texto puro.
-  const classes = `inline-flex max-w-full items-center gap-2 rounded-controle border px-2.5 ${compacto && !clicavel ? "min-h-9 py-1" : "min-h-11 py-1.5"} ${estilo.chip} ${className}`;
+  const classes = `inline-flex w-full max-w-full items-center gap-2 rounded-controle border px-2.5 ${compacto && !clicavel ? "min-h-9 py-1" : "min-h-11 py-1.5"} ${estilo.chip} ${className}`;
 
   if (clicavel && jornadaId) {
     return (

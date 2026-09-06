@@ -5,6 +5,7 @@ import { Botao } from "@/components/ui/Botao";
 import { Cartao } from "@/components/ui/Cartao";
 import { LinkBotao } from "@/components/ui/LinkBotao";
 import { EstadoCarregando } from "@/components/ui/Estado";
+import { BlocoRecolhivel } from "./BlocoRecolhivel";
 import { rotaCroquiApresentar, rotaCroquiSimular, rotaCroquiVer } from "./rotas-croqui";
 
 /**
@@ -20,13 +21,33 @@ import { rotaCroquiApresentar, rotaCroquiSimular, rotaCroquiVer } from "./rotas-
  * simular). O que sai: o DOM das 19 tabelas em toda abertura de Ficha.
  * Nenhuma funcionalidade perdida, uma navegação a mais de um clique.
  */
-export function CartaoCroqui({ estadoCroqui }: { estadoCroqui: EstadoCroquiDaJornada }) {
+export function CartaoCroqui({
+  estadoCroqui,
+  recolhivel = false,
+}: {
+  estadoCroqui: EstadoCroquiDaJornada;
+  /**
+   * Fase 7: na Ficha o cartão vive dentro de um `<details>` que nasce fechado.
+   * O estado do croqui (nome da versão, ou "ainda não começou") vai para o
+   * cabeçalho do recolhido — quem precisa dos três destinos abre.
+   */
+  recolhivel?: boolean;
+}) {
   const { croqui, croquiAtual, carregandoCroqui, croquiInexistente, criando, erroCriar, iniciarCroqui } = estadoCroqui;
 
   if (croqui === undefined && carregandoCroqui) return <EstadoCarregando rotulo="Carregando o croqui…" />;
 
+  const envolver = (conteudo: React.ReactNode, resumo: string) =>
+    recolhivel ? (
+      <BlocoRecolhivel titulo="Croqui estrutural" resumo={resumo}>
+        {conteudo}
+      </BlocoRecolhivel>
+    ) : (
+      conteudo
+    );
+
   if (!croquiAtual) {
-    return (
+    return envolver(
       <Cartao
         como="section"
         rotulo="Croqui estrutural"
@@ -48,11 +69,12 @@ export function CartaoCroqui({ estadoCroqui }: { estadoCroqui: EstadoCroquiDaJor
             Havia um registro de croqui que não está mais no sistema.
           </p>
         )}
-      </Cartao>
+      </Cartao>,
+      "ainda não começou",
     );
   }
 
-  return (
+  return envolver(
     <Cartao
       como="section"
       rotulo="Croqui estrutural"
@@ -73,6 +95,7 @@ export function CartaoCroqui({ estadoCroqui }: { estadoCroqui: EstadoCroquiDaJor
       }
     >
       <p className="text-sm text-tinta-suave">Os números do croqui e o material para o cliente ficam na tela do croqui.</p>
-    </Cartao>
+    </Cartao>,
+    croquiAtual.titulo ?? "croqui aberto",
   );
 }

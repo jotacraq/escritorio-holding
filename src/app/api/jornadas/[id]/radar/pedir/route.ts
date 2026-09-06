@@ -6,7 +6,18 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirVePatrimonio } from "@/server/auth";
 import { erroNaoEncontrado, erroValidacao, respostaErro } from "@/server/erros";
+import { criarLimitadorJanela } from "@/server/integracoes/rate-limit";
 import { pedirDocumentos } from "@/server/radar/pedir";
+
+/**
+ * Mesmo limitador da rota de emissão de link da equipe, pelo mesmo achado do
+ * pentest da Fase 6: aqui também sai um link `/p/*` (o `/p/d` do radar), a
+ * emissão também REVOGA o link `documentos` ativo anterior
+ * (`emitir_link_publico`, 0028:829-836) e cada chamada ainda enfileira
+ * mensagem para o cliente. Chave = perfil, não IP (o escritório sai por um IP
+ * só). 20 pedidos por 10 minutos.
+ */
+const limitarPedido = criarLimitadorJanela(20, 10 * 60_000);
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
@@ -32,7 +43,20 @@ const CorpoSchema = z.object({
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await exigirVePatrimonio();
+    const usuario = await exigirVePatrimonio();
+
+    const limite = limitarPedido(usuario.id);
+    if (limite.excedido) {
+      return NextResponse.json(
+        {
+          erro: "limite_excedido",
+          mensagem: `Muitos pedidos em sequência. Tente de novo em ${limite.tenteEmS} s.`,
+          tente_em_s: limite.tenteEmS,
+        },
+        { status: 429, headers: { "Retry-After": String(limite.tenteEmS) } },
+      );
+    }
+
     const { id: jornadaId } = ParametroSchema.parse(await params);
     const corpo = CorpoSchema.parse(
       await request.json().catch(() => {
@@ -45,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (error) throw error;
     if (!data) throw erroNaoEncontrado("Jornada não encontrada.");
 
-    return NextResponse.json(await pedirDocumentos(supabase, jornadaId, corpo.chaves), { status: 201 });
+    return NextResponse.json(await pedirDocumentos(supabase, jornadaId, corpo.chaves, usuario.id), { status: 201 });
   } catch (erro) {
     return respostaErro("api/jornadas/[id]/radar/pedir POST", erro);
   }

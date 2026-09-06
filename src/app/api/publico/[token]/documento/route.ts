@@ -11,7 +11,7 @@ import { statusParaErroPublico, ehRespostaDeErro } from "@/server/publico/rpc";
 import {
   assinaturaDeBytesBate,
   caminhoDocumentoPublico,
-  LIMITE_ARQUIVOS_POR_LINK,
+  limiteArquivosPorLink,
   mimeSuportadoPublico,
   resolverLinkParaUpload,
   sha256DeBytes,
@@ -57,9 +57,10 @@ const BUCKET = "documentos-sensiveis";
  * Ordem: pepper -> service_role -> Origin -> parse do multipart -> tamanho/mime/
  * assinatura -> resolve o link (leitura mínima, só para achar `pessoa_id` — ver
  * comentário em `resolverLinkParaUpload`) -> **pré-checagem de rate limit** ->
- * teto de 5 arquivos -> radar (em cache) -> upload ao bucket -> RPC
+ * teto de arquivos (`configuracoes['link.limite_arquivos']`, 0075) -> radar (em
+ * cache) -> upload ao bucket -> RPC
  * `registrar_documento_publico` (fonte de verdade real: rate limit, estado do link,
- * teto de 5 arquivos, dedupe por sha256) -> se a RPC recusar, remove o objeto do
+ * teto de arquivos, dedupe por sha256) -> se a RPC recusar, remove o objeto do
  * bucket (mesmo padrão de limpeza de `src/server/ia/documentos.ts#processarUploadDocumento`).
  *
  * ## O que a 0069 mudou nessa ordem (achado BAIXO do pentest da Fase 5)
@@ -139,16 +140,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return comCabecalhosPublicos(NextResponse.json(corpo, { status: statusParaErroPublico("limite_excedido") }));
     }
 
-    // Teto de 5 arquivos também checado aqui, antes do upload, para não gastar
+    // Teto de arquivos também checado aqui, antes do upload, para não gastar
     // bytes de Storage numa tentativa que a RPC vai recusar de qualquer jeito. A
     // RPC (`registrar_documento_publico`) reconfere com `usos`, que é a fonte real.
-    const { count: jaEnviados } = await admin
-      .from("documentos")
-      .select("id", { count: "exact", head: true })
-      .eq("jornada_id", linkParaUpload.jornadaId)
-      .eq("origem", "cliente")
-      .eq("ativo", true);
-    if ((jaEnviados ?? 0) >= LIMITE_ARQUIVOS_POR_LINK) {
+    //
+    // O NÚMERO vem de `configuracoes['link.limite_arquivos']` (0075) — a mesma
+    // chave que `app.limite_arquivos_por_link()` lê para o payload que o cliente
+    // vê e para a recusa da RPC. Não custa consulta: `tetoDoMinutoJaBatido`
+    // acabou de ler a tabela `configuracoes` e as duas chaves vieram juntas, no
+    // mesmo cache de 60 s.
+    const [limiteArquivos, { count: jaEnviados }] = await Promise.all([
+      limiteArquivosPorLink(admin),
+      admin
+        .from("documentos")
+        .select("id", { count: "exact", head: true })
+        .eq("jornada_id", linkParaUpload.jornadaId)
+        .eq("origem", "cliente")
+        .eq("ativo", true),
+    ]);
+    if ((jaEnviados ?? 0) >= limiteArquivos) {
       const corpo: ErroPublico = { erro: "limite_arquivos_atingido" };
       return comCabecalhosPublicos(NextResponse.json(corpo, { status: statusParaErroPublico("limite_arquivos_atingido") }));
     }

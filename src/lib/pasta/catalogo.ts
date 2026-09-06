@@ -3,7 +3,7 @@
  * pode ter. Antes desta peça, o único inventário do sistema era
  * `calcularPendencias()` (`components/ui/pendencias.ts`), que lista só 5
  * itens fixos e fica mudo sobre os outros 9 artefatos que o sistema produz
- * (Croqui, Patrimônio, Documentos, Relatório, Material, Links, Transcrição,
+ * (Croqui, Patrimônio, Documentos, Relatório, Material, Transcrição,
  * Análise da Sessão, Familiares) — visíveis só para quem está no grupo de
  * abas certo (`Abas.tsx`, `abasVisiveis = grupoAtivo ? grupoAtivo.abas :
  * abas`).
@@ -54,7 +54,6 @@ export interface ItemCatalogoPasta {
 export type ChaveItemPasta =
   | "formulario"
   | "ligacao"
-  | "links"
   | "briefing"
   | "sessao"
   | "transcricao"
@@ -71,7 +70,7 @@ export type ChaveItemPasta =
  * Nomes de negócio reusados tal e qual das abas/telas existentes — nenhum
  * vocabulário novo (regra do plano; ver `Glossario.md`):
  * - "Formulário" (aba `formulario`), "Ligação" (aba `ligacao`, POP 03/03-B),
- *   "Links" (aba `links`), "Briefing" (aba `briefing`, `BriefingAba.tsx`),
+ *   "Briefing" (aba `briefing`, `BriefingAba.tsx`),
  *   "Sessão" (aba `sessao`), "Transcrição da Sessão" (evento de timeline
  *   `transcricao`, `0045_transcricao_sv.sql`), "Análise da Sessão" (aba
  *   `analise-sessao`, `AnaliseSessaoAba.tsx`), "Relatório" (aba `relatorio`,
@@ -85,7 +84,6 @@ export type ChaveItemPasta =
 export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
   { chave: "formulario", rotulo: "Formulário", procedencia: "produzido", dono: "cliente", requerPatrimonio: false },
   { chave: "ligacao", rotulo: "Contato", titulo: "Contato da equipe", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
-  { chave: "links", rotulo: "Links", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
   { chave: "briefing", rotulo: "Briefing", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: false },
   { chave: "sessao", rotulo: "Sessão", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
   { chave: "transcricao", rotulo: "Transcrição", titulo: `Transcrição da ${rotulo("sessao_viabilidade")}`, procedencia: "recebido", dono: "equipe", requerPatrimonio: true },
@@ -116,7 +114,6 @@ export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
 export const SESSAO_POR_ITEM: Record<ChaveItemPasta, ChaveSessao> = {
   formulario: "viabilidade",
   ligacao: "viabilidade",
-  links: "viabilidade",
   briefing: "viabilidade",
   sessao: "viabilidade",
   transcricao: "viabilidade",

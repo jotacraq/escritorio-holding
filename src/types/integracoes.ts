@@ -50,6 +50,18 @@ export interface LigacaoIa {
   transcricao: string | null;
   resumo: string | null;
   gravacao_url: string | null;
+  /**
+   * 0073 — quando a retenção de voz (`ligacao_ia.retencao_dias`) apagou
+   * `transcricao`/`gravacao_url`. Opcional no tipo porque o código roda sem a
+   * migration aplicada: ausente = coluna ainda não existe; `null` = não expurgada.
+   */
+  expurgado_em?: string | null;
+  /**
+   * 0073 — token do link `/p/a` emitido PELO SISTEMA para esta ligação, cifrado
+   * (AES-256-GCM sob chave derivada do `LINK_PUBLICO_PEPPER`). Nunca em claro,
+   * nunca exposto por rota. Ver `server/ligacao-ia/token-cifrado.ts`.
+   */
+  token_link_cifrado?: string | null;
   custo_usd: number | null;
   erro: string | null;
   criado_em: string;
@@ -71,13 +83,17 @@ export interface PayloadLigacaoIaSaida {
   nome: string;
   primeiro_nome: string;
   telefone: string;
-  assistente_id: string | null;
+  /** Sempre presente: sem `VAPI_ASSISTENTE_ID` a ligação nem chega a ser montada. */
+  assistente_id: string;
   melhor_horario: HorarioOfertadoIa;
   alternativas: HorarioOfertadoIa[];
-  callback_url: string;
   emitido_em: string;
   teste?: boolean;
 }
+// `callback_url` SAIU do payload em 06/09/2026 (achado A1 do pentest). O
+// destino do POST de volta é configuração do n8n (`$vars.SICHF_CALLBACK_URL`),
+// nunca um campo que viaja pela rede e volta dentro do `metadata` da Vapi.
+// Ver `n8n/ligacao/mapear-vapi.js` (F8) e `n8n/ligacao/disparo-vapi.jsonbody.js`.
 
 export type EventoLigacaoIa = "discando" | "em_ligacao" | "concluida" | "sem_resposta" | "falhou";
 
@@ -116,6 +132,21 @@ export interface ResultadoProcessarFilaLigacoes {
   disparadas: number;
   manuais: number;
   falhas: number;
+  /** 0073/Fase 7: a etapa não reivindicou nada porque está fora da janela de discagem. */
+  pulada?: "fora_da_janela";
+  proxima_abertura_em?: string;
+  detalhe?: string;
+}
+
+/** Retorno da etapa de retenção de voz (`etapaExpurgoLigacoesIa`). */
+export interface ResultadoExpurgoLigacoes {
+  expurgadas: number;
+  /** `sem_retencao` = `ligacao_ia.retencao_dias` não configurada (default). */
+  pulada?: "sem_retencao" | "coluna_ausente";
+  retencao_dias?: number;
+  /** `true` quando o lote encheu — a próxima passagem do cron continua. */
+  resta_lote?: boolean;
+  erro?: string;
 }
 
 export interface ResultadoReaperLigacoes {

@@ -10,13 +10,54 @@ import { exigirPepper, gerarToken, hashToken } from "@/server/publico/pepper";
 import { gerarSugestoesAgendamento } from "@/server/agenda/sugestoes";
 import { emitirLinkConfirmacaoSistema } from "@/server/regua/links";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
+import { criarLimitadorJanela } from "@/server/integracoes/rate-limit";
+import { registrarLinkNaTimeline } from "@/server/publico/timeline-links";
 import { APP_URL } from "@/lib/config-publica";
+import type { UsuarioAtual } from "@/server/auth";
 import type {
   LinkPublicoResumo,
   RespostaEmitirLinkPublico,
   RespostaListarLinksPublicos,
   TipoLinkQualquer,
 } from "@/types/publico";
+
+/**
+ * Rate limit da EMISSÃO (achado BAIXO do pentest da Fase 6, CWE-770 / OWASP
+ * API4: "rota de emissão da equipe sem rate limit nem cooldown — cada chamada
+ * é destrutiva e `agendamento` gasta IA"). Três motivos para existir:
+ *
+ * 1. Emitir REVOGA o link ativo do mesmo tipo (`emitir_link_publico`,
+ *    0028:829-836). Um loop de cliques mata, um a um, links que o cliente já
+ *    recebeu no WhatsApp — sem aviso e sem desfazer.
+ * 2. `tipo='agendamento'` chama `gerarSugestoesAgendamento`, que grava em
+ *    `execucoes_ia`: cada clique custa dinheiro.
+ * 3. Cada emissão é uma linha nova em `links_publicos` — crescimento sem teto
+ *    a partir de um único usuário autenticado.
+ *
+ * A chave é o PERFIL, não o IP: o escritório inteiro sai por um IP só, e
+ * limitar por IP puniria a sala pelo excesso de uma pessoa (o inverso do que o
+ * achado pede). 20 emissões por 10 minutos é folgado para o uso real (a barra
+ * "Enviar" emite 1 por item) e fecha o abuso automatizado.
+ *
+ * Limitação conhecida e aceita, igual à dos webhooks: contador EM MEMÓRIA, por
+ * instância Node. A Hostinger roda uma instância; se um dia rodar mais, o teto
+ * efetivo vira 20 × instâncias — ainda um teto.
+ */
+const LIMITE_EMISSOES = 20;
+const JANELA_EMISSOES_MS = 10 * 60_000;
+const limitarEmissao = criarLimitadorJanela(LIMITE_EMISSOES, JANELA_EMISSOES_MS);
+
+/** 429 com `tente_em_s` no CORPO (contrato pedido) e em `Retry-After` (contrato HTTP). */
+function resposta429(tenteEmS: number) {
+  return NextResponse.json(
+    {
+      erro: "limite_excedido",
+      mensagem: `Muitos links emitidos em sequência. Tente de novo em ${tenteEmS} s.`,
+      tente_em_s: tenteEmS,
+    },
+    { status: 429, headers: { "Retry-After": String(tenteEmS) } },
+  );
+}
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 const CorpoSchema = z.object({
@@ -113,6 +154,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 async function emitirConfirmacao(
   supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
   jornadaId: string,
+  usuario: UsuarioAtual,
 ): Promise<NextResponse> {
   const { data: sessao, error: erroSessao } = await supabase
     .from("sessoes_viabilidade")
@@ -163,7 +205,19 @@ async function emitirConfirmacao(
   }
 
   try {
-    const { url, linha } = await emitirLinkConfirmacaoSistema(admin, agendamento.id);
+    // `usuario.id` vai como AUTOR: quem clicou na barra "Enviar" é uma pessoa,
+    // não o cron — sem isto o link nasce `criado_por = null` e a trilha diz
+    // "sistema" para um ato humano (achado BAIXO do pentest da Fase 6, CWE-778).
+    // Enquanto a 0074 não estiver aplicada, `emitirLinkConfirmacaoSistema`
+    // cai sozinha na assinatura de 3 argumentos e o link sai sem autor, como hoje.
+    const { url, linha } = await emitirLinkConfirmacaoSistema(admin, agendamento.id, usuario.id);
+    await registrarLinkNaTimeline(supabase, {
+      jornadaId,
+      tipo: "confirmacao",
+      linkId: linha.id,
+      atorPerfilId: usuario.id,
+      contexto: "POST /api/jornadas/[id]/links#confirmacao",
+    });
     const resposta: RespostaEmitirLinkPublico = { link: { ...paraResumo(linha), url } };
     return NextResponse.json(resposta, { status: 201 });
   } catch (erro) {
@@ -188,6 +242,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Trava de ROTA (mesma trava que a RPC confere de novo — as duas são obrigatórias,
     // ver docstring de `exigirPapel` em src/server/auth.ts).
     const usuario = await exigirPapel("admin", "advogada", "relacionamento");
+
+    // Rate limit DEPOIS da autenticação (a chave é o perfil) e ANTES de ler o
+    // corpo ou tocar no banco: quem está no teto não gasta consulta nenhuma.
+    const limite = limitarEmissao(usuario.id);
+    if (limite.excedido) return resposta429(limite.tenteEmS);
+
     const { id: jornadaId } = ParametroSchema.parse(await params);
     const corpo = CorpoSchema.parse(
       await request.json().catch(() => {
@@ -198,7 +258,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const supabase = await criarClienteServidor();
 
     if (corpo.tipo === "confirmacao") {
-      return await emitirConfirmacao(supabase, jornadaId);
+      return await emitirConfirmacao(supabase, jornadaId, usuario);
     }
 
     // Resolve a advogada ANTES de emitir o link — nunca depois: emitir mata o
@@ -259,6 +319,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       registrarErro("POST /api/jornadas/[id]/links", error, { jornada_id: jornadaId });
       throw error;
     }
+
+    await registrarLinkNaTimeline(supabase, {
+      jornadaId,
+      tipo: corpo.tipo,
+      linkId: linkBruto.id,
+      atorPerfilId: usuario.id,
+      contexto: "POST /api/jornadas/[id]/links",
+    });
 
     let horariosOfertados = 0;
     let avisoAgendamento: string | null = null;

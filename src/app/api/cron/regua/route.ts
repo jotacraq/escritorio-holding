@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { processarFilaRegua, type ResultadoProcessamento } from "@/server/regua/processar";
-import { etapaLigacoesIa, etapaReaperLigacoesIa, type ResultadoEtapaExterna } from "@/server/regua/externas";
+import { etapaExpurgoLigacoes, etapaLigacoesIa, etapaReaperLigacoesIa, type ResultadoEtapaExterna } from "@/server/regua/externas";
 import { sincronizarSalas, type ResultadoSincronizarSalas } from "@/server/sala/sincronizar";
 import { registrarErro } from "@/server/erros";
 
@@ -23,6 +23,7 @@ export interface RespostaCron {
   regua: Etapa<ResultadoProcessamento>;
   ligacoes: Etapa<ResultadoEtapaExterna>;
   reaper: Etapa<ResultadoEtapaExterna>;
+  expurgo: Etapa<ResultadoEtapaExterna>;
   salas: Etapa<ResultadoSincronizarSalas>;
   ultimo_cron_em: string;
 }
@@ -45,9 +46,11 @@ async function rodarEtapa<T>(nome: string, fn: () => Promise<T>): Promise<Etapa<
  *   1) régua de mensagens (e-mail; WhatsApp só com Chatwoot configurado);
  *   2) fila de ligações por IA (agente B — pulada com `modulo_ausente` até existir);
  *   3) reaper das ligações presas (idem);
+ *   3b) retenção de voz das ligações encerradas (LGPD B19 — só quando
+ *       `ligacao_ia.retencao_dias` está configurada; senão não apaga nada);
  *   4) salas via n8n (só se `sala.provedor='n8n'` e env vars presentes).
  * Cada etapa é isolada: falha em uma não derruba as outras; o retorno lista as
- * quatro. Prova de vida: grava `configuracoes['regua.ultimo_cron_em']`
+ * cinco. Prova de vida: grava `configuracoes['regua.ultimo_cron_em']`
  * (UPDATE, nunca linha nova) — a tela de Comunicação e a pendência
  * `cron_parado` (0052) leem daí.
  */
@@ -74,6 +77,7 @@ export async function POST(request: NextRequest) {
   const regua = await rodarEtapa("regua", () => processarFilaRegua(supabaseAdmin));
   const ligacoes = await rodarEtapa("ligacoes", () => etapaLigacoesIa(supabaseAdmin));
   const reaper = await rodarEtapa("reaper", () => etapaReaperLigacoesIa(supabaseAdmin));
+  const expurgo = await rodarEtapa("expurgo", () => etapaExpurgoLigacoes(supabaseAdmin));
   const salas = await rodarEtapa("salas", () => sincronizarSalas(supabaseAdmin));
 
   const ultimoCronEm = new Date().toISOString();
@@ -86,6 +90,6 @@ export async function POST(request: NextRequest) {
     registrarErro("POST /api/cron/regua#prova_de_vida", erroProvaDeVida);
   }
 
-  const resposta: RespostaCron = { regua, ligacoes, reaper, salas, ultimo_cron_em: ultimoCronEm };
+  const resposta: RespostaCron = { regua, ligacoes, reaper, expurgo, salas, ultimo_cron_em: ultimoCronEm };
   return NextResponse.json(resposta, { status: 200 });
 }

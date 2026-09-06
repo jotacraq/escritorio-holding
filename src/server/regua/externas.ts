@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { processarFilaLigacoesIa, reaperLigacoesIa } from "@/server/ligacao-ia";
+import { etapaExpurgoLigacoesIa, processarFilaLigacoesIa, reaperLigacoesIa } from "@/server/ligacao-ia";
 import { canalWhatsappViaChatwoot } from "@/server/chatwoot/canal";
 import { enviarWhatsapp } from "@/server/chatwoot/cliente";
 
@@ -27,6 +27,16 @@ export async function etapaLigacoesIa(admin: SupabaseClient): Promise<ResultadoE
 
 export async function etapaReaperLigacoesIa(admin: SupabaseClient): Promise<ResultadoEtapaExterna> {
   return (await reaperLigacoesIa(admin)) as unknown as ResultadoEtapaExterna;
+}
+
+/**
+ * Retenção de voz (LGPD B19, Fase 7). Última etapa do cron de propósito: é
+ * limpeza, e nada do que roda depois dela depende do que ela apaga. Sem
+ * `ligacao_ia.retencao_dias` configurada devolve `pulada: 'sem_retencao'` e não
+ * toca em linha nenhuma.
+ */
+export async function etapaExpurgoLigacoes(admin: SupabaseClient): Promise<ResultadoEtapaExterna> {
+  return (await etapaExpurgoLigacoesIa(admin)) as unknown as ResultadoEtapaExterna;
 }
 
 export interface ClienteChatwoot {

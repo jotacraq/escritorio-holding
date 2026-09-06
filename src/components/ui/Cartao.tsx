@@ -4,6 +4,13 @@ interface CartaoProps extends HTMLAttributes<HTMLElement> {
   /** Rótulo pequeno em caixa alta acima do título (a "seção" do seminário). */
   rotulo?: string;
   titulo?: ReactNode;
+  /**
+   * A explicação longa que ainda importa mas não cabe no fluxo (DS §2.2:
+   * "descrição longa que ainda importa vai para o `title` do elemento, não
+   * para um `<p>`"). Vira o `title` do `<h2>` — leitura por hover e por
+   * `aria-describedby` implícito, sem custar altura em toda visita.
+   */
+  tituloTitle?: string;
   descricao?: ReactNode;
   /** Ação à direita do cabeçalho (botão compacto, link). */
   acao?: ReactNode;
@@ -37,6 +44,7 @@ const REALCE = {
 export function Cartao({
   rotulo,
   titulo,
+  tituloTitle,
   descricao,
   acao,
   preenchimento = "normal",
@@ -61,7 +69,11 @@ export function Cartao({
         >
           <div className="min-w-0 flex-1">
             {rotulo && <p className="text-rotulo font-medium uppercase text-tinta-fraca">{rotulo}</p>}
-            {titulo && <h2 className={`font-bold text-tinta ${rotulo ? "mt-1" : ""} text-subtitulo`}>{titulo}</h2>}
+            {titulo && (
+              <h2 title={tituloTitle} className={`font-bold text-tinta ${rotulo ? "mt-1" : ""} text-subtitulo`}>
+                {titulo}
+              </h2>
+            )}
             {descricao && <p className="mt-1 text-sm text-tinta-suave">{descricao}</p>}
           </div>
           {/* `flex-wrap` (não `shrink-0`): várias ações/filtros no cabeçalho

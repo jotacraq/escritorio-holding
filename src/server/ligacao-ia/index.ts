@@ -9,6 +9,7 @@
  */
 export { processarFilaLigacoesIa, dispararAgora, dispararLigacao } from "./processar";
 export { reaperLigacoesIa } from "./reaper";
+export { etapaExpurgoLigacoesIa } from "./expurgo";
 export { aplicarResultado, tratarFalha, enviarFallbackLink } from "./resultado";
 export { enfileirarLigacaoIa, prepararOferta, urlDoLinkAgendamento } from "./fila";
 export { n8nLigacaoConfigurado, faltamN8nLigacao, testarN8nLigacao, VARIAVEIS_N8N_LIGACAO } from "./n8n";

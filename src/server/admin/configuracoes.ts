@@ -29,6 +29,15 @@ export const SCHEMAS_CONFIGURACAO: Record<ConfiguracaoChave, z.ZodType> = {
     .strict(),
   "link.limite_por_minuto": z.number().int().positive().max(1000),
   "link.limite_por_dia": z.number().int().positive().max(100_000),
+  // 0028 — teto somando TODOS os tokens por rota pública. Existia no banco
+  // desde a 0028 e NUNCA esteve aqui: a tela mostrava o campo e o "Salvar"
+  // respondia 404. Mesmo defeito que a 0075 trouxe de novo (abaixo).
+  "link.limite_global_por_minuto": z.number().int().positive().max(100_000),
+  // 0075 — arquivos por link de documentos. Lido por
+  // `app.limite_arquivos_por_link()`; fora de 1..50 (ou ausente) vale 10.
+  // O teto de 50 é o MESMO da função no banco — mudar um sem o outro faria a
+  // tela aceitar um número que a RPC ignora.
+  "link.limite_arquivos": z.number().int().min(1).max(50),
   "ia.cooldown_segundos": z.number().int().min(0).max(86_400),
   "ia.teto_execucoes_dia_por_usuario": z.number().int().positive().max(1000),
   "agenda.duracao_padrao_minutos": z.number().int().positive().max(600),
@@ -45,6 +54,36 @@ export const SCHEMAS_CONFIGURACAO: Record<ConfiguracaoChave, z.ZodType> = {
   "ligacao_ia.max_tentativas": z.number().int().min(0).max(10),
   "ligacao_ia.intervalo_retentativa_minutos": z.number().int().positive().max(10_080),
   "ligacao_ia.timeout_minutos": z.number().int().positive().max(240),
+  // 0073 — janela de discagem. `dias`: 0 = domingo … 6 = sábado; `inicio`/`fim`
+  // em "HH:MM" no `fuso` (IANA). `fim` > `inicio` é conferido aqui e não só na
+  // leitura: uma janela impossível salva pela tela viraria "nunca liga" em
+  // silêncio. Ver `server/ligacao-ia/janela.ts`.
+  "ligacao_ia.janela": z
+    .object({
+      dias: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+      inicio: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM (24 h)"),
+      fim: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM (24 h)"),
+      fuso: z.string().trim().min(1).max(64),
+    })
+    .strict()
+    .refine((j) => j.fim > j.inicio, { message: "o fim tem de ser depois do início" })
+    .refine((j) => {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: j.fuso });
+        return true;
+      } catch {
+        return false;
+      }
+    }, { message: "fuso horário desconhecido (use um IANA, ex.: America/Sao_Paulo)" }),
+  // 0073 — retenção de voz. `null` = NÃO expurga (é o valor semeado pela
+  // migration, `'null'::jsonb`; a decisão de minimização é jurídica, B19).
+  // Teto de 5 anos: acima disso é "guardar para sempre" com outro nome.
+  //
+  // O `0` também vale "desligado" e é o que a TELA envia: `configuracoes.valor`
+  // é `jsonb NOT NULL` (0027:152) e o PostgREST traduz um `null` do corpo para
+  // SQL NULL, que a coluna recusa (23502). `lerConfiguracaoInteiroOuNulo`
+  // trata `0`, `null` e chave ausente exatamente igual: não expurga.
+  "ligacao_ia.retencao_dias": z.number().int().min(0).max(1825).nullable(),
   // 0055 — material pós-sessão em PDF.
   "material.anexar_pdf": z.boolean(),
   "material.rodape_juridico": z.string().trim().min(1).max(2000),

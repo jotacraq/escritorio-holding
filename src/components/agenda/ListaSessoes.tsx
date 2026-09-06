@@ -128,7 +128,7 @@ export function ListaSessoes() {
             <EstadoVazio
               ilustracao="agenda"
               titulo="Nenhuma sessão nos próximos 7 dias"
-              descricao="A Sessão de Viabilidade é marcada pela Pasta do Cliente (aba Sessão) ou pelo link de agendamento que o cliente recebe."
+              descricao="Marque pela Ficha do cliente, em Sessão, ou mande o link de agendamento e deixe o cliente escolher."
               acao={<LinkBotao href="/clientes" variante="cta" tamanho="normal">Abrir a lista de clientes</LinkBotao>}
             />
           </div>

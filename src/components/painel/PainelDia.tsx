@@ -95,7 +95,7 @@ function resumirKpis(dados: PainelDiaNormalizado, papel: PapelEquipe | null) {
  * egress do Supabase é da organização inteira e já custou caro num sistema
  * desta casa com aba parada fazendo polling.
  *
- * "Atualizado às" usa `gerado_em` — o instante que o servidor calculou o
+ * "Atualizado em" usa `gerado_em` — o instante que o servidor calculou o
  * painel, não o relógio do navegador.
  */
 export function PainelDia() {
@@ -180,7 +180,7 @@ export function PainelDia() {
         }
         meta={
           <>
-            {dados?.geradoEm && <span>Atualizado às {formatarDataHora(dados.geradoEm)}</span>}
+            {dados?.geradoEm && <span>Atualizado em {formatarDataHora(dados.geradoEm)}</span>}
             {Boolean(erro) && !semNenhumaCargaAinda && (
               <span role="alert" className="text-[color:var(--vermelho)]">
                 Não atualizou — mostrando a última carga.

@@ -69,13 +69,11 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
 
     ligacao: () => (sinais.temLigacao ? { estado: "pronto" } : { estado: "falta" }),
 
-    // TODO: não há fonte de dado pronta para contar links emitidos no payload
-    // da Ficha 360 (`eventos_timeline` não tem tipo `'link'` — ver
-    // `0014_timeline.sql` — e `Ficha360` não traz `links[]`). Declarado como
-    // gap no relatório final; sem fonte real, este item nunca sai de
-    // `ainda_nao` aqui (não é o pré-requisito que falta, é a leitura — a
-    // aba `LinksAba.tsx` continua sendo a única fonte de verdade por ora).
-    links: () => ({ estado: "ainda_nao", nota: "Ver na aba Links." }),
+    // NÃO existe item `links` aqui, e é de propósito (Fase 7, veredito do
+    // Fable): a barra "Enviar" está sempre na tela e já diz o estado de cada
+    // link. Um cartão na Pasta seria um segundo lugar falando do mesmo link.
+    // Os eventos `tipo:'link'` que `server/publico/timeline-links.ts` grava
+    // continuam existindo — quem os mostra é o Histórico.
 
     briefing: () => {
       if (sinais.temBriefing) return { estado: "pronto" };

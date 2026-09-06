@@ -110,7 +110,7 @@ Fonte: Neuetra vem do `body`; não declare `font-family`.
 | Componente | Uso essencial |
 |---|---|
 | `Botao` | `<Botao variante="primario" carregando={salvando} onClick={…}>Salvar</Botao>` · `variante`: `primario` (1 por tela) · `secundario` · `perigo` · `fantasma` · `tamanho`: `normal`/`compacto`/`grande` · `icone` · `largo` · aceita `ref`. |
-| `Cartao` | `<Cartao rotulo="Antes da sessão" titulo="Formulário" descricao="…" acao={<Botao tamanho="compacto">Editar</Botao>}>…</Cartao>` · `preenchimento`: `normal`/`compacto`/`sem` (tabela) · `realce`: `latao`/`ambar`/`verde`/`vermelho` · `como`: `section`/`article`/`div`. |
+| `Cartao` | `<Cartao rotulo="Antes da sessão" titulo="Formulário" descricao="…" acao={<Botao tamanho="compacto">Editar</Botao>}>…</Cartao>` · `preenchimento`: `normal`/`compacto`/`sem` (tabela) · `realce`: `latao`/`ambar`/`verde`/`vermelho` · `como`: `section`/`article`/`div` · **`tituloTitle`** (Fase 7): a explicação longa que ainda importa vira o `title` do `<h2>` em vez de um `<p>` (§2.2) — mesma informação, zero altura. |
 | `CabecalhoPagina` | `<CabecalhoPagina rotulo="Dia a dia" titulo="Agenda" descricao="…" acoes={<Botao variante="primario">Nova janela</Botao>} meta={<Selo tom="neutro">…</Selo>} acima={<Link>← Esteira</Link>} />` — único `h1`. |
 | `Campo` + `Entrada`/`Selecao`/`AreaTexto`/`Opcao` | `<Campo rotulo="Telefone" ajuda="Com DDD" erro={erros.telefone} obrigatorio><Entrada type="tel" value={…} onChange={…} /></Campo>` — id, `aria-describedby`, `aria-invalid` vêm do `Campo`. `Opcao` = rádio/caixa com alvo grande. |
 | `Selo` | `<Selo tom="verde" icone={<svg…/>}>Pronto</Selo>` · tons: `verde`/`vermelho`/`azul`/`ambar`/`latao`/`neutro`. `SeloStub`, `SeloIA`, `SeloDemonstracao`, `SeloDadoExemplo` inalterados. |
@@ -135,7 +135,8 @@ Fonte: Neuetra vem do `body`; não declare `font-family`.
 - `acao` é **uma só** — montada pelo pai a partir de `derivarProximoPasso()`. `href` OU `onClick`, nunca os dois. O detalhe/sigla vai em `acao.title`.
 - Sem ação clicável, `nota` (≤ 4 palavras, ex.: `aguardando · Cliente`) e a frase inteira em `notaTitle`. **Nunca um botão morto.**
 - `resumoDoTrilho(passos)` → `"5 de 9 · Sessão · 4 de 15"`. Número primeiro (§2.2). `null` quando não há passo aceso — o componente cai no resumo de vazio rotulado ("Sem informação" / "9 de 9 · Entregue").
-- 4 estados com **glifo próprio** (check · seta · traço de pulado · círculo vazio), nunca só cor; `<ol>` + `aria-current="step"` no aceso; rótulo em `sr-only` abaixo de `sm`; alvo ≥ 44 px só onde há ação (marcador é indicador, não controle).
+- 4 estados com **glifo próprio** (check · seta · traço de pulado · círculo vazio), nunca só cor; `<ol>` + `aria-current="step"` no aceso; alvo ≥ 44 px só onde há ação (marcador é indicador, não controle).
+- **Leitura do marcador (Fase 7).** O glifo e o rótulo visível são `aria-hidden`, e o rótulo some abaixo de `sm`: o `sr-only` é a ÚNICA leitura do passo. Formato fixo, por `leituraDoPasso()`: **`passo 7 de 9: Contrato — agora`** — posição, tamanho do todo, nome INTEIRO do passo (`TITULO_TRILHO`, não o rótulo de ≤ 1 palavra) e estado, mais o motivo entre parênteses quando existe. Na variante `sessoes` o índice é o do trilho inteiro, não o da sessão: "passo 1 de 9" para o 7º passo seria mentira.
 
 **`Trilho variante="sessoes"` (Fase 6)** — a Ficha desenha os 9 passos AGRUPADOS nas
 **três sessões** que são a espinha do produto (Viabilidade · Croqui estrutural · Entrega da
@@ -153,6 +154,16 @@ e o par "ver / esconder" em `group-open:`. Regras:
   media 6.278 px e o repertório 5.110 px por listar tudo sempre;
 - `@media print` reabre todo `<details>`: a folha que vai para a reunião leva o conteúdo
   inteiro (`globals.css`).
+
+**Bloco recolhido diz o que há dentro (Fase 7).** `ficha360/BlocoRecolhivel.tsx` é o
+`<details>` padrão da Ficha: `<summary>` de `min-h-11` com o título de negócio + o
+**resumo do conteúdo** (`15 de 18 prontos · 3 a pedir`, `Croqui Estrutural`) + o par
+`ver`/`esconder`. Um recolhido sem resumo obriga a abrir só para descobrir se vale abrir —
+é pior que o aberto. Regra: **nasce fechado**, sempre; quem precisa abre (Tab + Enter), e
+o deep-link por hash abre por conta própria.
+Aplicado em `RadarDocumentos recolhivel` e `CartaoCroqui recolhivel`: os dois abriam
+sozinhos a partir da 2ª sessão e a Ficha avançada media **1.503 px** (medido a 1440×900 em
+`croqui_apresentado`); recolhidos, **917 px**.
 
 **`Dica`** — o balão só existe no DOM quando aparece, e se desloca para dentro da janela depois
 de medir. Antes ele ficava sempre montado com `opacity-0` e **quatro tooltips invisíveis
@@ -204,7 +215,17 @@ trabalho. Hierarquia visual é a informação.
 
 - Alvo de clique/toque **≥ 44 × 44 px** (`min-h-11`); ícone sozinho = `h-11 w-11` + `sr-only`/`aria-label`.
 - Fonte **≥ 12 px** (`text-legenda` é o piso); corpo 15–16 px.
-- Contraste medido (fórmula WCAG): `--tinta` 17,4:1 · `--tinta-suave` 9,5:1 · `--tinta-fraca` 5,3:1 (creme) / 6,0:1 (branco) · `--latao` 5,0:1 (creme) / 5,6:1 (branco) · CTA texto 6,4:1 · `--linha-controle` 3,5:1 · escuro: `--tinta-fraca` 5,5:1, `--latao` 6,1:1.
+- Contraste medido (fórmula WCAG): `--tinta` 17,4:1 · `--tinta-suave` 9,5:1 · `--tinta-fraca` 5,3:1 (creme) / 5,6:1 (`--papel`) / 6,0:1 (branco) · `--latao` 5,0:1 (creme) / 5,6:1 (branco) · CTA texto 6,4:1 · `--linha-controle` 3,5:1 (branco) / 3,1:1 (creme) · escuro: `--tinta-fraca` 5,5:1 (elevado) / 6,3:1 (fundo), `--latao` 6,1:1, `--linha-controle` 3,1:1.
+  Sobre fundo tingido (`--latao-fraco`, `--verde-fraco`, `--ambar-fraco`, `--vermelho-fraco`,
+  `--azul-fraco`, `--linha`) `--tinta-fraca` fica entre **4,48 e 5,30:1** nos dois temas — o
+  piso é o chip `--linha` do escuro. `--linha-forte` **nunca** é fundo de texto (só linha e
+  ponto): ali `--tinta-fraca` cairia a 3,6–3,9:1.
+- **Auditoria de contraste rodada no DOM (Fase 7), não estimada.** Varredura de todo nó de
+  texto visível com a cor e o fundo COMPUTADOS pelo navegador (fundo resolvido subindo a
+  árvore, com composição de alfa), mínimo 4,5:1 (3:1 para ≥ 24 px ou ≥ 18,66 px bold), com
+  todo `<details>` forçado aberto: **10 telas × 2 temas = 0 nó abaixo do mínimo**
+  (`Hoje · Clientes · Agenda · Mensagens · Admin · /admin#repertorio · Ficha · /p/c · /p/m · /p/d`).
+  Refaça esta varredura ao mexer em token de cor — é ela que prova, não o olho.
 - Foco visível em tudo (contorno + halo já vêm de `:focus-visible`). `outline-none` só com `focus:shadow-foco` + borda de foco.
 - Estado nunca só por cor: chip com texto, ícone ou forma diferente.
 - `aria-live`: toasts (já), `role="status"` em carregando, `role="alert"` em erro.
@@ -235,4 +256,11 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
 11. Lei de texto (§2.2) medida: palavras visíveis fora de dado de cliente ≤ 50% do que havia; nenhum bloco de texto > 2 linhas fora de `Dica`.
 12. Ritmo do §2.1: `gap-secao`/`gap-bloco`/`gap-cartao`/`gap-item`. Nenhum `gap-6`/`gap-8` novo.
 13. **Densidade medida (Fase 6):** altura do documento ≤ 1080 px a 1440×900 e **zero rolagem horizontal a 390 px**, nos dois temas. Tela de LISTA declara a exceção com o número, não com adjetivo.
+    Medido na Fase 7 (`document.body.scrollHeight`, 1440×900, jornada de exemplo em `croqui_apresentado`):
+    Hoje 900 · Clientes 900 · Agenda 900 · Mensagens 900 · Admin 900 · **Ficha 1.503 → 917** ·
+    **`/admin#repertorio` 1.684 → 959** · `/p/m` 1.259 · `/p/d` 1.212. Rolagem horizontal a 390 px: 0 em todas.
+    **Lista longa não usa "ver tudo": usa página.** Botão que despeja a base inteira faz o teto
+    da tela depender do tamanho do banco (52 casos = 4.900 px, e cresce a cada reunião). Com
+    paginação o teto é constante; o rodapé diz onde se está (`11–20 de 52 casos · página 2 de 6`),
+    não só para onde dá para ir, e trocar filtro rebobina para a página 1.
 14. **Linha de propósito:** toda tela do menu e toda aba dizem, em uma frase, para que servem (`CabecalhoPagina descricao` / `DefinicaoAba.descricao`). Zero jargão: POP, DISC, régua, esteira, cron, n8n, Vapi, token, webhook e `SUPABASE_*` não aparecem no fluxo — só em `title` ou em tela de admin.

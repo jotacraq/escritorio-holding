@@ -10,6 +10,10 @@ export const CHAVE_LIGACAO_PROVEDOR = "ligacao_ia.provedor";
 export const CHAVE_LIGACAO_MAX_TENTATIVAS = "ligacao_ia.max_tentativas";
 export const CHAVE_LIGACAO_INTERVALO_MIN = "ligacao_ia.intervalo_retentativa_minutos";
 export const CHAVE_LIGACAO_TIMEOUT_MIN = "ligacao_ia.timeout_minutos";
+/** 0073 — janela de discagem (jsonb). Ausente = `JANELA_PADRAO` do código. */
+export const CHAVE_LIGACAO_JANELA = "ligacao_ia.janela";
+/** 0073 — retenção de voz (LGPD, B19). `null` = não expurga nada. */
+export const CHAVE_LIGACAO_RETENCAO_DIAS = "ligacao_ia.retencao_dias";
 export const CHAVE_CANAL_WHATSAPP = "regua.canal_whatsapp";
 export const CHAVE_SALA_PROVEDOR = "sala.provedor";
 export const CHAVE_ULTIMO_CRON = "regua.ultimo_cron_em";
@@ -44,4 +48,25 @@ export async function lerConfiguracaoInteiro(supabase: SupabaseClient, chave: st
   const mapa = await lerConfiguracoes(supabase, [chave]);
   const valor = Number(mapa.get(chave)?.valor);
   return Number.isFinite(valor) && valor >= 0 ? valor : padrao;
+}
+
+/**
+ * Inteiro POSITIVO ou `null` — para chave cujo "desligado" é ausência de valor,
+ * não zero (`ligacao_ia.retencao_dias`: `null` = não expurga; `30` = expurga aos
+ * 30 dias). Chave ausente, `null` ou valor inválido → `null`: a falta nunca
+ * vira um número inventado que apagaria transcrição por engano.
+ */
+export async function lerConfiguracaoInteiroOuNulo(supabase: SupabaseClient, chave: string): Promise<number | null> {
+  const mapa = await lerConfiguracoes(supabase, [chave]);
+  if (!mapa.has(chave)) return null;
+  const bruto = mapa.get(chave)!.valor;
+  if (bruto === null || bruto === undefined) return null;
+  const valor = Number(bruto);
+  return Number.isInteger(valor) && valor > 0 ? valor : null;
+}
+
+/** Objeto jsonb cru (a validação de forma é de quem lê — ex.: `sanitizarJanela`). */
+export async function lerConfiguracaoObjeto(supabase: SupabaseClient, chave: string): Promise<unknown> {
+  const mapa = await lerConfiguracoes(supabase, [chave]);
+  return mapa.get(chave)?.valor ?? null;
 }

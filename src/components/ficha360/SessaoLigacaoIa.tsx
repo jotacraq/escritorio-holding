@@ -16,7 +16,7 @@ type Status = LigacaoIaResumo["status"];
 
 /** Os 7 estados da máquina (0053) em português de gente — nunca a chave crua. */
 const ESTADO: Record<Status, { rotulo: string; tom: TomSelo; explicacao: string }> = {
-  na_fila: { rotulo: "Na fila para ligar", tom: "azul", explicacao: "A ligação foi pedida e sai na próxima rodada da régua (a cada 15 minutos)." },
+  na_fila: { rotulo: "Na fila para ligar", tom: "azul", explicacao: "A ligação foi pedida e sai na próxima rodada da régua (a cada 5 minutos)." },
   discando: { rotulo: "Discando", tom: "azul", explicacao: "A integração recebeu o pedido e está chamando o cliente agora." },
   em_ligacao: { rotulo: "Em ligação", tom: "latao", explicacao: "O cliente atendeu — a IA está oferecendo os horários." },
   concluida: { rotulo: "Ligação concluída", tom: "verde", explicacao: "A ligação terminou; veja o resultado abaixo." },
@@ -70,8 +70,32 @@ export function SessaoLigacaoIa({
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
 
-  const ativa = ligacao && (ligacao.status === "na_fila" || ligacao.status === "discando" || ligacao.status === "em_ligacao");
+  /**
+   * "Ligar por IA agora" só some enquanto a chamada está EM CURSO. Em
+   * `na_fila` ele continua ali e é o atalho de "não espera a régua": o
+   * servidor reaproveita a ligação que já está na fila e dispara na hora
+   * (`decidirColisaoLigacaoAtiva`, `server/ligacao-ia/fila.ts`) — antes, o
+   * botão sumia justamente no estado em que a tela mandava usá-lo.
+   */
+  const emCurso = ligacao !== null && (ligacao.status === "discando" || ligacao.status === "em_ligacao");
   const cancelavel = ligacao && (ligacao.status === "na_fila" || ligacao.status === "discando");
+  /**
+   * `nao_antes_de` numa ligação ainda `na_fila` é a hora em que o servidor vai
+   * tentar de novo. Quem carimba é o servidor — a fila do cron, quando esbarra
+   * no horário de discagem, e `tratarFalha`, quando marca a retentativa. A tela
+   * NÃO recalcula a janela e NÃO lê o relógio (isso faria servidor e cliente
+   * pintarem coisas diferentes): mostra a data que o servidor decidiu, e some
+   * sozinha quando a ligação sai da fila.
+   *
+   * B4 do pentest (06/09/2026): esta linha DIZIA "Fora do horário de ligação".
+   * Era afirmar uma causa que o dado não sustenta — `tratarFalha` também grava
+   * `nao_antes_de` DENTRO da janela (agora + intervalo entre tentativas), e aí a
+   * tela acusava um horário fechado que estava aberto. O rótulo agora é neutro:
+   * diz O QUE VAI ACONTECER (a hora da próxima tentativa), que é o que o
+   * operador precisa, e não POR QUE. A causa só aparece quando o servidor a
+   * manda — o `aviso` de `dispararAgora`.
+   */
+  const esperandoProximaTentativa = Boolean(ligacao?.nao_antes_de);
 
   async function ligar() {
     setLigando(true);
@@ -85,13 +109,28 @@ export function SessaoLigacaoIa({
       aoAtualizar();
     } catch (e) {
       const erro = e instanceof ErroFicha360Api ? e : null;
+      const titulo =
+        erro?.codigo === "telefone_invalido"
+          ? "Telefone não é discável"
+          : erro?.status === 503
+            ? "Ligação por IA não configurada"
+            : // 409 agora só sobra para `discando`/`em_ligacao`: em `na_fila` o
+              // servidor reaproveita a ligação e disca (200).
+              erro?.status === 409
+              ? "A IA já está ligando para esta pessoa"
+              : // B3: o servidor limita 5 pedidos por 10 minutos, por pessoa —
+                // cada um disca de verdade e toca o telefone de um cliente.
+                erro?.status === 429
+                ? "Muitas ligações seguidas"
+                : "Não foi possível pedir a ligação";
       notificar({
         tom: "erro",
-        titulo: erro?.status === 503 ? "Ligação por IA não configurada" : erro?.status === 409 ? "Já existe uma ligação em andamento" : "Não foi possível pedir a ligação",
+        titulo,
         descricao:
           erro?.status === 503
             ? "A ligação por IA ainda não está ligada neste servidor. Enquanto isso, alguém da equipe liga e registra o contato na ficha."
             : erro?.message ?? "Confira a internet e tente de novo.",
+        duracao: erro?.codigo === "telefone_invalido" ? 12000 : undefined,
       });
     } finally {
       setLigando(false);
@@ -162,6 +201,11 @@ export function SessaoLigacaoIa({
             </span>
           </div>
           <p className="text-sm text-tinta-suave">{ESTADO[ligacao.status].explicacao}</p>
+          {ligacao.status === "na_fila" && esperandoProximaTentativa && (
+            <p className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5 text-sm text-[color:var(--ambar)]">
+              Aguardando · próxima tentativa {formatarDataHora(ligacao.nao_antes_de!)}. Para não esperar, use “Ligar por IA agora”: esta mesma ligação sai da fila e disca na hora.
+            </p>
+          )}
           {ligacao.resultado && (
             <p className="text-sm text-tinta">
               <strong>Resultado:</strong> {RESULTADO[ligacao.resultado]}
@@ -192,7 +236,7 @@ export function SessaoLigacaoIa({
       )}
 
       <div className="nao-imprimir flex flex-wrap gap-2">
-        {!ativa && (
+        {!emCurso && (
           <Botao variante={temAgendamentoAtivo ? "secundario" : "primario"} icone={ICONE_TELEFONE} carregando={ligando} onClick={ligar}>
             Ligar por IA agora
           </Botao>
@@ -225,6 +269,11 @@ export function SessaoLigacaoIa({
                   {item.nao_antes_de && !item.encerrada_em && <span className="text-tinta-suave">próxima tentativa não antes de {formatarDataHora(item.nao_antes_de)}</span>}
                   {item.duracao_segundos != null && <span className="text-tinta-suave">{Math.round(item.duracao_segundos / 60)} min</span>}
                   {item.custo_usd != null && <span className="text-tinta-suave">custo US$ {item.custo_usd.toFixed(2)}</span>}
+                  {item.expurgado_em && (
+                    <span className="text-tinta-fraca" title="Retenção de voz (Admin → Configurações → Ligação por IA). O resumo, a duração e o custo continuam guardados.">
+                      transcrição expurgada em {formatarDataHora(item.expurgado_em)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

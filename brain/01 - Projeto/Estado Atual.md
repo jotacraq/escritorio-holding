@@ -1,39 +1,37 @@
 # Estado Atual — SIC-HF
 
-**Atualizado em:** 2026-09-03
+**Atualizado em:** 2026-09-06 (Fase 7 em andamento). Histórico do dia 1 ficou em [[Fase 2 — o que entrou]] e no `Diário/`.
 
 ## O que é
 
-Sistema para o escritório da **Dra. Elaine Montenegro** (Time Holding Brasil / Grupo Participa) acompanhar o cliente da chegada no seminário até a contratação da Holding, e para dar ao advogado, **antes de cada Sessão de Viabilidade**, um briefing de quem é aquela família, como ela decide e como a sessão deve ser conduzida.
+Sistema para o escritório da **Dra. Elaine Montenegro** (Time Holding Brasil / Grupo Participa) acompanhar o cliente da chegada no seminário até a holding contratada, e dar ao advogado, **antes de cada Sessão de Viabilidade**, o Briefing Estratégico (quem é a família, como decide, o que proteger, que objeção virá). Depois da sessão, o Croqui é **cálculo determinístico do método** (19 tabelas, faixas, procedência por célula) — a IA só narra.
 
-O nome e o método vêm de um documento institucional escrito pela própria advogada (SIC-HF v1.0) — [[02 - Metodo/POPs]] e [[02 - Metodo/Protocolo 01 - Briefing Estrategico]].
+Nome e método vêm do documento institucional da própria advogada — [[02 - Metodo/POPs]], [[02 - Metodo/Protocolo 01 - Briefing Estrategico]]. Esteira: [[03 - Dominio/Esteira do cliente]].
 
-## Em que pé está
+## Em que pé está (06/09/2026)
 
-- **2026-09-03** — Dia 1. Projeto nascendo. Nada em produção.
-- Materiais de origem recebidos e extraídos para `06 - Materiais/`.
-- Projeto Supabase criado (`fcfsnqqaphtamhrpuyoh`, sa-east-1) — [[04 - Tecnico/Stack e deploy]].
-- Repositório de código: `C:\Users\João\projetos\sic-hf`.
-- Alvo do João: **MVP funcional para apresentar em 2026-09-04**.
+| | |
+|---|---|
+| **Produção** | `escritorio.grupoparticipa.app.br`, Hostinger Node.js App, deploy automático por push no remote `infra` (`origin` = backup; empurrar nos dois). Versão publicada em `/versao.txt`. |
+| **Banco** | Supabase `fcfsnqqaphtamhrpuyoh` (sa-east-1), migrations até **0072** aplicadas e provadas (`scripts/verificacao-*.sql`). RLS em toda tabela; links públicos só por RPC (0072). |
+| **Dados** | Só a pessoa do próprio João (`origem_dado='exemplo'`), controlada por `scripts/seed-exemplo-completo.ts`. As 70 transcrições de clientes vivem só no banco (sigilo). **Nenhum cliente real passou pelo sistema ainda.** |
+| **Fases fechadas** | MVP · 2 · 3 (IA via OpenRouter) · 4 (esteira automatizada, design system) · 5 (Motor do Croqui) · 6 (3 sessões, menu de 5, Ficha em uma tela). Todas com trava do Fable aprovada. |
+| **Fase atual** | **7 — "Pronto para apresentar"**: ligação por IA madura e testada, pendências da trava da Fase 6, polimento de UX, suíte de testes (vitest). |
+| **Acessos** | `elaine@advmais.com` (admin, criado 06/09 — trocar senha no 1º acesso) · `juliano.alfredo86@gmail.com` (admin de teste). |
 
-## Escopo do MVP (definido pelo João)
+## O que roda de verdade × o que roda em modo manual rotulado
 
-1. Pipeline/kanban do lead por etapa, com origem por edição de seminário.
-2. Ficha 360 do cliente — formulário, ligação, patrimônio, documentos, linha do tempo.
-3. Briefing Estratégico gerado por IA (Protocolo 01).
-4. Croqui em HTML, modo apresentação, dentro do sistema (substitui o slide).
-5. Webhook Hotmart + réguas de comunicação (boas-vindas, D-7, dia da sessão, pós-sessão).
+- **Roda:** login/RLS, esteira e kanban, Ficha 360 (3 sessões), Briefing por IA (`effort=low`, US$ ~0,04), Cenário Patrimonial, Diagnóstico da SV, Motor do Croqui + simulador + `.docx`, radar de documentos, links públicos `/p/*`, régua de mensagens (fila), cron de 4 etapas, painel por papel, Admin (Integrações · Parâmetros · Modelos · Prompts · Custo).
+- **Modo manual / travado em configuração (não é código):** e-mail (falta `RESEND_API_KEY`), pagamento Hotmart (falta secret + ids), ligação por IA (workflows n8n e assistente Vapi prontos; falta Variable no n8n + 4 envs na Hostinger), croqui **não fecha** até a Dra. Elaine cadastrar alíquotas reais de ITCMD/ITBI por UF em faixas, sala automática (Meet/Zoom sem decisão), Chatwoot (código pronto, 5 envs).
+- **Inativo por decisão:** prompts v3 (briefing) e v2/narrativa (croqui) até bancada; trava dos 13 slides desligada (Marcio, 04/09).
 
-## Fora do MVP, mas prometido no documento
+## Decisões pendentes (só o João / Dra. Elaine)
 
-- Pesquisa em fontes públicas (JusBrasil e afins) para enriquecer a ficha — **tem implicação de LGPD, decidir antes de implementar**.
-- Material/isca em PDF personalizado pela dor do cliente, enviado pós-sessão.
-- Módulo 4 — base de conhecimento que aprende com as sessões (74 transcrições reais já disponíveis).
-- Ligação de agendamento feita por IA.
-- POPs 04 a 08: existem só como título no documento, sem procedimento escrito.
+Ver topo de `CONTINUAR-AQUI.md`. Resumo: alíquotas e parâmetros do escritório (divergências), B19 retenção/expurgo de dado sensível, B3/B13 IA sobre transcrição, B1 critério de MQL, B5 quem vê patrimônio, janela/tentativas/prompt da ligação por IA (Ana), provedor de WhatsApp, sala Meet/Zoom, POPs 04–08.
 
 ## Riscos que já se conhecem
 
-- **PII sensível de verdade:** patrimônio, imposto de renda, contrato social, composição familiar. Isso não é cadastro de aluno — é sigilo profissional de advogado. Storage privado, RLS em tudo, e nada disso vai para a IA sem regra explícita.
-- **Dinheiro passando pelo webhook.** Webhook de pagamento que falha aberto ou perde evento = venda invisível. Idempotência e fail-closed são obrigatórios.
-- Prazo de um dia: o que não der, fica como **stub rotulado na tela** — nunca dado falso.
+- **PII de sigilo profissional** (patrimônio, IR, contrato social, transcrição de voz): RLS em tudo, Storage privado, IA só com regra registrada. Retenção ainda sem prazo (B19).
+- **Dinheiro pelo webhook:** fail-closed + idempotência por id de evento (0011, 0061). Sem `HOTMART_WEBHOOK_SECRET` o endpoint recusa.
+- **Ligação automática ligada em produção** (`ligacao_ia.automatica=true`, decisão do João de 05/09) antes de qualquer ligação real ter sido validada — inofensivo enquanto as envs não existem (cai no manual rotulado), mas o 1º teste real tem de ser com o telefone do João.
+- **Deploy por push:** conferir `/versao.txt` depois de cada push; já houve build antigo no ar.

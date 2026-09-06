@@ -232,7 +232,7 @@ const ROTULOS_TIPO_PATRIMONIO: Record<PatrimonioItem["tipo"], string> = {
 
 function SecaoPatrimonial({ patrimonio }: { patrimonio: PatrimonioItem[] }) {
   if (patrimonio.length === 0) {
-    return <EstadoVazio titulo="Nenhum item patrimonial registrado" descricao="Registre os bens na aba Patrimônio — este relatório reflete o mesmo dado." />;
+    return <EstadoVazio titulo="Nenhum item patrimonial registrado" descricao="Abra Patrimônio na Ficha e registre os bens — este relatório mostra o mesmo dado." />;
   }
   const grupos = new Map<PatrimonioItem["tipo"], PatrimonioItem[]>();
   for (const item of patrimonio) {
@@ -535,7 +535,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
         <legend className="text-base font-bold text-tinta">Composição patrimonial</legend>
-        <p className="nao-imprimir text-xs text-tinta-fraca">Mesma fonte da aba Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
+        <p className="nao-imprimir text-xs text-tinta-fraca">Mesma fonte de Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
         <SecaoPatrimonial patrimonio={patrimonio} />
       </fieldset>
 

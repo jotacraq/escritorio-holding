@@ -415,7 +415,7 @@ export async function montarFicha360(
       jornadaId,
       supabase
         .from("ligacoes_ia")
-        .select("id, jornada_id, provedor, status, tentativa, resultado, horario_escolhido, agendamento_id, disparada_em, encerrada_em, resumo, erro, criado_em")
+        .select("id, jornada_id, provedor, status, tentativa, resultado, horario_escolhido, agendamento_id, disparada_em, encerrada_em, resumo, erro, criado_em, nao_antes_de, expurgado_em")
         .eq("jornada_id", jornadaId)
         .order("criado_em", { ascending: false })
         .limit(1)
