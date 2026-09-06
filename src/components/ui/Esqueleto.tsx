@@ -49,7 +49,7 @@ export function EsqueletoCartao({ quantidade = 3, rotulo = "Carregando…" }: { 
 
 export function EsqueletoFicha({ rotulo = "Carregando a ficha…" }: { rotulo?: string }) {
   return (
-    <div role="status" aria-live="polite" className="flex flex-col gap-6">
+    <div role="status" aria-live="polite" className="flex flex-col gap-bloco">
       <span className="sr-only">{rotulo}</span>
       <div className="flex flex-col gap-3">
         <Bloco className="h-3 w-24" />

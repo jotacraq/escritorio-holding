@@ -127,7 +127,7 @@ export function ParametrosAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <Intro />
         {!novo && (

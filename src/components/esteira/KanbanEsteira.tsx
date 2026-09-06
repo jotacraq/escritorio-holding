@@ -7,13 +7,14 @@ import { useToast } from "@/hooks/useToast";
 import { atualizarEtapa, ApiError, listarJornadas, type EtapaJornada, type EtapaOrdem, type FiltrosJornadas, type JornadaKanban } from "@/lib/api";
 import { Botao } from "@/components/ui/Botao";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
+import { agruparColunasPorSessao } from "./sessaoDaEtapa";
 import { EsqueletoCartao } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { CartaoJornada } from "./CartaoJornada";
 import { FiltrosEsteira, haFiltroAtivo, type OpcaoEdicao } from "./FiltrosEsteira";
 import { ListaPorEtapa } from "./ListaPorEtapa";
 import { CHAVE_VISAO_ESTEIRA, corDaEtapa, type VisaoEsteira } from "./etapas";
-import { rotulo, rotuloDeEtapa, titleDe } from "@/lib/vocabulario";
+import { rotuloDeEtapa, titleDe } from "@/lib/vocabulario";
 
 const ICONE_QUADRO = (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
@@ -232,15 +233,16 @@ export function KanbanEsteira() {
   );
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Dia a dia"
-        titulo={<span title={titleDe("esteira")}>{rotulo("esteira")}</span>}
+        titulo={<span title={titleDe("esteira")}>Clientes</span>}
+        descricao="Todo mundo, e em qual das três sessões cada um está."
         acoes={alternadorVisao}
         meta={
           !carregandoJornadas && !erroJornadas ? (
             <span>
-              {total} {total === 1 ? "jornada" : "jornadas"}
+              {total} {total === 1 ? "cliente" : "clientes"}
               {filtroAtivo ? " com os filtros atuais" : mostrarFechadas ? " (abertas e fechadas)" : " abertas"}
             </span>
           ) : undefined
@@ -266,7 +268,7 @@ export function KanbanEsteira() {
       {etapasOrdenadas.length > 0 && (
         <>
           {/* Resumo por etapa — "quantas pessoas em cada etapa, agora?" + atalho para a coluna/seção. */}
-          <nav aria-label="Resumo por etapa" className="flex flex-wrap gap-2">
+          <nav aria-label="Resumo por etapa" className="flex flex-wrap gap-1">
             {etapasOrdenadas.map((etapa) => {
               const quantidade = contagemPorEtapa.get(etapa.etapa) ?? 0;
               return (
@@ -288,14 +290,14 @@ export function KanbanEsteira() {
             })}
           </nav>
 
-          {erroJornadas ? <EstadoErro erro={erroJornadas} tentarNovamente={recarregarJornadas} titulo="Não foi possível carregar as jornadas" /> : null}
+          {erroJornadas ? <EstadoErro erro={erroJornadas} tentarNovamente={recarregarJornadas} titulo="Não foi possível carregar os clientes" /> : null}
 
-          {carregandoJornadas && itens.length === 0 && !erroJornadas && <EsqueletoCartao quantidade={6} rotulo="Carregando jornadas…" />}
+          {carregandoJornadas && itens.length === 0 && !erroJornadas && <EsqueletoCartao quantidade={6} rotulo="Carregando os clientes…" />}
 
           {!carregandoJornadas && !erroJornadas && itens.length === 0 && (
             <EstadoVazio
               ilustracao="busca"
-              titulo="Nenhuma jornada encontrada"
+              titulo="Nenhum cliente encontrado"
               descricao={
                 filtroAtivo
                   ? "Nenhuma pessoa bate com estes filtros."
@@ -323,9 +325,18 @@ export function KanbanEsteira() {
                 tabIndex={0}
                 role="group"
                 aria-label="Colunas. Use as setas do teclado ou os botões ao lado para rolar na horizontal."
-                className="trilha-esteira relative flex gap-4 overflow-x-auto pb-4"
+                className="trilha-esteira relative flex items-start gap-cartao overflow-x-auto pb-item"
               >
-                {etapasOrdenadas.map((etapa) => {
+                {/* As TRÊS SESSÕES como faixas sobre as colunas (Fase 6 §1.3).
+                    Nenhuma coluna sumiu nem foi renomeada: elas continuam
+                    vindo de `etapas_jornada_ordem`. O que apareceu foi o nome
+                    do produto por cima — "em qual das três sessões cada um
+                    está", que é o que o menu promete. */}
+                {agruparColunasPorSessao(etapasOrdenadas).map((faixa) => (
+                <section key={faixa.chave} aria-label={faixa.rotulo} className="flex shrink-0 flex-col gap-1">
+                  <h2 className="sticky left-0 px-1 text-rotulo font-medium uppercase text-tinta-fraca">{faixa.rotulo}</h2>
+                  <div className="flex items-start gap-item">
+                {faixa.colunas.map((etapa) => {
                   const cartoes = itens.filter((j) => j.etapa === etapa.etapa);
                   const colapsada = colunaColapsada(etapa.etapa, cartoes.length);
                   const idColuna = `coluna-${etapa.etapa}`;
@@ -343,7 +354,7 @@ export function KanbanEsteira() {
                         if (jornada) moverJornada(jornada, etapa.etapa);
                       }}
                       className={`flex shrink-0 flex-col rounded-cartao border border-linha bg-papel transition-[width] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] ${
-                        colapsada ? "w-14" : "w-80"
+                        colapsada ? "w-12" : "w-72"
                       }`}
                       style={{
                         borderTopColor: corDaEtapa(etapa.cor),
@@ -356,7 +367,7 @@ export function KanbanEsteira() {
                           onClick={() => alternarColuna(etapa.etapa, cartoes.length)}
                           aria-expanded={false}
                           aria-controls={`${idColuna}-cartoes`}
-                          className="flex min-h-[220px] flex-1 flex-col items-center gap-3 px-2 py-4 text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:bg-papel-elevado hover:text-tinta"
+                          className="flex min-h-[200px] flex-1 flex-col items-center gap-item px-2 py-3 text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:bg-papel-elevado hover:text-tinta"
                         >
                           <span
                             className={`rounded-full px-2 py-0.5 text-legenda font-bold tabular-nums ${cartoes.length > 0 ? "bg-latao-fraco text-tinta" : "bg-papel-elevado text-tinta-fraca"}`}
@@ -370,7 +381,7 @@ export function KanbanEsteira() {
                         </button>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between gap-2 px-3 pt-3">
+                          <div className="flex items-center justify-between gap-2 px-item pt-item">
                             <h2 id={idTitulo} className="flex items-center gap-2 text-sm font-bold text-tinta" title={etapa.title}>
                               {etapa.rotulo}
                               <span
@@ -392,8 +403,8 @@ export function KanbanEsteira() {
                               <span className="sr-only">Recolher a coluna {etapa.rotulo}</span>
                             </button>
                           </div>
-                          <div id={`${idColuna}-cartoes`} className="flex min-h-[120px] flex-col gap-3 p-3">
-                            {cartoes.length === 0 && <EstadoVazio compacto titulo="Nenhuma jornada aqui" descricao="Arraste um cartão ou use “Mover”." />}
+                          <div id={`${idColuna}-cartoes`} className="flex min-h-[100px] flex-col gap-item p-item">
+                            {cartoes.length === 0 && <EstadoVazio compacto titulo="Ninguém aqui" descricao="Arraste um cartão ou use “Mover”." />}
                             {cartoes.map((jornada) => (
                               <CartaoJornada
                                 key={jornada.id}
@@ -414,6 +425,9 @@ export function KanbanEsteira() {
                     </section>
                   );
                 })}
+                  </div>
+                </section>
+                ))}
               </div>
 
               {/* Degradês + botões: avisam e permitem rolar quando há coluna fora da vista. */}

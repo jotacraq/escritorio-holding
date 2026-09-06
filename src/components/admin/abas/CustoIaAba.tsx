@@ -43,7 +43,7 @@ export function CustoIaAba() {
   const semExecucaoReal = resumo.execucoes_reais === 0;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <IntroAba>Quanto a IA custou, em dólar, por mês, por versão de prompt e por cliente. Só execução real conta; demonstração aparece separada.</IntroAba>
 
       <div className="grid gap-4 sm:grid-cols-2">

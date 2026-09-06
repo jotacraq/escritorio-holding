@@ -1,29 +1,27 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
 import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
 import { EstadoErro } from "@/components/ui/Estado";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
-import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { PastaDoCliente } from "@/components/pasta/PastaDoCliente";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { derivarPasta } from "@/lib/pasta/derivar";
+import { sinaisDaFicha } from "@/lib/pasta/sinais";
+import { agruparPorSessao, derivarTrilho } from "@/lib/pasta/trilho";
 import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import { FormularioAba } from "@/components/ficha360/FormularioAba";
 import { LigacaoAba } from "@/components/ficha360/LigacaoAba";
-import { LinksAba } from "@/components/ficha360/LinksAba";
 import { PatrimonioAba } from "@/components/ficha360/PatrimonioAba";
 import { DocumentosAba } from "@/components/ficha360/DocumentosAba";
 import { SessaoAba } from "@/components/ficha360/SessaoAba";
 import { RelatorioAba } from "@/components/ficha360/RelatorioAba";
 import { BriefingAba } from "@/components/briefing/BriefingAba";
 import { MaterialAba } from "@/components/ficha360/MaterialAba";
-import { PesquisaPublicaAba } from "@/components/ficha360/PesquisaPublicaAba";
-import { CroquiAba } from "@/components/ficha360/CroquiAba";
 import { AnaliseSessaoAba } from "@/components/ficha360/AnaliseSessaoAba";
 import { TimelineAba } from "@/components/ficha360/TimelineAba";
 import { DiagnosticoSv } from "@/components/ficha360/DiagnosticoSv";
@@ -31,100 +29,135 @@ import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/ap
 import { TrilhoDaFicha } from "@/components/ficha360/TrilhoDaFicha";
 import { AutomacoesFicha } from "@/components/ficha360/AutomacoesFicha";
 import { RadarDocumentos } from "@/components/ficha360/RadarDocumentos";
+import { BarraEnviar } from "@/components/ficha360/BarraEnviar";
+import { CartaoCroqui } from "@/components/ficha360/CartaoCroqui";
 import type { SinaisSessaoPasta } from "@/components/pasta/PastaDoCliente";
 import type { Ficha360 } from "@/lib/api";
 
-/** Rótulo de cada Gaveta migrada (Camada 2) — mesmo nome de negócio da aba original. */
-const TITULO_GAVETA: Partial<Record<ChaveItemPasta, string>> = {
+/**
+ * A Ficha do cliente — Fase 6.
+ *
+ * O diagnóstico do João, depois de usar a Fase 5: *"A Pasta do cliente está
+ * confusa; as abas (briefing, sessão, análise da sessão) estão confusas. Eu
+ * não consigo reunir os dados e ver: esse cara, a situação dele é essa, isso
+ * vai acontecer, falta isso para terminar."*
+ *
+ * A Ficha passa a responder cinco perguntas, de cima para baixo, **numa tela
+ * só**:
+ *   1. QUEM É        — a faixa de identidade + a gaveta "Ficha completa".
+ *   2. ONDE ESTÁ     — as 3 sessões (`TrilhoDaFicha`), com a atual aberta.
+ *   3. A PRÓXIMA AÇÃO— um botão só, `data-acao-agora`, dentro do trilho.
+ *   4. O QUE ENVIAR  — a barra "Enviar": os links desta pessoa, 1 clique.
+ *   5. O QUE ACONTECEU / O QUE FALTA — a Pasta, agrupada pelas 3 sessões.
+ *
+ * **A barra de abas acabou.** Não há mais "Ver tudo" nem uma fileira de nove
+ * nomes: cada artefato é um cartão da Pasta que abre a MESMA tela de antes,
+ * agora numa gaveta. O deep-link por hash continua funcionando — inclusive os
+ * de fora (`hrefDoPasso`, chips do Painel, `#briefing` do cabeçalho) —, só que
+ * agora todo hash conhecido abre gaveta, em vez de uns abrirem gaveta e outros
+ * trocarem uma aba.
+ *
+ * O croqui virou cartão + botão (`CartaoCroqui`): as 19 tabelas moram em
+ * `/croquis/[id]`, e eram ~8.600 px de DOM em toda abertura de Ficha.
+ */
+
+/** Rótulo de cada gaveta — o nome de negócio, igual ao da Pasta. */
+const TITULO_GAVETA: Record<string, string> = {
   formulario: "Formulário",
-  ligacao: "Ligação",
-  links: "Links",
+  ligacao: "Contato da equipe",
   documentos: "Documentos",
   patrimonio: "Patrimônio",
+  briefing: "Briefing",
+  sessao: "Sessão",
+  analise_sessao: "Análise da sessão",
+  relatorio_sv: "Relatório da sessão",
+  diagnostico_sv: "Diagnóstico",
+  material: "Material",
+  transcricao: "Histórico",
+};
+
+/**
+ * Toda chave que abre gaveta nesta tela. `ITENS_EM_GAVETA` (o contrato da
+ * Fase 3, em `lib/pasta/rotas.ts`) é o subconjunto que já era gaveta; as
+ * demais eram abas e viraram gaveta aqui. `historico` não é item da Pasta —
+ * é a linha do tempo, alcançável pelo botão do rodapé e por `#historico`.
+ */
+const CHAVES_EM_GAVETA = new Set<string>([
+  ...ITENS_EM_GAVETA,
+  "briefing",
+  "sessao",
+  "analise_sessao",
+  "relatorio_sv",
+  "diagnostico_sv",
+  "material",
+  "historico",
+  // Aliases dos hashes antigos, para link salvo/colado não morrer.
+  "links",
+  "analise-sessao",
+  "relatorio",
+  "diagnostico",
+  "timeline",
+]);
+
+/** Hash antigo -> chave nova. Um link colado no WhatsApp da equipe continua abrindo. */
+const ALIAS_HASH: Record<string, string> = {
+  "analise-sessao": "analise_sessao",
+  relatorio: "relatorio_sv",
+  diagnostico: "diagnostico_sv",
+  timeline: "historico",
+  // `links` era a aba de emissão; hoje quem responde por link é a barra "Enviar".
+  links: "enviar",
 };
 
 export default function PaginaFicha360({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { ficha, carregando, erro, recarregar } = useFicha360(id);
 
-  // Fase 4 (agente H): recarregar depois de uma ação NÃO derruba a tela —
-  // a ficha antiga fica de pé enquanto a nova chega (senão toda ação em
-  // gaveta/aba fechava a gaveta e piscava a página inteira). Só a primeira
-  // carga mostra o esqueleto; erro só toma a tela quando não há ficha.
-  if (carregando && !ficha) return <EsqueletoFicha rotulo="Carregando ficha…" />;
-  if (erro && !ficha) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar esta jornada" />;
+  // Recarregar depois de uma ação NÃO derruba a tela — a ficha antiga fica de
+  // pé enquanto a nova chega (senão toda ação em gaveta fechava a gaveta e
+  // piscava a página inteira). Só a primeira carga mostra o esqueleto.
+  if (carregando && !ficha) return <EsqueletoFicha rotulo="Carregando a ficha…" />;
+  if (erro && !ficha) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível abrir esta ficha" />;
   if (!ficha) return null;
 
   return <ConteudoFicha id={id} ficha={ficha} recarregar={recarregar} />;
 }
 
 function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360; recarregar: () => void }) {
-  // Busca única do Briefing atual (Tarefa 5) — antes, `CabecalhoFicha` e
-  // `BriefingAba` buscavam o mesmo `briefingAtual.id` cada um por conta
-  // própria. Elevado para cá, distribuído por prop.
+  // Busca única do Briefing atual — antes `CabecalhoFicha` e `BriefingAba`
+  // buscavam o mesmo `briefingAtual.id` cada um por conta própria.
   const { briefing, setBriefing, carregando: carregandoBriefing, erro: erroBriefing } = useBriefingAtual(ficha.briefingAtual?.id ?? null);
 
   // O backend não manda uma flag "pode ver patrimônio" — manda `null` no lugar
   // do array quando o papel não permite. É esse null que decide a UI aqui.
   const podeVerPatrimonio = ficha.patrimonio !== null;
 
-  // Estado do Croqui elevado para cá (mesma cirurgia de `useBriefingAtual`) —
-  // antes `CroquiAba` e `AnaliseSessaoAba` chamavam `useCroquiDaJornada` cada
-  // uma por conta própria. O hook é SEMPRE chamado (regra dos hooks do
-  // React); `croquiId` já nasce `null` quando não há croqui na timeline, e a
-  // prop `croquiAtalho` do cabeçalho é que fica `null` quando o papel não vê
-  // patrimônio — não a chamada do hook.
+  // Estado do Croqui elevado para cá (mesma cirurgia de `useBriefingAtual`).
+  // O hook é SEMPRE chamado (regra dos hooks do React); `croquiId` já nasce
+  // `null` quando não há croqui na timeline.
   const estadoCroqui = useCroquiDaJornada({ jornadaId: id, ficha, timeline: ficha.timeline });
-  // Sem o contador de revisão dos 13 slides: ele mede o editor da IA v1, e o
-  // botão ao lado abre a apresentação das 19 tabelas do motor — número de
-  // uma tela carimbado no atalho de outra.
-  const croquiAtalho = podeVerPatrimonio && estadoCroqui.croquiAtual ? { croquiId: estadoCroqui.croquiAtual.id } : null;
-  // Fase 2 de "A Pasta do Cliente" — mesma lista que alimenta o chip
-  // "Próxima ação" da faixa vital (CabecalhoFicha), calculada uma vez e
-  // compartilhada, não duplicada por componente.
-  const pasta = derivarPasta(ficha, podeVerPatrimonio);
-  // Link cruzado Briefing ↔ Análise da Sessão (Tarefa 2): a existência da
-  // análise vem do evento `analise_sessao` que o trigger `0043` grava na
-  // timeline — já carregada em `ficha.timeline`, sem requisição nova.
-  // Condicionado a `podeVerPatrimonio` (achado MÉDIO do pentest, 04/09): sem
-  // isso, um papel sem acesso a patrimônio via a timeline (que ele recebe
-  // sem gate) vazava a EXISTÊNCIA de uma Análise da Sessão que ele não pode
-  // ver o conteúdo — metadado institucional que só admin/advogada deveriam
-  // saber que existe.
+
+  // A Pasta, menos o cartao "Links": a barra "Enviar" ficou responsavel por
+  // todo link publico e esta SEMPRE na tela. Manter o cartao seria dois lugares
+  // dizendo coisas diferentes sobre o mesmo link (um deles "Ainda nao", com a
+  // barra logo acima ja oferecendo o botao). O hash `#links` continua chegando
+  // aqui: `ALIAS_HASH` o manda para a barra.
+  const pasta = derivarPasta(ficha, podeVerPatrimonio).filter((item) => item.chave !== "links");
+
+  // Qual das 3 sessoes esta acesa — a mesma derivacao do trilho, para a Pasta
+  // abrir o grupo certo. `sinaisDaFicha` e puro e ja e chamado pelo trilho;
+  // repetir a chamada e barato e mantem UMA fonte de verdade (nao ha estado
+  // compartilhado que possa dessincronizar).
+  const sessaoAtual = agruparPorSessao(derivarTrilho(sinaisDaFicha(ficha))).find((b) => b.estado === "atual")?.chave ?? null;
+
+  // Link cruzado Briefing <-> Análise da Sessão: a existência da análise vem do
+  // evento `analise_sessao` que o trigger 0043 grava na timeline — já
+  // carregada em `ficha.timeline`, sem requisição nova. Condicionado a
+  // `podeVerPatrimonio` (achado MÉDIO do pentest, 04/09): sem isso, um papel
+  // sem acesso a patrimônio via a timeline (que ele recebe sem gate) vazava a
+  // EXISTÊNCIA de uma Análise da Sessão cujo conteúdo ele não pode ver.
   const temAnaliseSessao = podeVerPatrimonio && ficha.timeline.some((e) => e.tipo === "analise_sessao");
 
-  // Fase 3 — Formulário, Ligação, Links, Documentos e Patrimônio migraram
-  // para a Gaveta (Camada 2, ver `ITENS_EM_GAVETA` em `lib/pasta/rotas.ts`) e
-  // SAEM do array `abas` — quem os renderiza agora é o bloco de `<Gaveta>`
-  // abaixo, com os MESMOS componentes e props (nenhuma lógica duplicada).
-  // `Abas` continua existindo para os itens não migrados desta rodada
-  // (Relatório, Briefing, Análise da Sessão, Material) e os que não fazem
-  // parte da Pasta (Sessão, Pesquisa pública, Croqui, Linha do tempo) — lista
-  // PLANA (sem `grupo`), como já era desde a Fase 2. Nenhuma regra de acesso
-  // muda: o mesmo `podeVerPatrimonio` que já gateava
-  // Patrimônio/Documentos/Relatório/Croqui continua gateando os mesmos itens
-  // (agora Patrimônio/Documentos como Gaveta, Relatório/Croqui como aba).
-  const abas: DefinicaoAba[] = [
-    {
-      id: "briefing",
-      rotulo: "Briefing",
-      conteudo: (
-        <BriefingAba
-          jornadaId={id}
-          briefing={briefing}
-          setBriefing={setBriefing}
-          carregando={carregandoBriefing}
-          erro={erroBriefing}
-          temAnaliseSessao={temAnaliseSessao}
-        />
-      ),
-    },
-    { id: "sessao", rotulo: "Sessão", conteudo: <SessaoAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} /> },
-  ];
-
-  // Fase 4 (agente H) — sinais da Sessão para o cartão "Sessão" da Pasta:
-  // presença (0051), sala e ligação por IA, lidos do MESMO payload da Ficha
-  // (`extrasDaFicha` tolera coluna/tabela ausente → "sem informação").
   const extras = extrasDaFicha(ficha);
   const proximoAgendamento = proximoAgendamentoAtivo(extras.agendamentos);
   const sinaisSessao: SinaisSessaoPasta = {
@@ -136,198 +169,153 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
     ligacaoIaStatus: extras.ligacaoIaAtual?.status ?? null,
   };
 
-  // "Análise da Sessão" (U3/U4, ARQUITETURA-FASE-3.md §5.3) — antes era
-  // sub-aba de CroquiAba, a 4 cliques e 3 níveis de aninhamento do Briefing.
-  // Mesmo gate `podeVerPatrimonio` que já protegia a sub-aba equivalente
-  // dentro de Croqui (ela lê patrimônio/familiares para os gráficos da
-  // arquitetura recomendada) — não afrouxa o recorte, só muda de nível.
-  if (podeVerPatrimonio) {
-    abas.push({
-      id: "analise-sessao",
-      rotulo: "Análise da Sessão",
-      conteudo: <AnaliseSessaoAba jornadaId={id} ficha={ficha} estadoCroqui={estadoCroqui} />,
-    });
-  }
+  // Um dono só para a gaveta na tela inteira: a Pasta, o trilho, o cabeçalho e
+  // o deep-link por hash mexem todos neste estado.
+  const [gavetaAberta, setGavetaAberta] = useState<string | null>(null);
+  const abrir = useCallback((chave: ChaveItemPasta | string) => setGavetaAberta(String(chave)), []);
+  const fechar = useCallback(() => setGavetaAberta(null), []);
 
-  // Relatório da SV carrega patrimônio (`exigirVePatrimonio` na rota) — mesmo
-  // recorte de Patrimônio/Documentos/Croqui: a aba nem aparece pra quem o
-  // servidor negaria.
-  if (podeVerPatrimonio) {
-    abas.push({ id: "relatorio", rotulo: "Relatório", conteudo: <RelatorioAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} /> });
-  }
+  // Quando o próximo passo é mandar um link, o botão do trilho rola até a barra
+  // "Enviar" e foca o botão daquele link. É o "cadê o link" resolvido no lugar
+  // onde o operador estava olhando, sem tirá-lo da ficha.
+  const barraRef = useRef<HTMLDivElement>(null);
+  const croquiRef = useRef<HTMLDivElement>(null);
+  const focarEnvio = useCallback((tipo: string) => {
+    const alvo = barraRef.current?.querySelector<HTMLElement>(`[data-envio="${tipo}"] button`);
+    barraRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    alvo?.focus();
+  }, []);
 
-  // Diagnóstico da SV (Fase 4 §4.7, 0058) — mesmo gate de patrimônio do
-  // Relatório/Cenário: a rota exige `ve_patrimonio`. Página própria em
-  // `/jornadas/[id]/diagnostico` para o modo apresentação.
-  if (podeVerPatrimonio) {
-    abas.push({
-      id: "diagnostico",
-      rotulo: "Diagnóstico",
-      conteudo: <DiagnosticoSv jornadaId={id} hrefApresentar={`/jornadas/${id}/diagnostico?apresentar=1`} aoMudar={recarregar} />,
-    });
-  }
-
-  abas.push({ id: "material", rotulo: "Material", conteudo: <MaterialAba jornadaId={id} /> });
-  abas.push({ id: "pesquisa", rotulo: "Pesquisa pública", conteudo: <PesquisaPublicaAba /> });
-
-  if (podeVerPatrimonio) {
-    abas.push({ id: "croqui", rotulo: "Croqui", conteudo: <CroquiAba jornadaId={id} estadoCroqui={estadoCroqui} /> });
-  }
-
-  abas.push({ id: "timeline", rotulo: "Linha do tempo", conteudo: <TimelineAba eventos={ficha.timeline} /> });
-
-  // Estado único da Camada 2 (Gaveta) para as 5 chaves migradas — `null` é
-  // "nenhuma gaveta aberta". Elevado para este componente (não para dentro
-  // de `PastaDoCliente`) porque tanto o cartão da Pasta quanto o chip
-  // "Próxima ação" de `CabecalhoFicha` precisam poder abrir a mesma gaveta.
-  const [gavetaAberta, setGavetaAberta] = useState<ChaveItemPasta | null>(null);
+  // Deep-link por hash. Todo hash conhecido abre gaveta; hash de aba antiga
+  // passa pelo alias. `#enviar` rola até a barra em vez de abrir gaveta.
+  useEffect(() => {
+    function aplicar() {
+      const bruto = window.location.hash.slice(1);
+      if (!bruto) return;
+      const chave = ALIAS_HASH[bruto] ?? bruto;
+      if (chave === "enviar") {
+        barraRef.current?.scrollIntoView({ block: "center" });
+        return;
+      }
+      // O croqui não é gaveta: é cartão + botão para `/croquis/[id]`. Um
+      // `#croqui` vindo da Pasta ou de um link antigo leva ao cartão.
+      if (chave === "croqui") {
+        // O cartao do croqui vive dentro de um `<details>` que nasce fechado
+        // quando a jornada ainda esta na sessao 1. Abrir antes de rolar, senao
+        // o link leva a um titulo e o cartao continua escondido.
+        croquiRef.current?.closest("details")?.setAttribute("open", "");
+        croquiRef.current?.scrollIntoView({ block: "center" });
+        return;
+      }
+      if (CHAVES_EM_GAVETA.has(chave)) setGavetaAberta(chave);
+    }
+    aplicar();
+    window.addEventListener("hashchange", aplicar);
+    return () => window.removeEventListener("hashchange", aplicar);
+  }, []);
 
   return (
-    <div className="flex flex-col gap-bloco">
-      <CabecalhoFicha
-        ficha={ficha}
-        aoAtualizar={recarregar}
-        briefing={briefing}
-        croquiAtalho={croquiAtalho}
-        aoAbrirGaveta={(chave) => setGavetaAberta(chave)}
-      />
-      {/* Fase 5 §1.3 — o trilho de 9 passos é a primeira coisa da Ficha e é
-          sticky: onde a família está + a ÚNICA ação de agora, sempre à vista.
-          Substitui a antiga faixa vital nesse papel (ver `CabecalhoFicha`). */}
-      <div className="nao-imprimir sticky top-0 z-20">
-        <TrilhoDaFicha ficha={ficha} aoAbrirGaveta={setGavetaAberta} />
-      </div>
-      {/* §1.4 e §1.5 — o que o sistema fez e o que falta de documento, no
-          fluxo da jornada, não escondidos em aba. O radar lê patrimônio e
-          família: fora do recorte, nem é montado (a rota recusaria). */}
-      <AutomacoesFicha jornadaId={id} />
-      {podeVerPatrimonio && <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} />}
-      <ConteudoPastaOuAbas pasta={pasta} abas={abas} aoMudarGaveta={setGavetaAberta} sinaisSessao={sinaisSessao} />
+    <div className="flex flex-col gap-item">
+      <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} briefing={briefing} aoAbrirGaveta={abrir} />
 
-      <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.formulario!}>
+      {/* ONDE ESTÁ + A AÇÃO DE AGORA. Sticky: some da vista só quem rolou de
+          propósito. É o bloco que o contador de aceite mede. */}
+      <div className="nao-imprimir sticky top-0 z-20">
+        <TrilhoDaFicha ficha={ficha} aoAbrirGaveta={abrir} aoCopiarLink={focarEnvio} />
+      </div>
+
+      {/* O QUE ENVIAR. */}
+      <div ref={barraRef} id="enviar">
+        <BarraEnviar jornadaId={id} ficha={ficha} />
+      </div>
+
+      {/* O QUE JÁ ACONTECEU / O QUE FALTA. O histórico anda junto: são as duas
+          formas de olhar para trás, e cada uma numa linha própria custava
+          55 px de dobra por nada. */}
+      <div className="flex flex-wrap items-center gap-item">
+        <div className="min-w-0 flex-1">
+          <AutomacoesFicha jornadaId={id} />
+        </div>
+        <button
+          type="button"
+          onClick={() => abrir("historico")}
+          className="nao-imprimir inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)]"
+        >
+          Histórico
+        </button>
+      </div>
+      <PastaDoCliente itens={pasta} aoAbrirGaveta={abrir} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} />
+
+      {/* A sessão 2 (Croqui estrutural) é onde IR e contrato social vivem — o
+          radar de documentos e o croqui pertencem a ela, não a blocos soltos
+          no meio da ficha. O radar lê patrimônio e família: fora do recorte,
+          nem é montado (a rota recusaria). */}
+      {podeVerPatrimonio && (
+        <details open={sessaoAtual === "croqui" || sessaoAtual === "entrega"} className="group flex flex-col gap-item">
+          <summary className="mb-item flex min-h-11 cursor-pointer list-none items-center justify-between gap-item marker:content-none">
+            <span className="text-subtitulo font-bold text-tinta">Documentos e croqui</span>
+            <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+              <span aria-hidden="true" className="group-open:hidden">ver</span>
+              <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
+            </span>
+          </summary>
+          <div className="flex flex-col gap-item">
+            <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} />
+            <div ref={croquiRef} id="croqui">
+              <CartaoCroqui estadoCroqui={estadoCroqui} />
+            </div>
+          </div>
+        </details>
+      )}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* As gavetas. Mesmos componentes das antigas abas, mesmas props,     */}
+      {/* mesmos gates de papel — o que mudou é que agora nenhuma delas      */}
+      {/* ocupa a dobra da tela até alguém pedir.                            */}
+      {/* ---------------------------------------------------------------- */}
+      <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.formulario} largura="larga">
         <FormularioAba jornadaId={id} />
       </Gaveta>
-      <Gaveta aberta={gavetaAberta === "ligacao"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.ligacao!}>
+
+      <Gaveta aberta={gavetaAberta === "ligacao"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.ligacao} largura="larga">
         <LigacaoAba jornadaId={id} ligacaoInicial={ficha.ligacao} trilha={ficha.jornada.trilha} aoAtualizar={recarregar} />
       </Gaveta>
-      <Gaveta aberta={gavetaAberta === "links"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.links!}>
-        <LinksAba jornadaId={id} />
+
+      <Gaveta aberta={gavetaAberta === "briefing"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.briefing} largura="larga">
+        <BriefingAba jornadaId={id} briefing={briefing} setBriefing={setBriefing} carregando={carregandoBriefing} erro={erroBriefing} temAnaliseSessao={temAnaliseSessao} />
       </Gaveta>
+
+      <Gaveta aberta={gavetaAberta === "sessao"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.sessao} largura="larga">
+        <SessaoAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} />
+      </Gaveta>
+
+      <Gaveta aberta={gavetaAberta === "material"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.material} largura="larga">
+        <MaterialAba jornadaId={id} />
+      </Gaveta>
+
+      <Gaveta aberta={gavetaAberta === "historico"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.transcricao} largura="larga">
+        <TimelineAba eventos={ficha.timeline} />
+      </Gaveta>
+
       {podeVerPatrimonio && (
         <>
-          <Gaveta aberta={gavetaAberta === "patrimonio"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.patrimonio!}>
+          <Gaveta aberta={gavetaAberta === "patrimonio"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.patrimonio} largura="larga">
             <PatrimonioAba jornadaId={id} />
           </Gaveta>
-          <Gaveta aberta={gavetaAberta === "documentos"} aoFechar={() => setGavetaAberta(null)} titulo={TITULO_GAVETA.documentos!}>
+          <Gaveta aberta={gavetaAberta === "documentos"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.documentos} largura="larga">
             <DocumentosAba jornadaId={id} pessoaId={ficha.pessoa.id} documentosIniciais={ficha.documentos} aoAtualizar={recarregar} />
+          </Gaveta>
+          <Gaveta aberta={gavetaAberta === "analise_sessao"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.analise_sessao} largura="larga">
+            <AnaliseSessaoAba jornadaId={id} ficha={ficha} estadoCroqui={estadoCroqui} />
+          </Gaveta>
+          <Gaveta aberta={gavetaAberta === "relatorio_sv"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.relatorio_sv} largura="larga">
+            <RelatorioAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} />
+          </Gaveta>
+          <Gaveta aberta={gavetaAberta === "diagnostico_sv"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.diagnostico_sv} largura="larga">
+            <DiagnosticoSv jornadaId={id} hrefApresentar={`/jornadas/${id}/diagnostico?apresentar=1`} aoMudar={recarregar} />
           </Gaveta>
         </>
       )}
     </div>
-  );
-}
-
-/**
- * Decide o que aparece abaixo do cabeçalho: sem hash na URL, a Pasta do
- * Cliente (tela raiz nova, Fase 2); com hash (`#briefing`, `#croqui`, ...),
- * o conteúdo da aba correspondente, como já funcionava. `Abas` continua sem
- * mudança de comportamento — só passa a ficar oculta quando não há hash.
- * Leitura de `window.location.hash` fica neste componente, não em `Abas`
- * (que não deveria saber da existência da Pasta) — mesmo padrão de "ler
- * sistema externo uma vez após montar" de `useTema.ts`.
- *
- * Fase 3 — deep-link dos 5 itens migrados para Gaveta: escolhida a opção (a)
- * do plano (`brain/Diário/2026-09-04.md`) — este componente também decide
- * abrir a Gaveta quando o hash bate com um item de `ITENS_EM_GAVETA`, em vez
- * de tratá-lo como "aba válida". Resultado: acessar `#documentos` direto
- * continua funcionando — abre a Gaveta de Documentos por cima da Pasta —
- * sem precisar de link morto nem de duplicar a Gaveta como aba de `Abas`.
- */
-function ConteudoPastaOuAbas({
-  pasta,
-  abas,
-  aoMudarGaveta,
-  sinaisSessao,
-}: {
-  pasta: ReturnType<typeof derivarPasta>;
-  abas: DefinicaoAba[];
-  aoMudarGaveta: (chave: ChaveItemPasta | null) => void;
-  sinaisSessao: SinaisSessaoPasta;
-}) {
-  const [hash, setHash] = useState<string | null>(null);
-
-  useEffect(() => {
-    function aplicarHash(valor: string | null) {
-      setHash(valor);
-      const chave = valor?.slice(1) as ChaveItemPasta | undefined;
-      if (chave && ITENS_EM_GAVETA.has(chave)) aoMudarGaveta(chave);
-    }
-    aplicarHash(window.location.hash || null);
-    function aoMudarHash() {
-      aplicarHash(window.location.hash || null);
-    }
-    window.addEventListener("hashchange", aoMudarHash);
-    return () => window.removeEventListener("hashchange", aoMudarHash);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Item migrado (`#formulario`, `#documentos`, ...) não conta como "aba
-  // válida" — a Gaveta é quem mostra o conteúdo, a Pasta continua por trás.
-  const chaveDoHash = hash?.slice(1) as ChaveItemPasta | undefined;
-  const hashEhItemEmGaveta = !!chaveDoHash && ITENS_EM_GAVETA.has(chaveDoHash);
-
-  // Antes de montar (SSR/primeira passada), `hash` é `null` — mesmo estado
-  // de "sem hash", então mostramos a Pasta sem flash: ela é o conteúdo
-  // padrão real, não um placeholder de carregamento.
-  const temHashValido = !hashEhItemEmGaveta && hash !== null && abas.some((a) => `#${a.id}` === hash);
-
-  function voltarParaPasta() {
-    // Mesmo motivo do `onClick` em `PastaDoCliente`: só reescrever o hash
-    // não é garantia de que o listener de `hashchange` seja avisado a
-    // tempo — disparamos o evento manualmente para o retorno ser síncrono.
-    history.pushState(null, "", window.location.pathname + window.location.search);
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-  }
-
-  /**
-   * Fase 5 §1.4 do pedido do João: as 9 abas **deixam de ser menu**. A Pasta é
-   * a única porta; quem quiser a tela crua entra por aqui. Nada foi apagado —
-   * o mesmo `<Abas>` de sempre, agora atrás de um botão em vez de ocupar a
-   * dobra com uma barra de 9 nomes.
-   */
-  function verTudo() {
-    const primeira = abas[0];
-    if (!primeira) return;
-    window.location.hash = `#${primeira.id}`;
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-  }
-
-  return (
-    <>
-      <div hidden={temHashValido} className="flex flex-col gap-bloco">
-        <PastaDoCliente itens={pasta} aoAbrirGaveta={aoMudarGaveta} sinaisSessao={sinaisSessao} />
-        <div className="nao-imprimir">
-          <button
-            type="button"
-            onClick={verTudo}
-            aria-expanded={temHashValido}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3.5 py-2 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)]"
-          >
-            Ver tudo
-            <span className="text-xs font-normal text-tinta-fraca">{abas.length} telas</span>
-          </button>
-        </div>
-      </div>
-      <div hidden={!temHashValido}>
-        <button
-          type="button"
-          onClick={voltarParaPasta}
-          className="nao-imprimir mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-controle text-sm font-medium text-tinta-suave hover:text-tinta"
-        >
-          ← Pasta do Cliente
-        </button>
-        <Abas abas={abas} deepLinkHash />
-      </div>
-    </>
   );
 }

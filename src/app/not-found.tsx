@@ -24,9 +24,9 @@ import { AppShell } from "@/components/shell/AppShell";
  * o 404 que estamos evitando.
  */
 const ROTAS_EM_CONSTRUCAO: Record<string, string> = {
-  "/painel": "O Painel do dia",
-  "/conhecimento": "A Base de Conhecimento",
-  "/importacoes": "A área de Importações",
+  "/hoje": "A tela de Hoje",
+  "/admin#repertorio": "O Repertório da IA",
+  "/admin#importacoes": "A área de Importações",
 };
 
 export default function NaoEncontrado() {
@@ -46,10 +46,10 @@ export default function NaoEncontrado() {
       </p>
       {!ehAreaPublica && (
         <Link
-          href="/esteira"
+          href="/clientes"
           className="rounded-controle border border-linha-forte bg-latao-fraco px-3.5 py-2 text-sm font-medium text-tinta hover:border-latao"
         >
-          Ir para a Esteira
+          Ir para os Clientes
         </Link>
       )}
     </div>

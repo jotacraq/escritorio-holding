@@ -7,7 +7,7 @@ import { EsqueletoLinha } from "@/components/ui/Esqueleto";
 import { Selo } from "@/components/ui/Selo";
 import { rotulo, titleDe } from "@/lib/vocabulario";
 import { buscarProvaDeVida } from "./api-regua";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 
 const ICONE_CHECK = (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -71,7 +71,7 @@ export function ProvaDeVida({ versao }: { versao: number }) {
       <span className="tabular-nums">
         <span className="font-bold text-tinta">{naFila}</span> na fila
       </span>
-      <LinkBotao href="/comunicacao" variante="fantasma" className="sm:ml-auto">
+      <LinkBotao href="/mensagens" variante="fantasma" className="sm:ml-auto">
         Ver mensagens
       </LinkBotao>
     </div>

@@ -108,7 +108,7 @@ export function TemplatesAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <IntroAba>
           O texto de cada mensagem da régua, por canal. Versão nova nunca substitui a anterior: ela é criada e, se marcada, passa a valer. O que já

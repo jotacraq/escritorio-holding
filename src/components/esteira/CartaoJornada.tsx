@@ -15,7 +15,7 @@ import { MenuMover } from "./MenuMover";
 import { corDaEtapa, etapaPorChave } from "./etapas";
 
 /**
- * Fase 5 — os três chips de preparo (Formulário · Ligação · Briefing) saíram
+ * Fase 5 — os três chips de preparo (Formulário · Contato · Briefing) saíram
  * daqui. O `Trilho` compacto já diz onde a família está nos 9 passos, e o
  * `ChipProximoPasso` já diz o que fazer: repetir o preparo em chip era a
  * terceira leitura do mesmo estado dentro de um cartão de 6 linhas. Nada foi
@@ -75,7 +75,7 @@ export function CartaoJornada({
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/jornadas/${jornada.id}`}
-          className="-my-2.5 min-w-0 py-2.5 text-subtitulo font-bold leading-snug text-tinta transition-colors duration-[var(--transicao-rapida)] hover:text-[color:var(--latao)]"
+          className="-my-2.5 inline-flex min-h-11 min-w-0 items-center py-2.5 text-subtitulo font-bold leading-snug text-tinta transition-colors duration-[var(--transicao-rapida)] hover:text-[color:var(--latao)]"
         >
           {jornada.nome}
         </Link>

@@ -87,7 +87,10 @@ export const ORDEM_TRILHO: ChaveTrilho[] = [
 
 export const ROTULO_TRILHO: Record<ChaveTrilho, string> = {
   pagou: "Pagou",
-  ligacao: "Ligação",
+  // Fase 6 §6.2: a "Ligação" do trilho é a ligação HUMANA da equipe (POP 03).
+  // Rótulo de passo é <= 1 palavra por desenho; o nome inteiro vai no `title`
+  // (`TITULO_TRILHO`). A CHAVE `ligacao` nao muda — e chave, nao texto.
+  ligacao: "Contato",
   agendou: "Agendou",
   confirmou: "Confirmou",
   sessao: "Sessão",
@@ -96,6 +99,89 @@ export const ROTULO_TRILHO: Record<ChaveTrilho, string> = {
   execucao: "Execução",
   entrega: "Entrega",
 };
+
+/**
+ * O nome inteiro do passo — SÓ para `title`/`aria-label`, nunca no fluxo
+ * (lei de texto, `docs/DESIGN-SYSTEM.md` §3.1). Só existe onde o rótulo curto
+ * não é o nome inteiro; `undefined` = o rótulo já basta.
+ */
+export const TITULO_TRILHO: Partial<Record<ChaveTrilho, string>> = {
+  ligacao: "Contato da equipe",
+};
+
+// ---------------------------------------------------------------------------
+// A espinha dorsal: três sessões (Fase 6 §1.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * O produto gira em torno de TRÊS sessões (`brain/03 - Dominio/Esteira do
+ * cliente.md`). Os 9 passos do trilho não mudam: eles se AGRUPAM nelas — 5 na
+ * primeira, 1 na segunda, 3 na terceira. Nenhum enum, nenhuma coluna e nenhum
+ * contrato da Fase 5 é tocado por este agrupamento.
+ */
+export type ChaveSessao = "viabilidade" | "croqui" | "entrega";
+
+export const ORDEM_SESSOES: ChaveSessao[] = ["viabilidade", "croqui", "entrega"];
+
+export const ROTULO_SESSAO: Record<ChaveSessao, string> = {
+  viabilidade: "Sessão de Viabilidade",
+  croqui: "Croqui estrutural",
+  entrega: "Entrega da holding",
+};
+
+export const SESSAO_POR_PASSO: Record<ChaveTrilho, ChaveSessao> = {
+  pagou: "viabilidade",
+  ligacao: "viabilidade",
+  agendou: "viabilidade",
+  confirmou: "viabilidade",
+  sessao: "viabilidade",
+  croqui: "croqui",
+  contrato: "entrega",
+  execucao: "entrega",
+  entrega: "entrega",
+};
+
+export interface BlocoSessao {
+  chave: ChaveSessao;
+  rotulo: string;
+  passos: PassoTrilho[];
+  /** `atual` = contém o passo aceso · `feito` = todos feito/pulado · `futuro` = o resto. */
+  estado: "feito" | "atual" | "futuro";
+  /** "2 de 5" — número primeiro (lei de texto §2.2). Conta só `feito`, como
+   *  `progressoDoTrilho`: `pulado` é passo que não aconteceu, não passo feito. */
+  resumo: string;
+}
+
+/**
+ * Agrupa os 9 passos nas 3 sessões, preservando a ordem do trilho dentro de
+ * cada bloco.
+ *
+ * A regra dura é a mesma do trilho: **`null` é "sem informação", nunca "não"**.
+ * Sem passo aceso (borda `a` do §8.1 — jornada só com `null`), NENHUMA sessão
+ * fica `atual`: acender uma seria inventar posição. E uma sessão só é `feito`
+ * quando todos os passos dela saíram do caminho (feito ou pulado) — a de trás
+ * de um passo aceso continua `feito` porque seus passos já saíram, não porque
+ * o trilho "passou por cima".
+ *
+ * Função pura. Não relê `derivarProximoPasso`: consome o que `derivarTrilho`
+ * já decidiu, para continuar existindo UMA fonte de "qual é o atual".
+ */
+export function agruparPorSessao(passos: PassoTrilho[]): BlocoSessao[] {
+  return ORDEM_SESSOES.map((chave) => {
+    const doBloco = passos.filter((p) => SESSAO_POR_PASSO[p.chave] === chave);
+    const temAtual = doBloco.some((p) => p.estado === "atual");
+    const todosResolvidos =
+      doBloco.length > 0 && doBloco.every((p) => p.estado === "feito" || p.estado === "pulado");
+    const feitos = doBloco.filter((p) => p.estado === "feito").length;
+    return {
+      chave,
+      rotulo: ROTULO_SESSAO[chave],
+      passos: doBloco,
+      estado: temAtual ? "atual" : todosResolvidos ? "feito" : "futuro",
+      resumo: `${feitos} de ${doBloco.length}`,
+    };
+  });
+}
 
 /**
  * Onde cada `ChavePasso` de `derivarProximoPasso` cai no trilho.

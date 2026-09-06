@@ -109,7 +109,7 @@ function FormularioConteudo({ jornadaId, dados }: { jornadaId: string; dados: Fo
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex items-center justify-between">
         <p className="text-xs text-tinta-fraca">
           POP 02 · versão {dados.formulario.versao}

@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from "react";
 import { buscarIndicadores, type IndicadoresEdicao } from "@/lib/api";
 import { useRecurso } from "@/hooks/useRecurso";
 import { useTema } from "@/hooks/useTema";
-import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { Cartao } from "@/components/ui/Cartao";
 import { Campo, Selecao } from "@/components/ui/Campo";
 import { EsqueletoCartao } from "@/components/ui/Esqueleto";
@@ -29,7 +28,7 @@ const ETAPAS: { chave: Chave; rotulo: string; base?: Chave; baseDescricao?: stri
 
 const PREPARACAO: { chave: Chave; rotulo: string; base: Chave; baseDescricao: string }[] = [
   { chave: "formularios_respondidos", rotulo: "Formulários respondidos", base: "sessoes_contratadas", baseDescricao: "de quem contratou a sessão" },
-  { chave: "ligacoes_feitas", rotulo: "Ligações Estratégicas feitas", base: "sessoes_contratadas", baseDescricao: "de quem contratou a sessão" },
+  { chave: "ligacoes_feitas", rotulo: "Contatos da equipe feitos", base: "sessoes_contratadas", baseDescricao: "de quem contratou a sessão" },
 ];
 
 const COLUNAS_TABELA: { chave: Chave; rotulo: string }[] = [
@@ -39,7 +38,7 @@ const COLUNAS_TABELA: { chave: Chave; rotulo: string }[] = [
   { chave: "croquis_contratados", rotulo: "Croquis" },
   { chave: "holdings", rotulo: "Holdings" },
   { chave: "formularios_respondidos", rotulo: "Formulários" },
-  { chave: "ligacoes_feitas", rotulo: "Ligações" },
+  { chave: "ligacoes_feitas", rotulo: "Contatos" },
 ];
 
 function nomeDaEdicao(item: IndicadoresEdicao): string {
@@ -104,28 +103,28 @@ export function IndicadoresApp() {
   }));
 
   return (
-    <div className="flex flex-col gap-10">
-      <CabecalhoPagina
-        rotulo="Método"
-        titulo="Indicadores"
-        descricao="O funil por coorte: cada pessoa conta na edição do seminário de onde veio, mesmo que a sessão aconteça meses depois. Por isso os números de uma edição recente ainda crescem — e nunca comparam gente diferente."
-        acoes={
-          !carregando && !erro && itens.length > 0 ? (
-            <Campo rotulo="Edição do seminário" className="min-w-[16rem]">
-              <Selecao value={edicaoSelecionada} onChange={(e) => setEdicaoSelecionada(e.target.value)}>
-                <option value={TODAS}>Todas as edições (soma das coortes)</option>
-                {itens.map((item) => (
-                  <option key={idDaEdicao(item)} value={idDaEdicao(item)}>
-                    {item.edicao_codigo ? `${item.edicao_codigo} — ` : ""}
-                    {nomeDaEdicao(item)}
-                  </option>
-                ))}
-              </Selecao>
-            </Campo>
-          ) : undefined
-        }
-        meta={<span>POP 08 — só o que a view calcula de fato. Sem fonte de dado, o indicador aparece vazio, não zero.</span>}
-      />
+    <div className="flex flex-col gap-bloco">
+      {/* Fase 6: os Indicadores viraram a aba "Números" de Hoje — o `h1` é o
+          da página, e o seletor de edição desceu do hero para a linha de
+          filtro. A explicação de coorte vive na `descricao` da aba. */}
+      {!carregando && !erro && itens.length > 0 && (
+        <div className="flex flex-wrap items-end gap-item">
+          <Campo rotulo="Edição do seminário" className="min-w-[16rem]">
+            <Selecao value={edicaoSelecionada} onChange={(e) => setEdicaoSelecionada(e.target.value)}>
+              <option value={TODAS}>Todas as edições (soma das coortes)</option>
+              {itens.map((item) => (
+                <option key={idDaEdicao(item)} value={idDaEdicao(item)}>
+                  {item.edicao_codigo ? `${item.edicao_codigo} — ` : ""}
+                  {nomeDaEdicao(item)}
+                </option>
+              ))}
+            </Selecao>
+          </Campo>
+          <p className="min-h-11 py-3 text-xs text-tinta-fraca" title="Indicador sem fonte de dado aparece vazio, nunca zero.">
+            Só o que a view calcula de fato.
+          </p>
+        </div>
+      )}
 
       {carregando && <EsqueletoCartao quantidade={4} rotulo="Carregando os indicadores…" />}
       {!carregando && erro ? <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não deu para carregar os indicadores" /> : null}
@@ -146,11 +145,11 @@ export function IndicadoresApp() {
       {!carregando && !erro && itens.length > 0 && (
         <>
           {/* --------------------------------------------------------- KPIs */}
-          <section aria-labelledby="titulo-kpis" className="flex flex-col gap-4">
+          <section aria-labelledby="titulo-kpis" className="flex flex-col gap-item">
             <h2 id="titulo-kpis" className="text-subtitulo font-bold text-tinta">
               {tituloSelecao}
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-cartao sm:grid-cols-2 xl:grid-cols-4">
               <Kpi rotulo="Pessoas na coorte" valor={coorte} unidade={coorte === 1 ? "pessoa" : "pessoas"} motivoVazio="nenhuma jornada ligada a esta edição" />
               {ETAPAS.slice(1, 4).map((etapa) => {
                 const valor = contador(selecionado, etapa.chave);
@@ -181,14 +180,14 @@ export function IndicadoresApp() {
           </Cartao>
 
           {/* --------------------------------------------------- preparação */}
-          <section aria-labelledby="titulo-preparacao" className="flex flex-col gap-4">
+          <section aria-labelledby="titulo-preparacao" className="flex flex-col gap-item">
             <div>
               <h2 id="titulo-preparacao" className="text-subtitulo font-bold text-tinta">
                 Preparação antes da sessão
               </h2>
-              <p className="mt-1 max-w-2xl text-sm text-tinta-suave">Formulário Estratégico (POP 02) e Ligação Estratégica (POP 03) — o que alimenta o Briefing. Base: quem contratou a sessão.</p>
+              <p className="mt-0.5 max-w-2xl text-sm text-tinta-suave" title="Formulário Estratégico (POP 02) e Contato da equipe (POP 03) — o que alimenta o Briefing.">O que alimenta o Briefing. Base: quem contratou a sessão.</p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-cartao sm:grid-cols-2">
               {PREPARACAO.map((item) => {
                 const valor = contador(selecionado, item.chave);
                 const base = contador(selecionado, item.base);

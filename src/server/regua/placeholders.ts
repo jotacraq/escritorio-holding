@@ -77,7 +77,7 @@ export async function resolverPlaceholdersDeEnvio(
     if (!mensagem.agendamento_id) {
       return { ok: false, hold: "agendamento_indisponivel", mensagem: "Mensagem sem agendamento — não há o que confirmar." };
     }
-    const url = await emitirLinkConfirmacaoSistema(supabaseAdmin, mensagem.agendamento_id);
+    const { url } = await emitirLinkConfirmacaoSistema(supabaseAdmin, mensagem.agendamento_id);
     corpo = corpo.split(PLACEHOLDER_LINK_CONFIRMACAO).join(url);
   }
 

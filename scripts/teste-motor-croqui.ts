@@ -967,6 +967,75 @@ async function testeF() {
 }
 
 // ---------------------------------------------------------------------------
+// G — o 409 não pode mentir: toda chave que o motor CONSOME é pedida
+// ---------------------------------------------------------------------------
+
+/**
+ * Achado A1 (`tmp/squad/mock-exemplo.md` §A1): `chavesNecessarias` não pedia
+ * `itcmd.faixas.doacao_reforma` nem `itcmd.fixo.celula_3_reforma`, mas
+ * `tabelas/modelos.ts` as consome na coluna "após reforma". Efeito medido:
+ * `parametrosAusentes()` devolvia 0 — a rota respondia "pode fechar" — e 12
+ * células saíam `ausente` no resultado gravado.
+ *
+ * A regressão que fecha a classe inteira do bug, não só as duas chaves: rodar
+ * o motor com o catálogo de parâmetros VAZIO faz toda chave consumida virar
+ * falta; nenhuma delas pode estar fora de `chavesNecessarias`.
+ *
+ * Uma exceção, e ela é por desenho: `itcmd.faixas.doacao_reforma` na UF de
+ * domicílio VANTAJOSO (achado A2 / CONFLITO 9). `jurisdicaoDe` só sabe amarrar
+ * essa chave à UF do cliente, então pedi-la pela 2ª célula apontaria a UF
+ * errada no 409 — o motor prefere nomear a falta na célula. A comparação aqui
+ * é por CHAVE, e a chave está no conjunto pelos blocos `doacao`/`celula_1`.
+ */
+function testeG() {
+  bloco("G · o 409 não mente (toda chave consumida está em chavesNecessarias)");
+
+  const entrada = entradaA();
+  const necessarias = new Set<string>(chavesNecessarias(entrada));
+
+  ok("A1 · pede o ITCMD doação pós-reforma", necessarias.has("itcmd.faixas.doacao_reforma"));
+  ok("A1 · pede o ITCMD da 3ª célula pós-reforma", necessarias.has("itcmd.fixo.celula_3_reforma"));
+
+  const vazios: ParametrosCroqui = {
+    itens: {},
+    horas_por_ato: HORAS,
+    sinal_modelo_referencia: "celula_3",
+    divergencias: [],
+  };
+  const r = calcularCroqui(entrada, vazios, AGORA);
+
+  const consumidas = new Set<string>();
+  for (const { celula } of todasAsCelulas(r)) {
+    for (const f of celula.falta ?? []) consumidas.add(f.chave);
+  }
+  ok("o motor de fato reclamou de alguma chave", consumidas.size > 0, `${consumidas.size} chaves`);
+
+  const orfas = [...consumidas].filter((c) => !necessarias.has(c));
+  ok(
+    "nenhuma chave consumida fica fora do 409",
+    orfas.length === 0,
+    orfas.length ? `órfãs: ${orfas.join(", ")}` : "",
+  );
+
+  // A prova do A1 pelo outro lado: com TODAS as chaves necessárias cadastradas,
+  // as duas colunas "após reforma" que o A1 derrubava fecham.
+  const completos = parametrosA();
+  completos.itens[chaveMapa("itcmd.fixo.celula_3_reforma", "SP", null)] = p("itcmd.fixo.celula_3_reforma", {
+    uf: "SP",
+    valor: 8000,
+  });
+  const r2 = calcularCroqui(entrada, completos, AGORA);
+  const doacaoReforma = cel(r2, "doacao", "total", "reforma") ?? cel(r2, "comparativo_geral", "doacao", "reforma");
+  ok(
+    "com o parâmetro cadastrado a 3ª célula pós-reforma sai calculada",
+    cel(r2, "celula_3", "itcmd", "reforma")?.procedencia !== "ausente" ||
+      cel(r2, "celula_3", "itcmd")?.procedencia !== "ausente",
+    JSON.stringify({ reforma: cel(r2, "celula_3", "itcmd", "reforma"), valor: cel(r2, "celula_3", "itcmd") }),
+  );
+  ok("e a doação continua calculável", doacaoReforma === undefined || doacaoReforma.procedencia !== "ausente");
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -982,6 +1051,8 @@ async function main() {
   const b = testeB();
   testeC([a, b]);
   testeD();
+  fecharBloco();
+  testeG();
   fecharBloco();
   testeE(caminhoFixture);
   fecharBloco();

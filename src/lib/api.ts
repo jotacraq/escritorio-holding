@@ -301,6 +301,14 @@ export interface Ficha360 {
   ligacaoIaAtual: LigacaoIaResumo | null;
   /** `tarefas` abertas (ex.: `tipo='enviar_link_croqui'`). */
   tarefasAbertas: Tarefa[];
+  /**
+   * Fase 6 §6.3 — configuração de UI lida de `configuracoes` (RLS `cfg_sel`,
+   * 0027:174). **Nada de segredo aqui**, e só a chave que a tela precisa:
+   * `ligacaoIaAtiva === (configuracoes['ligacao_ia.provedor'] === 'n8n')`.
+   * `false` (o estado de hoje) esconde o cartão da ligação por IA — sem
+   * esconder a tarefa HUMANA de ligar para agendar, que é outra coisa.
+   */
+  configuracoesUi: { ligacaoIaAtiva: boolean };
 }
 
 /** Espelha `server/ia/completude.ts#ResultadoCompletude` — vem em `ApiError.detalhe`

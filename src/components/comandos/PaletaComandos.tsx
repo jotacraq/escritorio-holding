@@ -20,6 +20,20 @@ type Opcao =
   | { tipo: "jornada"; id: string; rotulo: string; descricao: string; href: string }
   | { tipo: "acao"; id: string; rotulo: string; descricao: string; executar: () => void };
 
+/**
+ * Fase 6 — destinos que vivem DENTRO de uma das 5 áreas e que a pessoa
+ * procura pelo nome, não pelo caminho. O João: "onde é que a gente define
+ * quais dias a equipe vai estar disponível? achei, mas tem que ser fácil de
+ * achar". Ctrl+K passa a achar. São deep-links por hash para telas que já
+ * existem — nenhuma rota nova.
+ */
+const DESTINOS_INTERNOS: { href: string; rotulo: string; descricao: string }[] = [
+  { href: "/agenda#disponibilidade", rotulo: "Disponibilidade da equipe", descricao: "Os dias e horários em que a equipe atende — é daqui que saem as opções que o cliente escolhe." },
+  { href: "/hoje#numeros", rotulo: "Números", descricao: "O funil por turma do seminário: sessões, croquis e holdings." },
+  { href: "/admin#repertorio", rotulo: "Repertório da IA", descricao: "É o que a IA usa para analisar: o histórico de eventos e reuniões anteriores." },
+  { href: "/admin#importacoes", rotulo: "Importações", descricao: "Planilhas de alunos e compras que entram no sistema." },
+];
+
 const MIN_CARACTERES_BUSCA_JORNADA = 2;
 const ATRASO_DEBOUNCE_MS = 250;
 
@@ -118,13 +132,15 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
 
   const opcoesPagina = useMemo<Opcao[]>(
     () =>
-      ITENS_NAVEGACAO.filter((item) => contem(alvo, item.rotulo, item.descricao, item.grupo)).map((item) => ({
-        tipo: "pagina" as const,
-        id: item.href,
-        rotulo: item.rotulo,
-        descricao: item.descricao,
-        href: item.href,
-      })),
+      [...ITENS_NAVEGACAO, ...DESTINOS_INTERNOS]
+        .filter((item) => contem(alvo, item.rotulo, item.descricao))
+        .map((item) => ({
+          tipo: "pagina" as const,
+          id: item.href,
+          rotulo: item.rotulo,
+          descricao: item.descricao,
+          href: item.href,
+        })),
     [alvo],
   );
 

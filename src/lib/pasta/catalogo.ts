@@ -13,6 +13,7 @@
  */
 
 import { rotulo, titleDe } from "@/lib/vocabulario";
+import type { ChaveSessao } from "./trilho";
 
 export type ProcedenciaItemPasta = "recebido" | "produzido" | "gerado_ia";
 
@@ -83,7 +84,7 @@ export type ChaveItemPasta =
  */
 export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
   { chave: "formulario", rotulo: "Formulário", procedencia: "produzido", dono: "cliente", requerPatrimonio: false },
-  { chave: "ligacao", rotulo: "Ligação", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
+  { chave: "ligacao", rotulo: "Contato", titulo: "Contato da equipe", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
   { chave: "links", rotulo: "Links", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
   { chave: "briefing", rotulo: "Briefing", procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: false },
   { chave: "sessao", rotulo: "Sessão", procedencia: "produzido", dono: "equipe", requerPatrimonio: false },
@@ -98,3 +99,33 @@ export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
   { chave: "familiares", rotulo: "Familiares", procedencia: "produzido", dono: "equipe", requerPatrimonio: true },
   { chave: "documentos", rotulo: "Documentos", procedencia: "recebido", dono: "cliente", requerPatrimonio: true },
 ];
+
+/**
+ * Em qual das três sessões cada item da Pasta vive (Fase 6 §1.2).
+ *
+ * Substitui a lista `MOMENTOS` que estava hardcoded em
+ * `components/pasta/PastaDoCliente.tsx` ("Antes da sessão / Na sessão / Depois
+ * da sessão"): mesma quantidade de grupos, agora derivada da MESMA constante
+ * que o trilho usa (`SESSAO_POR_PASSO`), em vez de duas listas que podem
+ * divergir.
+ *
+ * Nenhum item cai em `entrega` hoje: a 3ª sessão é servida por
+ * `vw_automacoes_jornada`/`execucao_marcos` (`GET /api/jornadas/[id]/execucao`),
+ * não pela Pasta. Inventar um item ali seria cartão vazio na tela.
+ */
+export const SESSAO_POR_ITEM: Record<ChaveItemPasta, ChaveSessao> = {
+  formulario: "viabilidade",
+  ligacao: "viabilidade",
+  links: "viabilidade",
+  briefing: "viabilidade",
+  sessao: "viabilidade",
+  transcricao: "viabilidade",
+  analise_sessao: "croqui",
+  diagnostico_sv: "croqui",
+  relatorio_sv: "croqui",
+  croqui: "croqui",
+  material: "croqui",
+  patrimonio: "croqui",
+  familiares: "croqui",
+  documentos: "croqui",
+};

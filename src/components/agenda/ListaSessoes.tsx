@@ -6,7 +6,7 @@ import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoIndisponivel, EstadoVazio } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import type { AgendamentoAgenda } from "@/types/agenda";
 import { listarAgendamentos } from "./api-agendamentos";
 import { LinhaAgendamento } from "./LinhaAgendamento";
@@ -110,7 +110,7 @@ export function ListaSessoes() {
   const motivoConfirmaram = !temAlgo ? "nenhuma sessão marcada" : "confirmação de presença ainda não disponível";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <section aria-label="Resumo dos próximos 7 dias" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Kpi rotulo="Nos 7 dias" valor={resumo.proximos.length} />
         <Kpi rotulo="Confirmaram presença" valor={resumo.confirmaram} unidade={resumo.confirmaram !== null && resumo.proximos.length > 0 ? `de ${resumo.proximos.length}` : undefined} motivoVazio={motivoConfirmaram} />
@@ -129,7 +129,7 @@ export function ListaSessoes() {
               ilustracao="agenda"
               titulo="Nenhuma sessão nos próximos 7 dias"
               descricao="A Sessão de Viabilidade é marcada pela Pasta do Cliente (aba Sessão) ou pelo link de agendamento que o cliente recebe."
-              acao={<LinkBotao href="/esteira" variante="cta" tamanho="normal">Abrir a esteira</LinkBotao>}
+              acao={<LinkBotao href="/clientes" variante="cta" tamanho="normal">Abrir a lista de clientes</LinkBotao>}
             />
           </div>
         ) : (

@@ -6,7 +6,7 @@ import { formatarPercentual } from "@/lib/formatar";
 import { titleDe } from "@/lib/vocabulario";
 import type { EstadoBloco, IndicadorEdicao } from "@/types/painel-ui";
 import { BotaoDica } from "./Bloco";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 
 interface LinhaNumero {
   rotulo: string;
@@ -49,7 +49,7 @@ export function NumerosSemana({ estado, aoTentarDeNovo }: { estado: EstadoBloco<
       acao={
         <>
           <BotaoDica texto="Os três indicadores que o método acompanha, sempre por edição do seminário (coorte) — nunca por janela de calendário." rotulo="os números" />
-          <LinkBotao href="/indicadores">Ver indicadores</LinkBotao>
+          <LinkBotao href="/hoje#numeros">Ver os números</LinkBotao>
         </>
       }
     >

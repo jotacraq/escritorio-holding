@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
 import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
-import { Cartao } from "@/components/ui/Cartao";
 import { ROTULO_DIA_SEMANA } from "./rotulos";
 import { ApiError, criarDisponibilidade } from "./api";
 
@@ -56,7 +55,8 @@ export function FormularioDisponibilidade({ advogadaId, aoCriar }: { advogadaId:
   }
 
   return (
-    <Cartao como="div" rotulo="Nova janela" titulo="Adicionar horário livre recorrente" descricao="Toda semana, neste dia e neste intervalo, a advogada atende. É daqui que saem as opções do link de agendamento.">
+    <div className="flex flex-col gap-item">
+      <p className="text-sm text-tinta-suave">Toda semana, neste dia e neste intervalo, a advogada atende.</p>
       <form noValidate onSubmit={salvar} className="flex flex-col gap-5">
         <div className="grid gap-5 sm:grid-cols-3">
           <Campo rotulo="Dia da semana" id="disp-dia">
@@ -92,6 +92,6 @@ export function FormularioDisponibilidade({ advogadaId, aoCriar }: { advogadaId:
           </Botao>
         </div>
       </form>
-    </Cartao>
+    </div>
   );
 }

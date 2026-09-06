@@ -13,7 +13,7 @@ import type {
   RespostaEmitirLinkPublico,
   RespostaListarLinksPublicos,
   RespostaRevogarLinkPublico,
-  TipoLinkPublico,
+  TipoLinkQualquer,
 } from "@/types/publico";
 import type {
   RespostaAprovarMaterial,
@@ -89,12 +89,18 @@ export function listarLinks(jornadaId: string): Promise<LinkPublicoResumo[]> {
   return chamar<RespostaListarLinksPublicos>(`/api/jornadas/${jornadaId}/links`).then((d) => d.itens);
 }
 
-export function emitirLink(jornadaId: string, tipo: TipoLinkPublico): Promise<RespostaEmitirLinkPublico> {
+/**
+ * Emite um link público. Aceita os 5 tipos da barra "Enviar" (Fase 6 §5.3),
+ * inclusive `confirmacao` — cujo `agendamento_id` é resolvido no servidor.
+ * O endereço com o token vem UMA única vez, nesta resposta (0028:70-73).
+ */
+export function emitirLinkDeEnvio(jornadaId: string, tipo: TipoLinkQualquer): Promise<RespostaEmitirLinkPublico> {
   return chamar<RespostaEmitirLinkPublico>(`/api/jornadas/${jornadaId}/links`, {
     method: "POST",
     body: JSON.stringify({ tipo }),
   });
 }
+
 
 export function revogarLink(linkId: string): Promise<LinkPublicoResumo> {
   return chamar<RespostaRevogarLinkPublico>(`/api/links/${linkId}/revogar`, { method: "POST" }).then((d) => d.link);

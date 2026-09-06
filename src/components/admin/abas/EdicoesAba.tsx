@@ -126,7 +126,7 @@ export function EdicoesAba() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <IntroAba>Cada edição do seminário é a coorte que os indicadores agrupam — quem entrou por ela é medido junto, do seminário à holding.</IntroAba>
         {!novo && (

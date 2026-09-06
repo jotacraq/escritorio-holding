@@ -11,7 +11,7 @@ import { Cartao } from "@/components/ui/Cartao";
 import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
 import { Selo } from "@/components/ui/Selo";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { buscarCroquiCalculo } from "./apiCroquiCalculo";
 import { colunasVazias, melhorEconomia, type MelhorEconomia } from "./blocosCroqui";
 import { ErroAoFixar } from "./ErroAoFixar";
@@ -181,7 +181,7 @@ export function Simulador({
   ].filter((t): t is Tabela => Boolean(t));
 
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center justify-between gap-item">
         <div className="flex flex-wrap items-center gap-item">
           {voltar && (

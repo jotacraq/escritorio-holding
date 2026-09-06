@@ -6,13 +6,13 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirPapel } from "@/server/auth";
 import { erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
-import type { LinkPublicoResumo, RespostaRevogarLinkPublico, TipoLinkPublico } from "@/types/publico";
+import type { LinkPublicoResumo, RespostaRevogarLinkPublico, TipoLinkQualquer } from "@/types/publico";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
 interface LinhaLinkPublico {
   id: string;
-  tipo: TipoLinkPublico;
+  tipo: TipoLinkQualquer;
   estado: LinkPublicoResumo["estado"];
   token_prefixo: string;
   expira_em: string;

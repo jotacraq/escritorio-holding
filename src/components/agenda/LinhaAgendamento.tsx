@@ -10,6 +10,7 @@ import { sinaisDaSessaoDoDia } from "@/lib/pasta/sinais";
 import { derivarTrilho } from "@/lib/pasta/trilho";
 import type { AgendamentoAgenda } from "@/types/agenda";
 import { Botao } from "@/components/ui/Botao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { Selo, type TomSelo } from "@/components/ui/Selo";
@@ -126,8 +127,8 @@ export function LinhaAgendamento({
     // a 1280px de janela mas dentro da Ficha 360 (barra lateral fixa de
     // 288px), o cartão real mede ~900px e a linha virava horizontal mesmo
     // sem espaço, espremendo a coluna do meio (achado H, Fase 4).
-    <li className="@container flex min-h-11 flex-col gap-3 px-5 py-4 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel sm:px-6">
-      <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-start @3xl:gap-5">
+    <li className="@container flex min-h-11 flex-col gap-item px-cartao py-item transition-colors duration-[var(--transicao-rapida)] hover:bg-papel">
+      <div className="flex flex-col gap-item @3xl:flex-row @3xl:items-start @3xl:gap-cartao">
         <div className="flex shrink-0 items-baseline gap-2 @3xl:w-28 @3xl:flex-col @3xl:gap-0">
           <time dateTime={agendamento.inicio_em} className="text-subtitulo font-bold tabular-nums text-tinta">
             {formatarHora(agendamento.inicio_em)}
@@ -166,6 +167,15 @@ export function LinhaAgendamento({
           // resto entra num `<details>` nativo: teclado, Esc e leitor de tela
           // funcionam sem JS, e nada foi removido.
           <div className="nao-imprimir flex flex-wrap items-start gap-2 @3xl:w-80 @3xl:shrink-0 @3xl:justify-end">
+            {/* Fase 6: "Conduzir sessão" deixou de ser entrada de menu — a
+                tela de escolher a sessão só repetia esta lista. O caminho
+                agora é o natural: a sessão está aqui, o botão que a conduz
+                está nela. `/sessoes/[id]/conduzir` recebe o id da JORNADA. */}
+            {agendamento.jornada_id && (
+              <LinkBotao href={`/sessoes/${agendamento.jornada_id}/conduzir`} variante="cta" title="Abre o roteiro, o briefing e as anotações da sessão">
+                Conduzir
+              </LinkBotao>
+            )}
             {podeConfirmarPresenca && (
               <Botao variante="secundario" tamanho="compacto" icone={ICONE_CHECK} carregando={ocupado === "presenca"} disabled={ocupado !== null && ocupado !== "presenca"} onClick={confirmarPresenca}>
                 Confirmar presença

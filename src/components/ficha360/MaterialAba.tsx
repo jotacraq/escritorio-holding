@@ -16,7 +16,7 @@ import { Selo, SeloDemonstracao, SeloIA, SeloStub, type TomSelo } from "@/compon
 import { formatarDataHora } from "@/lib/formatar";
 
 const ROTULOS_FONTE: Record<FonteDorMaterial, string> = {
-  ligacao: "Registro da ligação",
+  ligacao: "Registro do contato",
   formulario: "Formulário do cliente",
   relatorio: "Relatório da Sessão de Viabilidade",
   nenhuma: "Nenhuma — material padrão",
@@ -232,12 +232,12 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
           </div>
         )}
         {gerando ? (
-          <Progresso rotulo="Gerando o material" etapas={[{ rotulo: "Lendo ligação, formulário e relatório" }, { rotulo: "Escolhendo o modelo pela dor" }, { rotulo: "Escrevendo o texto" }]} etapaAtual={1} tempoEsperado="costuma levar até 1 minuto" cronometro />
+          <Progresso rotulo="Gerando o material" etapas={[{ rotulo: "Lendo o contato, o formulário e o relatório" }, { rotulo: "Escolhendo o modelo pela dor" }, { rotulo: "Escrevendo o texto" }]} etapaAtual={1} tempoEsperado="costuma levar até 1 minuto" cronometro />
         ) : !atual ? (
           <EstadoVazio
             ilustracao="pasta"
             titulo="Nenhum material gerado para esta jornada"
-            descricao="Gerar cruza ligação, formulário e relatório para achar a dor principal do cliente — sem fonte, sai rotulado como material padrão. Use o botão acima."
+            descricao="Gerar cruza o contato da equipe, o formulário e o relatório para achar a dor principal do cliente. Sem fonte, sai rotulado como material padrão."
           />
         ) : (
           <div className="flex flex-col gap-4">

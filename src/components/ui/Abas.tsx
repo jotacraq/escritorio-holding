@@ -13,6 +13,12 @@ export interface DefinicaoAba {
   grupo?: string;
   /** Contador ou selo curto à direita do rótulo (ex.: pendências). */
   extra?: ReactNode;
+  /**
+   * A linha de propósito da aba (lei L2 da Fase 6): uma frase que diz para
+   * que a aba serve. Aparece no topo do painel e no `title` do botão da aba —
+   * quem opera não precisa clicar em tudo para descobrir o que é cada uma.
+   */
+  descricao?: string;
 }
 
 interface Grupo {
@@ -121,7 +127,7 @@ export function Abas({
       {grupos && grupoAtivo && (
         // Nível 1 — seções do dossiê. Botões simples com `aria-current`, no
         // mesmo padrão da navegação lateral — não é um segundo `tablist`.
-        <div aria-label="Seções da ficha" className="nao-imprimir mb-1 flex flex-wrap gap-1">
+        <div aria-label="Seções da ficha" className="nao-imprimir mb-1 flex flex-wrap gap-1 overflow-x-auto">
           {grupos.map((grupo) => {
             const selecionado = grupo.slug === grupoAtivo.slug;
             return (
@@ -146,7 +152,7 @@ export function Abas({
       <div
         role="tablist"
         aria-label={grupoAtivo ? `Seções de ${grupoAtivo.rotulo}` : "Seções da ficha"}
-        className="nao-imprimir -mb-px flex flex-wrap gap-1 border-b border-linha-forte"
+        className="nao-imprimir -mb-px flex flex-wrap gap-0.5 border-b border-linha-forte"
       >
         {abasVisiveis.map((aba) => {
           const selecionada = aba.id === abaAtual.id;
@@ -164,7 +170,8 @@ export function Abas({
               tabIndex={selecionada ? 0 : -1}
               onKeyDown={(e) => aoTeclar(e, abasVisiveis, indice)}
               onClick={() => ativar(aba.id)}
-              className={`-mb-px inline-flex min-h-11 items-center gap-2 rounded-t-controle border-b-[3px] px-4 text-sm transition-colors duration-[var(--transicao-rapida)] ${
+              title={aba.descricao}
+              className={`-mb-px inline-flex min-h-11 items-center gap-2 rounded-t-controle border-b-[3px] px-3 text-sm transition-colors duration-[var(--transicao-rapida)] ${
                 selecionada
                   ? "border-[color:var(--latao)] font-bold text-tinta"
                   : "border-transparent font-medium text-tinta-suave hover:bg-papel-elevado hover:text-tinta"
@@ -187,11 +194,20 @@ export function Abas({
           tabIndex={0}
           className={
             semMoldura
-              ? "pt-5"
-              : "rounded-b-cartao rounded-tr-cartao border border-t-0 border-linha bg-papel-elevado p-4 shadow-cartao sm:p-6"
+              ? "pt-cartao"
+              : "rounded-b-cartao rounded-tr-cartao border border-t-0 border-linha bg-papel-elevado p-cartao shadow-cartao"
           }
         >
-          {aba.id === abaAtual.id ? aba.conteudo : null}
+          {aba.id === abaAtual.id ? (
+            <>
+              {aba.descricao && (
+                <p data-proposito className="mb-cartao text-sm text-tinta-suave">
+                  {aba.descricao}
+                </p>
+              )}
+              {aba.conteudo}
+            </>
+          ) : null}
         </div>
       ))}
     </div>

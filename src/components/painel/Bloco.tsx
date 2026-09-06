@@ -12,7 +12,7 @@ import type { EstadoBloco } from "@/types/painel-ui";
  */
 function IconeTudoCerto() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 shrink-0 fill-current">
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-current text-[color:var(--verde)]">
       <path d="M10 1.5A8.5 8.5 0 1 0 18.5 10 8.51 8.51 0 0 0 10 1.5Zm4.28 6.2-4.9 5.6a1 1 0 0 1-1.43.07l-2.6-2.4a1 1 0 1 1 1.36-1.47l1.85 1.71 4.2-4.8a1 1 0 0 1 1.52 1.3Z" />
     </svg>
   );
@@ -86,6 +86,29 @@ export function Bloco<T>({ id, rotulo, titulo, tituloTitle, dica, mensagemNadaPe
   const contagem = estado.situacao === "ok" ? estado.itens.length : null;
   const urgenteAtivo = Boolean(urgente && contagem !== null && contagem > 0);
 
+  // Fase 6 — bloco SEM NADA PENDENTE vira UMA LINHA, não um cartão.
+  //
+  // O João: "tá tudo muito grande, tenho que escrolar muito pra ver todo o
+  // conteúdo". Num dia calmo, os quatro blocos do painel estavam todos vazios
+  // e cada um ocupava ~150 px (rótulo + título + divisor + uma frase) para
+  // dizer "nada aqui". Meia tela para dizer que não há trabalho.
+  //
+  // A boa notícia continua verde, com check e o mesmo texto — só deixa de
+  // ocupar o espaço de um bloco que tem trabalho. Hierarquia visual É a
+  // informação: o que exige ação fica maior que o que não exige.
+  if (estado.situacao === "ok" && estado.itens.length === 0) {
+    return (
+      <section id={id} aria-labelledby={`${id}-titulo`} className="flex min-h-11 flex-wrap items-center gap-x-item gap-y-0.5 rounded-cartao border border-linha bg-papel-elevado px-3 py-1.5">
+        <IconeTudoCerto />
+        <h3 id={`${id}-titulo`} title={tituloTitle} className="text-sm font-bold text-tinta">
+          {titulo}
+        </h3>
+        <p className="text-sm text-[color:var(--verde)]">{mensagemNadaPendente}</p>
+        {dica && <span className="ml-auto">{<BotaoDica texto={dica} rotulo={titulo} />}</span>}
+      </section>
+    );
+  }
+
   return (
     <Cartao
       id={id}
@@ -115,20 +138,13 @@ export function Bloco<T>({ id, rotulo, titulo, tituloTitle, dica, mensagemNadaPe
       }
     >
       {estado.situacao === "indisponivel" && (
-        <div role="alert" className="flex flex-wrap items-center gap-item px-5 py-4 text-sm text-tinta-suave sm:px-6">
+        <div role="alert" className="flex flex-wrap items-center gap-item px-cartao py-item text-sm text-tinta-suave">
           <IconeIndisponivel />
           <span>Não carregou.</span>
           <Botao variante="secundario" tamanho="compacto" onClick={aoTentarDeNovo}>
             Tentar de novo
           </Botao>
         </div>
-      )}
-
-      {estado.situacao === "ok" && estado.itens.length === 0 && (
-        <p className="flex items-center gap-2.5 px-5 py-4 text-sm font-medium text-[color:var(--verde)] sm:px-6">
-          <IconeTudoCerto />
-          {mensagemNadaPendente}
-        </p>
       )}
 
       {estado.situacao === "ok" && estado.itens.length > 0 && children(estado.itens)}
@@ -139,7 +155,7 @@ export function Bloco<T>({ id, rotulo, titulo, tituloTitle, dica, mensagemNadaPe
 /** Linha padrão de uma fila do painel: ≥ 44px, divisor, hover suave, empilha no celular. */
 export function LinhaFila({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <li className={`flex min-h-11 flex-col gap-item px-5 py-3 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 sm:px-6 ${className}`}>
+    <li className={`flex min-h-11 flex-col gap-item px-cartao py-item transition-colors duration-[var(--transicao-rapida)] hover:bg-papel sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-cartao sm:gap-y-1 ${className}`}>
       {children}
     </li>
   );

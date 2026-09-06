@@ -110,3 +110,21 @@ Pentest da Fase 5 (Fable): **0 crítico/alto**, 1 MÉDIO, 4 BAIXO, 10 INFO. O M�
 **0070** (ressalvas de segurança da trava do Fable): `vw_automacoes_jornada` com revoke/grant explícito (anon → 42501); `set search_path = public, pg_temp` nas 4 funções de trigger da 0065/0067; `croqui_narrativas` com RLS forçada, sem INSERT/UPDATE/DELETE para `authenticated`, RPC `registrar_croqui_narrativa` só `service_role` com gate por perfil (relacionamento → 42501); `POST /api/documentos` deixou de ecoar mensagem crua do Storage/Postgres (mensagem humana + `registrar_erro`).
 
 **Lições:** (1) "o cliente nunca manda o resultado" tem de valer no banco, não só no zod da rota — toda RPC `security definer` que grava snapshot precisa de gate de papel dentro dela; (2) ao verificar ACL de função por texto, PUBLIC é `{=X/` ou `,=X/` — o padrão `%=X/%` casa com `postgres=X/postgres` e dá falso positivo (aconteceu no roteiro da 0070); (3) função de trigger sem `search_path` fixo é achado recorrente — conferir `pg_proc.proconfig` em toda migration nova.
+
+## Fase 6 (05/09/2026 à noite) — 0071 e o mapa de triggers
+
+A3 (mock): `app.regua_boas_vindas` sem `security definer` fazia qualquer escrita direta em `pagamentos` depender do EXECUTE do escritor em `app.enfileirar_mensagem` — produção escapava só porque o webhook usa `processar_pagamento_hotmart` (definer). Corrigido na origem (definer + search_path), EXECUTE de `enfileirar_mensagem` revogado de `public/anon/authenticated`. A5: `registrar_diagnostico_sv` alinhada às RPCs de croqui (autor declarado só sem sessão; com sessão não se assina no nome de outro — mais estrito que a 0069). O passo 7 do roteiro varre a CLASSE do A3 (função de `app` chamada por trigger, sem definer e sem EXECUTE para `service_role`): resultado **(nenhuma)** em 05/09.
+
+**Lição:** teste de privilégio rodado como `postgres` é decorativo (superusuário não passa por EXECUTE) — o roteiro usa `set local role service_role` + `reset role` para medir a operação real.
+
+**Pendente de produto (A4, não tocado):** `processar_pagamento_hotmart` abre jornada NOVA quando a atual está `ganha`. Decisão do João.
+
+## Fase 6 (05/09/2026 à noite) — pentest + 0072
+
+Pentest da Fase 6 (Fable): 0 crítico · **1 ALTO** · 0 médio · 3 baixo · 5 info. O ALTO: `links_publicos` tinha policies `lp_ins`/`lp_upd` (0028) que só conferiam PAPEL — advogada via PostgREST ressuscitava link revogado, zerava `usos`, estendia `expira_em`, movia o link para outra jornada, trocava `tipo`/`token_hash` e inseria sem pepper (tudo 200/201, medido em produção). **0072**: drop das duas policies + `revoke insert, update, delete … from public, anon, authenticated`; toda escrita fica nas RPCs `security definer` (`emitir_link_*`, `revogar_link_publico`) — nenhum escritor em `src/` usava a sessão. Provado: `scripts/verificacao-0072.sql` 6/6 (UPDATE/INSERT como `authenticated` → 42501; SELECT continua; 5 RPCs definer).
+
+Os 7 alvos da barra "Enviar" seguraram (confirmação com `agendamento_id` do servidor; `assistente` 403/42501; token só no 201; `/admin#repertorio` para advogada sem aba/fetch admin; `configuracoesUi` só `ligacaoIaAtiva`; pepper fail-closed). 0071 provada por HTTP e SQL. Redirects 308 exatos, demos 404, webhook n8n 503 fail-closed, ligação por IA só enfileira por pagamento via `service_role`.
+
+**Baixos em aberto (backlog):** `emitir_link_confirmacao_sistema` grava `criado_por = null`; rota de emissão da equipe sem rate limit (`agendamento` gasta IA por chamada); segredos de produção em `tmp/squad/segredos-producao.txt` (texto puro, fora do git) — apagar depois de configurar; access log da Hostinger guarda URL com token de `/p/*`.
+
+**Lição:** policy que só confere papel em tabela de token é porta aberta para quem tem o papel — tabela de segredo derivado (hash, pepper, estado) só se escreve por RPC.

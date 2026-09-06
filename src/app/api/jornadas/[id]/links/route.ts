@@ -8,31 +8,36 @@ import { exigirInterno, exigirPapel } from "@/server/auth";
 import { ErroApi, erroNaoEncontrado, erroValidacao, registrarErro, respostaErro } from "@/server/erros";
 import { exigirPepper, gerarToken, hashToken } from "@/server/publico/pepper";
 import { gerarSugestoesAgendamento } from "@/server/agenda/sugestoes";
+import { emitirLinkConfirmacaoSistema } from "@/server/regua/links";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { APP_URL } from "@/lib/config-publica";
 import type {
   LinkPublicoResumo,
   RespostaEmitirLinkPublico,
   RespostaListarLinksPublicos,
-  TipoLinkPublico,
+  TipoLinkQualquer,
 } from "@/types/publico";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 const CorpoSchema = z.object({
-  tipo: z.enum(["formulario", "agendamento", "documentos", "material"]),
+  // Fase 6 §5.3: `confirmacao` entra na rota que já existe — a equipe passa a
+  // poder emitir o link de confirmação de presença, que antes só nascia no
+  // envio da D-7. Zero rota nova, zero grant, zero migration.
+  tipo: z.enum(["formulario", "agendamento", "confirmacao", "documentos", "material"]),
 });
 
-/** Segmento de URL por finalidade (§4.1: `/p/f`, `/p/a`, `/p/d`, `/p/m`). */
-const SEGMENTO_POR_TIPO: Record<TipoLinkPublico, string> = {
+/** Segmento de URL por finalidade (§4.1: `/p/f`, `/p/a`, `/p/c`, `/p/d`, `/p/m`). */
+const SEGMENTO_POR_TIPO: Record<TipoLinkQualquer, string> = {
   formulario: "f",
   agendamento: "a",
+  confirmacao: "c",
   documentos: "d",
   material: "m",
 };
 
 interface LinhaLinkPublico {
   id: string;
-  tipo: TipoLinkPublico;
+  tipo: TipoLinkQualquer;
   estado: LinkPublicoResumo["estado"];
   token_prefixo: string;
   expira_em: string;
@@ -87,6 +92,97 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
  * B-1B) calcula as linhas; gravá-las é responsabilidade desta rota, na MESMA
  * requisição que emite o link (nunca antes de existir o `link_id`).
  */
+/**
+ * Ramo `confirmacao` (Fase 6 §5.3). Três coisas o desenho não abre mão:
+ *
+ * 1. **`agendamento_id` sai do SERVIDOR, nunca do corpo.** Aceitá-lo do cliente
+ *    seria IDOR: emitir link de confirmação para a sessão de outra família. A
+ *    leitura é feita com o cliente do USUÁRIO (RLS), escopada pela jornada da
+ *    URL — quem não enxerga a jornada não acha o agendamento.
+ * 2. **Sem `service_role`, 503 rotulado — nunca link pela metade.** A RPC
+ *    `emitir_link_confirmacao_sistema` (0051:521-522) é `service_role` only.
+ *    Mesmo padrão do ramo `agendamento` (linhas 126-139).
+ * 3. **Sem agendamento ativo, 409 com código estável, nunca 500.** O `check`
+ *    `ck_link_confirmacao_agendamento` (0051:285-286) recusaria de qualquer
+ *    forma; aqui a recusa vem com frase de gente, antes de tocar no banco.
+ *
+ * A trava de papel é a da rota (`exigirPapel`, mais acima): a RPC roda como
+ * `service_role` e NÃO confere papel — esta rota é a única barreira, e por isso
+ * o ramo fica depois de `exigirPapel`, nunca antes.
+ */
+async function emitirConfirmacao(
+  supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
+  jornadaId: string,
+): Promise<NextResponse> {
+  const { data: sessao, error: erroSessao } = await supabase
+    .from("sessoes_viabilidade")
+    .select("id")
+    .eq("jornada_id", jornadaId)
+    .maybeSingle<{ id: string }>();
+  if (erroSessao) throw erroSessao;
+  if (!sessao) {
+    throw new ErroApi(
+      409,
+      "sem_agendamento",
+      "Ainda não há sessão marcada para confirmar. Marque a sessão antes de enviar o link de confirmação.",
+    );
+  }
+
+  // O mesmo filtro de `emitir_link_confirmacao_sistema` (0051:498): só
+  // agendamento ativo. `remarcado`/`cancelado` já teve o link revogado pelo
+  // gatilho `revoga_link_confirmacao` (0051:193-204) — não se ressuscita.
+  const { data: agendamento, error: erroAgendamento } = await supabase
+    .from("agendamentos")
+    .select("id")
+    .eq("sessao_id", sessao.id)
+    .in("status", ["agendado", "confirmado"])
+    .order("inicio_em", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (erroAgendamento) throw erroAgendamento;
+  if (!agendamento) {
+    throw new ErroApi(
+      409,
+      "sem_agendamento",
+      "Ainda não há sessão marcada para confirmar. Marque a sessão antes de enviar o link de confirmação.",
+    );
+  }
+
+  let admin;
+  try {
+    admin = criarClienteAdmin();
+  } catch (erroServiceRole) {
+    registrarErro("POST /api/jornadas/[id]/links#confirmacao_service_role_ausente", erroServiceRole, {
+      jornada_id: jornadaId,
+    });
+    throw new ErroApi(
+      503,
+      "servico_indisponivel",
+      "Link de confirmação exige SUPABASE_SERVICE_ROLE_KEY no servidor — indisponível agora.",
+    );
+  }
+
+  try {
+    const { url, linha } = await emitirLinkConfirmacaoSistema(admin, agendamento.id);
+    const resposta: RespostaEmitirLinkPublico = { link: { ...paraResumo(linha), url } };
+    return NextResponse.json(resposta, { status: 201 });
+  } catch (erro) {
+    // Corrida com o gatilho de remarcação: entre a leitura acima e a RPC o
+    // agendamento pode ter saído de `agendado`. 409, nunca 500.
+    if ((erro as { code?: string }).code === "P0002") {
+      throw new ErroApi(
+        409,
+        "sem_agendamento",
+        "A sessão mudou enquanto o link era emitido. Recarregue a Ficha e tente de novo.",
+      );
+    }
+    // Nada do que sai daqui carrega token: `emitirLinkConfirmacaoSistema` só o
+    // devolve no caminho de sucesso.
+    registrarErro("POST /api/jornadas/[id]/links#confirmacao", erro, { jornada_id: jornadaId });
+    throw erro;
+  }
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     // Trava de ROTA (mesma trava que a RPC confere de novo — as duas são obrigatórias,
@@ -100,6 +196,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
 
     const supabase = await criarClienteServidor();
+
+    if (corpo.tipo === "confirmacao") {
+      return await emitirConfirmacao(supabase, jornadaId);
+    }
 
     // Resolve a advogada ANTES de emitir o link — nunca depois: emitir mata o
     // link ativo anterior (efeito colateral destrutivo), e uma falha descoberta

@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
+import { SESSAO_POR_ITEM, type ChaveItemPasta } from "@/lib/pasta/catalogo";
+import { ORDEM_SESSOES, ROTULO_SESSAO, type ChaveSessao } from "@/lib/pasta/trilho";
 import type { EstadoItemPasta, ItemPasta } from "@/lib/pasta/derivar";
 import { ACAO_POR_ITEM_PASTA, ITENS_EM_GAVETA, TITULO_ACAO_ITEM_PASTA, caminhoItemPasta } from "@/lib/pasta/rotas";
 import { Selo } from "@/components/ui/Selo";
@@ -63,32 +64,25 @@ const ROTULO_LIGACAO_IA: Record<string, { rotulo: string; tom: "azul" | "latao" 
  */
 
 /**
- * Os 3 momentos amplos do plano do arquiteto. Mapeamento de
- * `ChaveItemPasta` decidido ao ler `catalogo.ts`/`derivar.ts`:
- * - "Antes da sessão": tudo que é preparação (Formulário, Ligação, Links,
- *   Briefing) mais o próprio agendamento da Sessão (`sessao` cobre tanto
- *   "agendar" quanto "realizar" — ela é o evento-gonzo entre antes/durante,
- *   e como todo pré-requisito de "na sessão"/"depois" é `sessao_realizada`,
- *   faz mais sentido ancorar o cartão de agendamento em "antes").
- * - "Na sessão": os dois artefatos que só existem por causa do evento em si
- *   (Transcrição, Análise da Sessão) — não são preparação nem produto final.
- * - "Depois da sessão": tudo que só o faz sentido consumir depois que a SV
- *   aconteceu (Diagnóstico, Relatório, Croqui, Material) mais o que não tem
- *   relação de pré-requisito com a sessão em si, mas semanticamente pertence
- *   ao dossiê final do caso (Patrimônio, Familiares, Documentos) — mantido
- *   junto do plano do arquiteto em vez de um 4º momento "Patrimônio", porque
- *   a Fase 2 é sobre PARAR de esconder itens atrás de grupo, não recriar um
- *   grupo novo com outro nome.
+ * Fase 6 — os grupos da Pasta deixaram de ser "Antes / Na / Depois da sessão"
+ * e passaram a ser **as três sessões que são a espinha do produto**:
+ * Sessão de Viabilidade · Croqui estrutural · Entrega da holding.
+ *
+ * A lista `MOMENTOS` hardcoded que vivia aqui morreu: o agrupamento agora sai
+ * de `SESSAO_POR_ITEM` (`lib/pasta/catalogo.ts`), a MESMA constante que o
+ * trilho usa via `SESSAO_POR_PASSO`. Eram duas listas que podiam divergir —
+ * e a tela e o trilho passariam a contar histórias diferentes sobre a mesma
+ * jornada. Agora é uma fonte só.
+ *
+ * A sessão 3 (Entrega da holding) não tem item de Pasta hoje: ela é servida
+ * por `execucao_marcos` (o cartão "O que o sistema fez"), não por artefato.
+ * Um grupo sem item simplesmente não é renderizado — nada de caixa vazia.
  */
-const MOMENTOS: { id: string; titulo: string; chaves: ChaveItemPasta[] }[] = [
-  { id: "antes", titulo: "Antes da sessão", chaves: ["formulario", "ligacao", "links", "briefing", "sessao"] },
-  { id: "durante", titulo: "Na sessão", chaves: ["transcricao", "analise_sessao"] },
-  {
-    id: "depois",
-    titulo: "Depois da sessão",
-    chaves: ["diagnostico_sv", "relatorio_sv", "croqui", "material", "patrimonio", "familiares", "documentos"],
-  },
-];
+const GRUPOS_SESSAO: { id: ChaveSessao; titulo: string; chaves: ChaveItemPasta[] }[] = ORDEM_SESSOES.map((sessao) => ({
+  id: sessao,
+  titulo: ROTULO_SESSAO[sessao],
+  chaves: (Object.keys(SESSAO_POR_ITEM) as ChaveItemPasta[]).filter((chave) => SESSAO_POR_ITEM[chave] === sessao),
+}));
 
 const ROTULO_ESTADO: Record<EstadoItemPasta, string> = {
   pronto: "Pronto",
@@ -322,12 +316,12 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
 
   const conteudo = (
     <>
-      <div className="flex items-start gap-3" title={explicacao ?? tituloDoCartao}>
-        <span aria-hidden="true" className={`grid h-10 w-10 shrink-0 place-items-center rounded-controle ${estilo.selo}`}>
+      <div className="flex items-start gap-item" title={explicacao ?? tituloDoCartao}>
+        <span aria-hidden="true" className={`grid h-9 w-9 shrink-0 place-items-center rounded-controle ${estilo.selo}`}>
           <IconeItem chave={item.chave} />
         </span>
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className={`text-[15px] font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className={`text-sm font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
             {item.rotulo}
           </p>
           <p className={`inline-flex items-center gap-1.5 text-xs font-bold ${estilo.texto}`}>
@@ -367,7 +361,7 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
     </>
   );
 
-  const classeBase = `flex min-h-[44px] flex-col gap-2 rounded-controle border p-3.5 text-left transition-all ${estilo.cartao}`;
+  const classeBase = `flex min-h-11 flex-col gap-1 rounded-controle border px-3 py-2 text-left transition-all ${estilo.cartao}`;
 
   if (!clicavel) {
     // `ainda_nao`: não navega — mas continua no DOM como elemento estático,
@@ -427,11 +421,19 @@ export function PastaDoCliente({
   itens,
   aoAbrirGaveta,
   sinaisSessao,
+  sessaoAtual,
 }: {
   itens: ItemPasta[];
   aoAbrirGaveta: (chave: ChaveItemPasta) => void;
   /** Presença/sala/ligação IA para o cartão "Sessão" (Fase 4). Opcional: sem ele, o cartão fica como antes. */
   sinaisSessao?: SinaisSessaoPasta;
+  /**
+   * Qual das 3 sessoes esta acesa no trilho (`agruparPorSessao`). Fase 6: so
+   * ela nasce ABERTA; as outras ficam recolhidas com o resumo. Sem ela
+   * (jornada so com `null`, a borda do trilho sem passo aceso), a PRIMEIRA
+   * que tiver trabalho abre - nunca todas, e nunca nenhuma por engano.
+   */
+  sessaoAtual?: ChaveSessao | null;
 }) {
   // Contador honesto: o denominador é só o que já é "hora de fazer"
   // (pronto + em_revisao + falta) — `ainda_nao` fica de fora do total tanto
@@ -445,14 +447,18 @@ export function PastaDoCliente({
   const prontos = itensAcionaveis.filter((i) => i.estado === "pronto").length;
   const aindaNao = itens.length - total;
 
-  const momentosVisiveis = MOMENTOS.map((momento) => ({
+  const momentosVisiveis = GRUPOS_SESSAO.map((momento) => ({
     ...momento,
     itens: itens.filter((i) => momento.chaves.includes(i.chave)),
   })).filter((momento) => momento.itens.length > 0);
 
+  // Sem sessao acesa, abre a primeira que tem trabalho a fazer. `-1` (tudo
+  // pronto, ou tudo "ainda nao") deixa as tres recolhidas - que e a verdade.
+  const indicePrimeiraComTrabalho = momentosVisiveis.findIndex((m) => statusDoMomento(m.itens) === "atual");
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2.5 rounded-controle border border-linha-forte bg-papel-elevado px-4 py-3">
+    <div className="flex flex-col gap-bloco">
+      <div className="flex flex-col gap-1 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2">
         {/* Número primeiro (§2): "3 de 7 prontos", não "Você já tem 3 de 7
             itens desta fase". */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -488,16 +494,17 @@ export function PastaDoCliente({
           const status = statusDoMomento(momento.itens);
           const acionaveisDoMomento = momento.itens.filter((i) => i.estado !== "ainda_nao");
           const prontosDoMomento = acionaveisDoMomento.filter((i) => i.estado === "pronto").length;
+          const aberta = sessaoAtual ? momento.id === sessaoAtual : indice === indicePrimeiraComTrabalho;
+          const resumo =
+            acionaveisDoMomento.length === 0
+              ? "mais adiante"
+              : `${prontosDoMomento} de ${acionaveisDoMomento.length} ${acionaveisDoMomento.length === 1 ? "pronto" : "prontos"}`;
           return (
-            <li
-              key={momento.id}
-              aria-labelledby={`momento-${momento.id}`}
-              className={`relative pl-12 sm:pl-14 ${ultimo ? "" : "pb-8"}`}
-            >
-              {!ultimo && <span aria-hidden="true" className="absolute bottom-0 left-[17px] top-11 w-px bg-linha-forte" />}
+            <li key={momento.id} aria-labelledby={`momento-${momento.id}`} className={`relative pl-10 ${ultimo ? "" : "pb-item"}`}>
+              {!ultimo && <span aria-hidden="true" className="absolute bottom-0 left-[15px] top-9 w-px bg-linha-forte" />}
               <span
                 aria-hidden="true"
-                className={`absolute left-0 top-0 grid h-9 w-9 place-items-center rounded-full border text-sm font-bold ${ESTILO_NO[status]}`}
+                className={`absolute left-0 top-0 grid h-8 w-8 place-items-center rounded-full border text-sm font-bold ${ESTILO_NO[status]}`}
               >
                 {status === "concluido" ? (
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -507,21 +514,23 @@ export function PastaDoCliente({
                   indice + 1
                 )}
               </span>
-              <div className="mb-3 flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <h2 id={`momento-${momento.id}`} className="text-lg font-bold leading-tight text-tinta">
-                  {momento.titulo}
-                </h2>
-                <span className="text-xs font-medium text-tinta-fraca">
-                  {acionaveisDoMomento.length === 0
-                    ? "depois da sessão"
-                    : `${prontosDoMomento} de ${acionaveisDoMomento.length} ${acionaveisDoMomento.length === 1 ? "pronto" : "prontos"}`}
-                </span>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {momento.itens.map((item) => (
-                  <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} sinaisSessao={sinaisSessao} />
-                ))}
-              </div>
+              <details open={aberta} className="group">
+                <summary className="mb-item flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 marker:content-none">
+                  <h2 id={`momento-${momento.id}`} className="text-subtitulo font-bold leading-tight text-tinta">
+                    {momento.titulo}
+                  </h2>
+                  <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+                    {resumo}
+                    <span aria-hidden="true" className="group-open:hidden">ver</span>
+                    <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
+                  </span>
+                </summary>
+                <div className="grid gap-item pb-item sm:grid-cols-2 xl:grid-cols-3">
+                  {momento.itens.map((item) => (
+                    <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} sinaisSessao={sinaisSessao} />
+                  ))}
+                </div>
+              </details>
             </li>
           );
         })}

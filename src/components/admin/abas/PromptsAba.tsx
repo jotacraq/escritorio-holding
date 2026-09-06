@@ -142,7 +142,7 @@ export function PromptsAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <IntroAba>
           O texto que guia a IA em cada geração. Toda mudança nasce como versão nova — a versão em uso nunca é editada, e cada briefing guarda com

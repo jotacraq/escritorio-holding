@@ -8,7 +8,7 @@ import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { formatarDataHora } from "@/lib/formatar";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import type { AgendaBloqueio } from "@/types/agenda";
 import { ApiError, cancelarBloqueio, listarBloqueios } from "./api";
 import { FormularioBloqueio } from "./FormularioBloqueio";
@@ -73,7 +73,7 @@ export function PainelBloqueios() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <SeletorAdvogada membros={membros} valor={efetiva} aoMudar={setAdvogadaId} id="bloq-advogada" />
 
       {efetiva && (

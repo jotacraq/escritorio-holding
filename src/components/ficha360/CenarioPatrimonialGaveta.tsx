@@ -179,7 +179,7 @@ function ConteudoCenario({ jornadaId, uf, aoAtualizar }: { jornadaId: string; uf
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center gap-2 text-xs text-tinta-suave">
         <span className="font-medium text-tinta">Legenda:</span>
         {(Object.keys(PROCEDENCIA) as ProcedenciaValor[]).map((p) => (

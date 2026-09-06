@@ -26,7 +26,7 @@ export default function PaginaSimularCroqui({ params }: { params: Promise<{ croq
   }
 
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina rotulo="Simulação" titulo={croqui.titulo} />
       <Simulador
         jornadaId={jornadaId}

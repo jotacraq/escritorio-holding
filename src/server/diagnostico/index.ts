@@ -92,8 +92,19 @@ async function analiseAtual(supabase: Cliente, jornadaId: string): Promise<Anali
   );
 }
 
-/** Monta (função pura) e registra versão nova via `registrar_diagnostico_sv`. */
-export async function gerarDiagnostico(supabase: Cliente, jornadaId: string): Promise<DiagnosticoSv> {
+/**
+ * Monta (função pura) e registra versão nova via `registrar_diagnostico_sv`.
+ *
+ * `criadoPor` só é usado quando o cliente NÃO tem sessão (`service_role`: job,
+ * cron, seed). Com sessão, a RPC ignora o parâmetro e assina com o perfil da
+ * própria sessão — ninguém carimba diagnóstico no nome de outro (0071).
+ * A rota `POST /api/jornadas/[id]/diagnostico` chama sem ele, como antes.
+ */
+export async function gerarDiagnostico(
+  supabase: Cliente,
+  jornadaId: string,
+  criadoPor: string | null = null,
+): Promise<DiagnosticoSv> {
   const [ficha, cenario, analise] = await Promise.all([
     montarFicha360(supabase, jornadaId, true),
     listarCenario(supabase, jornadaId),
@@ -115,11 +126,23 @@ export async function gerarDiagnostico(supabase: Cliente, jornadaId: string): Pr
   const blocos = montarDiagnostico(entrada);
 
   const { data, error } = await supabase
-    .rpc("registrar_diagnostico_sv", { p_jornada_id: jornadaId, p_analise_id: analise?.id ?? null, p_blocos: blocos })
+    .rpc("registrar_diagnostico_sv", {
+      p_jornada_id: jornadaId,
+      p_analise_id: analise?.id ?? null,
+      p_blocos: blocos,
+      p_criado_por: criadoPor,
+    })
     .single<DiagnosticoSv>();
   if (error) {
     const msg = (error as { message: string }).message;
     if (msg.startsWith("sem_permissao")) throw erroConflito("sem_permissao", "Só admin/advogada monta o diagnóstico.");
+    // Só alcançável sem sessão (service_role) e sem `criadoPor` — é erro de
+    // programação do chamador, não do usuário. Mensagem para quem lê o log.
+    if (msg.startsWith("criado_por_ausente"))
+      throw erroConflito(
+        "criado_por_ausente",
+        "Sem sessão, o diagnóstico precisa do perfil de quem está montando.",
+      );
     if (msg.startsWith("jornada_nao_encontrada")) throw erroNaoEncontrado("Jornada não encontrada.");
     registrarErro("server/diagnostico.gerarDiagnostico", error, { jornada_id: jornadaId });
     throw error;

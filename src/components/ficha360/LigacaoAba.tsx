@@ -169,7 +169,7 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
       )}
       {bloco.proibido.length > 0 && (
         <div role="alert" className="rounded-controle border-2 border-vermelho bg-vermelho-fraco px-3 py-2.5">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Proibido nesta ligação</p>
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Não fazer neste contato</p>
           <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--vermelho)]">
             {bloco.proibido.map((item, i) => (
               <li key={i}>{item}</li>
@@ -198,14 +198,14 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
       setSalvoEm(new Date().toISOString());
       aoAtualizar();
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : "Não foi possível salvar o registro da ligação.");
+      setErro(e instanceof ApiError ? e.message : "Não foi possível salvar o contato.");
     } finally {
       setSalvando(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       {/* §9.2: a sigla do método (POP 03 / POP 03-B) sai do fluxo e vai
           para o `title` — o nome humano vem do dicionário único. */}
       <p className="text-xs text-tinta-fraca" title={`${titleDe("pop03")}${pop03b ? "-B" : ""}`}>
@@ -336,7 +336,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
 
       <div className="nao-imprimir">
         <Botao variante="primario" carregando={salvando} onClick={salvar}>
-          Salvar registro da ligação
+          Salvar o contato
         </Botao>
       </div>
     </div>

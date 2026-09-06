@@ -8,7 +8,7 @@ import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Selo } from "@/components/ui/Selo";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import type { Disponibilidade } from "@/types/agenda";
 import { ApiError, atualizarDisponibilidade, listarDisponibilidades } from "./api";
 import { ROTULO_DIA_SEMANA, formatarDataCalendario, formatarHoraSql } from "./rotulos";
@@ -87,14 +87,31 @@ export function PainelDisponibilidade() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <SeletorAdvogada membros={membros} valor={efetiva} aoMudar={setAdvogadaId} id="disp-advogada" />
 
       {efetiva && (
         <>
-          <FormularioDisponibilidade advogadaId={efetiva} aoCriar={aoMudarJanelas} />
+          {/* Fase 6: o formulário de nova janela ocupava 390 px NO TOPO, todo
+              dia, para uma ação que se faz uma vez por mês. Quem abre esta aba
+              quer VER os dias em que a equipe atende; adicionar vem depois.
+              `<details>` nativo: um clique, teclado e leitor de tela de graça. */}
+          <details className="group rounded-cartao border border-linha bg-papel-elevado px-cartao py-item shadow-cartao">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-item marker:content-none">
+              <span className="text-subtitulo font-bold text-tinta">Adicionar um dia de atendimento</span>
+              <span aria-hidden="true" className="text-xs text-tinta-fraca group-open:hidden">
+                abrir
+              </span>
+              <span aria-hidden="true" className="hidden text-xs text-tinta-fraca group-open:inline">
+                fechar
+              </span>
+            </summary>
+            <div className="pt-item">
+              <FormularioDisponibilidade advogadaId={efetiva} aoCriar={aoMudarJanelas} />
+            </div>
+          </details>
 
-          <Cartao rotulo="Janelas" titulo="Horários livres recorrentes" descricao="Desativar uma janela tira os horários dela das opções do cliente sem apagar o histórico." preenchimento="sem">
+          <Cartao rotulo="Janelas" titulo="Janelas de atendimento" descricao="Desativar tira os horários das opções do cliente sem apagar o histórico." preenchimento="sem">
             {carregando && !dados && (
               <div className="p-5 sm:p-6">
                 <EsqueletoLista linhas={3} rotulo="Carregando janelas…" />

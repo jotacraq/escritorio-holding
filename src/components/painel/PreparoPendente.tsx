@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Bloco, LinhaFila } from "./Bloco";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { Selo } from "@/components/ui/Selo";
 import { formatarDataHora, formatarRelativo } from "@/lib/formatar";
@@ -10,7 +10,7 @@ import { sinaisDoPreparo } from "@/lib/pasta/sinais";
 import type { EstadoBloco, PendenciaPreparo } from "@/types/painel-ui";
 
 /**
- * Bloco 2 — sessão marcada e falta formulário, ligação ou briefing.
+ * Bloco 2 — sessão marcada e falta formulário, contato da equipe ou briefing.
  * Ordenado por quão perto está a sessão (a view já entrega em janela de 7 dias).
  * O chip diz qual dos três vem primeiro e de quem é — a mesma regra da Esteira.
  */
@@ -21,7 +21,7 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
       rotulo="Preparo"
       titulo="Preparo pendente"
       tituloTitle={titleDe("briefing_etapa")}
-      dica="Sessão marcada para os próximos 7 dias com algo faltando antes dela: formulário, ligação estratégica ou briefing."
+      dica="Sessão marcada para os próximos 7 dias com algo faltando antes dela: formulário, contato da equipe ou briefing."
       mensagemNadaPendente="Preparo completo nos próximos 7 dias."
       estado={estado}
       aoTentarDeNovo={aoTentarDeNovo}
@@ -51,7 +51,7 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                     )}
                     {item.falta_ligacao && (
                       <span title={titleDe("pop03")} className="inline-flex">
-                        <Selo tom="neutro">Falta ligação</Selo>
+                        <Selo tom="neutro">Falta o contato</Selo>
                       </span>
                     )}
                     {item.falta_briefing && (

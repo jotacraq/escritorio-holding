@@ -17,7 +17,7 @@ import { FormularioAgendamento } from "@/components/agenda/FormularioAgendamento
 import { extrasDaFicha, proximoAgendamentoAtivo } from "./api-extras";
 import { SessaoPresenca } from "./SessaoPresenca";
 import { SessaoSala } from "./SessaoSala";
-import { SessaoLigacaoIa } from "./SessaoLigacaoIa";
+import { SessaoLigacaoIa, TarefaLigarParaAgendar } from "./SessaoLigacaoIa";
 import { SessaoTarefaCroqui } from "./SessaoTarefaCroqui";
 
 const ROTULOS_RESULTADO: Record<NonNullable<SessaoViabilidade["resultado"]>, { rotulo: string; tom: TomSelo }> = {
@@ -133,25 +133,34 @@ export function SessaoAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: string
         </div>
       </Cartao>
 
-      {/* §1 ponto 3 — se não serve, não ocupa a tela. Com horário ativo a
-          ligação por IA vira uma linha de estado, não um cartão com botão. */}
-      {proximo === null ? (
-        <Cartao titulo="Ligação por IA">
-          <SessaoLigacaoIa
-            jornadaId={jornadaId}
-            ligacao={extras.ligacaoIaAtual}
-            disponivel={extras.ligacaoIaDisponivel}
-            tarefaLigarAberta={tarefaLigar}
-            temAgendamentoAtivo={false}
-            aoAtualizar={aoAtualizar}
-          />
-        </Cartao>
-      ) : (
-        <p className="flex min-h-9 flex-wrap items-center gap-x-2 rounded-controle border border-dashed border-linha bg-transparent px-3.5 py-2 text-sm text-tinta-suave">
-          <span className="font-medium text-tinta">Ligação por IA</span>
-          <span>· não se aplica · horário já marcado</span>
-        </p>
-      )}
+      {/* A TAREFA HUMANA de ligar para marcar. Fica FORA do bloco da ligação
+          por IA de propósito (§6.3): é trabalho do operador, e desligar a IA
+          não pode esconder trabalho de gente. */}
+      <TarefaLigarParaAgendar tarefa={tarefaLigar} />
+
+      {/* A ligação por IA é RECURSO OPCIONAL desde a Fase 6: só existe na tela
+          quando o escritório a ligou (`ligacao_ia.provedor = 'n8n'`, lido do
+          servidor em `configuracoesUi.ligacaoIaAtiva`). Desligada — que é o
+          estado de hoje — ela não aparece, nem como "não configurado": o
+          operador não precisa saber que existe uma automação que ninguém
+          contratou. Com horário já marcado, vira uma linha de estado. */}
+      {ficha.configuracoesUi.ligacaoIaAtiva &&
+        (proximo === null ? (
+          <Cartao titulo="Ligação por IA" preenchimento="compacto">
+            <SessaoLigacaoIa
+              jornadaId={jornadaId}
+              ligacao={extras.ligacaoIaAtual}
+              disponivel={extras.ligacaoIaDisponivel}
+              temAgendamentoAtivo={false}
+              aoAtualizar={aoAtualizar}
+            />
+          </Cartao>
+        ) : (
+          <p className="flex min-h-9 flex-wrap items-center gap-x-2 rounded-controle border border-dashed border-linha bg-transparent px-3 py-1.5 text-sm text-tinta-suave">
+            <span className="font-medium text-tinta">Ligação por IA</span>
+            <span>· não se aplica · horário já marcado</span>
+          </p>
+        ))}
 
       <ComposicaoFamiliar jornadaId={jornadaId} />
     </div>

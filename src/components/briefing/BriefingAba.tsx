@@ -25,8 +25,8 @@ import {
 
 const ROTULOS_FONTE: Record<string, string> = {
   formulario: "Formulário estratégico",
-  ligacao_observacoes: "Observações da ligação",
-  transcricao: "Transcrição da ligação",
+  ligacao_observacoes: "Observações do contato",
+  transcricao: "Transcrição do contato",
   patrimonio_faixa: "Faixa de patrimônio",
 };
 
@@ -48,7 +48,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
   // que chega do servidor é v2 (ver tipos.ts). Cast documentado, não fantasia.
   const c = briefing.conteudo as unknown as BriefingConteudoV2;
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       {/* Resumo compacto (Tarefa 3) — mesma peça do Modo Conduzir Sessão
           (`PainelBriefingSessao.tsx`), promovida para o topo da versão
           completa. Sem sticky/localStorage/recolher aqui: sem `sessaoId`
@@ -382,7 +382,7 @@ export function BriefingAba({
       )}
 
       {!carregando && !erroCarregar && !briefing && (
-        <EstadoVazio titulo="Nenhum briefing gerado ainda" descricao="Gere o Briefing Estratégico com o botão acima, depois de registrar o formulário e a ligação." />
+        <EstadoVazio titulo="Nenhum briefing gerado ainda" descricao="Gere o Briefing com o botão acima, depois de registrar o formulário e o contato da equipe." />
       )}
 
       {!carregando && briefing && <ConteudoBriefing briefing={briefing} />}

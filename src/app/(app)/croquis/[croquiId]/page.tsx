@@ -26,7 +26,7 @@ export default function PaginaCroquiCalculado({ params }: { params: Promise<{ cr
   }
 
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina rotulo={rotulo("croqui")} titulo={croqui.titulo} />
       <CroquiCalculado
         jornadaId={jornadaId}

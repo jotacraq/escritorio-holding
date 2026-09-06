@@ -17,7 +17,7 @@ function IconeBusca({ className = "h-5 w-5" }: { className?: string }) {
 
 function Marca({ className = "" }: { className?: string }) {
   return (
-    <Link href="/painel" className={`group flex min-h-11 items-center gap-2.5 rounded-controle ${className}`}>
+    <Link href="/hoje" className={`group flex min-h-11 items-center gap-2.5 rounded-controle ${className}`}>
       <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)] shadow-[0_2px_0_0_var(--latao-cta-forte)]">
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3.5 8.5 10 3.5l6.5 5M5.5 9v6.5M10 9v6.5M14.5 9v6.5M4 16.25h12" />
@@ -123,7 +123,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Marca className="px-2" />
       {botaoBuscar}
       <Nav aoNavegar={() => setGavetaAberta(false)} />
-      <div className="mt-auto flex flex-col gap-3 border-t border-linha pt-4">
+      <div className="mt-auto flex flex-col gap-2 border-t border-linha pt-3">
         <CartaoUsuario />
         {/* Alinhado à direita, de propósito: o canto inferior esquerdo é onde o
             indicador de dev do Next se ancora, e os dois não podem se sobrepor. */}
@@ -186,14 +186,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         id="navegacao-lateral"
         ref={gavetaRef}
         aria-label="Menu"
-        className={`nao-imprimir z-40 flex w-[19rem] max-w-[88vw] shrink-0 flex-col gap-5 overflow-y-auto border-r border-linha bg-papel px-3 py-5 transition-transform duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:translate-x-0 lg:px-4 lg:py-6 ${
+        className={`nao-imprimir z-40 flex w-[17rem] max-w-[88vw] shrink-0 flex-col gap-3 overflow-y-auto border-r border-linha bg-papel px-3 py-4 transition-transform duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:translate-x-0 ${
           gavetaAberta ? "fixed inset-y-0 left-0 translate-x-0 shadow-flutuante" : "fixed inset-y-0 left-0 -translate-x-full lg:relative lg:shadow-none"
         }`}
       >
         {conteudoLateral}
       </aside>
 
-      <main id="conteudo-principal" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 outline-none sm:px-8 sm:py-8 lg:px-10 lg:py-10">
+      <main id="conteudo-principal" tabIndex={-1} className="min-w-0 flex-1 px-3 py-4 outline-none sm:px-5 sm:py-5 lg:px-6 lg:py-6">
         <div className="mx-auto w-full max-w-7xl">{children}</div>
       </main>
 

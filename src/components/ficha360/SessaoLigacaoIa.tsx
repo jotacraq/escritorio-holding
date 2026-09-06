@@ -52,7 +52,6 @@ export function SessaoLigacaoIa({
   jornadaId,
   ligacao,
   disponivel,
-  tarefaLigarAberta,
   temAgendamentoAtivo,
   aoAtualizar,
 }: {
@@ -60,8 +59,6 @@ export function SessaoLigacaoIa({
   ligacao: LigacaoIaResumo | null;
   /** `false` = a Ficha ainda não carrega `ligacoes_ia` (tabela 0053 ausente). */
   disponivel: boolean;
-  /** Tarefa `ligar_para_agendar` aberta (provedor manual) — a equipe liga. */
-  tarefaLigarAberta: Tarefa | null;
   temAgendamentoAtivo: boolean;
   aoAtualizar: () => void;
 }) {
@@ -93,7 +90,7 @@ export function SessaoLigacaoIa({
         titulo: erro?.status === 503 ? "Ligação por IA não configurada" : erro?.status === 409 ? "Já existe uma ligação em andamento" : "Não foi possível pedir a ligação",
         descricao:
           erro?.status === 503
-            ? "Integração não configurada no servidor: faltam N8N_WEBHOOK_LIGACAO_URL e LIGACAO_IA_WEBHOOK_SECRET (ou a chave de serviço). Enquanto isso, ligue pela equipe e registre a Ligação Estratégica."
+            ? "A ligação por IA ainda não está ligada neste servidor. Enquanto isso, alguém da equipe liga e registra o contato na ficha."
             : erro?.message ?? "Confira a internet e tente de novo.",
       });
     } finally {
@@ -141,9 +138,11 @@ export function SessaoLigacaoIa({
 
   if (!disponivel) {
     return (
-      <div className="flex flex-col gap-3">
-        <SeloStub texto="Ligação por IA ainda não disponível — a tabela de ligações (migração 0053) não foi aplicada neste ambiente." />
-        <p className="text-sm text-tinta-suave">Enquanto isso, a equipe liga e registra a Ligação Estratégica (POP 03) na Pasta do Cliente.</p>
+      <div className="flex flex-col gap-item">
+        <SeloStub texto="Ligação por IA ainda não disponível neste ambiente." />
+        <p className="text-sm text-tinta-suave" title="A tabela de ligações (migração 0053) não foi aplicada neste ambiente.">
+          Enquanto isso, a equipe liga e registra o contato na ficha.
+        </p>
       </div>
     );
   }
@@ -182,7 +181,7 @@ export function SessaoLigacaoIa({
           )}
           {(ligacao.status === "falhou" || ligacao.status === "sem_resposta") && (
             <p className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5 text-sm text-[color:var(--ambar)]">
-              Fallback da esteira: quando as tentativas se esgotam, o link de agendamento é enviado por mensagem (e-mail automático; WhatsApp entra na fila de Comunicação). Confira lá se já saiu.
+              Quando as tentativas se esgotam, o link de agendamento vai por e-mail sozinho — e o WhatsApp entra na fila de Mensagens. Confira lá se já saiu.
             </p>
           )}
         </div>
@@ -190,15 +189,6 @@ export function SessaoLigacaoIa({
         <p className="text-sm text-tinta-suave">
           Nenhuma ligação pedida
         </p>
-      )}
-
-      {tarefaLigarAberta && (
-        <div className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3.5 py-2.5 text-sm text-[color:var(--ambar)]">
-          <p className="font-bold">Tarefa aberta para a equipe: ligar para agendar</p>
-          <p>
-            Sem integração de voz configurada, a ligação virou tarefa humana{tarefaLigarAberta.vence_em ? ` (vence ${formatarRelativo(tarefaLigarAberta.vence_em)})` : ""}. Ligue, registre a Ligação Estratégica e marque o horário na agenda.
-          </p>
-        </div>
       )}
 
       <div className="nao-imprimir flex flex-wrap gap-2">
@@ -253,6 +243,27 @@ export function SessaoLigacaoIa({
         aoConfirmar={cancelar}
         aoCancelar={() => setConfirmandoCancelar(false)}
       />
+    </div>
+  );
+}
+
+/**
+ * "Ligar para agendar" — a TAREFA HUMANA, separada do componente da ligação
+ * por IA (Fase 6 §6.3).
+ *
+ * Ela vivia dentro de `SessaoLigacaoIa`. Com a ligação por IA passando a ser
+ * um recurso opcional (some da tela quando `ligacao_ia.provedor` não é n8n),
+ * deixá-la lá dentro significaria: **desligar a IA esconderia o trabalho do
+ * operador**. É exatamente o tipo de sumiço silencioso que a Fase 6 existe
+ * para acabar. Agora ela é um bloco próprio, renderizado pela `SessaoAba`
+ * independentemente da IA estar ligada.
+ */
+export function TarefaLigarParaAgendar({ tarefa }: { tarefa: Tarefa | null }) {
+  if (!tarefa) return null;
+  return (
+    <div className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-[color:var(--ambar)]">
+      <p className="font-bold">Ligar para o cliente e marcar o horário{tarefa.vence_em ? ` — vence ${formatarRelativo(tarefa.vence_em)}` : ""}</p>
+      <p>Ligue, registre o contato na ficha e marque a sessão na agenda.</p>
     </div>
   );
 }

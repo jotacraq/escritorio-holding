@@ -1,5 +1,5 @@
 import { Cartao } from "@/components/ui/Cartao";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { chavesDoErro } from "./apiCroquiCalculo";
 
 /**

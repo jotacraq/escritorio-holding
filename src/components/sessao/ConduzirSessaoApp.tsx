@@ -182,7 +182,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 
   if (estado.fase === "carregando") {
     return (
-      <div className="flex flex-col gap-8" aria-busy="true">
+      <div className="flex flex-col gap-bloco" aria-busy="true">
         <CabecalhoPagina rotulo="Conduzir sessão" titulo="Carregando a sessão…" />
         <EsqueletoFicha />
       </div>
@@ -191,7 +191,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 
   if (estado.fase === "erro") {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-bloco">
         <CabecalhoPagina rotulo="Conduzir sessão" titulo="Sessão de Viabilidade" />
         <EstadoErro erro={estado.erro} tentarNovamente={tentarNovamente} titulo="Não foi possível carregar a sessão" />
       </div>
@@ -201,7 +201,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   if (estado.fase === "sem-sessao" || estado.fase === "sem-roteiro") {
     const semRoteiro = estado.fase === "sem-roteiro";
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-bloco">
         <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} />
         <EstadoVazio
           ilustracao="agenda"
@@ -226,7 +226,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const mostrarOferta = estado.ofertas.length > 0 || indice >= total - 3;
 
   return (
-    <div className="flex flex-col gap-6 pb-28">
+    <div className="flex flex-col gap-bloco pb-28">
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
@@ -238,8 +238,8 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
        * vem DEPOIS do roteiro — a Dra. Elaine já está com o roteiro na tela
        * antes de rolar até o briefing.
        */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 items-start gap-bloco lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex flex-col gap-bloco">
           <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
 
           <PainelSims

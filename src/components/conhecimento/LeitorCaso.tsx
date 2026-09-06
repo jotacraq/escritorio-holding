@@ -20,7 +20,7 @@ const ROTULO_TIPO = {
 
 function VoltarAoConhecimento() {
   return (
-    <Link href="/conhecimento" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+    <Link href="/admin#repertorio" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
       ← Conhecimento
     </Link>
   );
@@ -94,7 +94,7 @@ export function LeitorCaso({ casoId }: { casoId: string }) {
   const { caso, sessao_viabilidade, apresentacao_croqui } = dados;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Método · Conhecimento"
         acima={<VoltarAoConhecimento />}
@@ -113,7 +113,7 @@ export function LeitorCaso({ casoId }: { casoId: string }) {
         }
       />
 
-      <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="flex flex-col gap-bloco lg:flex-row">
         <Coluna titulo="Sessão de Viabilidade" transcricao={sessao_viabilidade} vazio="Transcrição não disponível." />
         <Coluna titulo="Apresentação do croqui" transcricao={apresentacao_croqui} vazio="Nenhuma apresentação de croqui gravada para esta pessoa." />
       </div>
@@ -130,7 +130,7 @@ export function LeitorTranscricao({ transcricaoId }: { transcricaoId: string }) 
   if (!transcricao) return <EstadoVazio titulo="Transcrição não encontrada" acao={<VoltarAoConhecimento />} />;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Método · Conhecimento"
         acima={<VoltarAoConhecimento />}

@@ -172,7 +172,7 @@ function mensagemErroGerar(erro: ApiError): string {
     return "Sem chave de IA configurada ou sem consentimento de tratamento por IA registrado. Nenhum briefing de mentira é mostrado aqui.";
   }
   if (erro.status === 409) {
-    return "Dados insuficientes para um briefing confiável (formulário/ligação incompletos, ou já existe um briefing atual). Veja a aba Briefing na ficha completa.";
+    return "Falta informação para um briefing confiável — o formulário ou o contato da equipe estão incompletos (ou já existe um briefing atual). Veja o Briefing na ficha.";
   }
   if (erro.status === 429) {
     return "Limite de gerações de IA atingido por agora. Tente de novo em instantes.";

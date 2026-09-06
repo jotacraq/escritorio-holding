@@ -10,7 +10,7 @@ import {
   listarCasos,
   type ListaCasos,
 } from "@/components/conhecimento/api";
-import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
+import { Botao } from "@/components/ui/Botao";
 import { Cartao } from "@/components/ui/Cartao";
 import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
 import { EsqueletoCartao, EsqueletoLista } from "@/components/ui/Esqueleto";
@@ -25,6 +25,9 @@ export const ROTULO_TIPO: Record<TipoTranscricao, string> = {
   sessao_viabilidade: "Sessão de Viabilidade",
   apresentacao_croqui: "Apresentação de croqui",
 };
+
+/** Quantos casos a lista mostra antes do botão "Ver os N casos". */
+const LIMITE_CASOS_VISIVEIS = 8;
 
 const TAMANHO_MINIMO_TERMO = 2;
 const ATRASO_BUSCA_MS = 350;
@@ -62,6 +65,7 @@ function IconeSeta() {
 export function ConhecimentoApp() {
   const { dados: lista, carregando: carregandoLista, erro: erroLista, recarregar: carregarLista } = useRecurso<ListaCasos>(listarCasos, []);
   const [filtroCasos, setFiltroCasos] = useState<DesfechoObservado | "">("");
+  const [mostrarTodos, setMostrarTodos] = useState(false);
 
   const [termo, setTermo] = useState("");
   const [tipo, setTipo] = useState<TipoTranscricao | "">("");
@@ -152,57 +156,51 @@ export function ConhecimentoApp() {
 
   if (semAcesso) {
     return (
-      <div className="flex flex-col gap-8">
-        <CabecalhoPagina rotulo="Método" titulo="Conhecimento" />
-        <EstadoVazio
-          ilustracao="pasta"
-          titulo="Área restrita"
-          descricao="A base de conhecimento reúne transcrições de reuniões com clientes — patrimônio, família, decisões. Só quem enxerga patrimônio no sistema (advogada e administração) tem acesso."
-        />
-      </div>
+      <EstadoVazio
+        ilustracao="pasta"
+        titulo="Área restrita"
+        descricao="O repertório reúne transcrições de reuniões com clientes — patrimônio, família, decisões. Só quem enxerga patrimônio no sistema (advogada e administração) tem acesso."
+      />
     );
   }
 
   return (
-    <div className="flex flex-col gap-10">
-      <CabecalhoPagina
-        rotulo="Método"
-        titulo="Conhecimento"
-        descricao="As Sessões de Viabilidade e apresentações de croqui já realizadas, transcritas e consultáveis por texto. Leia antes de uma sessão para lembrar como famílias parecidas falaram, decidiram e travaram."
-        meta={
-          lista && lista.casos.length > 0 ? (
-            <span>
-              {lista.casos.length} caso{lista.casos.length === 1 ? "" : "s"} com transcrição
-            </span>
-          ) : undefined
-        }
-      />
+    <div className="flex flex-col gap-bloco">
+      {/* Fase 6: "Conhecimento" virou a aba "Repertório da IA" do Admin. O
+          `h1` é o da página (Admin) e a frase que explica o que isto é vive
+          na `descricao` da aba — o João pediu que ficasse REGISTRADO na tela
+          que este é o repertório da IA. Aqui sobra só o estado. */}
+      {lista && lista.casos.length > 0 && (
+        <p className="text-xs text-tinta-fraca">
+          {lista.casos.length} caso{lista.casos.length === 1 ? "" : "s"} com transcrição
+        </p>
+      )}
 
       {/* ------------------------------------------------ trava de IA (LGPD) */}
-      <Cartao realce="ambar" rotulo="Leitura por IA" titulo="A IA ainda não lê estas conversas" como="section">
-        <div className="flex flex-col gap-3 text-sm text-tinta-suave">
-          <p>
-            Estas transcrições são conversas de clientes com a Dra. Elaine: patrimônio, família, conflitos. Mandar isso para um serviço de IA fora do escritório é tratamento de dado pessoal sensível — precisa de uma decisão jurídica registrada antes (LGPD), não de um botão.
-          </p>
-          <p>
-            <strong className="font-bold text-tinta">O que fazer:</strong> a Dra. Elaine decide se e como as transcrições podem ser lidas por IA, e a decisão fica registrada em{" "}
-            <Link href="/admin#pendencias" className="-my-3 inline-block py-3 font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
-              Admin → Pendências
-            </Link>
-            . Até lá, a busca e a leitura abaixo funcionam normalmente — o texto fica no banco do escritório e não sai daqui.
-          </p>
-          <SeloStub texto="Análise por IA das transcrições: bloqueada até a decisão jurídica." className="self-start" />
-        </div>
-      </Cartao>
+      {/* Era um cartão de 5 linhas em toda visita. O fato é um só e cabe numa
+          linha; o porquê (dado pessoal sensível, decisão jurídica) vive no
+          `title` e na página de Pendências, que é onde a decisão mora. */}
+      <div className="flex min-h-11 flex-wrap items-center gap-item rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-tinta">
+        <SeloStub texto="A IA ainda não lê estas conversas" />
+        <span
+          className="text-tinta-suave"
+          title="São conversas de clientes com a Dra. Elaine — patrimônio, família, conflitos. Mandar isso a um serviço de IA fora do escritório é tratamento de dado pessoal sensível: precisa de decisão jurídica registrada (LGPD), não de um botão."
+        >
+          A busca e a leitura abaixo funcionam. O texto não sai do banco do escritório.
+        </span>
+        <Link href="/admin#pendencias" className="-my-3 inline-flex min-h-11 items-center py-3 font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+          Onde a decisão fica registrada
+        </Link>
+      </div>
 
       {/* -------------------------------------------------- contagem por desfecho */}
-      <section aria-labelledby="titulo-desfecho" className="flex flex-col gap-4">
+      <section aria-labelledby="titulo-desfecho" className="flex flex-col gap-item">
         <div>
           <h2 id="titulo-desfecho" className="text-subtitulo font-bold text-tinta">
             O que se sabe sobre o desfecho
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-tinta-suave">
-            Dois números separados, de propósito: “sem desfecho conhecido” não é perda — parte dessas sessões é recente ou o croqui não foi gravado. Por isso não viram taxa.
+            “Sem desfecho conhecido” não é perda: a sessão é recente ou o croqui não foi gravado. Por isso não vira taxa.
           </p>
         </div>
         {carregandoLista ? (
@@ -210,7 +208,7 @@ export function ConhecimentoApp() {
         ) : erroLista ? (
           <EstadoErro erro={erroLista} tentarNovamente={carregarLista} />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-cartao sm:grid-cols-2">
             <Kpi
               rotulo="Avançaram para o croqui"
               valor={baseVazia ? null : contagem?.avancou}
@@ -248,7 +246,7 @@ export function ConhecimentoApp() {
         descricao="Digite e os trechos aparecem sozinhos — “inventário”, “ITCMD”, “brigar”, “empresa”. Bom para lembrar como uma objeção surgiu na boca do cliente."
         como="section"
       >
-        <form role="search" onSubmit={(e) => e.preventDefault()} className="grid gap-4 sm:grid-cols-[1fr_auto_auto]" noValidate>
+        <form role="search" onSubmit={(e) => e.preventDefault()} className="grid gap-cartao sm:grid-cols-[1fr_auto_auto]" noValidate>
           <Campo rotulo="Termo" ajuda={termo.trim().length > 0 && termo.trim().length < TAMANHO_MINIMO_TERMO ? "Digite ao menos duas letras." : undefined}>
             <Entrada
               type="search"
@@ -380,7 +378,7 @@ export function ConhecimentoApp() {
           </div>
         ) : (
           <ul className="divide-y divide-linha" aria-live="polite">
-            {casosFiltrados.map((caso) => (
+            {casosFiltrados.slice(0, mostrarTodos ? undefined : LIMITE_CASOS_VISIVEIS).map((caso) => (
               <li key={caso.caso_id}>
                 <Link
                   href={`/conhecimento/casos/${caso.caso_id}`}
@@ -402,6 +400,17 @@ export function ConhecimentoApp() {
               </li>
             ))}
           </ul>
+        )}
+        {/* A base tem ~70 conversas. Listar todas de uma vez fazia a tela medir
+            mais de 5.000 px — quem procura um caso usa a busca acima, quem
+            navega quer os mais recentes. O botão continua dando acesso à lista
+            inteira, com o número na frente (lei de texto: número primeiro). */}
+        {!carregandoLista && !erroLista && casosFiltrados.length > LIMITE_CASOS_VISIVEIS && (
+          <div className="border-t border-linha px-cartao py-item">
+            <Botao variante="secundario" tamanho="compacto" onClick={() => setMostrarTodos((v) => !v)} aria-expanded={mostrarTodos}>
+              {mostrarTodos ? `Mostrar só os ${LIMITE_CASOS_VISIVEIS} primeiros` : `Ver os ${casosFiltrados.length} casos`}
+            </Botao>
+          </div>
         )}
       </Cartao>
     </div>

@@ -140,7 +140,7 @@ export function AssistenteImportacao({ aoCriada }: { aoCriada: (importacao: Impo
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <Passos passos={[...PASSOS_IMPORTACAO]} atual={passoAtual} aoEscolher={irPara} rotulo="Etapas da importação" />
 
       {/* ------------------------------------------------------ 1 · arquivo */}

@@ -254,7 +254,15 @@ export interface RespostaConfirmarPresencaPublico {
 
 export interface LinkPublicoResumo {
   id: string;
-  tipo: TipoLinkPublico;
+  /**
+   * `TipoLinkQualquer`, e não `TipoLinkPublico`: `GET /api/jornadas/[id]/links`
+   * lista TODOS os links da jornada, e `confirmacao` nasce tanto pela régua
+   * (`emitir_link_confirmacao_sistema`, 0051) quanto pela barra "Enviar"
+   * (Fase 6 §5.3). Enquanto este campo era o tipo estreito, a listagem
+   * devolvia linhas `confirmacao` tipadas errado — dívida anterior à Fase 6,
+   * fechada quando a `LinksAba` deixou de indexar `Record<TipoLinkPublico,…>`.
+   */
+  tipo: TipoLinkQualquer;
   estado: EstadoLinkPublico;
   token_prefixo: string;
   expira_em: string;
@@ -264,7 +272,12 @@ export interface LinkPublicoResumo {
 }
 
 export interface CorpoEmitirLinkPublico {
-  tipo: TipoLinkPublico;
+  /**
+   * Fase 6 §5.3: a barra "Enviar" também emite `confirmacao` — antes só o
+   * sistema emitia, no envio da D-7. O `agendamento_id` continua sendo
+   * resolvido NO SERVIDOR (nunca vem no corpo: seria IDOR).
+   */
+  tipo: TipoLinkQualquer;
 }
 
 export interface RespostaEmitirLinkPublico {

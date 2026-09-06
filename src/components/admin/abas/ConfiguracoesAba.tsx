@@ -88,7 +88,7 @@ export function ConfiguracoesAba() {
   const ordenados = [...ORDEM_GRUPOS.filter((g) => grupos.has(g)), ...Array.from(grupos.keys()).filter((g) => !ORDEM_GRUPOS.includes(g))];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <IntroAba>Ajustes que valem na hora, sem deploy. Chave nova é migration — esta tela só muda o valor de chave que já existe.</IntroAba>
       {ordenados.map((grupo) => (
         <Cartao key={grupo} preenchimento="sem" rotulo={grupo} titulo={`${grupos.get(grupo)!.length} ${grupos.get(grupo)!.length === 1 ? "ajuste" : "ajustes"}`}>

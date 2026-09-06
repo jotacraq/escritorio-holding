@@ -530,15 +530,31 @@ export function chavesNecessarias(entrada: EntradaCroqui): ChaveParametroCroqui[
   }
 
   if (modelos.has("doacao")) {
-    add("itcmd.faixas.doacao", "cartorio.certidoes.valor");
+    // `doacao_reforma` entra junto porque `montarDoacao` calcula a coluna "após
+    // reforma" com ela (`tabelas/modelos.ts:65`). Sem esta linha o 409
+    // `parametro_ausente` dizia "pode fechar" e o croqui saía com célula
+    // `ausente` (achado A1, `tmp/squad/mock-exemplo.md`).
+    add("itcmd.faixas.doacao", "itcmd.faixas.doacao_reforma", "cartorio.certidoes.valor");
     if (imovel) add("cartorio.faixas.notas", "cartorio.notas.percentual_fallback");
     add("cartorio.faixas.imoveis", "cartorio.imoveis.percentual_fallback");
   }
 
   if (modelos.has("celula_1")) {
-    add("itcmd.faixas.doacao", "holding.junta_comercial.celula_1", "holding.contabilidade.celula_1");
+    // Mesma razão do bloco `doacao`: `itcmdDoModelo` usa a faixa pós-reforma na
+    // coluna "após reforma" da 1ª célula (`tabelas/modelos.ts:113`).
+    add(
+      "itcmd.faixas.doacao",
+      "itcmd.faixas.doacao_reforma",
+      "holding.junta_comercial.celula_1",
+      "holding.contabilidade.celula_1",
+    );
   }
   if (modelos.has("celula_2")) {
+    // NÃO entra `itcmd.faixas.doacao_reforma` aqui: `itcmdDoModelo` amarra essa
+    // coluna à UF de domicílio VANTAJOSO (`tabelas/modelos.ts:116-130`) e
+    // `jurisdicaoDe` só sabe amarrar a chave à UF do cliente — pedi-la aqui
+    // apontaria a UF errada no 409. É o achado A2 (CONFLITO 9 da Fase 5): a
+    // célula segue `ausente` com o motivo escrito, por desenho.
     add(
       "itcmd.aliquota.domicilio_vantajoso",
       "holding.junta_comercial.celula_2",
@@ -546,7 +562,14 @@ export function chavesNecessarias(entrada: EntradaCroqui): ChaveParametroCroqui[
     );
   }
   if (modelos.has("celula_3")) {
-    add("itcmd.fixo.celula_3", "holding.junta_comercial.celula_3", "holding.contabilidade.celula_3");
+    // `itcmd.fixo.celula_3_reforma` é lido por `itcmdDoModelo`
+    // (`tabelas/modelos.ts:133`) na coluna "após reforma" da 3ª célula.
+    add(
+      "itcmd.fixo.celula_3",
+      "itcmd.fixo.celula_3_reforma",
+      "holding.junta_comercial.celula_3",
+      "holding.contabilidade.celula_3",
+    );
   }
 
   if (holding) {

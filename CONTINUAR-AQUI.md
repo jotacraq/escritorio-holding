@@ -4,7 +4,7 @@ Escrito em **03/09/2026**, atualizado no mesmo dia (sessão de tarde/noite — F
 para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.
 
-> **Sessão de 05/09 (noite) — FASE 6 "fechar o produto" em andamento.** O João vai testar DO ZERO com a própria
+> **Sessão de 05/09 (noite) — FASE 6 "fechar o produto" EXECUTADA** (back ‖ front Opus, pentest Fable → 0071/0072 aplicadas e provadas, trava do Fable; ver diário 23:30). Menu de 5 (Hoje · Clientes · Agenda · Mensagens · Admin), Ficha por 3 sessões com barra "Enviar", densidade V2, croqui com sumário decisório. Só existe a pessoa do João no banco (`captado`), com parâmetros de exemplo rotulados; `scripts/seed-exemplo-completo.ts --help` para avançar/rebobinar/limpar. O João vai testar DO ZERO com a própria
 > pessoa (seed `scripts/seed-exemplo-completo.ts`, todos os outros exemplos apagados) e quer RECEBER A LIGAÇÃO.
 > Plano: `docs/ARQUITETURA-FASE-6.md` (3 sessões como espinha, densidade, menu de 5, barra "Enviar",
 > "Contato da equipe", "Disponibilidade da equipe"). Chat/Chatwoot = **backlog** (decisão do João).

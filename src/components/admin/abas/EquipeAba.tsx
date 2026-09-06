@@ -130,10 +130,10 @@ export function EquipeAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <IntroAba>
-          Quem entra no sistema e com que papel. O papel decide o que a pessoa vê: só admin e advogada veem patrimônio; relacionamento vê a esteira
+          Quem entra no sistema e com que papel. O papel decide o que a pessoa vê: só admin e advogada veem patrimônio; relacionamento vê a lista de clientes
           e a comunicação.
         </IntroAba>
         {!novo && (

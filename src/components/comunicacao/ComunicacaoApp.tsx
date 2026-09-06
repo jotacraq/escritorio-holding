@@ -80,10 +80,11 @@ export function ComunicacaoApp() {
   const atualizadoEm = useMemo(() => new Date().toISOString(), [pendentes.dados]);
 
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Dia a dia"
-        titulo="Comunicação"
+        titulo="Mensagens"
+        descricao="O que vai sair para o cliente e o que já chegou."
         acoes={
           <Botao variante="secundario" icone={ICONE_ATUALIZAR} carregando={atualizando} onClick={atualizarTudo}>
             Atualizar
@@ -118,6 +119,7 @@ export function ComunicacaoApp() {
           {
             id: "a-sair",
             rotulo: "A sair",
+            descricao: "O que o sistema vai mandar sozinho e o que depende da sua mão — em ordem de quando sai.",
             extra: pendentes.dados ? <Selo tom="neutro">{pendentes.dados.itens.length}</Selo> : undefined,
             conteudo: (
               <AgendaDeSaidas
@@ -134,10 +136,11 @@ export function ComunicacaoApp() {
           {
             id: "recebidas",
             rotulo: "Recebidas",
+            descricao: "O que o cliente respondeu. Mensagem sem dono ainda não foi ligada a uma pessoa.",
             extra: semVinculo > 0 ? <Selo tom="ambar">{semVinculo}</Selo> : undefined,
             conteudo: <Recebidas dados={recebidas.dados} carregando={recebidas.carregando} erro={recebidas.erro} recarregar={recebidas.recarregar} />,
           },
-          { id: "historico", rotulo: "Enviadas", conteudo: <Historico /> },
+          { id: "historico", rotulo: "Enviadas", descricao: "O que já saiu, com o resultado de cada envio.", conteudo: <Historico /> },
         ]}
       />
     </div>

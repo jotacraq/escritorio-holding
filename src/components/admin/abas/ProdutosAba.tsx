@@ -129,7 +129,7 @@ export function ProdutosAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <IntroAba>
           Cada produto liga o ID da Hotmart ao nível pago da jornada e guarda o link de pagamento que a equipe manda ao cliente. Sem o ID, o

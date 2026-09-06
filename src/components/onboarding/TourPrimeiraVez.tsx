@@ -9,11 +9,16 @@ import { Gaveta } from "@/components/ui/Gaveta";
 import { adiarNestaSessao, buscarEstadoOnboarding, foiAdiadoNestaSessao, marcarOnboardingVisto } from "./api-onboarding";
 
 /**
- * Os 8 passos do tour — um por área do menu, em português de gente, para
- * quem vive de e-mail e WhatsApp. `rotulo`/`descricao` curtos vêm do próprio
- * menu (`ITENS_NAVEGACAO`, só leitura — o shell é de outro time); o texto
- * longo é daqui. Importações + Administração viram um passo só: raramente
- * a advogada entra lá.
+ * Os 5 passos do tour — um por entrada do menu, em português de gente, para
+ * quem vive de e-mail e WhatsApp e não entende de sistemas.
+ *
+ * Fase 6: eram 8 passos para 9 entradas de menu. Agora são 5 para 5. O que
+ * era "Conduzir sessão" virou o botão "Conduzir" na linha da Agenda;
+ * "Conhecimento" virou o Repertório da IA dentro do Admin; "Indicadores"
+ * virou a aba Números de Hoje; "Importações" virou aba do Admin.
+ *
+ * `rotulo`/`descricao` curtos vêm do próprio menu (`ITENS_NAVEGACAO`); o
+ * texto longo é daqui.
  */
 interface PassoTour {
   id: string;
@@ -25,26 +30,26 @@ interface PassoTour {
 
 const PASSOS: PassoTour[] = [
   {
-    id: "painel",
-    hrefs: ["/painel"],
-    titulo: "Painel do dia",
+    id: "hoje",
+    hrefs: ["/hoje"],
+    titulo: "Hoje",
     icone: <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4A1.5 1.5 0 0 1 10 3.5v4A1.5 1.5 0 0 1 8.5 9h-4A1.5 1.5 0 0 1 3 7.5v-4Zm9 0A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v4A1.5 1.5 0 0 1 15.5 9h-2A1.5 1.5 0 0 1 12 7.5v-4ZM3 12.5A1.5 1.5 0 0 1 4.5 11h2A1.5 1.5 0 0 1 8 12.5v4A1.5 1.5 0 0 1 6.5 18h-2A1.5 1.5 0 0 1 3 16.5v-4Zm9-1A1.5 1.5 0 0 1 13.5 10h4a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a1.5 1.5 0 0 1-1.5-1.5v-4Z" />,
     texto: (
       <>
-        <p>Comece o dia por aqui. O painel mostra, em ordem de urgência, o que precisa de você hoje: as sessões marcadas, quem pagou e ainda não recebeu ligação, e o que travou no sistema.</p>
-        <p>Cada linha traz um chip dizendo o próximo passo e de quem ele é — equipe, advogada, cliente ou o próprio sistema.</p>
+        <p>Comece o dia por aqui. A aba “O dia” mostra, em ordem de urgência, o que precisa de você: as sessões marcadas, quem pagou e ainda não recebeu contato, e o que travou.</p>
+        <p>A aba “Números” tem o funil por turma do seminário: quantas pessoas fizeram a sessão, contrataram o croqui e a holding.</p>
       </>
     ),
   },
   {
-    id: "esteira",
-    hrefs: ["/esteira"],
-    titulo: "Esteira",
-    icone: <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h4A1.5 1.5 0 0 1 10 4.5v11A1.5 1.5 0 0 1 8.5 17h-4A1.5 1.5 0 0 1 3 15.5v-11Zm9-1A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v6A1.5 1.5 0 0 1 15.5 11h-2A1.5 1.5 0 0 1 12 9.5v-6Zm0 9A1.5 1.5 0 0 1 13.5 11h2a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-2a1.5 1.5 0 0 1-1.5-1.5v-3Z" />,
+    id: "clientes",
+    hrefs: ["/clientes"],
+    titulo: "Clientes",
+    icone: <path d="M7.5 9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.25.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5ZM1.5 16.2c0-2.6 2.7-4.7 6-4.7s6 2.1 6 4.7a.8.8 0 0 1-.8.8H2.3a.8.8 0 0 1-.8-.8Zm13.6.8a2.3 2.3 0 0 0 .15-.8c0-1.6-.72-3.03-1.87-4.02a5.3 5.3 0 0 1 1.27-.15c2.5 0 4.35 1.63 4.35 3.67 0 .73-.35 1.3-.98 1.3h-2.92Z" />,
     texto: (
       <>
-        <p>Todas as pessoas, do seminário à holding, em colunas por etapa. Cada cartão é uma família e diz o que falta agora.</p>
-        <p>Para mudar alguém de etapa, arraste o cartão ou use “Mover”. Se preferir não rolar de lado, troque para “Lista por etapa”. Clique no nome para abrir a Pasta do Cliente.</p>
+        <p>Todo mundo, do seminário à holding, em colunas agrupadas pelas três sessões: Viabilidade, Croqui estrutural e Entrega da holding. Cada cartão é uma família e diz o que falta agora.</p>
+        <p>Para mudar alguém de coluna, arraste o cartão ou use “Mover”. Clique no nome para abrir a ficha dele.</p>
       </>
     ),
   },
@@ -55,68 +60,32 @@ const PASSOS: PassoTour[] = [
     icone: <path d="M6 2a1 1 0 0 1 1 1v1h6V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 7H2v7a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5V9Z" />,
     texto: (
       <>
-        <p>As Sessões de Viabilidade dos próximos dias e quem já confirmou presença. Marcar como realizada, remarcar ou cancelar é feito aqui mesmo.</p>
-        <p>Nas outras abas você define os seus horários livres (é deles que saem as opções que o cliente vê no link) e bloqueia folgas e compromissos.</p>
+        <p>As Sessões de Viabilidade dos próximos dias e quem já confirmou presença. O botão “Conduzir” na linha da sessão abre o roteiro para você conduzir com a família.</p>
+        <p>Na aba “Disponibilidade da equipe” você define os dias e horários em que atende — é de lá que saem as opções que o cliente escolhe no link.</p>
       </>
     ),
   },
   {
-    id: "sessoes",
-    hrefs: ["/sessoes"],
-    titulo: "Conduzir sessão",
-    icone: <path d="M4 3.5A1.5 1.5 0 0 1 5.5 2h9A1.5 1.5 0 0 1 16 3.5v13a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16.5v-13Zm3 2.5a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h3a1 1 0 1 0 0-2H7Z" />,
-    texto: (
-      <>
-        <p>Durante a Sessão de Viabilidade: o roteiro, os 4 SIMs, o Briefing Estratégico ao lado e o lugar para anotar o que a família disse.</p>
-        <p>Não é reunião de vendas — é diagnóstico. A tela existe para você conduzir com a família, sem procurar nada.</p>
-      </>
-    ),
-  },
-  {
-    id: "comunicacao",
-    hrefs: ["/comunicacao"],
-    titulo: "Comunicação",
+    id: "mensagens",
+    hrefs: ["/mensagens"],
+    titulo: "Mensagens",
     icone: <path d="M2 5.5A2.5 2.5 0 0 1 4.5 3h11A2.5 2.5 0 0 1 18 5.5v6a2.5 2.5 0 0 1-2.5 2.5H9l-4.2 3.15A.75.75 0 0 1 3.6 16.6V14h-.1A2.5 2.5 0 0 1 1 11.5v-6Z" />,
     texto: (
       <>
-        <p>Os e-mails e mensagens de WhatsApp que a régua envia sozinha: boas-vindas quando a pessoa paga, pedido de confirmação uma semana antes, link da sala no dia e o material depois da sessão.</p>
+        <p>Os e-mails e mensagens que o sistema envia sozinho: boas-vindas quando a pessoa paga, pedido de confirmação uma semana antes, link da sala no dia e o material depois da sessão.</p>
         <p>Você vê o que vai sair e quando — e o que falhou, com o motivo.</p>
       </>
     ),
   },
   {
-    id: "conhecimento",
-    hrefs: ["/conhecimento"],
-    titulo: "Conhecimento",
-    icone: <path d="M3 4.2A1.2 1.2 0 0 1 4.2 3h4.6c.85 0 1.66.34 2.2.94A3.15 3.15 0 0 1 13.2 3h2.6A1.2 1.2 0 0 1 17 4.2v10.6a1.2 1.2 0 0 1-1.2 1.2h-3.51a2 2 0 0 0-1.42.59l-.29.29a1 1 0 0 1-1.16 0l-.29-.29a2 2 0 0 0-1.42-.59H4.2A1.2 1.2 0 0 1 3 14.8V4.2ZM9.25 6.1v8.4c.34.08.66.22.96.4V7.53a1.4 1.4 0 0 0-.96-1.43Z" />,
-    texto: (
-      <>
-        <p>Transcrições e casos anteriores para consultar antes de uma sessão: o que já foi dito para famílias parecidas, que objeção apareceu, o que funcionou.</p>
-        <p>Busque por uma palavra ou por um tema — é o acervo do método.</p>
-      </>
-    ),
-  },
-  {
-    id: "indicadores",
-    hrefs: ["/indicadores"],
-    titulo: "Indicadores",
-    icone: <path d="M3 3a1 1 0 0 1 1 1v11h13a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm13.5 2.4a1 1 0 0 1 .1 1.41l-4.3 4.9a1 1 0 0 1-1.44.06L8.5 9.5l-3.02 3.44a1 1 0 1 1-1.5-1.32l3.75-4.28a1 1 0 0 1 1.44-.06l2.36 2.27 3.56-4.06a1 1 0 0 1 1.41-.1Z" />,
-    texto: (
-      <>
-        <p>Os números do funil por edição do seminário: quantas pessoas viraram cliente, quantas fizeram a sessão, quantas contrataram o croqui e a holding.</p>
-        <p>Sempre por turma de origem — quem entrou em junho é comparado com quem entrou em junho.</p>
-      </>
-    ),
-  },
-  {
-    id: "administracao",
-    hrefs: ["/importacoes", "/admin"],
-    titulo: "Importações e Administração",
+    id: "admin",
+    hrefs: ["/admin"],
+    titulo: "Admin",
     icone: <path d="M10 2 3 5v5c0 4.2 2.9 7.7 7 8.9 4.1-1.2 7-4.7 7-8.9V5l-7-3Zm0 4.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5ZM6 14.2c.7-1.6 2.2-2.7 4-2.7s3.3 1.1 4 2.7c-1.1 1-2.5 1.7-4 2.1-1.5-.4-2.9-1.1-4-2.1Z" />,
     texto: (
       <>
-        <p>As planilhas do seminário entram por Importações. Em Administração ficam a equipe, os produtos, os modelos de mensagem e as configurações do sistema.</p>
-        <p>Raramente você precisa entrar aqui — e quando algo depende de configuração, o painel avisa com todas as letras.</p>
+        <p>Os ajustes do escritório: a equipe, os produtos, os valores do método, os modelos de mensagem e a lista de planilhas importadas.</p>
+        <p>Aqui também fica o <strong>Repertório da IA</strong> — o histórico de eventos e reuniões anteriores que a IA usa para analisar cada família. Raramente você precisa entrar; quando algo depende de configuração, Hoje avisa com todas as letras.</p>
       </>
     ),
   },
@@ -244,7 +213,7 @@ export function TourPrimeiraVez({ forcarAbrir = false, aoFechar }: Props) {
         </>
       }
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-bloco">
         <ol aria-label="Progresso do tour" className="flex items-center gap-1.5">
           {PASSOS.map((p, i) => (
             <li key={p.id} aria-current={i === indice ? "step" : undefined} className="flex">
@@ -265,22 +234,21 @@ export function TourPrimeiraVez({ forcarAbrir = false, aoFechar }: Props) {
           ))}
         </ol>
 
-        <div key={passo.id} className="anim-surgir flex flex-col gap-5">
-          <div className="flex items-center gap-4">
+        <div key={passo.id} className="anim-surgir flex flex-col gap-bloco">
+          <div className="flex items-center gap-cartao">
             <span aria-hidden="true" className="grid h-14 w-14 shrink-0 place-items-center rounded-cartao bg-latao-fraco text-[color:var(--latao)]">
               <svg viewBox="0 0 20 20" className="h-7 w-7 fill-current">
                 {passo.icone}
               </svg>
             </span>
             <div className="min-w-0">
-              {itemMenu && <p className="text-rotulo font-medium uppercase text-tinta-fraca">{itemMenu.grupo}</p>}
               <h3 className="text-titulo font-bold text-tinta">{passo.titulo}</h3>
             </div>
           </div>
 
           {itemMenu && <p className="text-sm font-medium text-tinta-suave">{itemMenu.descricao}</p>}
 
-          <div className="flex flex-col gap-3 text-corpo text-tinta">{passo.texto}</div>
+          <div className="flex flex-col gap-item text-corpo text-tinta">{passo.texto}</div>
 
           <div className="flex flex-wrap gap-2">
             {passo.hrefs.map((href) => {

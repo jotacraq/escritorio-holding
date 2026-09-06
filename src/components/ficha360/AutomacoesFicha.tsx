@@ -91,30 +91,44 @@ export function AutomacoesFicha({ jornadaId }: { jornadaId: string }) {
 
   const itens = dados.dados.itens;
 
-  return (
-    <section aria-labelledby="automacoes-titulo" className="flex flex-col gap-item rounded-cartao border border-linha bg-papel-elevado px-4 py-3.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+  // Fase 6: o bloco era uma lista aberta no meio da Ficha — até 12 linhas de
+  // registro entre a Pasta e o resto, para uma informação de consulta. Virou
+  // UMA linha ("O sistema fez N coisas sozinho") que abre em `<details>`
+  // nativo: teclado, Esc e leitor de tela funcionam sem JS, e nada sumiu.
+  if (itens.length === 0) {
+    return (
+      <section aria-labelledby="automacoes-titulo" className="flex flex-wrap items-center gap-x-item gap-y-0.5 rounded-cartao border border-linha bg-papel-elevado px-3 py-2">
         <h2 id="automacoes-titulo" className="text-sm font-bold text-tinta" title={TITULO_BLOCO}>
-          Automações
+          O sistema ainda não fez nada sozinho
         </h2>
-        {itens.length > 0 && <span className="text-xs text-tinta-fraca">{itens.length} registros</span>}
-      </div>
+        <Link href="/mensagens" className="inline-flex min-h-11 items-center text-sm font-medium text-[color:var(--latao)] underline underline-offset-2">
+          Ver a fila de mensagens
+        </Link>
+      </section>
+    );
+  }
 
-      {itens.length === 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <p className="text-sm text-tinta-suave">Nenhum envio ainda</p>
-          <Link href="/comunicacao" className="inline-flex min-h-11 items-center text-sm font-medium text-[color:var(--latao)] underline underline-offset-2">
-            Ver a fila
-          </Link>
-        </div>
-      ) : (
+  return (
+    <details className="group rounded-cartao border border-linha bg-papel-elevado px-3 py-1">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-item text-sm marker:content-none">
+        <span className="font-bold text-tinta" title={TITULO_BLOCO}>
+          O sistema fez {itens.length} {itens.length === 1 ? "coisa" : "coisas"} sozinho
+        </span>
+        <span aria-hidden="true" className="text-xs text-tinta-fraca group-open:hidden">
+          ver
+        </span>
+        <span aria-hidden="true" className="hidden text-xs text-tinta-fraca group-open:inline">
+          esconder
+        </span>
+      </summary>
+      <div className="pb-item">
         <ul className="flex flex-col divide-y divide-linha">
           {itens.map((item) => (
             <LinhaDeAutomacao key={`${item.tipo}:${item.chave}:${item.ordem}`} item={item} />
           ))}
         </ul>
-      )}
-    </section>
+      </div>
+    </details>
   );
 }
 

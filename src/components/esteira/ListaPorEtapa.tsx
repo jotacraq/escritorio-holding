@@ -99,7 +99,7 @@ export function ListaPorEtapa({
               </span>
             }
             acao={
-              <span className="inline-flex min-h-8 items-center rounded-full bg-papel px-3 text-sm font-bold tabular-nums text-tinta" aria-label={`${cartoes.length} ${cartoes.length === 1 ? "jornada" : "jornadas"}`}>
+              <span className="inline-flex min-h-8 items-center rounded-full bg-papel px-3 text-sm font-bold tabular-nums text-tinta" aria-label={`${cartoes.length} ${cartoes.length === 1 ? "cliente" : "clientes"}`}>
                 {cartoes.length}
               </span>
             }

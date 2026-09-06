@@ -9,11 +9,11 @@ export default function PaginaNovaImportacao() {
   const router = useRouter();
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Administração · Importações"
         acima={
-          <Link href="/importacoes" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+          <Link href="/admin#importacoes" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
             ← Todas as importações
           </Link>
         }

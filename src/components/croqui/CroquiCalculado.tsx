@@ -9,7 +9,7 @@ import { Botao } from "@/components/ui/Botao";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { Selo, type TomSelo } from "@/components/ui/Selo";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { LinkBotao } from "@/components/painel/LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { formatarDataHora } from "@/lib/formatar";
 import { rotulo } from "@/lib/vocabulario";
 import { buscarCroquiCalculo, fixarVersaoCroqui } from "./apiCroquiCalculo";
@@ -135,7 +135,7 @@ export function CroquiCalculado({
   const { atual, historico } = dados;
 
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center justify-between gap-item">
         <div className="flex flex-wrap items-center gap-item">
           {voltar && (

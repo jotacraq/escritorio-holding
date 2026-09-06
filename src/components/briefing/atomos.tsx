@@ -98,7 +98,7 @@ export function FraseComFidelidade({ frase, status }: { frase: string; status?: 
       <span className="italic">&ldquo;{frase}&rdquo;</span>
       {status === "nao_localizada" && (
         <span
-          title="Esta frase não foi localizada no material de origem (formulário, ligação ou transcrição) usado para gerar o briefing."
+          title="Esta frase não foi localizada no material de origem (formulário, contato da equipe ou transcrição) usado para gerar o briefing."
           className="rounded-controle bg-vermelho-fraco px-1.5 py-0.5 text-legenda font-bold uppercase tracking-wide text-[color:var(--vermelho)]"
         >
           Não localizada na fonte

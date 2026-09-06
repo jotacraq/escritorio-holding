@@ -257,7 +257,7 @@ function VincularPessoa({
               compacto
               titulo="Ninguém com esse nome"
               acao={
-                <Link href="/esteira" className="min-h-11 text-sm font-medium text-[color:var(--latao)] underline-offset-2 hover:underline">
+                <Link href="/clientes" className="min-h-11 text-sm font-medium text-[color:var(--latao)] underline-offset-2 hover:underline">
                   Criar no caminho do cliente
                 </Link>
               }

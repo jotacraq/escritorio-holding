@@ -89,19 +89,26 @@
 
 /* Tokens que NÃO mudam com o tema: forma, ritmo, movimento, foco. */
 :root {
-  --raio-cartao: 1.25rem;
+  /* Fase 6: 1.25rem → 1rem. Cartão compacto com raio de 20px vira bolha. */
+  --raio-cartao: 1rem;
   --raio-controle: 0.75rem;
   --raio-pilula: 2.625rem;
 
-  /* Ritmo vertical — UMA escala, quatro degraus (Fase 5 §3). O diagnóstico
-     do João foi "blocos grudados": cartões de 1,5rem de padding separados
-     por 1,5rem de gap não leem como blocos distintos, leem como um bloco só
-     listrado. A regra é o degrau de FORA ser sempre maior que o de dentro:
-     seção (2,5) > bloco (1,75) > cartão (1,5) > item (0,75). */
-  --espaco-secao: 2.5rem;
-  --espaco-bloco: 1.75rem;
-  --espaco-cartao: 1.5rem;
-  --espaco-item: 0.75rem;
+  /* Ritmo vertical — UMA escala, quatro degraus. A regra da Fase 5 continua
+     valendo: o degrau de FORA é sempre maior que o de dentro.
+     Fase 6 ("Praticidade", decisão 1 do João: "tá tudo muito grande, tenho
+     que escrolar muito") encolheu a escala inteira em ~35 %, preservando a
+     ordem: seção (1,625) > bloco (1,125) > cartão (1) > item (0,5).
+     Não é regressão da identidade da Fase 4: cor, tipo, sombra e selo ficam
+     intactos — o que encolheu foi a ESCALA. */
+  --espaco-secao: 1.625rem;
+  --espaco-bloco: 1.125rem;
+  --espaco-cartao: 1rem;
+  --espaco-item: 0.5rem;
+  /* TRAVA: 44px é o alvo mínimo de toque (WCAG 2.5.8 / DS §6) e NÃO encolhe
+     com a compactação. `min-h-11` é rem sobre a raiz do documento — por isso
+     `html { font-size }` nunca é declarado neste arquivo. Mudar a raiz
+     encolheria todos os alvos de uma vez, em silêncio. */
   --alvo-minimo: 44px;
 
   --transicao-rapida: 120ms;
@@ -202,34 +209,40 @@
   --spacing-cartao: var(--espaco-cartao);
   --spacing-item: var(--espaco-item);
 
-  /* Escala tipográfica (nenhum degrau abaixo de 12px). `text-xs`/`text-sm`
-     do Tailwind sobem para 13px/15px — o corpo interno inteiro usa
-     `text-sm`, e 14px é pequeno para quem usa o sistema o dia inteiro aos
-     60+. Degraus semânticos: `text-legenda` 12px é o mínimo absoluto. */
-  --text-xs: 0.8125rem;
+  /* Escala tipográfica — Fase 6, um degrau abaixo da Fase 5.
+     Decisão 1 do João: corpo 16 → 14. A escala inteira desceu junto para o
+     contraste entre degraus continuar legível. `text-legenda`/`text-rotulo`
+     NÃO descem: 12px é o piso absoluto do DS §6 e da WCAG.
+     `--text-xs` passa a coincidir com `--text-legenda` (12px) — são o mesmo
+     tamanho com entrelinhas diferentes; unificar os dois nomes tocaria ~90
+     arquivos e ficou FORA desta rodada.
+     `.area-publica` (o cliente de 60+ no celular) NÃO é afetada: ela declara
+     o próprio `font-size: 1.0625rem` mais abaixo neste arquivo. */
+  --text-xs: 0.75rem;
   --text-xs--line-height: 1.4;
-  --text-sm: 0.9375rem;
-  --text-sm--line-height: 1.5;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.45;
   --text-legenda: 0.75rem;
   --text-legenda--line-height: 1.4;
   --text-rotulo: 0.75rem;
   --text-rotulo--line-height: 1.3;
   --text-rotulo--letter-spacing: 0.08em;
-  --text-corpo: 1rem;
-  --text-corpo--line-height: 1.55;
-  --text-subtitulo: 1.125rem;
-  --text-subtitulo--line-height: 1.4;
+  --text-corpo: 0.875rem;
+  --text-corpo--line-height: 1.45;
+  --text-subtitulo: 1rem;
+  --text-subtitulo--line-height: 1.35;
   /* Entrelinha dos títulos (Fase 5 §3 — "fonte entortada"). A Neuetra bold
      tem ascendente alta e descendente longa: com 1.12/1.2 o título que
-     quebra em duas linhas encosta o "g" da primeira no "S" da segunda. Os
-     degraus abaixo dão folga sem soltar o bloco. Não mexer sem medir em
-     título de 2 linhas a 390px. */
-  --text-titulo: 1.5rem;
-  --text-titulo--line-height: 1.28;
-  --text-titulo--letter-spacing: -0.012em;
-  --text-display: 2.125rem;
-  --text-display--line-height: 1.18;
-  --text-display--letter-spacing: -0.018em;
+     quebra em duas linhas encosta o "g" da primeira no "S" da segunda.
+     Fase 6: o display encolheu 34 → 24px, então a entrelinha SOBE (1.18 →
+     1.22) — título menor precisa de proporcionalmente mais folga para
+     quebrar em duas linhas a 390px sem colar. Medido no navegador. */
+  --text-titulo: 1.25rem;
+  --text-titulo--line-height: 1.3;
+  --text-titulo--letter-spacing: -0.01em;
+  --text-display: 1.5rem;
+  --text-display--line-height: 1.22;
+  --text-display--letter-spacing: -0.014em;
 
   --ease-suave: var(--suavizacao);
 
@@ -462,6 +475,17 @@ p, li, dd {
   }
   a[href]::after {
     content: none !important;
+  }
+  /* Bloco recolhido NÃO some do papel. A Fase 6 passou a recolher seções
+     longas (`<details>`) para caberem na tela; na folha que a Dra. Elaine
+     leva para a reunião, tudo tem de estar lá. `open` é atributo do DOM, e
+     `display: block` no conteúdo é a forma de imprimir o que está fechado
+     sem depender de JS abrir cada um antes de mandar imprimir. */
+  details > summary {
+    list-style: none;
+  }
+  details > summary ~ * {
+    display: block !important;
   }
 }
 

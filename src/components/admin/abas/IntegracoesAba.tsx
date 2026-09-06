@@ -85,7 +85,7 @@ export function IntegracoesAba() {
   if (erro) {
     const semServiceRole = erro instanceof ApiError && erro.status === 503;
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-bloco">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <IntroAba>O que está ligado, o que falta configurar (só o nome da variável — nunca o valor) e um botão para testar cada ponta.</IntroAba>
           <Botao variante="secundario" tamanho="compacto" carregando={carregando} onClick={recarregar}>
@@ -121,7 +121,7 @@ export function IntegracoesAba() {
   const configuradas = ordenadas.filter((i) => i.configurado).length;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <IntroAba>O que está ligado, o que falta configurar (só o nome da variável — nunca o valor) e um botão para testar cada ponta.</IntroAba>
         <Selo tom={configuradas === ordenadas.length ? "verde" : "ambar"}>

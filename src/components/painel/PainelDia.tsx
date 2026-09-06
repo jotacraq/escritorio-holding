@@ -6,16 +6,19 @@ import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { EsqueletoCartao, EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
+import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
+import { IndicadoresApp } from "@/components/indicadores/IndicadoresApp";
 import { TourPrimeiraVez } from "@/components/onboarding/TourPrimeiraVez";
 import { useUsuarioAtual } from "@/hooks/useUsuarioAtual";
 import { formatarDataHora } from "@/lib/formatar";
 import type { PainelDiaNormalizado } from "@/types/painel-ui";
+import type { PapelEquipe } from "@/types/banco";
 import { usePainelDia } from "./usePainelDia";
 import { blocosDoPapel, type ChaveBlocoPainel } from "./blocosPorPapel";
 import { SessoesHoje } from "./SessoesHoje";
 import { PreparoPendente } from "./PreparoPendente";
 import { PagosSemContato } from "./PagosSemContato";
-import { Travado } from "./Travado";
+import { Travado, pendenciasVisiveis } from "./Travado";
 import { NumerosSemana } from "./NumerosSemana";
 import { ProvaDeVida } from "./ProvaDeVida";
 
@@ -62,7 +65,7 @@ const BLOCOS_ENQUANTO_CARREGA: ChaveBlocoPainel[] = ["sessoes_hoje", "preparo"];
  * agente A traz a coluna: sem ela, o KPI diz que a informação ainda não está
  * disponível.
  */
-function resumirKpis(dados: PainelDiaNormalizado) {
+function resumirKpis(dados: PainelDiaNormalizado, papel: PapelEquipe | null) {
   const sessoes = dados.sessoesDoDia.situacao === "ok" ? dados.sessoesDoDia.itens : null;
   const temColunaPresenca = sessoes?.some((s) => s.presenca_confirmada_em !== undefined) ?? false;
   return {
@@ -70,7 +73,10 @@ function resumirKpis(dados: PainelDiaNormalizado) {
     confirmaram: sessoes && temColunaPresenca ? sessoes.filter((s) => Boolean(s.presenca_confirmada_em)).length : null,
     motivoConfirmaram: !sessoes ? "não carregou" : sessoes.length === 0 ? "sem sessão nas próximas 48 h" : "presença ainda não disponível",
     pagosSemContato: dados.pagosSemContato.situacao === "ok" ? dados.pagosSemContato.itens.length : null,
-    travados: dados.pendenciasSistema.situacao === "ok" ? dados.pendenciasSistema.itens.length : null,
+    // O MESMO recorte do bloco "Travado" (`pendenciasVisiveis`). Antes o KPI
+    // contava o array cru e dizia "Travado 1" com o bloco logo abaixo dizendo
+    // "Nada travado" — dois números para o mesmo fato, na mesma dobra.
+    travados: dados.pendenciasSistema.situacao === "ok" ? pendenciasVisiveis(dados.pendenciasSistema.itens, papel).length : null,
   };
 }
 
@@ -98,7 +104,7 @@ export function PainelDia() {
   const semNenhumaCargaAinda = !dados;
   const [versao, setVersao] = useState(0);
   const [tourAberto, setTourAberto] = useState(false);
-  const kpis = useMemo(() => (dados ? resumirKpis(dados) : null), [dados]);
+  const kpis = useMemo(() => (dados ? resumirKpis(dados, usuario?.papel ?? null) : null), [dados, usuario]);
 
   const papel = usuario?.papel ?? null;
   const ehAdmin = papel === "admin";
@@ -113,8 +119,52 @@ export function PainelDia() {
     setVersao((v) => v + 1);
   }
 
+  /**
+   * Fase 6 — "Indicadores" deixou de ser entrada de menu e virou a aba
+   * "Números" de Hoje (`/hoje#numeros`). O acesso NÃO mudou: continua sendo
+   * de todo papel interno, como era em `/indicadores`. O bloco `numeros` do
+   * papel decide o resumo da semana dentro da fila do dia; a aba é o funil
+   * por coorte inteiro, que a view já servia a qualquer sessão interna.
+   */
+  const abas: DefinicaoAba[] = [
+    {
+      id: "dia",
+      rotulo: "O dia",
+      descricao: "O que precisa de você agora, na ordem em que atrasa.",
+      conteudo: (
+        <ConteudoDoDia
+          dados={dados}
+          kpis={kpis}
+          carregando={carregando}
+          erro={erro}
+          atualizar={atualizar}
+          ve={ve}
+          ehAdmin={ehAdmin}
+          papel={papel}
+          versao={versao}
+        />
+      ),
+    },
+    {
+      id: "numeros",
+      rotulo: "Números",
+      descricao: "O funil por coorte: cada pessoa conta na edição do seminário de onde veio, mesmo que a sessão aconteça meses depois.",
+      conteudo: (
+        <div className="flex flex-col gap-bloco">
+          {/* "Números por edição" saiu da fila do dia e veio para cá. Ele é
+              LEITURA, não ação — e a aba Números é onde os números moram
+              agora. O gate de papel é o MESMO (`ve("numeros")`): quem não via
+              o bloco continua não vendo. Ninguém perdeu informação; ela
+              deixou de disputar espaço com o que precisa de decisão hoje. */}
+          {ve("numeros") && dados && <NumerosSemana estado={dados.indicadoresSemana} aoTentarDeNovo={atualizar} />}
+          <IndicadoresApp />
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-secao">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Dia a dia"
         titulo={comMaiusculaInicial(FORMATADOR_DATA_TITULO.format(new Date()))}
@@ -140,6 +190,40 @@ export function PainelDia() {
         }
       />
 
+      <Abas abas={abas} abaInicial="dia" deepLinkHash semMoldura />
+
+      <TourPrimeiraVez forcarAbrir={tourAberto} aoFechar={() => setTourAberto(false)} />
+    </div>
+  );
+}
+
+interface ConteudoDoDiaProps {
+  dados: PainelDiaNormalizado | null | undefined;
+  kpis: ReturnType<typeof resumirKpis> | null;
+  carregando: boolean;
+  erro: unknown;
+  atualizar: () => void;
+  ve: (b: ChaveBlocoPainel) => boolean;
+  ehAdmin: boolean;
+  papel: PapelEquipe | null;
+  versao: number;
+}
+
+/** O conteúdo da aba "O dia" — a fila de trabalho, sem `h1` próprio. */
+function ConteudoDoDia({
+  dados,
+  kpis,
+  carregando,
+  erro,
+  atualizar,
+  ve,
+  ehAdmin,
+  papel,
+  versao,
+}: ConteudoDoDiaProps) {
+  const semNenhumaCargaAinda = !dados;
+  return (
+    <div className="flex flex-col gap-bloco">
       {carregando && semNenhumaCargaAinda && (
         <div className="flex flex-col gap-bloco">
           <EsqueletoCartao quantidade={4} rotulo="Carregando o painel do dia…" />
@@ -203,7 +287,6 @@ export function PainelDia() {
             {ve("sessoes_hoje") && <SessoesHoje estado={dados.sessoesDoDia} aoTentarDeNovo={atualizar} />}
             {ve("preparo") && <PreparoPendente estado={dados.pendenciasPreparo} aoTentarDeNovo={atualizar} />}
             {ve("travado") && <Travado estado={dados.pendenciasSistema} papel={papel} aoTentarDeNovo={atualizar} />}
-            {ve("numeros") && <NumerosSemana estado={dados.indicadoresSemana} aoTentarDeNovo={atualizar} />}
           </section>
 
           {/* Seção 2 — sistema. Existe só para o admin, e cabe numa linha. */}
@@ -217,8 +300,6 @@ export function PainelDia() {
           )}
         </>
       )}
-
-      <TourPrimeiraVez forcarAbrir={tourAberto} aoFechar={() => setTourAberto(false)} />
     </div>
   );
 }

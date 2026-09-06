@@ -49,19 +49,25 @@ export function FaltaDaTabela({ falta }: { falta: FaltaParametro[] }) {
 /** Rollup do croqui inteiro: número primeiro, uma linha por parâmetro, um botão. */
 export function PainelFaltas({ faltas }: { faltas: ResultadoCroqui["faltas"] }) {
   return (
-    <section
-      aria-label="Parâmetros a cadastrar"
-      className="flex flex-col gap-item rounded-controle border border-ambar-borda bg-ambar-fraco p-4"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-item">
-        <p className="text-sm font-medium text-[color:var(--ambar)]">
+    // Fase 6: o aviso é UMA LINHA com o número e a ação; a lista de quais
+    // parâmetros faltam abre no `<details>`. O que decide se você para agora é
+    // "faltam 2"; QUAIS são 2 só importa depois de decidir ir cadastrar.
+    <details className="group rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-1.5" aria-label="Parâmetros a cadastrar">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-item marker:content-none">
+        <span className="flex items-center gap-item text-sm font-medium text-[color:var(--ambar)]">
           {faltas.length} {faltas.length === 1 ? "parâmetro a cadastrar" : "parâmetros a cadastrar"}
-        </p>
+          <span aria-hidden="true" className="text-xs opacity-70 group-open:hidden">
+            ver quais
+          </span>
+          <span aria-hidden="true" className="hidden text-xs opacity-70 group-open:inline">
+            esconder
+          </span>
+        </span>
         <Link href="/admin#parametros" className={CLASSE_LINK}>
           Cadastrar
         </Link>
-      </div>
-      <ul className="flex flex-col gap-1 text-xs text-[color:var(--ambar)]">
+      </summary>
+      <ul className="flex flex-col gap-1 pb-item text-xs text-[color:var(--ambar)]">
         {faltas.map((falta) => (
           <li key={chaveDe(falta)} className="flex flex-wrap gap-x-2">
             <span className="font-medium" title={falta.chave}>
@@ -74,27 +80,32 @@ export function PainelFaltas({ faltas }: { faltas: ResultadoCroqui["faltas"] }) 
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }
 
 /** Duas versões do mesmo número no material do escritório — o motor não escolhe. */
 export function PainelDivergencias({ divergencias }: { divergencias: ResultadoCroqui["divergencias"] }) {
   return (
-    <section
-      aria-label="Números em divergência"
-      className="flex flex-col gap-item rounded-controle border border-vermelho bg-vermelho-fraco p-4"
-    >
-      <p className="text-sm font-medium text-[color:var(--vermelho)]">
-        {divergencias.length} {divergencias.length === 1 ? "número em divergência" : "números em divergência"}
-      </p>
-      <ul className="flex flex-col gap-1 text-xs text-[color:var(--vermelho)]">
+    <details className="group rounded-controle border border-vermelho bg-vermelho-fraco px-3 py-1.5" aria-label="Números em divergência">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-item marker:content-none">
+        <span className="text-sm font-medium text-[color:var(--vermelho)]">
+          {divergencias.length} {divergencias.length === 1 ? "número em divergência" : "números em divergência"}
+        </span>
+        <span aria-hidden="true" className="text-xs text-[color:var(--vermelho)] opacity-70 group-open:hidden">
+          ver quais
+        </span>
+        <span aria-hidden="true" className="hidden text-xs text-[color:var(--vermelho)] opacity-70 group-open:inline">
+          esconder
+        </span>
+      </summary>
+      <ul className="flex flex-col gap-1 pb-item text-xs text-[color:var(--vermelho)]">
         {divergencias.map((d) => (
           <li key={d.chave} title={d.onde}>
             <span className="font-medium">{rotuloDoParametro(d.chave)}</span> {d.valores.join(" × ")}
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }

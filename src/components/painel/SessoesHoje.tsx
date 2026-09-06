@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Bloco, LinhaFila } from "./Bloco";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { SeloPresenca } from "@/components/agenda/SeloPresenca";
 import { Selo } from "@/components/ui/Selo";

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { erroConflito, erroNaoEncontrado, registrarErro } from "./erros";
+import { CHAVE_LIGACAO_PROVEDOR } from "./integracoes/config";
 import type {
   AgendamentoSessao,
   BriefingResumo,
@@ -60,6 +61,13 @@ const TRANSICOES_PERMITIDAS: Record<EtapaJornada, EtapaJornada[]> = {
   croqui_apresentado: ["holding_contratada"],
   holding_contratada: [],
 };
+
+/**
+ * O provedor que significa "a ligação por IA está no ar" (`ligacao_ia.provedor`,
+ * enum de `server/admin/configuracoes.ts:43`). Qualquer outro valor — inclusive
+ * o `"manual"` semeado — deixa o recurso desligado e fora da tela (§6.3).
+ */
+const PROVEDOR_LIGACAO_IA_ATIVO = "n8n";
 
 /** nivel_pago 1/2/3 trava a etapa mínima em 30/60/80 (ver trigger da máquina de estados). */
 const PISO_POR_NIVEL_PAGO: Record<number, number> = { 0: 0, 1: 30, 2: 60, 3: 80 };
@@ -182,6 +190,13 @@ export interface Ficha360 {
   ligacaoIaAtual: LigacaoIaResumo | null;
   /** `tarefas` abertas (0027 + `tipo` 0051) — ex.: 'enviar_link_croqui' para a aba Sessão. */
   tarefasAbertas: Tarefa[];
+  /**
+   * Fase 6 §6.3 — configuração de UI, e SÓ ela: `ligacao_ia.provedor === 'n8n'`.
+   * `configuracoes` guarda coisa de integração; por isso a leitura é filtrada
+   * por chave e o payload carrega um booleano, nunca o mapa. RLS `cfg_sel`
+   * (0027:174) já libera leitura para qualquer papel interno — nada de novo.
+   */
+  configuracoesUi: { ligacaoIaAtiva: boolean };
 }
 
 export interface CenariosDaFicha {
@@ -299,6 +314,7 @@ export async function montarFicha360(
     { data: documentos },
     { data: timeline },
     { data: materialAtual },
+    { data: configuracoesLidas },
   ] = await Promise.all([
     supabase.from("formularios_respostas").select("*").eq("jornada_id", jornadaId).maybeSingle(),
     supabase
@@ -332,6 +348,14 @@ export async function montarFicha360(
       .eq("jornada_id", jornadaId)
       .eq("atual", true)
       .maybeSingle(),
+    // Fase 6 §6.3 — a única chave de `configuracoes` que a Ficha lê, e ela é
+    // de UI, não de segredo: decide se o cartão da ligação por IA aparece.
+    // Entra nesta MESMA onda (nenhuma ida a mais ao banco em série) e é
+    // filtrada por `.eq("chave", ...)`: nenhuma outra configuração — que
+    // inclui coisa de integração — chega perto do payload.
+    // `configuracoes` já é legível por qualquer papel interno (`cfg_sel`,
+    // 0027:174), então isto não abre permissão nenhuma.
+    supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LIGACAO_PROVEDOR).maybeSingle(),
   ]);
 
   let relatorio: RelatorioSessao | null = null;
@@ -349,6 +373,13 @@ export async function montarFicha360(
     relatorio = (relatorioData as RelatorioSessao | null) ?? null;
     agendamentos = (agendamentosData as AgendamentoSessao[] | null) ?? [];
   }
+
+  // Tolerante por desenho: chave ausente, valor inesperado ou falha de leitura
+  // viram `false` — a ligação por IA some da tela, que é o estado de hoje
+  // (`0053:339` semeia `"manual"`). Nunca derruba a Ficha por causa de um
+  // cartão opcional, e nunca liga a IA por engano.
+  const ligacaoIaAtiva =
+    (configuracoesLidas as { valor: unknown } | null)?.valor === PROVEDOR_LIGACAO_IA_ATIVO;
 
   let patrimonio: PatrimonioItem[] | null = null;
   let familiares: Familiar[] | null = null;
@@ -423,6 +454,7 @@ export async function montarFicha360(
     cenarios,
     ligacaoIaAtual,
     tarefasAbertas,
+    configuracoesUi: { ligacaoIaAtiva },
   };
 }
 

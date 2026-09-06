@@ -1,4 +1,4 @@
-# Design system do SIC-HF — contrato de migração (V1, 04/09/2026)
+# Design system do SIC-HF — contrato de migração (V2, 06/09/2026)
 
 Para ser **seguido**, não lido. Quem migra uma tela abre isto, aplica, marca o checklist do fim.
 A referência é o seminário (`guardioesdolegado.com.br/ak1`): creme, cartão branco de raio grande, tinta escura,
@@ -6,6 +6,14 @@ laranja só em CTA, Neuetra em tudo, rótulo pequeno em caixa alta + título gra
 **Acessibilidade vence fidelidade.** Quem usa tem 60+ anos e vive de e-mail e WhatsApp.
 
 Fonte de verdade: `src/app/globals.css` (tokens) e `src/components/ui/*` (componentes).
+
+> **V2 (Fase 6, "Praticidade").** O João, depois de usar a V1 em produção: *"tá tudo
+> muito grande, eu tenho que escrolar muito pra ver todo o conteúdo da página"*. A
+> escala encolheu: **corpo 16 → 14 px, um degrau a menos em cada título, ritmo
+> vertical −35 %, raio do cartão 20 → 16 px.** O que **NÃO** mudou, e é trava:
+> cor, tipografia (Neuetra), sombra, selo, foco, contraste, o piso de 12 px, o alvo
+> de 44 px e a `.area-publica` (o cliente de 60+ continua com 17 px e 44 px).
+> Isto é substituição consciente da escala da Fase 4, não regressão dela.
 
 ## 1. Tokens — quando usar cada um
 
@@ -24,12 +32,12 @@ Fonte de verdade: `src/app/globals.css` (tokens) e `src/components/ui/*` (compon
 | `--latao-fraco` | `bg-latao-fraco` | fundo de item ativo (nav, opção marcada, linha selecionada). |
 | `--verde/--ambar/--vermelho/--azul` + `-fraco` | `text-[color:var(--verde)] bg-verde-fraco` | estado: pronto / atenção / erro / informação. Sempre com texto ou ícone junto. |
 | `--sombra-cartao` / `--sombra-flutuante` | `shadow-cartao` / `shadow-flutuante` | cartão em repouso / gaveta, diálogo, toast, paleta. |
-| `--raio-cartao` 1.25rem / `--raio-controle` 0.75rem / `--raio-pilula` | `rounded-cartao` / `rounded-controle` / `rounded-pilula` | cartão / input, botão, aba / CTA primário e chip. |
+| `--raio-cartao` **1rem** / `--raio-controle` 0.75rem / `--raio-pilula` | `rounded-cartao` / `rounded-controle` / `rounded-pilula` | cartão / input, botão, aba / CTA primário e chip. |
 | `--transicao-rapida` 120ms / `--transicao-normal` 220ms / `--suavizacao` | `duration-[var(--transicao-rapida)] ease-[var(--suavizacao)]` | hover, foco / abrir, entrar. |
 | `--foco` | `shadow-foco` (já vem em `:focus-visible`) | halo de foco. Nunca `outline-none` sem substituto. |
 | `--espaco-secao` · `--espaco-bloco` · `--espaco-cartao` · `--espaco-item` | `gap-secao` · `gap-bloco` · `gap-cartao` · `gap-item` | ritmo vertical — ver §2.1. Nunca escolha `gap-6`/`gap-8` no olho. |
 
-`rounded-sm/md/lg` do Tailwind foram remapeados (10px / 14px / 20px) e `text-xs/sm` sobem para 13px/15px —
+`rounded-sm/md/lg` do Tailwind foram remapeados (10px / 14px / 16px) e `text-xs/sm` valem 12px/13px na V2 —
 telas antigas já ganham o raio e o tamanho novos sem edição. Na migração, troque pelos nomes semânticos.
 
 ## 2.1 Ritmo vertical — uma escala só (Fase 5)
@@ -40,15 +48,18 @@ Causa: cartão com 1,5rem de padding separado por 1,5rem de gap não lê como bl
 
 **Regra: o degrau de fora é sempre maior que o de dentro.**
 
-| Degrau | Token | Classe | Onde |
-|---|---|---|---|
-| Seção | `--espaco-secao` 2.5rem | `gap-secao` | entre seções de uma página (`<div className="flex flex-col gap-secao">` na raiz da tela) |
-| Bloco | `--espaco-bloco` 1.75rem | `gap-bloco` | entre cartões de uma mesma seção, e entre linhas de uma grade de cartões grandes |
-| Cartão | `--espaco-cartao` 1.5rem | `gap-cartao` / `p-cartao` | dentro do cartão: entre grupos, entre KPIs de uma faixa |
-| Item | `--espaco-item` 0.75rem | `gap-item` | entre chips, entre linhas de uma lista densa, entre rótulo e valor |
+| Degrau | Token (V2) | V1 | Classe | Onde |
+|---|---|---|---|---|
+| Seção | `--espaco-secao` **1.625rem / 26px** | 40px | `gap-secao` | entre seções de uma página |
+| Bloco | `--espaco-bloco` **1.125rem / 18px** | 28px | `gap-bloco` | entre cartões de uma mesma seção; é o degrau raiz da maioria das telas na V2 |
+| Cartão | `--espaco-cartao` **1rem / 16px** | 24px | `gap-cartao` / `p-cartao` | dentro do cartão: entre grupos, entre KPIs de uma faixa |
+| Item | `--espaco-item` **0.5rem / 8px** | 12px | `gap-item` | entre chips, entre linhas de uma lista densa, entre rótulo e valor |
 
-Tipografia: entrelinha de título é `1.18` (display) e `1.28` (título) — folga para o título que
-quebra em duas linhas na Neuetra bold. **`h1`–`h4` não declaram `letter-spacing`**: ele vem do
+`--raio-cartao` **1rem** (era 1.25rem): cartão compacto com raio de 20 px vira bolha.
+
+Tipografia: entrelinha de título é `1.22` (display) e `1.30` (título) — na V2 os títulos
+encolheram, então a entrelinha SUBIU: título menor precisa de proporcionalmente mais folga para
+quebrar em duas linhas na Neuetra bold sem colar. **`h1`–`h4` não declaram `letter-spacing`**: ele vem do
 degrau (`--text-titulo--letter-spacing`), então título pequeno fica com tracking zero.
 `text-wrap: balance` em título, `text-wrap: pretty` em `p`/`li`/`dd` (sem palavra órfã).
 Ao mexer nesses valores, meça um título de 2 linhas a 390px antes de fechar.
@@ -72,16 +83,24 @@ que ele faria não acontece. Para admin, aviso de sistema é 1 linha + 1 link, n
 
 ## 2. Escala tipográfica (classes exatas)
 
-| Papel | Classe | Tamanho | Peso |
-|---|---|---|---|
-| Display (título de página) | `text-display font-bold text-tinta` | 34px | 700 |
-| Título (gaveta, diálogo, seção grande) | `text-titulo font-bold text-tinta` | 24px | 700 |
-| Subtítulo (cartão, item) | `text-subtitulo font-bold text-tinta` | 18px | 700 |
-| Corpo | `text-corpo text-tinta` / `text-tinta-suave` | 16px | 400 |
-| Corpo compacto (tabela, lista densa) | `text-sm` | 15px | 400/500 |
-| Legenda / meta | `text-xs text-tinta-suave` | 13px | 400 |
-| Rótulo caixa alta | `text-rotulo font-medium uppercase text-tinta-fraca` | 12px | 500 |
-| Mínimo absoluto | `text-legenda` | 12px | — |
+| Papel | Classe | V2 | V1 | Peso |
+|---|---|---|---|---|
+| Display (título de página) | `text-display font-bold text-tinta` | **24px** | 34px | 700 |
+| Título (gaveta, diálogo, seção grande) | `text-titulo font-bold text-tinta` | **20px** | 24px | 700 |
+| Subtítulo (cartão, item) | `text-subtitulo font-bold text-tinta` | **16px** | 18px | 700 |
+| Corpo | `text-corpo text-tinta` / `text-tinta-suave` | **14px** | 16px | 400 |
+| Corpo compacto (tabela, lista densa) | `text-sm` | **13px** | 15px | 400/500 |
+| Legenda / meta | `text-xs text-tinta-suave` | **12px** | 13px | 400 |
+| Rótulo caixa alta | `text-rotulo font-medium uppercase text-tinta-fraca` | 12px | 12px | 500 |
+| Mínimo absoluto | `text-legenda` | 12px | 12px | — |
+
+`CabecalhoPagina` usa **um só tamanho** de título (`text-display`) — o
+`text-titulo sm:text-display` da V1 saiu: a 24 px o título já cabe a 390 px.
+Na V2 `--text-xs` e `--text-legenda` coincidem em 12 px (entrelinhas diferentes);
+unificar os dois nomes tocaria ~90 arquivos e ficou fora da Fase 6.
+
+**Alvo de toque:** com a escala menor, `-my-2.5 py-2.5` deixou de alcançar 44 px.
+Alvo pequeno agora declara `min-h-11` explicitamente — não confie no padding.
 
 Pesos: **400, 500, 700 apenas** (`font-medium`, `font-bold`). `font-semibold` sintetiza bold falso — proibido.
 Fonte: Neuetra vem do `body`; não declare `font-family`.
@@ -118,6 +137,31 @@ Fonte: Neuetra vem do `body`; não declare `font-family`.
 - `resumoDoTrilho(passos)` → `"5 de 9 · Sessão · 4 de 15"`. Número primeiro (§2.2). `null` quando não há passo aceso — o componente cai no resumo de vazio rotulado ("Sem informação" / "9 de 9 · Entregue").
 - 4 estados com **glifo próprio** (check · seta · traço de pulado · círculo vazio), nunca só cor; `<ol>` + `aria-current="step"` no aceso; rótulo em `sr-only` abaixo de `sm`; alvo ≥ 44 px só onde há ação (marcador é indicador, não controle).
 
+**`Trilho variante="sessoes"` (Fase 6)** — a Ficha desenha os 9 passos AGRUPADOS nas
+**três sessões** que são a espinha do produto (Viabilidade · Croqui estrutural · Entrega da
+holding). Recebe `sessoes={agruparPorSessao(passos)}` (`lib/pasta/trilho.ts`) além de `passos`.
+As três aparecem sempre; **só a `atual` abre** e mostra os micro-passos. Sem passo aceso,
+nenhuma acende — o trilho não inventa posição. `desfecho` (opcional) troca o resumo "Parado"
+pelo desfecho real: uma jornada GANHA no meio do trilho **terminou**, não parou.
+O botão da ação de agora carrega `data-acao-agora` — é o que o contador de aceite mede.
+
+**Recolher em vez de esconder (Fase 6).** Lista longa e seção de consulta usam `<details>`
+**nativo** (Tab, Enter, Ctrl+F e leitor de tela de graça, sem JS) com `<summary>` de `min-h-11`
+e o par "ver / esconder" em `group-open:`. Regras:
+- o grupo da sessão ATUAL nasce aberto; os outros, fechados com o resumo ("2 de 5");
+- lista sem teto ganha corte + botão com o número na frente ("Ver os 52 casos") — o croqui
+  media 6.278 px e o repertório 5.110 px por listar tudo sempre;
+- `@media print` reabre todo `<details>`: a folha que vai para a reunião leva o conteúdo
+  inteiro (`globals.css`).
+
+**`Dica`** — o balão só existe no DOM quando aparece, e se desloca para dentro da janela depois
+de medir. Antes ele ficava sempre montado com `opacity-0` e **quatro tooltips invisíveis
+criavam rolagem horizontal em `/hoje` a 390 px**.
+
+**`Bloco`** (`painel/Bloco.tsx`) — bloco do painel **sem nada pendente vira UMA LINHA**, não um
+cartão: a boa notícia continua verde e com check, mas não ocupa o espaço de um bloco que tem
+trabalho. Hierarquia visual é a informação.
+
 **`Passos`** (`ui/Passos.tsx`) — o stepper curto dentro de uma tela (Sessão: Horário → Confirmação → Sala → Presença).
 - **O "feito" sai do índice, não do estado**: tudo antes de `atual` vira check verde. Portanto `atual` recebe o passo **real**, nunca o passo que o usuário abriu para olhar — passar o passo aberto carimba "concluído" em etapa que nunca aconteceu (bug pego no navegador, `SessaoAba.tsx:85-95`). Quem sinaliza o bloco aberto é o `<h3>` do bloco, não o stepper.
 
@@ -137,7 +181,7 @@ Fonte: Neuetra vem do `body`; não declare `font-family`.
 
 ## 4. Padrões de página
 
-- **Página**: `<div className="flex flex-col gap-secao">` → `CabecalhoPagina` → seções; cartões dentro de uma seção com `gap-bloco` (§2.1).
+- **Página**: `<div className="flex flex-col gap-bloco">` → `CabecalhoPagina` (com a **linha de propósito** em `descricao`, que carrega `data-proposito`) → seções. Na V2 o degrau raiz é `gap-bloco`; `gap-secao` só quando a tela tem seções realmente distintas.
 - **Seção**: `Cartao` com `rotulo` + `titulo`; ou, quando é uma grade de cartões, `<h2 className="text-subtitulo font-bold">` solto acima da grade.
 - **Lista**: `Cartao preenchimento="sem"` + `<ul className="divide-y divide-linha">`, cada `<li>` com `min-h-11` e o item inteiro clicável (`<Link>`/`<button>` ocupando o `li`).
 - **Tabela**: dentro de `Cartao preenchimento="sem"`, `<th>` em `text-rotulo uppercase text-tinta-fraca`, linhas `min-h-11`, `hover:bg-papel`, primeira coluna em `font-medium`; em < 640px, vira lista de cartões (não scroll horizontal).
@@ -190,3 +234,5 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
 10. Vocabulário do `Glossario.md` **via `src/lib/vocabulario.ts`** (§2.2); nada de dado inventado; impressão sem barra/botão.
 11. Lei de texto (§2.2) medida: palavras visíveis fora de dado de cliente ≤ 50% do que havia; nenhum bloco de texto > 2 linhas fora de `Dica`.
 12. Ritmo do §2.1: `gap-secao`/`gap-bloco`/`gap-cartao`/`gap-item`. Nenhum `gap-6`/`gap-8` novo.
+13. **Densidade medida (Fase 6):** altura do documento ≤ 1080 px a 1440×900 e **zero rolagem horizontal a 390 px**, nos dois temas. Tela de LISTA declara a exceção com o número, não com adjetivo.
+14. **Linha de propósito:** toda tela do menu e toda aba dizem, em uma frase, para que servem (`CabecalhoPagina descricao` / `DefinicaoAba.descricao`). Zero jargão: POP, DISC, régua, esteira, cron, n8n, Vapi, token, webhook e `SUPABASE_*` não aparecem no fluxo — só em `title` ou em tela de admin.

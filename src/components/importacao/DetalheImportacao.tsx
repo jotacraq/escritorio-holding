@@ -67,7 +67,7 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
       notificar({
         tom: "sucesso",
         titulo: "Importação confirmada",
-        descricao: `${frasePlural(i.pessoas_novas, "pessoa nova", "pessoas novas")} e ${frasePlural(i.jornadas_novas, "jornada nova", "jornadas novas")} gravadas. Elas já aparecem na esteira.`,
+        descricao: `${frasePlural(i.pessoas_novas, "pessoa nova", "pessoas novas")} e ${frasePlural(i.jornadas_novas, "jornada nova", "jornadas novas")} gravadas. Elas já aparecem na lista de clientes.`,
       });
       recarregar();
     } catch (e) {
@@ -109,11 +109,11 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
   const perguntas = importacao.perguntas_seminario ?? [];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Administração · Importações"
         acima={
-          <Link href="/importacoes" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+          <Link href="/admin#importacoes" className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
             ← Todas as importações
           </Link>
         }
@@ -161,9 +161,9 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
           <p className="text-sm text-tinta-suave">
             {importacao.status === "confirmada" ? (
               <>
-                <strong className="font-bold text-tinta">Concluída.</strong> As pessoas novas já estão na esteira, na etapa de entrada da edição.{" "}
-                <Link href="/esteira" className="font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
-                  Abrir a esteira
+                <strong className="font-bold text-tinta">Concluída.</strong> As pessoas novas já estão na lista de clientes, na etapa de entrada da turma.{" "}
+                <Link href="/clientes" className="font-medium text-[color:var(--latao)] underline-offset-4 hover:underline">
+                  Abrir a lista de clientes
                 </Link>
               </>
             ) : (

@@ -16,7 +16,20 @@
  * As duas funções sob teste são PURAS: nenhum acesso a banco, nenhuma variável
  * de ambiente, `agora` injetado. O que falhar aqui falha igual em produção.
  */
-import { derivarTrilho, passoAtual, progressoDoTrilho, type ChaveTrilho, type EstadoPasso, type PassoTrilho } from "../src/lib/pasta/trilho";
+import {
+  agruparPorSessao,
+  derivarTrilho,
+  passoAtual,
+  progressoDoTrilho,
+  ROTULO_SESSAO,
+  SESSAO_POR_PASSO,
+  type BlocoSessao,
+  type ChaveSessao,
+  type ChaveTrilho,
+  type EstadoPasso,
+  type PassoTrilho,
+} from "../src/lib/pasta/trilho";
+import { CATALOGO_PASTA, SESSAO_POR_ITEM } from "../src/lib/pasta/catalogo";
 import { sinaisComExecucao, sinaisDaFicha, sinaisVazios, type Sinais } from "../src/lib/pasta/sinais";
 import type { EventoTimeline, Ficha360 } from "../src/lib/api";
 import { derivarRadarDocumentos, resumoDoRadar } from "../src/lib/radar/derivar";
@@ -137,6 +150,102 @@ console.log("\n=== TRILHO — 6 bordas do §8.1 ===\n");
   conferir("F · progresso 4 de 15", execucao?.progresso?.feitos === 4 && execucao?.progresso?.total === 15, JSON.stringify(execucao?.progresso));
   conferir("F · contrato feito", estado(passos, "contrato") === "feito", mapa(passos));
   conferir("F · entrega futuro", estado(passos, "entrega") === "futuro", mapa(passos));
+}
+
+console.log("\n=== ESPINHA — as 3 sessões (Fase 6 §1.2) ===\n");
+
+function sessao(blocos: BlocoSessao[], chave: ChaveSessao): BlocoSessao {
+  const b = blocos.find((x) => x.chave === chave);
+  if (!b) throw new Error(`sessão ausente: ${chave}`);
+  return b;
+}
+
+function mapaSessoes(blocos: BlocoSessao[]): string {
+  return blocos.map((b) => `${b.chave}=${b.estado}(${b.resumo})`).join(" ");
+}
+
+// Estrutura: os 9 passos cabem nas 3 sessões, 5/1/3, sem sobra e sem repetição.
+{
+  const blocos = agruparPorSessao(derivarTrilho(s({}), AGORA));
+  conferir("S1 · 3 sessões, na ordem", blocos.map((b) => b.chave).join(",") === "viabilidade,croqui,entrega", mapaSessoes(blocos));
+  conferir("S1 · 5 / 1 / 3 passos", blocos.map((b) => b.passos.length).join(",") === "5,1,3", mapaSessoes(blocos));
+  conferir(
+    "S1 · nenhum passo se perde nem se repete",
+    blocos.reduce((n, b) => n + b.passos.length, 0) === 9,
+    mapaSessoes(blocos),
+  );
+  conferir("S1 · rótulos vêm de ROTULO_SESSAO", blocos.every((b) => b.rotulo === ROTULO_SESSAO[b.chave]), mapaSessoes(blocos));
+}
+
+// (novo 1) Tudo `null` → NENHUMA sessão atual. Sem passo aceso não se inventa
+// posição: é a borda `a` do §8.1 propagada para o agrupamento.
+{
+  const blocos = agruparPorSessao(derivarTrilho(s({}), AGORA));
+  conferir("S2 · nenhuma sessão atual (tudo null)", blocos.every((b) => b.estado !== "atual"), mapaSessoes(blocos));
+  conferir("S2 · nenhuma sessão feito", blocos.every((b) => b.estado === "futuro"), mapaSessoes(blocos));
+  conferir("S2 · resumo 0 de N", blocos.map((b) => b.resumo).join(" · ") === "0 de 5 · 0 de 1 · 0 de 3", mapaSessoes(blocos));
+}
+
+// (novo 2) Jornada completa → as 3 sessões `feito`, nenhuma atual.
+{
+  const base = s({
+    etapa: "holding_contratada",
+    nivelPago: 3,
+    temLigacao: true,
+    proximaSessaoEm: HA_10_DIAS,
+    presencaConfirmada: true,
+    presencaConfirmadaEm: HA_10_DIAS,
+    sessaoRealizadaEm: HA_10_DIAS,
+    croquiStatus: "apresentado",
+  });
+  const blocos = agruparPorSessao(
+    derivarTrilho(sinaisComExecucao(base, { feitos: 19, total: 19, contratoAssinadoEm: HA_10_DIAS, entregaEm: HA_10_DIAS }), AGORA),
+  );
+  conferir("S3 · 3 sessões feito", blocos.every((b) => b.estado === "feito"), mapaSessoes(blocos));
+  conferir("S3 · nenhuma atual", blocos.every((b) => b.estado !== "atual"), mapaSessoes(blocos));
+  conferir("S3 · resumo 5 de 5 · 1 de 1 · 3 de 3", blocos.map((b) => b.resumo).join(" · ") === "5 de 5 · 1 de 1 · 3 de 3", mapaSessoes(blocos));
+}
+
+// (novo 3) Croqui comprado sem sessão nenhuma → sessão 1 resolvida com passos
+// `pulado` (logo `feito`, não `atual`) e sessão 2 `atual`.
+{
+  const passos = derivarTrilho(s({ etapa: "croqui_contratado", nivelPago: 2, temLigacao: true, croquiStatus: "nenhum", temDocumentos: true }), AGORA);
+  const blocos = agruparPorSessao(passos);
+  conferir("S4 · viabilidade resolvida (feito)", sessao(blocos, "viabilidade").estado === "feito", mapaSessoes(blocos));
+  conferir(
+    "S4 · e ela tem passos pulados — o resumo não mente",
+    sessao(blocos, "viabilidade").passos.filter((p) => p.estado === "pulado").length === 3 &&
+      sessao(blocos, "viabilidade").resumo === "2 de 5",
+    mapaSessoes(blocos),
+  );
+  conferir("S4 · croqui atual", sessao(blocos, "croqui").estado === "atual", mapaSessoes(blocos));
+  conferir("S4 · entrega futuro", sessao(blocos, "entrega").estado === "futuro", mapaSessoes(blocos));
+  conferir("S4 · uma e só uma sessão atual", blocos.filter((b) => b.estado === "atual").length === 1, mapaSessoes(blocos));
+}
+
+// A espinha é exaustiva dos dois lados: nenhum passo e nenhum item da Pasta
+// fica sem sessão. É o que substitui a lista MOMENTOS duplicada.
+{
+  const passos = derivarTrilho(s({ etapa: "sessao_agendada", nivelPago: 1, temLigacao: true, proximaSessaoEm: EM_5_DIAS }), AGORA);
+  conferir("S5 · todo passo tem sessão", passos.every((p) => SESSAO_POR_PASSO[p.chave] !== undefined), mapa(passos));
+  conferir(
+    "S5 · todo item da Pasta tem sessão",
+    CATALOGO_PASTA.every((i) => SESSAO_POR_ITEM[i.chave] !== undefined),
+    CATALOGO_PASTA.map((i) => `${i.chave}=${SESSAO_POR_ITEM[i.chave]}`).join(" "),
+  );
+  conferir(
+    "S5 · nenhum item da Pasta cai em `entrega` (a 3ª sessão vem de execucao_marcos)",
+    CATALOGO_PASTA.every((i) => SESSAO_POR_ITEM[i.chave] !== "entrega"),
+    "",
+  );
+}
+
+// B5 — o rótulo do passo virou "Contato"; a CHAVE continua `ligacao`.
+{
+  const passos = derivarTrilho(s({ etapa: "sessao_contratada", nivelPago: 1, temLigacao: false }), AGORA);
+  const ligacao = passos.find((p) => p.chave === "ligacao");
+  conferir("S6 · rótulo do passo é 'Contato'", ligacao?.rotulo === "Contato", String(ligacao?.rotulo));
+  conferir("S6 · a chave `ligacao` não mudou", passos.some((p) => p.chave === "ligacao"), mapa(passos));
 }
 
 console.log("\n=== TRILHO — caminho normal da esteira ===\n");

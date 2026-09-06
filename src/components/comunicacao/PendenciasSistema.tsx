@@ -37,7 +37,7 @@ function destino(item: PendenciaSistemaComunicacao): { href: string; rotulo: str
 
 /**
  * Fase 5 §9.1 — o filtro agora é por **papel** além de por tela. Quem não é
- * admin vê só o que uma pessoa resolve (sessão sem sala, ligação que não
+ * admin vê só o que uma pessoa resolve (sessão sem sala, ligação por IA que não
  * completou); conserto de infraestrutura ("envio falhou", reenfileirar) é do
  * admin. O item some do array antes do render: não fica escondido no DOM.
  */

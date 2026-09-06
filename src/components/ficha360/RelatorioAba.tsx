@@ -455,7 +455,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
   const cenariosCompletos = totaisCenario.filter((t) => t.total !== null).length;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <div className="nao-imprimir flex items-center justify-between gap-3">
         <p className="text-xs text-tinta-fraca">Relatório da Sessão de Viabilidade — espelha o formulário em papel, campo a campo.</p>
         <Botao variante="secundario" tamanho="compacto" onClick={() => window.print()}>Imprimir relatório</Botao>

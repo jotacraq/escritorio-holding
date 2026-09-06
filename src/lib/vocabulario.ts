@@ -39,10 +39,16 @@ export const VOCABULARIO = {
     sigla: "POP 02",
     explique: "17 perguntas, até 3 minutos, respondidas antes da sessão.",
   },
+  // Fase 6, decisão 4 do João: este passo é a ligação HUMANA da equipe — quem
+  // liga é uma pessoa, e o que ela produz é informação sobre o cliente. A
+  // ligação de AGENDAMENTO por IA (Vapi/n8n, `ligacoes_ia`) continua se
+  // chamando ligação e vive atrás de `ligacao_ia.provedor` (ver
+  // `provedor_ligacao`, abaixo) — são coisas diferentes, com nomes diferentes.
   pop03: {
-    humano: "Ligação estratégica",
+    humano: "Contato da equipe",
     sigla: "POP 03",
-    explique: "Ligação humana de até 5 minutos, antes da sessão, feita pelo relacionamento.",
+    explique:
+      "Ligação humana de até 5 minutos, antes da sessão: a equipe registra como o cliente fala e o que ele já respondeu.",
   },
 
   // --- Nomes do negócio (Glossario.md manda: mantêm) ----------------------

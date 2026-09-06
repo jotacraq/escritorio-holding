@@ -46,7 +46,7 @@ export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
  */
 export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   formulario: "Preencher o formulário",
-  ligacao: "Registrar a ligação",
+  ligacao: "Registrar o contato",
   links: "Emitir os links",
   briefing: "Gerar o Briefing",
   sessao: "Agendar a sessão",

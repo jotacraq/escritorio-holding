@@ -62,7 +62,7 @@ export default function PaginaDiagnostico({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-bloco">
       <CabecalhoPagina
         rotulo="Cliente"
         titulo="Diagnóstico da SV"

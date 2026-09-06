@@ -34,7 +34,7 @@ export const SLIDES_PADRAO: (Omit<CroquiSlide, "id" | "conteudo"> & { mensagemPa
 
 /** `id` = o próprio tipo (slug estável) — mesma convenção do `construirSlidesBase()` do backend.
  * `conteudo` nasce com a mensagem-padrão do método (editável, não vazio) e
- * `origem: 'metodo'` — mesmo contrato do backend, para `EditorCroqui` mostrar
+ * `origem: 'metodo'` — mesmo contrato do backend, para a tela do croqui mostrar
  * o carimbo certo desde o primeiro instante. */
 export function criarEsqueletoSlides(): CroquiSlide[] {
   return SLIDES_PADRAO.map(({ mensagemPadrao, ...s }) => ({ ...s, id: s.tipo, conteudo: mensagemPadrao, origem: "metodo", revisado: false }));
@@ -47,7 +47,7 @@ export const ROTULO_TIPO_SLIDE: Record<CroquiSlide["tipo"], string> = Object.fro
 
 /**
  * Contagem única de revisão dos slides — antes duplicada com lógica levemente
- * diferente em `EditorCroqui`, `ApresentarCroqui` e `CabecalhoFicha`. A
+ * diferente em `ApresentarCroqui` e `CabecalhoFicha` (o editor de 13 slides foi aposentado na Fase 6). A
  * revisão dos 13 slides deixou de ser trava obrigatória para virar sinal de
  * atenção (o croqui pode virar "pronto" com pendências — a assinatura é da
  * advogada, não do sistema); esta função só conta, não decide nada.

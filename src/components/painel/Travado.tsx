@@ -1,5 +1,5 @@
 import { Bloco, LinhaFila } from "./Bloco";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { Selo } from "@/components/ui/Selo";
 import { formatarRelativo } from "@/lib/formatar";
 import { titleDe } from "@/lib/vocabulario";
@@ -38,7 +38,7 @@ export function rotuloTipoPendencia(tipo: string): string {
 
 /** Para onde "Resolver" leva quando não há jornada: pendências de sistema puro. */
 function destinoSemJornada(tipo: string): string | null {
-  if (tipo === "cron_parado" || tipo === "mensagem_falhou") return "/comunicacao";
+  if (tipo === "cron_parado" || tipo === "mensagem_falhou") return "/mensagens";
   if (tipo === "webhook_falho") return "/admin";
   return null;
 }
@@ -52,6 +52,15 @@ function destinoSemJornada(tipo: string): string | null {
  * uma pessoa resolve. O filtro é no array, antes do render: o item some do
  * DOM, não fica escondido por CSS.
  */
+/**
+ * O recorte de pendências que uma PESSOA resolve, para o papel dado.
+ * Exportado porque o KPI "Travado" do topo tem de contar exatamente o que este
+ * bloco mostra — duas contagens da mesma coisa é como a tela passa a mentir.
+ */
+export function pendenciasVisiveis(itens: PendenciaSistema[], papel: PapelEquipe | null): PendenciaSistema[] {
+  return itens.filter((i) => i.tipo !== "cron_parado" && pendenciaVisivelPara(papel, i.tipo));
+}
+
 export function Travado({
   estado,
   papel,
@@ -65,9 +74,7 @@ export function Travado({
   // automático" da seção Sistema, e para os demais é ruído de infra. Contar
   // duas vezes a mesma pendência é o que faz o painel parecer cheio.
   const filtrado: EstadoBloco<PendenciaSistema> =
-    estado.situacao === "ok"
-      ? { situacao: "ok", itens: estado.itens.filter((i) => i.tipo !== "cron_parado" && pendenciaVisivelPara(papel, i.tipo)) }
-      : estado;
+    estado.situacao === "ok" ? { situacao: "ok", itens: pendenciasVisiveis(estado.itens, papel) } : estado;
 
   return (
     <Bloco

@@ -12,7 +12,7 @@ import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { Selo } from "@/components/ui/Selo";
-import { emitirLink, ErroFicha360Api } from "./api";
+import { emitirLinkDeEnvio, ErroFicha360Api } from "./api";
 import { buscarTarefa, concluirTarefa, renderizarMensagemTarefa, type MensagemCroquiPronta, type PendenciaMensagemCroqui } from "./api-tarefas";
 
 /** Cada pendência diz o que falta E onde resolver — nunca só o código. */
@@ -59,7 +59,7 @@ export function SessaoTarefaCroqui({ jornadaId, tarefa, aoAtualizar }: { jornada
   async function gerarLinkDocumentos() {
     setGerandoLink(true);
     try {
-      const res = await emitirLink(jornadaId, "documentos");
+      const res = await emitirLinkDeEnvio(jornadaId, "documentos");
       setLinkDocumentos(res.link.url);
       const nova = await renderizarMensagemTarefa(tarefa.id, res.link.url);
       aplicarMensagem(nova);

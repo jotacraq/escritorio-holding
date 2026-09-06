@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Bloco, LinhaFila } from "./Bloco";
-import { LinkBotao } from "./LinkBotao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { formatarData } from "@/lib/formatar";
 import { derivarProximoPasso, hrefDoPasso } from "@/lib/pasta/proximo-passo";
@@ -25,7 +25,7 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
       id="pagos-sem-contato"
       rotulo="Urgente"
       titulo="Pagou, sem contato"
-      dica="Pagamento aprovado e nenhuma ligação ou mensagem registrada ainda. É o furo que mais dói: o dinheiro entrou e o cliente está esperando."
+      dica="Pagamento aprovado e nenhum contato da equipe nem mensagem registrada ainda. É o furo que mais dói: o dinheiro entrou e o cliente está esperando."
       mensagemNadaPendente="Ninguém esperando contato."
       estado={estado}
       urgente

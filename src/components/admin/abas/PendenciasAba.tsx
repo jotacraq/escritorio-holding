@@ -85,7 +85,7 @@ export function PendenciasAba() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <IntroAba>O que travou e depende de alguém. Cada linha leva à ação que resolve.</IntroAba>
         <Botao variante="secundario" tamanho="compacto" carregando={carregando} onClick={recarregar}>
