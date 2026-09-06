@@ -1,11 +1,12 @@
 "use client";
 
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
 import { useCroquiDaJornada } from "@/hooks/useCroquiDaJornada";
 import { EstadoErro } from "@/components/ui/Estado";
-import { EsqueletoFicha } from "@/components/ui/Esqueleto";
+import { EsqueletoFicha, EsqueletoLista } from "@/components/ui/Esqueleto";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { PastaDoCliente } from "@/components/pasta/PastaDoCliente";
 import { Gaveta } from "@/components/ui/Gaveta";
@@ -14,17 +15,6 @@ import { sinaisDaFicha } from "@/lib/pasta/sinais";
 import { agruparPorSessao, derivarTrilho } from "@/lib/pasta/trilho";
 import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
-import { FormularioAba } from "@/components/ficha360/FormularioAba";
-import { LigacaoAba } from "@/components/ficha360/LigacaoAba";
-import { PatrimonioAba } from "@/components/ficha360/PatrimonioAba";
-import { DocumentosAba } from "@/components/ficha360/DocumentosAba";
-import { SessaoAba } from "@/components/ficha360/SessaoAba";
-import { RelatorioAba } from "@/components/ficha360/RelatorioAba";
-import { BriefingAba } from "@/components/briefing/BriefingAba";
-import { MaterialAba } from "@/components/ficha360/MaterialAba";
-import { AnaliseSessaoAba } from "@/components/ficha360/AnaliseSessaoAba";
-import { TimelineAba } from "@/components/ficha360/TimelineAba";
-import { DiagnosticoSv } from "@/components/ficha360/DiagnosticoSv";
 import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/api-extras";
 import { TrilhoDaFicha } from "@/components/ficha360/TrilhoDaFicha";
 import { AutomacoesFicha } from "@/components/ficha360/AutomacoesFicha";
@@ -60,6 +50,57 @@ import type { Ficha360 } from "@/lib/api";
  * O croqui virou cartão + botão (`CartaoCroqui`): as 19 tabelas moram em
  * `/croquis/[id]`, e eram ~8.600 px de DOM em toda abertura de Ficha.
  */
+
+/**
+ * As onze telas de gaveta chegam por `dynamic()`, não por `import` estático.
+ *
+ * Motivo medido (06/09/2026, Playwright + `getEntriesByType("resource")`, dev,
+ * cache frio): a Ficha baixava 8.091 KB de JS para desenhar a dobra, e onze
+ * desses módulos — os maiores do projeto: `RelatorioAba` 624 linhas,
+ * `PatrimonioAba` 547, `BriefingAba` 397 — só são montados quando alguém
+ * ABRE a gaveta. `Gaveta` devolve `null` fechada, então o `dynamic` nem é
+ * renderizado até o clique: o módulo não entra na carga inicial.
+ *
+ * `ssr` fica no padrão (`true`): a Ficha inteira é `"use client"`, e desligar
+ * SSR aqui só mudaria o HTML inicial de uma tela que já nasce vazia.
+ *
+ * O `loading` não é enfeite: é o que a pessoa vê no primeiro clique de cada
+ * gaveta, enquanto o chunk vem. Rodapé da gaveta e foco continuam com a
+ * `Gaveta` (o fallback vive DENTRO dela), então nada de acessibilidade muda.
+ */
+const FormularioAba = dynamic(() => import("@/components/ficha360/FormularioAba").then((m) => m.FormularioAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o formulário…" />,
+});
+const LigacaoAba = dynamic(() => import("@/components/ficha360/LigacaoAba").then((m) => m.LigacaoAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o contato…" />,
+});
+const PatrimonioAba = dynamic(() => import("@/components/ficha360/PatrimonioAba").then((m) => m.PatrimonioAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o patrimônio…" />,
+});
+const DocumentosAba = dynamic(() => import("@/components/ficha360/DocumentosAba").then((m) => m.DocumentosAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo os documentos…" />,
+});
+const SessaoAba = dynamic(() => import("@/components/ficha360/SessaoAba").then((m) => m.SessaoAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo a sessão…" />,
+});
+const RelatorioAba = dynamic(() => import("@/components/ficha360/RelatorioAba").then((m) => m.RelatorioAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o relatório…" />,
+});
+const BriefingAba = dynamic(() => import("@/components/briefing/BriefingAba").then((m) => m.BriefingAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o briefing…" />,
+});
+const MaterialAba = dynamic(() => import("@/components/ficha360/MaterialAba").then((m) => m.MaterialAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o material…" />,
+});
+const AnaliseSessaoAba = dynamic(() => import("@/components/ficha360/AnaliseSessaoAba").then((m) => m.AnaliseSessaoAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo a análise…" />,
+});
+const TimelineAba = dynamic(() => import("@/components/ficha360/TimelineAba").then((m) => m.TimelineAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o histórico…" />,
+});
+const DiagnosticoSv = dynamic(() => import("@/components/ficha360/DiagnosticoSv").then((m) => m.DiagnosticoSv), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o diagnóstico…" />,
+});
 
 /** Rótulo de cada gaveta — o nome de negócio, igual ao da Pasta. */
 const TITULO_GAVETA: Record<string, string> = {

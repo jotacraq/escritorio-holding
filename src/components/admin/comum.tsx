@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Selo } from "@/components/ui/Selo";
+import { formatarData } from "@/lib/formatar";
 
 /**
  * Peças pequenas repetidas nas abas do Admin. Ficam aqui para toda aba falar
@@ -71,3 +72,13 @@ export function IntroAba({ children }: { children: ReactNode }) {
 
 /** Célula/valor "vazio é vazio". */
 export const TRACO = "—";
+
+/**
+ * "publicada em 03/09/2026" · "ativada em 05/09/2026". A lista de versões
+ * (formulário e roteiro) devolve `criado_por`/`ativado_por` como id de perfil,
+ * não nome — e id na tela não diz nada a ninguém. Enquanto o servidor não
+ * juntar o nome, sai só a data: vazio é vazio, não se inventa autor.
+ */
+export function autoriaDeVersao(quando: string | null | undefined, verbo: string): string | null {
+  return quando ? `${verbo} em ${formatarData(quando)}` : null;
+}

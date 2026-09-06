@@ -1,20 +1,26 @@
 import type { PerguntaFormularioPublico } from "@/types/publico-ui";
-import { rotuloOpcao } from "@/lib/vocabulario";
+import { normalizarOpcoes, perguntaVisivel } from "@/lib/formulario/definicao";
 
-/** Avalia a condicional de uma pergunta (ex.: P11 só aparece se P10 incluir "Imóveis"). Mesma regra da tela interna. */
-export function perguntaPublicaVisivel(pergunta: PerguntaFormularioPublico, respostas: Record<string, unknown>): boolean {
-  if (!pergunta.condicional) return true;
-  const valorDependido = respostas[pergunta.condicional.depende_de];
-  if (pergunta.condicional.igual !== undefined) return valorDependido === pergunta.condicional.igual;
-  if (pergunta.condicional.contem !== undefined) {
-    const lista = Array.isArray(valorDependido) ? valorDependido : [];
-    return lista.includes(pergunta.condicional.contem);
-  }
-  return true;
-}
+/**
+ * `opcoes` chega nos DOIS formatos que `formularios.definicao` guarda: string
+ * crua (versões 1..5) e `{valor, rotulo}` (0078 em diante). O tipo do contrato
+ * público só descreve o legado, então aqui a lista entra como `unknown` e sai
+ * normalizada por `normalizarOpcoes` — a mesma função que a Ficha e o editor do
+ * Admin usam. `PerguntaFormularioPublico` continua atribuível a este tipo.
+ */
+export type PerguntaPublica = Omit<PerguntaFormularioPublico, "opcoes"> & { opcoes?: unknown };
+
+/**
+ * Avalia a condicional de uma pergunta (ex.: P11 só aparece se P10 incluir
+ * "Imóveis"). É `perguntaVisivel` do núcleo, sem cópia: a MESMA regra que a
+ * Ficha usa na tela interna e que a 0082 espelha no banco para não cobrar
+ * pergunta que ninguém viu. O nome local fica porque é o vocabulário desta
+ * pasta (`*Publico`); a regra, não.
+ */
+export const perguntaPublicaVisivel: (pergunta: PerguntaPublica, respostas: Record<string, unknown>) => boolean = perguntaVisivel;
 
 /** Uma pergunta preenchida conta como respondida se tem valor não vazio. */
-export function perguntaPublicaRespondida(pergunta: PerguntaFormularioPublico, valor: unknown): boolean {
+export function perguntaPublicaRespondida(pergunta: PerguntaPublica, valor: unknown): boolean {
   if (!pergunta.obrigatoria) return true;
   if (valor === undefined || valor === null) return false;
   if (typeof valor === "string") return valor.trim().length > 0;
@@ -32,10 +38,17 @@ export function CampoPerguntaPublico({
   valor,
   aoMudar,
 }: {
-  pergunta: PerguntaFormularioPublico;
+  pergunta: PerguntaPublica;
   valor: unknown;
   aoMudar: (valor: unknown) => void;
 }) {
+  /*
+   * `idCampo` está em TODOS os tipos, inclusive nos grupos de escolha (onde
+   * fica no `<div role=radiogroup|group>`, com `tabIndex={-1}`). Dois motivos:
+   * o `<label htmlFor>` do assistente deixa de apontar para o vazio, e o erro
+   * que o servidor devolve por id de pergunta (`opcao_invalida`, que só
+   * acontece em escolha) consegue levar o foco até o grupo culpado.
+   */
   const idCampo = `pergunta-publica-${pergunta.id}`;
   const rotuloId = `${idCampo}-rotulo`;
   /*
@@ -45,6 +58,7 @@ export function CampoPerguntaPublico({
    * obrigatório e ninguém dizia. Aqui ele volta pela via correta.
    */
   const obrigatorio = pergunta.obrigatoria || undefined;
+  const opcoes = normalizarOpcoes(pergunta.opcoes);
 
   switch (pergunta.tipo) {
     case "texto":
@@ -85,7 +99,7 @@ export function CampoPerguntaPublico({
       );
     case "sim_nao":
       return (
-        <div role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex gap-3">
+        <div id={idCampo} tabIndex={-1} role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex gap-3">
           {(["sim", "nao"] as const).map((opcao) => (
             <label
               key={opcao}
@@ -101,16 +115,22 @@ export function CampoPerguntaPublico({
       );
     case "unica":
       return (
-        <div role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex flex-col gap-2.5">
-          {(pergunta.opcoes ?? []).map((opcao) => (
+        <div id={idCampo} tabIndex={-1} role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex flex-col gap-2.5">
+          {opcoes.map((opcao) => (
             <label
-              key={opcao}
+              key={opcao.valor}
               className={`flex items-center gap-3 min-h-11 rounded-controle border-2 px-4 py-3 text-base ${
-                valor === opcao ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
+                valor === opcao.valor ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
               }`}
             >
-              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 shrink-0 accent-[color:var(--latao-cta)]" />
-              <span className="text-tinta">{rotuloOpcao(opcao)}</span>
+              <input
+                type="radio"
+                name={idCampo}
+                checked={valor === opcao.valor}
+                onChange={() => aoMudar(opcao.valor)}
+                className="h-5 w-5 shrink-0 accent-[color:var(--latao-cta)]"
+              />
+              <span className="text-tinta">{opcao.rotulo}</span>
             </label>
           ))}
         </div>
@@ -120,21 +140,21 @@ export function CampoPerguntaPublico({
       return (
         // Grupo de caixas: `role="radiogroup"` seria mentira (dá para marcar várias).
         // `role="group"` + `aria-labelledby` dá ao conjunto o nome da pergunta.
-        <div role="group" aria-labelledby={rotuloId} className="flex flex-col gap-2.5">
-          {(pergunta.opcoes ?? []).map((opcao) => (
+        <div id={idCampo} tabIndex={-1} role="group" aria-labelledby={rotuloId} className="flex flex-col gap-2.5">
+          {opcoes.map((opcao) => (
             <label
-              key={opcao}
+              key={opcao.valor}
               className={`flex items-center gap-3 min-h-11 rounded-controle border-2 px-4 py-3 text-base ${
-                selecionadas.includes(opcao) ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
+                selecionadas.includes(opcao.valor) ? "border-[color:var(--latao-cta)] bg-latao-fraco" : "border-linha-forte bg-papel"
               }`}
             >
               <input
                 type="checkbox"
-                checked={selecionadas.includes(opcao)}
-                onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
+                checked={selecionadas.includes(opcao.valor)}
+                onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao.valor] : selecionadas.filter((o) => o !== opcao.valor))}
                 className="h-5 w-5 shrink-0 rounded-controle accent-[color:var(--latao-cta)]"
               />
-              <span className="text-tinta">{rotuloOpcao(opcao)}</span>
+              <span className="text-tinta">{opcao.rotulo}</span>
             </label>
           ))}
         </div>

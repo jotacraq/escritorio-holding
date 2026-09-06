@@ -28,7 +28,10 @@ const FiltrosSchema = z.object({
   origem: z.enum(["seminario", "indicacao", "organico", "trafego_pago", "outro"]).optional(),
   responsavel_id: z.string().uuid().optional(),
   busca: z.string().trim().min(1).max(200).optional(),
-  desfecho: z.enum(["aberta", "ganha", "perdida", "descartada", "congelada"]).optional(),
+  // FILTRO (leitura): `anonimizada` (0079) entra aqui para que a equipe consiga
+  // listar quem teve o tratamento encerrado. No PATCH de etapa ele NÃO entra —
+  // ninguém marca isso à mão, só a RPC `anonimizar_titular`.
+  desfecho: z.enum(["aberta", "ganha", "perdida", "descartada", "congelada", "anonimizada"]).optional(),
   incluir_fechadas: z
     .enum(["true", "false"])
     .optional()

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { criarClientePublico } from "@/server/publico/cliente";
 import { exigirPepper, hashIp, hashToken } from "@/server/publico/pepper";
 import { comCabecalhosPublicos, exigirOrigemPublica, LIMITE_CORPO_JSON_BYTES, lerSinaisDeRequisicao } from "@/server/publico/protecao";
-import { ehRespostaDeErro, statusParaErroPublico } from "@/server/publico/rpc";
+import { corpoDeErroPublico, ehRespostaDeErro, statusParaErroPublico } from "@/server/publico/rpc";
 import { ErroApi, registrarErro, respostaErro } from "@/server/erros";
 import type { ErroPublico, RespostaResponderFormularioPublico } from "@/types/publico";
 
@@ -72,7 +72,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (error) throw error;
 
     if (ehRespostaDeErro(data)) {
-      const corpoErro: ErroPublico = { erro: data.erro as ErroPublico["erro"] };
+      // `resposta_obrigatoria`/`opcao_invalida` (0081/0082) vêm com `pergunta`:
+      // a tela precisa dela para dizer QUAL pergunta e levar o foco até lá.
+      // Descartar aqui era o que transformava um erro permanente e corrigível
+      // em "não foi possível enviar agora" (Fable r3, UX).
+      const corpoErro: ErroPublico = corpoDeErroPublico(data);
       return comCabecalhosPublicos(NextResponse.json(corpoErro, { status: statusParaErroPublico(data.erro) }));
     }
 

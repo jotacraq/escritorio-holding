@@ -6,19 +6,11 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
 import { formatarDataHora } from "@/lib/formatar";
-import { rotuloOpcao } from "@/lib/vocabulario";
-
-/** Avalia a condicional de uma pergunta (ex.: P11 só aparece se P10 incluir "Imóveis"). */
-function perguntaVisivel(pergunta: FormularioDefinicaoPergunta, respostas: Record<string, unknown>): boolean {
-  if (!pergunta.condicional) return true;
-  const valorDependido = respostas[pergunta.condicional.depende_de];
-  if (pergunta.condicional.igual !== undefined) return valorDependido === pergunta.condicional.igual;
-  if (pergunta.condicional.contem !== undefined) {
-    const lista = Array.isArray(valorDependido) ? valorDependido : [];
-    return lista.includes(pergunta.condicional.contem);
-  }
-  return true;
-}
+// `perguntaVisivel` (a condicional: P11 só aparece se P10 incluir "Imóveis")
+// vem do núcleo. Havia uma cópia aqui e outra no formulário do cliente — duas
+// cópias da mesma regra é a regra já divergindo, e foi assim que o servidor
+// passou a cobrar pergunta invisível (0082).
+import { normalizarOpcoes, perguntaVisivel } from "@/lib/formulario/definicao";
 
 function CampoPergunta({
   pergunta,
@@ -30,6 +22,10 @@ function CampoPergunta({
   aoMudar: (valor: unknown) => void;
 }) {
   const idCampo = `pergunta-${pergunta.id}`;
+  // Fase 7 r3: as opções chegam como string crua (versões antigas) ou como
+  // `{valor, rotulo}` (0078). `normalizarOpcoes` é a mesma leitura que o
+  // formulário do cliente faz — a equipe vê o rótulo, o banco guarda o valor.
+  const opcoes = normalizarOpcoes(pergunta.opcoes);
   switch (pergunta.tipo) {
     case "texto":
       return <input id={idCampo} type="text" value={(valor as string) ?? ""} onChange={(e) => aoMudar(e.target.value)} className="w-full rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm" />;
@@ -51,10 +47,10 @@ function CampoPergunta({
     case "unica":
       return (
         <div role="radiogroup" aria-labelledby={`${idCampo}-rotulo`} className="flex flex-col gap-1.5">
-          {(pergunta.opcoes ?? []).map((opcao) => (
-            <label key={opcao} className="flex items-center gap-2 text-sm text-tinta">
-              <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-4 w-4 accent-[color:var(--latao)]" />
-              {rotuloOpcao(opcao)}
+          {opcoes.map((opcao) => (
+            <label key={opcao.valor} className="flex items-center gap-2 text-sm text-tinta">
+              <input type="radio" name={idCampo} checked={valor === opcao.valor} onChange={() => aoMudar(opcao.valor)} className="h-4 w-4 accent-[color:var(--latao)]" />
+              {opcao.rotulo}
             </label>
           ))}
         </div>
@@ -63,15 +59,15 @@ function CampoPergunta({
       const selecionadas = Array.isArray(valor) ? (valor as string[]) : [];
       return (
         <div className="flex flex-col gap-1.5">
-          {(pergunta.opcoes ?? []).map((opcao) => (
-            <label key={opcao} className="flex items-center gap-2 text-sm text-tinta">
+          {opcoes.map((opcao) => (
+            <label key={opcao.valor} className="flex items-center gap-2 text-sm text-tinta">
               <input
                 type="checkbox"
-                checked={selecionadas.includes(opcao)}
-                onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
+                checked={selecionadas.includes(opcao.valor)}
+                onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao.valor] : selecionadas.filter((o) => o !== opcao.valor))}
                 className="h-4 w-4 rounded-controle accent-[color:var(--latao)]"
               />
-              {rotuloOpcao(opcao)}
+              {opcao.rotulo}
             </label>
           ))}
         </div>

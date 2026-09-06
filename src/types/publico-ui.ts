@@ -176,10 +176,19 @@ export type CodigoErroPublico =
   | "limite_arquivos_atingido"
   | "arquivo_duplicado"
   /** `/p/m`: material aprovado sem arquivo PDF gerado (409) — a página continua com `window.print()`. */
-  | "pdf_indisponivel";
+  | "pdf_indisponivel"
+  /**
+   * `/p/f` (0081/0082, 422): a definição da versão ativa vale no servidor. São
+   * erros PERMANENTES e vêm com `pergunta` — a tela nomeia o rótulo e leva o
+   * foco até ela, em vez de dizer "tente de novo em instantes".
+   */
+  | "resposta_obrigatoria"
+  | "opcao_invalida";
 
 export interface ErroPublico {
   erro: CodigoErroPublico;
+  /** Id da pergunta culpada — só em `resposta_obrigatoria` e `opcao_invalida`. */
+  pergunta?: string;
 }
 
 // ---------------------------------------------------------------------------

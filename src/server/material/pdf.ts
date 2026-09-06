@@ -1,9 +1,20 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import PDFDocument from "pdfkit";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  ALTURA_A4,
+  COR,
+  FONTE_BOLD,
+  FONTE_REGULAR,
+  LARGURA_A4,
+  LARGURA_UTIL,
+  MARGEM,
+  TIPOGRAFIA_HELVETICA,
+  TIPOGRAFIA_NEUETRA,
+  lerFontes,
+  type Tipografia,
+} from "@/server/pdf/base";
 import type { BlocoMaterial, ConteudoMaterial, FontePdfMaterial, OrigemDadoMaterial } from "@/types/material";
 
 /**
@@ -44,55 +55,10 @@ export interface ResultadoPdfMaterial {
   erroFonte: string | null;
 }
 
-const COR = {
-  tinta: "#141b22",
-  texto: "#43454f",
-  apagada: "#6d6a64",
-  marca: "#ff7400",
-  areia: "#e8e0d6",
-} as const;
-
-const MARGEM = 56;
-const LARGURA_A4 = 595.28;
-const ALTURA_A4 = 841.89;
-const LARGURA_UTIL = LARGURA_A4 - 2 * MARGEM;
 const ASSINATURA_PADRAO = "Time Holding Brasil · Dra. Elaine Montenegro";
 const MARCA_DAGUA_EXEMPLO = "EXEMPLO — DEMONSTRAÇÃO";
 
-const FONTE_REGULAR = "Neuetra";
-const FONTE_BOLD = "Neuetra-Bold";
-
-interface FontesCarregadas {
-  regular: Buffer;
-  bold: Buffer;
-}
-
-/**
- * A Neuetra do site vive em `public/fonts/*.woff2`. O fontkit LÊ WOFF2, mas não
- * consegue SUBSETAR fonte com tabela `glyf` transformada (a `loca` do WOFF2 é
- * derivada; `TTFSubset._addGlyph` lê bytes crus e estoura —
- * `RangeError: Offset is outside the bounds of the DataView`, medido em
- * 04/09/2026 com fontkit 2.0.4). Por isso as mesmas fontes existem aqui em
- * TTF (conversão 1:1 com fonttools, mesmos 380 glifos), fora de `public/`
- * para não expor um arquivo copiável a mais.
- */
-function caminhoFonte(arquivo: string): string {
-  return path.join(process.cwd(), "src", "server", "material", "fontes", arquivo);
-}
-
-function lerFontes(): FontesCarregadas {
-  return {
-    regular: fs.readFileSync(caminhoFonte("TBJNeuetra-Regular.ttf")),
-    bold: fs.readFileSync(caminhoFonte("TBJNeuetra-Bold.ttf")),
-  };
-}
-
 type Documento = InstanceType<typeof PDFDocument>;
-
-interface Tipografia {
-  regular: string;
-  bold: string;
-}
 
 /**
  * Tenta abrir o documento já com a Neuetra como fonte padrão (assim a Helvetica
@@ -128,16 +94,16 @@ function abrirDocumento(
       // para Helvetica em vez de quebrar no meio da renderização.
       doc.font(FONTE_BOLD);
       doc.font(FONTE_REGULAR);
-      return { doc, tipografia: { regular: FONTE_REGULAR, bold: FONTE_BOLD }, fonte: "neuetra", erroFonte: null };
+      return { doc, tipografia: TIPOGRAFIA_NEUETRA, fonte: "neuetra", erroFonte: null };
     } catch (erro) {
       const mensagem = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro);
       const doc = new PDFDocument(opcoesBase);
-      return { doc, tipografia: { regular: "Helvetica", bold: "Helvetica-Bold" }, fonte: "helvetica", erroFonte: mensagem };
+      return { doc, tipografia: TIPOGRAFIA_HELVETICA, fonte: "helvetica", erroFonte: mensagem };
     }
   }
 
   const doc = new PDFDocument(opcoesBase);
-  return { doc, tipografia: { regular: "Helvetica", bold: "Helvetica-Bold" }, fonte: "helvetica", erroFonte: null };
+  return { doc, tipografia: TIPOGRAFIA_HELVETICA, fonte: "helvetica", erroFonte: null };
 }
 
 function desenharCabecalho(doc: Documento, tipografia: Tipografia, entrada: EntradaPdfMaterial) {

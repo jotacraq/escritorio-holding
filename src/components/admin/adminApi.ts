@@ -30,6 +30,7 @@ import type {
   RespostaListarMateriaisModelos,
   RespostaMaterialModelo,
 } from "@/types/material";
+import type { ChaveRoteiro, RoteiroVersao, RoteiroVersaoResumo } from "@/types/roteiro";
 import { chamar, chamarBruto, erroDaResposta } from "./http";
 
 // ---------------------------------------------------------------------------
@@ -259,4 +260,36 @@ export function criarMaterialModeloVersao(corpo: CorpoCriarMaterialModelo) {
 
 export function editarMaterialModelo(id: string, patch: CorpoEditarMaterialModelo) {
   return chamar<RespostaMaterialModelo>(`/api/admin/materiais-modelos/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+// ---------------------------------------------------------------------------
+// Roteiros (0030) — a aba "Formulário e roteiros" (Fase 7 r3, §A5.3)
+//
+// `GET /api/roteiros` e `POST /api/roteiros/[id]/ativar` existiam sem nenhum
+// botão: era por SQL à mão que se respondia qual das versões é a oficial
+// (BLOQUEIO B15). O cliente do FORMULÁRIO mora em `@/lib/api/formularios.ts`
+// (é usado também pela Ficha); o dos roteiros fica aqui porque só a tela de
+// administração lista versão e ativa — a sessão e a ligação usam
+// `/api/roteiros/ativa`, que já tem cliente próprio em `components/sessao/api`.
+// ---------------------------------------------------------------------------
+
+/**
+ * `ativado_por`/`ativado_em` entram por interseção: tipo com campo opcional a
+ * mais é compatível com o dia em que `RoteiroVersaoResumo` ganhar os dois.
+ */
+export type RoteiroVersaoResumoAdmin = RoteiroVersaoResumo & {
+  ativado_por?: string | null;
+  ativado_em?: string | null;
+};
+
+export function listarRoteiros(chave?: ChaveRoteiro) {
+  return chamar<{ itens: RoteiroVersaoResumoAdmin[] }>(`/api/roteiros${chave ? `?chave=${encodeURIComponent(chave)}` : ""}`);
+}
+
+export function buscarRoteiroVersao(id: string) {
+  return chamar<{ roteiro: RoteiroVersao }>(`/api/roteiros/${id}`);
+}
+
+export function ativarRoteiroVersao(id: string) {
+  return chamar<{ roteiro: RoteiroVersao }>(`/api/roteiros/${id}/ativar`, { method: "POST" });
 }

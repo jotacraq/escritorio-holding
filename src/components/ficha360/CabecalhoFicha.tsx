@@ -13,13 +13,33 @@ import { rotularDisc } from "@/components/briefing/tipos";
 import { rotulo, rotuloDeEtapa, titleDe } from "@/lib/vocabulario";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 
-const ROTULOS_DESFECHO: Record<DesfechoJornada, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
+/**
+ * Como cada desfecho aparece. `Record<string, …>` e não `Record<DesfechoJornada, …>`
+ * porque `anonimizada` (0079, Fase 7 r3) só existe no enum depois da migration
+ * aplicada — e a tela tem de funcionar antes disso. Desfecho desconhecido cai
+ * no fallback legível de `desfechoNaTela`, nunca em `undefined.rotulo`.
+ */
+const ROTULOS_DESFECHO: Record<string, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
   aberta: { rotulo: "Aberta", tom: "azul" },
   ganha: { rotulo: "Ganha", tom: "verde" },
   perdida: { rotulo: "Perdida", tom: "vermelho" },
   descartada: { rotulo: "Descartada", tom: "vermelho" },
   congelada: { rotulo: "Congelada", tom: "neutro" },
+  // Tom NEUTRO de propósito: encerrar o tratamento a pedido do titular não é
+  // derrota comercial nem vitória — é um direito exercido.
+  anonimizada: { rotulo: "Anonimizada", tom: "neutro" },
 };
+
+/**
+ * Os desfechos que alguém ESCOLHE na tela. `anonimizada` fica de fora: ela é
+ * consequência de "Direitos do titular" no Admin, com motivo e base legal
+ * registrados, e não um item de menu suspenso (o servidor também recusa).
+ */
+const DESFECHOS_ESCOLHIVEIS: DesfechoJornada[] = ["aberta", "ganha", "perdida", "descartada", "congelada"];
+
+function desfechoNaTela(desfecho: string): { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" } {
+  return ROTULOS_DESFECHO[desfecho] ?? { rotulo: desfecho.replace(/_/g, " "), tom: "neutro" };
+}
 
 // "Sessão paga" aparecia aqui E como rótulo da etapa `sessao_contratada`:
 // dois selos idênticos lado a lado, dizendo coisas diferentes (um é a coluna
@@ -203,7 +223,7 @@ export function CabecalhoFicha({
           <Selo tom="neutro" title={etapaNaTela.title ?? "Em que coluna da lista de clientes esta pessoa está"}>
             {etapaNaTela.rotulo}
           </Selo>
-          <Selo tom={ROTULOS_DESFECHO[jornada.desfecho].tom}>{ROTULOS_DESFECHO[jornada.desfecho].rotulo}</Selo>
+          <Selo tom={desfechoNaTela(jornada.desfecho).tom}>{desfechoNaTela(jornada.desfecho).rotulo}</Selo>
           <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
           <Botao variante="secundario" tamanho="compacto" onClick={() => setFichaCompleta(true)}>
             Ficha completa
@@ -244,7 +264,7 @@ export function CabecalhoFicha({
               <Campo rotulo="Turma do seminário" valor={jornada.edicao_id ? jornada.edicao_id.slice(0, 8) : null} mono />
               <Campo rotulo="Caminho" valor={jornada.trilha === "seminario" ? "Seminário" : "Preliminar"} />
               <Campo rotulo="Patrimônio declarado" valor={jornada.faixa_patrimonio_declarada ?? null} />
-              <Campo rotulo="Situação" valor={ROTULOS_DESFECHO[jornada.desfecho].rotulo} />
+              <Campo rotulo="Situação" valor={desfechoNaTela(jornada.desfecho).rotulo} />
               <Campo rotulo="Já pagou" valor={ROTULOS_NIVEL_PAGO[jornada.nivel_pago]} />
             </dl>
             {jornada.motivo_desfecho && jornada.desfecho !== "aberta" && (
@@ -277,9 +297,9 @@ export function CabecalhoFicha({
                     onChange={(e) => setNovoDesfecho(e.target.value as DesfechoJornada)}
                     className="min-h-11 rounded-controle border border-linha-controle bg-papel-elevado px-2 text-sm"
                   >
-                    {Object.entries(ROTULOS_DESFECHO).map(([valor, info]) => (
+                    {DESFECHOS_ESCOLHIVEIS.map((valor) => (
                       <option key={valor} value={valor}>
-                        {info.rotulo}
+                        {desfechoNaTela(valor).rotulo}
                       </option>
                     ))}
                   </select>

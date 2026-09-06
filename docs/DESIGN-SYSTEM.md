@@ -297,3 +297,45 @@ com "Passo N de T: <bloco>" e a página rola para o topo do passo. Foco em `<fie
 a regra global `:focus-visible` pinta um halo laranja em volta do cartão inteiro.
 Obrigatoriedade viaja por `aria-required` + `<span className="sr-only"> (obrigatória)</span>` —
 o asterisco vermelho é `aria-hidden` e sozinho não diz nada a quem não vê.
+
+## 11. Performance — o que já é regra e como se mede (Fase 7 r3)
+
+Medido em 06/09/2026 com Playwright + `performance.getEntriesByType("resource")`
+contra `next dev` (Turbopack), 1440×900, **cache HTTP frio** (um contexto novo por
+tela) e a rota já compilada. Número de `dev` **não é** número de produção — o
+bundle não passou por minificação nem tree-shaking. O que vale aqui é a
+**diferença entre duas rodadas na mesma máquina**, nunca o valor absoluto.
+
+| Tela | JS antes | JS depois | LCP antes → depois | CLS |
+|---|---|---|---|---|
+| `/hoje` | 6.552 KB | 6.587 KB | 204 → 224 ms | 0,009 |
+| `/clientes` | 5.191 KB | 5.226 KB | 900 → 868 ms | 0,004 |
+| Ficha (`/jornadas/[id]`) | **8.091 KB** | **5.538 KB (−31,6%)** | 1.268 → 1.332 ms | 0,046 |
+| `/croquis/[id]` | 5.247 KB | 5.282 KB | 808 → 828 ms | 0,000 |
+| `/admin` | 5.764 KB | 5.799 KB | 968 → 1.064 ms | 0,000 |
+
+### As três regras
+
+1. **Tela que só aparece quando alguém pede não entra na carga inicial.** As onze
+   gavetas da Ficha chegam por `dynamic()` com `loading:` — `Gaveta` devolve
+   `null` fechada, então o módulo só é buscado no clique. Foi o que tirou 2,5 MB
+   da abertura da Ficha e derrubou a interação de abrir gaveta de 88 ms para
+   40 ms. **`next/dynamic` exige objeto literal nas opções**: fatorar o
+   `{ loading: … }` numa função quebra a compilação (erro
+   `invalid-dynamic-options-type`), e o `tsc` não pega — só o navegador.
+2. **Toda rota de menu tem `loading.tsx`**, com o esqueleto de `ui/Esqueleto` que
+   tem a forma do que vem. Sem ele o App Router segura a tela ANTERIOR na frente
+   até o RSC chegar, e quem clicou clica de novo. Esqueleto não é dado inventado:
+   é silhueta `aria-hidden` com um `role="status"` que anuncia uma vez.
+3. **Otimização sem número medido não entra.** Nesta rodada o `dynamic()` da
+   paleta de comandos (Ctrl+K) foi implementado, medido — **+9 KB e 3 requisições
+   a mais, zero ganho de LCP**, porque as dependências dela já estavam no chunk do
+   shell — e **revertido**. Código a mais que não paga é regressão.
+
+### Onde NÃO tem gordura (não procure de novo)
+
+- **Imagens:** o sistema não tem nenhuma. Zero `<img>`, zero `next/image` em
+  `src/`. A marca é SVG inline. Não há CLS de imagem para corrigir.
+- **CLS:** a pior tela é a Ficha com 0,046 — folgado abaixo do limite de 0,1.
+- **`React.memo`:** nenhum foi acrescentado. A regra da casa é `memo` só com
+  prova de rerender no profiler; sem a prova, é ruído que envelhece mal.

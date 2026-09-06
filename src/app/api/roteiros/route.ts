@@ -6,9 +6,18 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirInterno, exigirPapel } from "@/server/auth";
 import { erroValidacao, registrarErro, respostaErro } from "@/server/erros";
+import { migracaoPendente, respostaMigracaoPendente } from "@/server/migracao-pendente";
 import type { RoteiroVersao, RoteiroVersaoResumo } from "@/types/roteiro";
 
-const COLUNAS_LISTA = "id, chave, versao, titulo, ativo, notas, criado_em, criado_por";
+/**
+ * `ativado_por`/`ativado_em` nasceram na 0078 — é a resposta rastreável do
+ * BLOQUEIO B15 ("qual das 4 versões é a oficial, e quem decidiu"). Enquanto a
+ * migration não for aplicada, a consulta cai no conjunto legado: a tela mostra
+ * a lista sem a autoria, nunca um erro.
+ */
+const COLUNAS_LISTA =
+  "id, chave, versao, titulo, ativo, notas, criado_em, criado_por, ativado_por, ativado_em";
+const COLUNAS_LISTA_LEGADO = "id, chave, versao, titulo, ativo, notas, criado_em, criado_por";
 
 const CHAVES = ["sessao_viabilidade", "pop_03", "pop_03b"] as const;
 
@@ -37,7 +46,21 @@ export async function GET(request: NextRequest) {
 
     if (chave) query = query.eq("chave", chave);
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && migracaoPendente(error)) {
+      let consultaLegado = supabase
+        .from("roteiros_versoes")
+        .select(COLUNAS_LISTA_LEGADO)
+        .order("chave", { ascending: true })
+        .order("versao", { ascending: false });
+      if (chave) consultaLegado = consultaLegado.eq("chave", chave);
+      const legado = await consultaLegado;
+      // O supabase-js tipa a linha pelo literal de colunas; o conjunto legado
+      // tem duas a menos. `unknown` aqui é a ponte honesta entre os dois — o
+      // consumidor recebe `RoteiroVersaoResumo`, com `ativado_*` opcionais.
+      data = (legado.data as unknown as typeof data) ?? null;
+      error = legado.error;
+    }
     if (error) {
       registrarErro("api/roteiros GET", error, { chave });
       throw error;
@@ -95,6 +118,13 @@ const CorpoSchema = z.object({
  * continuam apontando para a versão com que aquela sessão/ligação foi
  * conduzida — editar o texto por baixo do histórico quebraria essa auditoria
  * (e o BLOQUEIO B15 é exatamente sobre isto: versão nova, nunca edição).
+ *
+ * Desde a 0081 é UMA transação: `publicar_roteiro_versao` calcula o N+1,
+ * desativa a anterior e insere a nova junto. O caminho antigo eram três idas ao
+ * supabase-js — o mesmo bug que a 0078 fechou para formulários: com o INSERT
+ * falhando depois do UPDATE, a chave ficava PERMANENTEMENTE sem versão ativa e
+ * `iniciar_sessao_viabilidade` (0030) passava a gravar `roteiro_versao_id`
+ * nulo, sem ninguém perceber.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -106,45 +136,41 @@ export async function POST(request: NextRequest) {
     );
 
     const supabase = await criarClienteServidor();
-
-    const { data: ultima, error: erroUltima } = await supabase
-      .from("roteiros_versoes")
-      .select("versao")
-      .eq("chave", corpo.chave)
-      .order("versao", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ versao: number }>();
-    if (erroUltima) throw erroUltima;
-
-    const proximaVersao = (ultima?.versao ?? 0) + 1;
-
-    if (corpo.ativar) {
-      const { error: erroDesativar } = await supabase
-        .from("roteiros_versoes")
-        .update({ ativo: false })
-        .eq("chave", corpo.chave)
-        .eq("ativo", true);
-      if (erroDesativar) {
-        registrarErro("api/roteiros POST#desativar-anterior", erroDesativar, { chave: corpo.chave });
-        throw erroDesativar;
-      }
-    }
-
     const { data: novo, error } = await supabase
-      .from("roteiros_versoes")
-      .insert({
-        chave: corpo.chave,
-        versao: proximaVersao,
-        titulo: corpo.titulo,
-        definicao: corpo.definicao,
-        notas: corpo.notas ?? null,
-        ativo: corpo.ativar,
-        criado_por: usuario.id,
+      .rpc("publicar_roteiro_versao", {
+        p_chave: corpo.chave,
+        p_definicao: corpo.definicao,
+        p_titulo: corpo.titulo,
+        p_ativar: corpo.ativar,
+        p_notas: corpo.notas ?? null,
+        p_criado_por: usuario.id,
       })
-      .select("*")
       .single<RoteiroVersao>();
 
     if (error) {
+      if (migracaoPendente(error)) {
+        return respostaMigracaoPendente("0081", "publicar_roteiro_versao não existe neste banco");
+      }
+      const pg = error as { message?: string; code?: string };
+      const mensagem = pg.message ?? "";
+      if (mensagem.startsWith("sem_permissao")) {
+        return NextResponse.json(
+          { erro: "sem_permissao", mensagem: "Sem permissão para publicar versão de roteiro." },
+          { status: 403 },
+        );
+      }
+      if (pg.code === "23505") {
+        return NextResponse.json(
+          { erro: "conflito_de_versao", mensagem: "Outra publicação aconteceu ao mesmo tempo. Recarregue e tente de novo." },
+          { status: 409 },
+        );
+      }
+      if (pg.code === "22023" || pg.code === "22004") {
+        return NextResponse.json(
+          { erro: "definicao_invalida", mensagem: mensagem.includes(": ") ? mensagem.slice(mensagem.indexOf(": ") + 2) : mensagem },
+          { status: 400 },
+        );
+      }
       registrarErro("api/roteiros POST", error, { chave: corpo.chave });
       throw error;
     }

@@ -25,21 +25,69 @@ const ROTULO_TIPO: Record<TipoPendenciaSistema, { titulo: string; descricao: str
   material_aguardando_aprovacao: { titulo: "Material aguardando aprovação", descricao: "Gerado, mas ninguém aprovou — o cliente não recebe até lá." },
 };
 
+/**
+ * Tipos que a 0080 acrescenta a `vw_pendencias_sistema` (Fase 7 r3, §B4.1).
+ * Ficam separados porque `TipoPendenciaSistema` é do backend: enquanto a
+ * migration não estiver aplicada, a view não emite a linha e a aba simplesmente
+ * não a mostra — nada quebra, e nada é inventado.
+ */
+type TipoPendenciaLgpd = "expurgo_storage_pendente";
+
+const ROTULO_TIPO_LGPD: Record<TipoPendenciaLgpd, { titulo: string; descricao: string }> = {
+  expurgo_storage_pendente: {
+    titulo: "Expurgo de arquivos pendente",
+    descricao: "O tratamento foi encerrado e o banco já está anonimizado, mas os arquivos do cliente continuam no armazenamento. Enquanto isso, a eliminação não está completa.",
+  },
+};
+
 /** Ordem de urgência para a Dra. Elaine: o que trava a máquina inteira primeiro. */
-const ORDEM: TipoPendenciaSistema[] = ["cron_parado", "sessao_sem_sala", "webhook_falho", "mensagem_falhou", "ligacao_ia_falhou", "material_aguardando_aprovacao", "link_expirando"];
+const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd)[] = [
+  "cron_parado",
+  "expurgo_storage_pendente",
+  "sessao_sem_sala",
+  "webhook_falho",
+  "mensagem_falhou",
+  "ligacao_ia_falhou",
+  "material_aguardando_aprovacao",
+  "link_expirando",
+];
 
 function rotuloDe(tipo: string): { titulo: string; descricao: string } {
-  return (ROTULO_TIPO as Record<string, { titulo: string; descricao: string }>)[tipo] ?? { titulo: tipo.replace(/_/g, " "), descricao: "" };
+  const mapa = { ...ROTULO_TIPO, ...ROTULO_TIPO_LGPD } as Record<string, { titulo: string; descricao: string }>;
+  return mapa[tipo] ?? { titulo: tipo.replace(/_/g, " "), descricao: "" };
 }
 
-/** Link de ação quando não há botão: a tela que resolve. */
-function destino(item: PendenciaSistema): { href: string; rotulo: string } | null {
+/**
+ * Link de ação quando não há botão: a tela que resolve.
+ *
+ * `expurgo_storage_pendente` é a única linha da view que não tem `jornada_id`
+ * (a solicitação é da PESSOA, não de uma jornada), e "#titulares" sozinho
+ * abria a aba na tela de busca — quem clicava tinha de adivinhar que o titular
+ * agora se chama "Titular anonimizado 3f2a1b9c". O marcador que a
+ * `anonimizar_titular` grava (0080:355) é derivado do id da pessoa e por isso
+ * é ÚNICO: mandá-lo em `?titular=` faz a aba já abrir a pessoa certa, com a
+ * MESMA busca que ela faria à mão — nenhuma consulta nova.
+ *
+ * `recarrega` marca o único destino que NÃO pode ser `<Link>`: mudar a query
+ * junto com o hash faz o Next navegar por `pushState`, e `pushState` não
+ * dispara `hashchange` — o `Abas` (`deepLinkHash`) nunca saberia que é para
+ * trocar de aba, e o clique não faria nada visível. Os outros destinos são
+ * hash puro ou rota diferente, onde `<Link>` funciona.
+ */
+function destino(item: PendenciaSistema): { href: string; rotulo: string; recarrega?: boolean } | null {
   if (item.tipo === "cron_parado") return { href: "#integracoes", rotulo: "Ver a régua em Integrações" };
+  if (item.tipo === "expurgo_storage_pendente") {
+    if (!item.pessoa_nome) return { href: "#titulares", rotulo: "Concluir o expurgo" };
+    return { href: `/admin?titular=${encodeURIComponent(item.pessoa_nome)}#titulares`, rotulo: "Concluir o expurgo", recarrega: true };
+  }
   if (item.tipo === "sessao_sem_sala" && item.jornada_id) return { href: `/jornadas/${item.jornada_id}#sessao`, rotulo: "Colar o link da sala" };
   if (item.tipo === "material_aguardando_aprovacao" && item.jornada_id) return { href: `/jornadas/${item.jornada_id}#material`, rotulo: "Aprovar o material" };
   if (item.jornada_id) return { href: `/jornadas/${item.jornada_id}`, rotulo: "Abrir a Ficha" };
   return null;
 }
+
+const CLASSE_LINK_ACAO =
+  "inline-flex min-h-11 items-center rounded-controle border border-linha-controle bg-papel-elevado px-3.5 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]";
 
 type Confirmacao = { tipo: "webhook" | "mensagem"; item: PendenciaSistema } | null;
 
@@ -108,10 +156,10 @@ export function PendenciasAba() {
             <Cartao
               key={tipo}
               preenchimento="sem"
-              realce={tipo === "cron_parado" || tipo === "webhook_falho" ? "vermelho" : "ambar"}
+              realce={tipo === "cron_parado" || tipo === "webhook_falho" || tipo === "expurgo_storage_pendente" ? "vermelho" : "ambar"}
               titulo={rotulo.titulo}
               descricao={rotulo.descricao}
-              acao={<Selo tom={tipo === "cron_parado" || tipo === "webhook_falho" ? "vermelho" : "ambar"}>{itens.length}</Selo>}
+              acao={<Selo tom={tipo === "cron_parado" || tipo === "webhook_falho" || tipo === "expurgo_storage_pendente" ? "vermelho" : "ambar"}>{itens.length}</Selo>}
             >
               <ul className="divide-y divide-linha">
                 {itens.map((item) => {
@@ -138,14 +186,16 @@ export function PendenciasAba() {
                           </p>
                         )}
                       </div>
-                      {link && (
-                        <Link
-                          href={link.href}
-                          className="inline-flex min-h-11 items-center rounded-controle border border-linha-controle bg-papel-elevado px-3.5 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
-                        >
-                          {link.rotulo}
-                        </Link>
-                      )}
+                      {link &&
+                        (link.recarrega ? (
+                          <a href={link.href} className={CLASSE_LINK_ACAO}>
+                            {link.rotulo}
+                          </a>
+                        ) : (
+                          <Link href={link.href} className={CLASSE_LINK_ACAO}>
+                            {link.rotulo}
+                          </Link>
+                        ))}
                       {acaoBotao && (
                         <Botao variante="secundario" tamanho="compacto" onClick={() => setConfirmacao({ tipo: acaoBotao.tipo, item })}>
                           {acaoBotao.rotulo}

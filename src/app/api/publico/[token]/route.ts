@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { criarClientePublico } from "@/server/publico/cliente";
 import { exigirPepper, hashIp, hashToken } from "@/server/publico/pepper";
 import { comCabecalhosPublicos, lerSinaisDeRequisicao } from "@/server/publico/protecao";
-import { ehRespostaDeErro, statusParaErroPublico } from "@/server/publico/rpc";
+import { corpoDeErroPublico, ehRespostaDeErro, statusParaErroPublico } from "@/server/publico/rpc";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { jornadaDoLinkPublico } from "@/server/publico/documento";
 import { itensDeColetaDoLinkEmCache, tiposPedidosPublicos } from "@/server/publico/documentos-pedidos";
@@ -48,7 +48,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (error) throw error;
 
     if (ehRespostaDeErro(data)) {
-      const corpo: ErroPublico = { erro: data.erro as ErroPublico["erro"] };
+      // Mesmo montador das rotas de escrita: `abrir_link_publico` não anexa
+      // `pergunta` hoje, e é justamente por isso que o corpo é montado num
+      // lugar só — quando anexar, a rota não precisa lembrar de repassar.
+      const corpo: ErroPublico = corpoDeErroPublico(data);
       return comCabecalhosPublicos(NextResponse.json(corpo, { status: statusParaErroPublico(data.erro) }));
     }
 

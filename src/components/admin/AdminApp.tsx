@@ -1,25 +1,71 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Abas } from "@/components/ui/Abas";
 import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { SeloStub } from "@/components/ui/Selo";
 import { useAcessoAdmin } from "./useAcessoAdmin";
-import { PendenciasAba } from "./abas/PendenciasAba";
-import { IntegracoesAba } from "./abas/IntegracoesAba";
-import { EquipeAba } from "./abas/EquipeAba";
-import { ProdutosAba } from "./abas/ProdutosAba";
-import { TemplatesAba } from "./abas/TemplatesAba";
-import { PromptsAba } from "./abas/PromptsAba";
-import { ParametrosAba } from "./abas/ParametrosAba";
-import { MateriaisModelosAba } from "./abas/MateriaisModelosAba";
-import { EdicoesAba } from "./abas/EdicoesAba";
-import { ConfiguracoesAba } from "./abas/ConfiguracoesAba";
-import { CustoIaAba } from "./abas/CustoIaAba";
-import { ConhecimentoApp } from "@/components/conhecimento/ConhecimentoApp";
-import { ListaImportacoes } from "@/components/importacao/ListaImportacoes";
+
+/*
+ * As 15 abas chegam por `dynamic()` (DS §11, regra 1): o Admin mostra UMA de
+ * cada vez, e `Abas` só renderiza o painel ativo — com import estático, os 15
+ * módulos entravam na carga inicial de /admin para nada. O elemento é criado
+ * para todas, mas só o painel ativo é montado, então o chunk só é buscado no
+ * clique.
+ *
+ * ARMADILHA (medida em 06/09, ver DS §11): as opções do `dynamic` têm de ser
+ * um OBJETO LITERAL. Fatorar o `{ loading: … }` numa função auxiliar compila
+ * no `tsc` e derruba a rota em runtime com `invalid-dynamic-options-type`.
+ * Por isso a repetição abaixo é deliberada.
+ */
+const PendenciasAba = dynamic(() => import("./abas/PendenciasAba").then((m) => m.PendenciasAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as pendências…" />,
+});
+const IntegracoesAba = dynamic(() => import("./abas/IntegracoesAba").then((m) => m.IntegracoesAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as integrações…" />,
+});
+const CustoIaAba = dynamic(() => import("./abas/CustoIaAba").then((m) => m.CustoIaAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo o custo de IA…" />,
+});
+const ListaImportacoes = dynamic(() => import("@/components/importacao/ListaImportacoes").then((m) => m.ListaImportacoes), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as importações…" />,
+});
+const ParametrosAba = dynamic(() => import("./abas/ParametrosAba").then((m) => m.ParametrosAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo os parâmetros…" />,
+});
+const MateriaisModelosAba = dynamic(() => import("./abas/MateriaisModelosAba").then((m) => m.MateriaisModelosAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo os modelos de material…" />,
+});
+const TemplatesAba = dynamic(() => import("./abas/TemplatesAba").then((m) => m.TemplatesAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo os templates…" />,
+});
+const PromptsAba = dynamic(() => import("./abas/PromptsAba").then((m) => m.PromptsAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as versões de prompt…" />,
+});
+const FormulariosRoteirosAba = dynamic(() => import("./abas/FormulariosRoteirosAba").then((m) => m.FormulariosRoteirosAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o formulário e os roteiros…" />,
+});
+const ConhecimentoApp = dynamic(() => import("@/components/conhecimento/ConhecimentoApp").then((m) => m.ConhecimentoApp), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo o repertório…" />,
+});
+const EquipeAba = dynamic(() => import("./abas/EquipeAba").then((m) => m.EquipeAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo a equipe…" />,
+});
+const ProdutosAba = dynamic(() => import("./abas/ProdutosAba").then((m) => m.ProdutosAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo os produtos…" />,
+});
+const EdicoesAba = dynamic(() => import("./abas/EdicoesAba").then((m) => m.EdicoesAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as edições…" />,
+});
+const DireitosDoTitularAba = dynamic(() => import("./abas/DireitosDoTitularAba").then((m) => m.DireitosDoTitularAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo os direitos do titular…" />,
+});
+const ConfiguracoesAba = dynamic(() => import("./abas/ConfiguracoesAba").then((m) => m.ConfiguracoesAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as configurações…" />,
+});
 
 /**
  * Admin — a mesa de controle do sistema. Restrita ao papel `admin` (só a aba
@@ -35,7 +81,15 @@ import { ListaImportacoes } from "@/components/importacao/ListaImportacoes";
  * agora (Operação) · as regras do método (Método) · quem e o quê (Cadastro).
  * `deepLinkHash`: outras telas apontam para `/admin#integracoes`,
  * `/admin#pendencias`, `/admin#parametros`, `/admin#repertorio`,
- * `/admin#importacoes`.
+ * `/admin#importacoes`, `/admin#titulares`.
+ *
+ * Fase 7 r3 — duas abas novas, e nenhuma delas empilha tela: "Formulário e
+ * roteiros" (Método) dá botão a três rotas que existiam sem porta
+ * (`GET/POST /api/formularios` e `POST /api/roteiros/[id]/ativar` — o
+ * BLOQUEIO B15), e "Direitos do titular" (Cadastro) é o caminho de LGPD art.
+ * 18 que o sistema não tinha. As duas ficam FORA do ramo `somente_custo_ia`:
+ * publicar o POP 02 e encerrar o tratamento de uma pessoa são de `admin`
+ * (BLOQUEIO B40, hipótese conservadora).
  *
  * Fase 6 — o menu caiu de 9 entradas para 5, e o Admin absorveu duas telas:
  * "Conhecimento" virou **Repertório da IA** (com a frase que explica o que
@@ -113,11 +167,25 @@ export function AdminApp() {
         { id: "materiais-modelos", grupo: "Método", rotulo: "Modelos de material", descricao: "Os modelos do material que o cliente recebe depois da sessão.", conteudo: <MateriaisModelosAba /> },
         { id: "templates", grupo: "Método", rotulo: "Templates de mensagem", descricao: "O texto de cada e-mail e mensagem que sai para o cliente.", conteudo: <TemplatesAba /> },
         { id: "prompts", grupo: "Método", rotulo: "Versões de prompt", descricao: "As instruções que a IA recebe para escrever o briefing e a narrativa do croqui.", conteudo: <PromptsAba /> },
+        {
+          id: "formularios",
+          grupo: "Método",
+          rotulo: "Formulário e roteiros",
+          descricao: "As perguntas que o cliente responde antes da sessão e os roteiros de condução — e qual versão está valendo.",
+          conteudo: <FormulariosRoteirosAba />,
+        },
         { id: "repertorio", grupo: "Método", rotulo: "Repertório da IA", descricao: FRASE_REPERTORIO, conteudo: <ConhecimentoApp /> },
         { id: "equipe", grupo: "Cadastro", rotulo: "Equipe", descricao: "Quem entra no sistema e com que papel — o papel decide o que a pessoa vê.", conteudo: <EquipeAba /> },
         { id: "produtos", grupo: "Cadastro", rotulo: "Produtos", descricao: "O que o escritório vende e por qual link de pagamento.", conteudo: <ProdutosAba /> },
         { id: "edicoes", grupo: "Cadastro", rotulo: "Edições do seminário", descricao: "As turmas do seminário — é por elas que os números do funil são contados.", conteudo: <EdicoesAba /> },
         { id: "configuracoes", grupo: "Cadastro", rotulo: "Configurações", descricao: "Ajustes gerais do sistema: prazos, canais e o que roda sozinho.", conteudo: <ConfiguracoesAba /> },
+        {
+          id: "titulares",
+          grupo: "Cadastro",
+          rotulo: "Direitos do titular",
+          descricao: "Exportar tudo que o sistema guarda de uma pessoa, ou encerrar o tratamento dos dados dela.",
+          conteudo: <DireitosDoTitularAba />,
+        },
       ]}
     />
   );

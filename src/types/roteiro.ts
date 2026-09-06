@@ -65,6 +65,13 @@ export interface RoteiroVersao {
   notas: string | null;
   criado_em: string;
   criado_por: string | null;
+  /**
+   * 0078 — quem carimbou esta versão como a oficial, e quando. É a resposta
+   * rastreável do BLOQUEIO B15. Ausente/nulo nas versões ativadas antes da
+   * migration: vazio é vazio, não se inventa autor retroativo.
+   */
+  ativado_por?: string | null;
+  ativado_em?: string | null;
 }
 
 /** Lista — SEM `definicao` (mesmo corte de `PromptVersaoResumo` em `admin.ts`:

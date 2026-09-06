@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import type { DesfechoJornada, Ficha360 } from "@/lib/api";
+import type { Ficha360 } from "@/lib/api";
 import { useRecurso } from "@/hooks/useRecurso";
 import { ROTULO_DONO, derivarProximoPasso, hrefDoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisComExecucao, sinaisDaFicha } from "@/lib/pasta/sinais";
@@ -40,12 +40,16 @@ import { buscarExecucao } from "./api-fase5";
  * Como o desfecho aparece no resumo do trilho. Sem isto, uma jornada GANHA
  * ficava "8 de 9 · Parado" — o trilho chamando de parada uma venda fechada.
  */
-const ROTULO_DESFECHO: Record<DesfechoJornada, string> = {
+const ROTULO_DESFECHO: Record<string, string> = {
   aberta: "Aberta",
   ganha: "Ganha",
   perdida: "Perdida",
   descartada: "Descartada",
   congelada: "Congelada",
+  // 0079 (Fase 7 r3): o titular pediu o encerramento do tratamento. Chave em
+  // `Record<string, …>` porque o valor só entra no enum com a migration
+  // aplicada — e a tela precisa funcionar antes disso.
+  anonimizada: "Anonimizada",
 };
 
 /** Passo do trilho -> tipo de link. Só os passos que se resolvem MANDANDO um link. */
@@ -125,7 +129,7 @@ export function TrilhoDaFicha({
       acao={acao}
       nota={nota}
       notaTitle={notaTitle}
-      desfecho={ficha.jornada.desfecho === "aberta" ? null : ROTULO_DESFECHO[ficha.jornada.desfecho]}
+      desfecho={ficha.jornada.desfecho === "aberta" ? null : ROTULO_DESFECHO[ficha.jornada.desfecho] ?? ficha.jornada.desfecho}
       rotulo="As três sessões desta jornada"
       className="nao-imprimir rounded-cartao border border-linha-forte bg-papel-elevado px-cartao py-item shadow-cartao"
     />

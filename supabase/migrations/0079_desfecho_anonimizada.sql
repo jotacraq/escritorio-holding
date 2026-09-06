@@ -1,0 +1,24 @@
+-- 0079_desfecho_anonimizada.sql
+-- Valor novo de `desfecho_jornada`, em migration PRÓPRIA: o Postgres não deixa
+-- usar um valor de enum na mesma transação em que ele é criado. A 0080 usa
+-- 'anonimizada' dentro de `public.anonimizar_titular` — por isso os dois
+-- arquivos são separados e a ordem de aplicação é 0078 → 0079 → 0080.
+--
+-- Por que valor novo e não reaproveitar 'descartada': "descartada" é veredito
+-- COMERCIAL (lead sem fit) e entra nas métricas de funil como perda.
+-- "Encerrada por direito do titular" não é perda comercial — misturar as duas
+-- mentiria no indicador. Aditivo: nenhuma linha existente muda de valor
+-- (medido antes: 0 jornadas com desfecho 'anonimizada', porque o valor não
+-- existia).
+--
+-- Efeito colateral desejado e gratuito: `app.revoga_links_ao_fechar_jornada`
+-- (0028) já dispara em qualquer `desfecho <> 'aberta'` — pôr a jornada em
+-- 'anonimizada' revoga os links públicos ativos dela pela trigger que já
+-- existe. A 0080 não reimplementa isso (só reafirma, e é idempotente).
+--
+-- REVERSÃO: o Postgres não remove valor de enum. Reverter exige recriar o tipo
+-- (rename + create + alter column using + drop), o que NÃO é recomendado.
+-- Antes de qualquer tentativa, zerar as linhas que usam o valor:
+--   update jornadas set desfecho = 'descartada' where desfecho = 'anonimizada';
+
+alter type desfecho_jornada add value if not exists 'anonimizada';

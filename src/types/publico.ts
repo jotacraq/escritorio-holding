@@ -201,10 +201,25 @@ export type CodigoErroPublico =
   | "limite_arquivos_atingido"
   | "arquivo_duplicado"
   /** Fase 4 (agente C): material aprovado sem PDF gerado — `GET /api/publico/[token]/material-pdf`. */
-  | "pdf_indisponivel";
+  | "pdf_indisponivel"
+  /**
+   * `POST /api/publico/[token]/formulario` (0081/0082): a definição da versão
+   * ATIVA passou a valer no servidor. Os dois vêm sempre com `pergunta` — são
+   * erros PERMANENTES (tentar de novo com o mesmo corpo dá o mesmo resultado),
+   * e é por isso que a tela precisa nomear a pergunta em vez de pedir
+   * paciência.
+   */
+  | "resposta_obrigatoria"
+  | "opcao_invalida";
 
 export interface ErroPublico {
   erro: CodigoErroPublico;
+  /**
+   * Id da pergunta culpada — só em `resposta_obrigatoria` e `opcao_invalida`.
+   * É um id de definição (`p11`), não dado de ninguém: pode ir para o cliente
+   * anônimo sem contar nada sobre outra jornada.
+   */
+  pergunta?: string;
 }
 
 export type RespostaRpcPublica<T extends object> = ({ ok: true } & T) | { erro: string };

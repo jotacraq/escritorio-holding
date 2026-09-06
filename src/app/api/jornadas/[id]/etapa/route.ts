@@ -23,6 +23,10 @@ const CorpoSchema = z
         "holding_contratada",
       ])
       .optional(),
+    // `anonimizada` (0079) fica FORA desta lista de propósito: encerrar o
+    // tratamento de um titular é ato de LGPD, com motivo, base legal e trilha
+    // — passa por `POST /api/admin/titulares/[pessoaId]/anonimizacao`, nunca
+    // por um select de desfecho na Ficha.
     desfecho: z.enum(["aberta", "ganha", "perdida", "descartada", "congelada"]).optional(),
     motivo: z.string().trim().min(1).max(1000).optional(),
   })

@@ -27,7 +27,19 @@ export type EtapaJornada =
   | "croqui_apresentado"
   | "holding_contratada";
 
-export type DesfechoJornada = "aberta" | "ganha" | "perdida" | "descartada" | "congelada";
+/**
+ * `anonimizada` (0079) não é veredito comercial: é o encerramento do tratamento
+ * a pedido do titular (LGPD art. 18). Fica fora do `z.enum` de ESCRITA de
+ * `PATCH /api/jornadas/[id]/etapa` de propósito — ninguém marca isto à mão, só
+ * a RPC `anonimizar_titular`.
+ */
+export type DesfechoJornada =
+  | "aberta"
+  | "ganha"
+  | "perdida"
+  | "descartada"
+  | "congelada"
+  | "anonimizada";
 
 export type TrilhaJornada = "seminario" | "preliminar";
 
@@ -212,6 +224,36 @@ export interface Formulario {
   definicao: unknown; // jsonb — ver PerguntaFormulario para o shape esperado
   ativo: boolean;
   criado_em: string;
+  /** 0078 — nulos nas versões publicadas antes da migration. Vazio é vazio. */
+  titulo?: string | null;
+  notas?: string | null;
+  criado_por?: string | null;
+  ativado_por?: string | null;
+  ativado_em?: string | null;
+}
+
+/** Lista do Admin: metadado de versão, SEM a `definicao` (payload pesado). */
+export interface FormularioResumo {
+  id: string;
+  chave: string;
+  versao: number;
+  ativo: boolean;
+  criado_em: string;
+  titulo?: string | null;
+  notas?: string | null;
+  criado_por?: string | null;
+  ativado_por?: string | null;
+  ativado_em?: string | null;
+}
+
+/**
+ * Opção com valor estável e rótulo humano (0078). O formato antigo
+ * (`opcoes: ["viuvo", ...]`) continua válido nas versões já gravadas — quem lê
+ * os dois é `normalizarOpcoes` (`src/server/formularios/definicao.ts`).
+ */
+export interface OpcaoPergunta {
+  valor: string;
+  rotulo: string;
 }
 
 export interface PerguntaFormulario {
@@ -219,8 +261,9 @@ export interface PerguntaFormulario {
   bloco: string;
   tipo: "texto" | "texto_longo" | "numero" | "unica" | "multipla" | "sim_nao";
   rotulo: string;
-  opcoes?: string[];
-  condicional?: { depende_de: string; contem?: string };
+  opcoes?: (string | OpcaoPergunta)[];
+  obrigatoria?: boolean;
+  condicional?: { depende_de: string; contem?: string; igual?: string };
 }
 
 export interface FormularioResposta {

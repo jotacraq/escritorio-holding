@@ -44,6 +44,12 @@ const CODIGOS_CONHECIDOS: ReadonlySet<string> = new Set<ErroPublico["erro"]>([
   "limite_arquivos_atingido",
   "arquivo_duplicado",
   "pdf_indisponivel",
+  // 0081/0082 — a definição da versão ativa vale no servidor. Sem estes dois
+  // nomes aqui, os 422 caíam em `erro_desconhecido` e a tela do cliente
+  // oferecia "tente de novo em instantes" para um erro que só some se ele
+  // mudar a resposta.
+  "resposta_obrigatoria",
+  "opcao_invalida",
 ]);
 
 function normalizarCodigo(codigo: unknown): ErroPublico["erro"] {
@@ -52,11 +58,23 @@ function normalizarCodigo(codigo: unknown): ErroPublico["erro"] {
 
 export class ErroLinkPublico extends Error {
   codigo: ErroPublico["erro"];
-  constructor(codigo: ErroPublico["erro"]) {
+  /**
+   * Id da pergunta culpada, quando o servidor nomeia uma
+   * (`resposta_obrigatoria`, `opcao_invalida`). É o que deixa a tela escrever
+   * o rótulo e levar o foco até o campo.
+   */
+  pergunta?: string;
+  constructor(codigo: ErroPublico["erro"], pergunta?: string) {
     super(codigo);
     this.name = "ErroLinkPublico";
     this.codigo = codigo;
+    if (pergunta) this.pergunta = pergunta;
   }
+}
+
+/** Corpo de erro da rota → exceção tipada, com a pergunta quando ela vem. */
+function erroDoCorpo(corpo: Partial<ErroPublico>): ErroLinkPublico {
+  return new ErroLinkPublico(normalizarCodigo(corpo.erro), typeof corpo.pergunta === "string" ? corpo.pergunta : undefined);
 }
 
 async function lerCorpo<T>(resposta: Response): Promise<T> {
@@ -81,7 +99,7 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
 
   if (!resposta.ok) {
     const corpo = await lerCorpo<Partial<ErroPublico>>(resposta).catch(() => ({}) as Partial<ErroPublico>);
-    throw new ErroLinkPublico(normalizarCodigo(corpo.erro));
+    throw erroDoCorpo(corpo);
   }
 
   return lerCorpo<T>(resposta);
@@ -227,7 +245,7 @@ export function enviarDocumentoPublico(
         resolve(corpo as RespostaRegistrarDocumentoPublico);
         return;
       }
-      reject(new ErroLinkPublico(normalizarCodigo((corpo as Partial<ErroPublico>)?.erro)));
+      reject(erroDoCorpo((corpo ?? {}) as Partial<ErroPublico>));
     };
 
     const forma = new FormData();
