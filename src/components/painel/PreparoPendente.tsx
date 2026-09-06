@@ -34,11 +34,11 @@ export function PreparoPendente({ estado, aoTentarDeNovo }: { estado: EstadoBloc
               const proximo = derivarProximoPasso(sinaisDoPreparo(item));
               return (
                 <LinhaFila key={item.jornada_id}>
-                  <Link href={`/jornadas/${item.jornada_id}`} className="-my-3 min-w-0 truncate py-3 text-sm font-bold text-tinta underline-offset-2 hover:text-[color:var(--latao)] hover:underline sm:flex-1">
-                    {item.nome}
+                  <Link href={`/jornadas/${item.jornada_id}`} className="-my-3 flex min-h-11 min-w-0 items-center py-3 text-sm font-bold text-tinta underline-offset-2 hover:text-[color:var(--latao)] hover:underline sm:flex-1">
+                    <span className="truncate">{item.nome}</span>
                   </Link>
 
-                  <span className="whitespace-nowrap text-xs text-tinta-suave" title={formatarDataHora(item.inicio_em)}>
+                  <span className="whitespace-nowrap text-legenda text-tinta-suave" title={formatarDataHora(item.inicio_em)}>
                     sessão {formatarRelativo(item.inicio_em)}
                   </span>
 

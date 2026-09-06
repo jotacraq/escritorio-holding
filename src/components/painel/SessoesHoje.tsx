@@ -39,8 +39,8 @@ export function SessoesHoje({ estado, aoTentarDeNovo }: { estado: EstadoBloco<Se
                     <time dateTime={sessao.inicio_em} className="shrink-0 text-sm font-bold tabular-nums text-tinta sm:w-24">
                       {formatarHora(sessao.inicio_em)}–{formatarHora(sessao.fim_em)}
                     </time>
-                    <Link href={`/jornadas/${sessao.jornada_id}`} className="-my-3 min-w-0 truncate py-3 text-sm font-bold text-tinta underline-offset-2 hover:text-[color:var(--latao)] hover:underline sm:flex-1">
-                      {sessao.nome}
+                    <Link href={`/jornadas/${sessao.jornada_id}`} className="-my-3 flex min-h-11 min-w-0 items-center py-3 text-sm font-bold text-tinta underline-offset-2 hover:text-[color:var(--latao)] hover:underline sm:flex-1">
+                      <span className="truncate">{sessao.nome}</span>
                     </Link>
                   </div>
 

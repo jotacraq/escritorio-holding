@@ -6,6 +6,7 @@ import { useRecurso } from "@/hooks/useRecurso";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Botao } from "@/components/ui/Botao";
 import { formatarDataHora } from "@/lib/formatar";
+import { rotuloOpcao } from "@/lib/vocabulario";
 
 /** Avalia a condicional de uma pergunta (ex.: P11 só aparece se P10 incluir "Imóveis"). */
 function perguntaVisivel(pergunta: FormularioDefinicaoPergunta, respostas: Record<string, unknown>): boolean {
@@ -53,7 +54,7 @@ function CampoPergunta({
           {(pergunta.opcoes ?? []).map((opcao) => (
             <label key={opcao} className="flex items-center gap-2 text-sm text-tinta">
               <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-4 w-4 accent-[color:var(--latao)]" />
-              {opcao}
+              {rotuloOpcao(opcao)}
             </label>
           ))}
         </div>
@@ -70,7 +71,7 @@ function CampoPergunta({
                 onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
                 className="h-4 w-4 rounded-controle accent-[color:var(--latao)]"
               />
-              {opcao}
+              {rotuloOpcao(opcao)}
             </label>
           ))}
         </div>
@@ -111,7 +112,7 @@ function FormularioConteudo({ jornadaId, dados }: { jornadaId: string; dados: Fo
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-tinta-fraca">
+        <p className="text-legenda text-tinta-fraca">
           POP 02 · versão {dados.formulario.versao}
           {dados.resposta && ` · respondido em ${formatarDataHora(dados.resposta.respondido_em)}`}
         </p>

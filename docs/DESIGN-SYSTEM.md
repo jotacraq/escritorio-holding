@@ -37,8 +37,10 @@ Fonte de verdade: `src/app/globals.css` (tokens) e `src/components/ui/*` (compon
 | `--foco` | `shadow-foco` (já vem em `:focus-visible`) | halo de foco. Nunca `outline-none` sem substituto. |
 | `--espaco-secao` · `--espaco-bloco` · `--espaco-cartao` · `--espaco-item` | `gap-secao` · `gap-bloco` · `gap-cartao` · `gap-item` | ritmo vertical — ver §2.1. Nunca escolha `gap-6`/`gap-8` no olho. |
 
-`rounded-sm/md/lg` do Tailwind foram remapeados (10px / 14px / 16px) e `text-xs/sm` valem 12px/13px na V2 —
+`rounded-sm/md/lg` do Tailwind foram remapeados (10px / 14px / 16px) e `text-sm` vale 13px na V2 —
 telas antigas já ganham o raio e o tamanho novos sem edição. Na migração, troque pelos nomes semânticos.
+`text-xs` **não existe mais como degrau próprio**: virou alias de `text-legenda` (§6) e não deve ser escrito
+em código novo.
 
 ## 2.1 Ritmo vertical — uma escala só (Fase 5)
 
@@ -90,17 +92,28 @@ que ele faria não acontece. Para admin, aviso de sistema é 1 linha + 1 link, n
 | Subtítulo (cartão, item) | `text-subtitulo font-bold text-tinta` | **16px** | 18px | 700 |
 | Corpo | `text-corpo text-tinta` / `text-tinta-suave` | **14px** | 16px | 400 |
 | Corpo compacto (tabela, lista densa) | `text-sm` | **13px** | 15px | 400/500 |
-| Legenda / meta | `text-xs text-tinta-suave` | **12px** | 13px | 400 |
+| Legenda / meta | `text-legenda text-tinta-suave` | **12px** | 13px | 400 |
 | Rótulo caixa alta | `text-rotulo font-medium uppercase text-tinta-fraca` | 12px | 12px | 500 |
 | Mínimo absoluto | `text-legenda` | 12px | 12px | — |
 
+> **Um degrau, um nome.** `text-legenda` É o mínimo absoluto E a legenda/meta — a linha anterior e esta
+> são o mesmo tamanho de propósito. Dois nomes para o mesmo degrau é como a escala volta a divergir.
+
 `CabecalhoPagina` usa **um só tamanho** de título (`text-display`) — o
 `text-titulo sm:text-display` da V1 saiu: a 24 px o título já cabe a 390 px.
-Na V2 `--text-xs` e `--text-legenda` coincidem em 12 px (entrelinhas diferentes);
-unificar os dois nomes tocaria ~90 arquivos e ficou fora da Fase 6.
+Na Fase 6 `--text-xs` e `--text-legenda` já eram o mesmo valor (0,75rem / entrelinha 1,4) com dois nomes;
+a Fase 7 (r2) unificou: 229 ocorrências de `text-xs` em 80 arquivos viraram `text-legenda`, e `--text-xs`
+ficou em `globals.css` só como **alias** (`var(--text-legenda)`) por causa de 1 uso em arquivo de outro
+agente. Alias não diverge — quando aquele uso migrar, o token sai.
 
 **Alvo de toque:** com a escala menor, `-my-2.5 py-2.5` deixou de alcançar 44 px.
 Alvo pequeno agora declara `min-h-11` explicitamente — não confie no padding.
+Link de lista que precisa de elipse vira `-my-3 flex min-h-11 items-center py-3` com o
+`truncate` num `<span>` interno: `text-overflow` precisa de caixa de bloco, e a caixa flex
+é quem garante os 44 px (Fase 7 r2 — os links de nome em Hoje e em Clientes mediam 42,8 px).
+Exceção declarada da WCAG 2.5.8: link **dentro de uma frase** (ex.: "3 produtos sem ID —
+preencher em Produtos", Admin → Integrações) é alvo *inline* e não precisa de 44 px —
+esticá-lo quebraria a linha do texto.
 
 Pesos: **400, 500, 700 apenas** (`font-medium`, `font-bold`). `font-semibold` sintetiza bold falso — proibido.
 Fonte: Neuetra vem do `body`; não declare `font-family`.
@@ -111,6 +124,7 @@ Fonte: Neuetra vem do `body`; não declare `font-family`.
 |---|---|
 | `Botao` | `<Botao variante="primario" carregando={salvando} onClick={…}>Salvar</Botao>` · `variante`: `primario` (1 por tela) · `secundario` · `perigo` · `fantasma` · `tamanho`: `normal`/`compacto`/`grande` · `icone` · `largo` · aceita `ref`. |
 | `Cartao` | `<Cartao rotulo="Antes da sessão" titulo="Formulário" descricao="…" acao={<Botao tamanho="compacto">Editar</Botao>}>…</Cartao>` · `preenchimento`: `normal`/`compacto`/`sem` (tabela) · `realce`: `latao`/`ambar`/`verde`/`vermelho` · `como`: `section`/`article`/`div` · **`tituloTitle`** (Fase 7): a explicação longa que ainda importa vira o `title` do `<h2>` em vez de um `<p>` (§2.2) — mesma informação, zero altura. |
+| ↳ *Cartao, 390px* | O cabeçalho é `flex-wrap`: a coluna do título pede `basis-56` (14rem) e o `<h2>` tem `break-words`. Sem os dois, título sem espaço (`cartorio.certidoes.valor`, e-mail, URL) vazava por baixo do selo da coluna `acao` — medido em Admin → Parâmetros a 390px na Fase 7 r2. Quando não cabem lado a lado, quem desce é a AÇÃO. |
 | `CabecalhoPagina` | `<CabecalhoPagina rotulo="Dia a dia" titulo="Agenda" descricao="…" acoes={<Botao variante="primario">Nova janela</Botao>} meta={<Selo tom="neutro">…</Selo>} acima={<Link>← Esteira</Link>} />` — único `h1`. |
 | `Campo` + `Entrada`/`Selecao`/`AreaTexto`/`Opcao` | `<Campo rotulo="Telefone" ajuda="Com DDD" erro={erros.telefone} obrigatorio><Entrada type="tel" value={…} onChange={…} /></Campo>` — id, `aria-describedby`, `aria-invalid` vêm do `Campo`. `Opcao` = rádio/caixa com alvo grande. |
 | `Selo` | `<Selo tom="verde" icone={<svg…/>}>Pronto</Selo>` · tons: `verde`/`vermelho`/`azul`/`ambar`/`latao`/`neutro`. `SeloStub`, `SeloIA`, `SeloDemonstracao`, `SeloDadoExemplo` inalterados. |
@@ -264,3 +278,22 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
     paginação o teto é constante; o rodapé diz onde se está (`11–20 de 52 casos · página 2 de 6`),
     não só para onde dá para ir, e trocar filtro rebobina para a página 1.
 14. **Linha de propósito:** toda tela do menu e toda aba dizem, em uma frase, para que servem (`CabecalhoPagina descricao` / `DefinicaoAba.descricao`). Zero jargão: POP, DISC, régua, esteira, cron, n8n, Vapi, token, webhook e `SUPABASE_*` não aparecem no fluxo — só em `title` ou em tela de admin.
+
+## 10. Páginas públicas `/p/*` — o que é do LAYOUT, não da tela (Fase 7 r2)
+
+As cinco páginas (`/p/f` formulário · `/p/a` agendamento · `/p/c` confirmação · `/p/d`
+documentos · `/p/m` material) compartilham **um** shell: `src/app/(publico)/layout.tsx`.
+
+| Elemento | Onde vive | Regra |
+|---|---|---|
+| Cabeçalho ("Planejamento Patrimonial · Time Holding Brasil · Dra. Elaine Montenegro") | layout | idêntico nas 5. Nenhuma tela declara o seu. |
+| Rodapé: contato do escritório + aviso de sigilo | layout (`ContatoEquipe`) | **uma vez por tela.** Sem `NEXT_PUBLIC_CONTATO_*` a frase é "fale com quem te enviou este link" — nunca um número inventado. Não repita o `ContatoEquipe` dentro da página só para ter contato: o rodapé já tem. Repita só quando for uma AÇÃO daquele estado ("Precisa mudar o horário?"). |
+| Link vencido/revogado/inexistente | `TelaLinkInvalido` | **uma** mensagem para todos os casos — distinguir transformaria a rota em oráculo de existência (ARQUITETURA-FASE-2 §2.2). |
+| Carregando · erro passageiro | `CarregandoPublico` · `ErroTemporarioPublico` | as 5 usam os mesmos dois. |
+| Tipografia | `.area-publica` | corpo 17px, alvo ≥ 52px no CTA. `text-legenda` (12px) é o piso da ÁREA DA EQUIPE — no público, o menor é `text-sm`. |
+
+**Formulário passo a passo:** ao trocar de passo, o foco vai para um `<p className="sr-only" tabIndex={-1}>`
+com "Passo N de T: <bloco>" e a página rola para o topo do passo. Foco em `<fieldset>` não serve:
+a regra global `:focus-visible` pinta um halo laranja em volta do cartão inteiro.
+Obrigatoriedade viaja por `aria-required` + `<span className="sr-only"> (obrigatória)</span>` —
+o asterisco vermelho é `aria-hidden` e sozinho não diz nada a quem não vê.

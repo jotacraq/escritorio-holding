@@ -37,14 +37,14 @@ function LinhaBloqueio({ bloqueio, aoAtualizar }: { bloqueio: AgendaBloqueio; ao
         <p className="text-sm font-bold text-tinta">
           {formatarDataHora(bloqueio.inicio_em)} — {formatarDataHora(bloqueio.fim_em)}
         </p>
-        <p className="text-xs text-tinta-suave">{bloqueio.motivo}</p>
+        <p className="text-legenda text-tinta-suave">{bloqueio.motivo}</p>
       </div>
       {!bloqueio.cancelado_em ? (
         <Botao variante="perigo" tamanho="compacto" carregando={ocupado} onClick={cancelar}>
           Cancelar bloqueio
         </Botao>
       ) : (
-        <span className="text-xs text-tinta-fraca">Cancelado em {formatarDataHora(bloqueio.cancelado_em)}</span>
+        <span className="text-legenda text-tinta-fraca">Cancelado em {formatarDataHora(bloqueio.cancelado_em)}</span>
       )}
     </li>
   );

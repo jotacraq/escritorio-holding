@@ -25,7 +25,7 @@ export function AtalhosTeclado() {
           </div>
         ))}
       </dl>
-      <p className="pb-4 text-xs text-tinta-fraca">Desativados enquanto você digita numa anotação ou num campo da oferta.</p>
+      <p className="pb-4 text-legenda text-tinta-fraca">Desativados enquanto você digita numa anotação ou num campo da oferta.</p>
     </details>
   );
 }

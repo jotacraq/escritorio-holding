@@ -28,7 +28,7 @@
  * ---------------------------------------------------------------------------
  *
  * Função pura, sem I/O. `agora` é injetável. Teste de mesa em
- * `scripts/teste-envios.ts` (`npx tsx scripts/teste-envios.ts`).
+ * `src/lib/pasta/envios.test.ts` (`npm test`).
  */
 import type { Ficha360 } from "@/lib/api";
 import type { LinkPublicoResumo } from "@/types/publico";

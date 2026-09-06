@@ -1,4 +1,5 @@
 import type { PerguntaFormularioPublico } from "@/types/publico-ui";
+import { rotuloOpcao } from "@/lib/vocabulario";
 
 /** Avalia a condicional de uma pergunta (ex.: P11 só aparece se P10 incluir "Imóveis"). Mesma regra da tela interna. */
 export function perguntaPublicaVisivel(pergunta: PerguntaFormularioPublico, respostas: Record<string, unknown>): boolean {
@@ -37,6 +38,13 @@ export function CampoPerguntaPublico({
 }) {
   const idCampo = `pergunta-publica-${pergunta.id}`;
   const rotuloId = `${idCampo}-rotulo`;
+  /*
+   * Fase 7 r2 (§UX2.3): o asterisco do rótulo é `aria-hidden` — de propósito,
+   * "asterisco" lido em voz alta não quer dizer nada. Só que sem `aria-required`
+   * a informação sumia por completo para quem usa leitor de tela: o campo era
+   * obrigatório e ninguém dizia. Aqui ele volta pela via correta.
+   */
+  const obrigatorio = pergunta.obrigatoria || undefined;
 
   switch (pergunta.tipo) {
     case "texto":
@@ -46,6 +54,7 @@ export function CampoPerguntaPublico({
           type="text"
           value={(valor as string) ?? ""}
           onChange={(e) => aoMudar(e.target.value)}
+          aria-required={obrigatorio}
           autoComplete="off"
           className="w-full rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
@@ -59,6 +68,7 @@ export function CampoPerguntaPublico({
           min={0}
           value={(valor as number) ?? ""}
           onChange={(e) => aoMudar(e.target.value === "" ? null : Number(e.target.value))}
+          aria-required={obrigatorio}
           className="w-32 rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
       );
@@ -69,12 +79,13 @@ export function CampoPerguntaPublico({
           rows={4}
           value={(valor as string) ?? ""}
           onChange={(e) => aoMudar(e.target.value)}
+          aria-required={obrigatorio}
           className="w-full rounded-controle border border-linha-controle bg-papel-elevado px-4 py-3 text-base text-tinta"
         />
       );
     case "sim_nao":
       return (
-        <div role="radiogroup" aria-labelledby={rotuloId} className="flex gap-3">
+        <div role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex gap-3">
           {(["sim", "nao"] as const).map((opcao) => (
             <label
               key={opcao}
@@ -90,7 +101,7 @@ export function CampoPerguntaPublico({
       );
     case "unica":
       return (
-        <div role="radiogroup" aria-labelledby={rotuloId} className="flex flex-col gap-2.5">
+        <div role="radiogroup" aria-labelledby={rotuloId} aria-required={obrigatorio} className="flex flex-col gap-2.5">
           {(pergunta.opcoes ?? []).map((opcao) => (
             <label
               key={opcao}
@@ -99,7 +110,7 @@ export function CampoPerguntaPublico({
               }`}
             >
               <input type="radio" name={idCampo} checked={valor === opcao} onChange={() => aoMudar(opcao)} className="h-5 w-5 shrink-0 accent-[color:var(--latao-cta)]" />
-              <span className="text-tinta">{opcao}</span>
+              <span className="text-tinta">{rotuloOpcao(opcao)}</span>
             </label>
           ))}
         </div>
@@ -107,7 +118,9 @@ export function CampoPerguntaPublico({
     case "multipla": {
       const selecionadas = Array.isArray(valor) ? (valor as string[]) : [];
       return (
-        <div className="flex flex-col gap-2.5">
+        // Grupo de caixas: `role="radiogroup"` seria mentira (dá para marcar várias).
+        // `role="group"` + `aria-labelledby` dá ao conjunto o nome da pergunta.
+        <div role="group" aria-labelledby={rotuloId} className="flex flex-col gap-2.5">
           {(pergunta.opcoes ?? []).map((opcao) => (
             <label
               key={opcao}
@@ -121,7 +134,7 @@ export function CampoPerguntaPublico({
                 onChange={(e) => aoMudar(e.target.checked ? [...selecionadas, opcao] : selecionadas.filter((o) => o !== opcao))}
                 className="h-5 w-5 shrink-0 rounded-controle accent-[color:var(--latao-cta)]"
               />
-              <span className="text-tinta">{opcao}</span>
+              <span className="text-tinta">{rotuloOpcao(opcao)}</span>
             </label>
           ))}
         </div>

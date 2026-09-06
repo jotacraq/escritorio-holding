@@ -44,7 +44,7 @@ export function ResumoImportacao({ importacao }: { importacao: Importacao }) {
                   <span key={v.id} className="block h-full rounded-[2px]" style={{ width: `${(v.valor / somaConhecida) * 100}%`, background: v.cor }} />
                 ))}
             </div>
-            <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-tinta-suave">
+            <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-legenda text-tinta-suave">
               <span>
                 <strong className="font-bold text-tinta">{entram}</strong> {entram === 1 ? "entra" : "entram"}
               </span>
@@ -63,7 +63,7 @@ export function ResumoImportacao({ importacao }: { importacao: Importacao }) {
                 {ROTULO_RESULTADO[v.id]}
               </dt>
               <dd className={`text-titulo font-bold tabular-nums ${v.valor > 0 ? "text-tinta" : "text-tinta-fraca"}`}>{v.valor}</dd>
-              <dd className="text-xs leading-snug text-tinta-suave">{EXPLICACAO_RESULTADO[v.id]}</dd>
+              <dd className="text-legenda leading-snug text-tinta-suave">{EXPLICACAO_RESULTADO[v.id]}</dd>
             </div>
           ))}
         </dl>

@@ -372,7 +372,7 @@ function BlocoEditor({
         )}
 
         {bloco.fontes.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-tinta-suave">
+          <div className="flex flex-wrap items-center gap-1.5 text-legenda text-tinta-suave">
             <span className="font-medium text-tinta">Fontes:</span>
             {bloco.fontes.map((f, i) => (
               <span key={i} className="rounded-pilula border border-linha bg-papel px-2 py-0.5">

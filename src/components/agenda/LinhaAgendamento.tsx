@@ -133,7 +133,7 @@ export function LinhaAgendamento({
           <time dateTime={agendamento.inicio_em} className="text-subtitulo font-bold tabular-nums text-tinta">
             {formatarHora(agendamento.inicio_em)}
           </time>
-          <span className="text-xs text-tinta-suave">
+          <span className="text-legenda text-tinta-suave">
             até {formatarHora(agendamento.fim_em)}
             {mostrarData ? ` · ${formatarData(agendamento.inicio_em)}` : ""}
           </span>

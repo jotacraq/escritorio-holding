@@ -121,7 +121,7 @@ function ItemToast({ toast, aoFechar }: { toast: ToastVivo; aoFechar: (id: numbe
         </svg>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-tinta">{toast.titulo}</p>
-          {toast.descricao && <p className="mt-0.5 text-xs text-tinta-suave">{toast.descricao}</p>}
+          {toast.descricao && <p className="mt-0.5 text-legenda text-tinta-suave">{toast.descricao}</p>}
           {toast.acao && (
             <button
               type="button"

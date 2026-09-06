@@ -196,7 +196,7 @@ export function SessaoLigacaoIa({
             </Selo>
             <Selo tom="neutro">tentativa {ligacao.tentativa}</Selo>
             {ligacao.provedor === "manual" && <Selo tom="ambar">sem integração — manual</Selo>}
-            <span className="text-xs text-tinta-suave">
+            <span className="text-legenda text-tinta-suave">
               {ligacao.encerrada_em ? `encerrada ${formatarRelativo(ligacao.encerrada_em)}` : ligacao.disparada_em ? `disparada ${formatarRelativo(ligacao.disparada_em)}` : `pedida ${formatarRelativo(ligacao.criado_em)}`}
             </span>
           </div>

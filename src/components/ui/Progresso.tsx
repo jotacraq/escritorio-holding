@@ -43,7 +43,7 @@ export function Progresso({ valor, etapas, etapaAtual = 0, tempoEsperado, rotulo
     <div className={`flex flex-col gap-3 ${className}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm font-bold text-tinta">{rotulo}</p>
-        <p className="text-xs text-tinta-suave">
+        <p className="text-legenda text-tinta-suave">
           {determinado && <span className="font-medium text-tinta">{Math.round(largura!)}%</span>}
           {determinado && (tempoEsperado || cronometro) && " · "}
           {tempoEsperado}
@@ -77,7 +77,7 @@ export function Progresso({ valor, etapas, etapaAtual = 0, tempoEsperado, rotulo
               <li
                 key={etapa.rotulo}
                 aria-current={estado === "atual" ? "step" : undefined}
-                className={`flex items-center gap-2 text-xs ${estado === "atual" ? "font-bold text-tinta" : estado === "feita" ? "text-[color:var(--verde)]" : "text-tinta-fraca"}`}
+                className={`flex items-center gap-2 text-legenda ${estado === "atual" ? "font-bold text-tinta" : estado === "feita" ? "text-[color:var(--verde)]" : "text-tinta-fraca"}`}
               >
                 <span
                   aria-hidden="true"

@@ -108,7 +108,7 @@ export function GraficoDoSlide({
         <div className="flex flex-col gap-2">
           <BarrasComposicao itens={itens} titulo="Concentração patrimonial por tipo de bem" tema={tema} modoApresentacao={modoApresentacao} />
           {concentracao && !modoApresentacao && (
-            <p className="text-xs text-tinta-fraca">
+            <p className="text-legenda text-tinta-fraca">
               O maior bem representa {formatarPercentual(concentracao.fracao)} do patrimônio com valor registrado.
             </p>
           )}
@@ -133,7 +133,7 @@ export function GraficoDoSlide({
         <div className="flex flex-col gap-2">
           <MatrizCriterios criterios={criterios} recomendacao={recomendacao} tema={tema} modoApresentacao={modoApresentacao} />
           {!modoApresentacao && (
-            <p className="text-xs text-tinta-fraca">
+            <p className="text-legenda text-tinta-fraca">
               Cada critério é a avaliação geral da análise (não por célula) — a coluna recomendada aparece destacada.
             </p>
           )}

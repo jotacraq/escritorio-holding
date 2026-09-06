@@ -216,7 +216,7 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
               aria-current={bloco.estado === "atual" ? "step" : undefined}
               className={`flex min-w-0 items-center gap-2 rounded-controle border px-2.5 py-1.5 ${ESTILO_BLOCO[bloco.estado]}`}
             >
-              <span aria-hidden="true" className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold ${ESTILO_NO_SESSAO[bloco.estado]}`}>
+              <span aria-hidden="true" className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border text-legenda font-bold ${ESTILO_NO_SESSAO[bloco.estado]}`}>
                 {bloco.estado === "feito" ? <Glifo estado="feito" /> : i + 1}
               </span>
               <span className="flex min-w-0 flex-col leading-tight">
@@ -280,7 +280,7 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
             </li>
           ))}
         </ol>
-        <p className="truncate text-xs font-medium text-tinta-suave">{resumo}</p>
+        <p className="truncate text-legenda font-medium text-tinta-suave">{resumo}</p>
       </div>
     );
   }
@@ -311,7 +311,7 @@ export function Trilho({ passos, variante = "completo", sessoes, acao, nota, not
                 <Glifo estado={passo.estado} />
               </span>
               <span className="sr-only">{leituraDoPasso(passo, i, passos.length)}</span>
-              <span aria-hidden="true" className={`hidden max-w-full truncate px-0.5 text-xs leading-tight sm:block ${ESTILO_ROTULO[passo.estado]}`}>
+              <span aria-hidden="true" className={`hidden max-w-full truncate px-0.5 text-legenda leading-tight sm:block ${ESTILO_ROTULO[passo.estado]}`}>
                 {passo.rotulo}
               </span>
             </li>

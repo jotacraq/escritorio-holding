@@ -138,7 +138,7 @@ export function ListaSessoes() {
       </Cartao>
 
       {resumo.depois.length > 0 && (
-        <Cartao rotulo="Depois" titulo="Mais adiante" acao={<span className="text-xs text-tinta-fraca">{resumo.depois.length}</span>} preenchimento="sem">
+        <Cartao rotulo="Depois" titulo="Mais adiante" acao={<span className="text-legenda text-tinta-fraca">{resumo.depois.length}</span>} preenchimento="sem">
           <BlocoDias grupos={resumo.gruposDepois} aoAtualizar={recarregar} />
         </Cartao>
       )}

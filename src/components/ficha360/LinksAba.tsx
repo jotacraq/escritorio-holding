@@ -72,7 +72,7 @@ export function LinksAba({ links, aoAtualizar }: { links: readonly LinkPublicoRe
 
   return (
     <div className="nao-imprimir flex flex-col gap-item">
-      <p className="text-xs text-tinta-fraca">
+      <p className="text-legenda text-tinta-fraca">
         O endereço completo aparece <strong>uma única vez</strong>, na hora em que é gerado. Aqui fica só o começo dele.
       </p>
 
@@ -90,9 +90,9 @@ export function LinksAba({ links, aoAtualizar }: { links: readonly LinkPublicoRe
             <li key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-sm">
               <div>
                 <p className="font-medium text-tinta">
-                  {rotuloDoTipo(link.tipo)} <span className="font-mono text-xs text-tinta-fraca">({link.token_prefixo}…)</span>
+                  {rotuloDoTipo(link.tipo)} <span className="font-mono text-legenda text-tinta-fraca">({link.token_prefixo}…)</span>
                 </p>
-                <p className="text-xs text-tinta-fraca">
+                <p className="text-legenda text-tinta-fraca">
                   Gerado em {formatarDataHora(link.criado_em)} · expira em {formatarDataHora(link.expira_em)} · {link.usos} uso(s)
                   {link.revogado_em && ` · revogado em ${formatarDataHora(link.revogado_em)}`}
                 </p>

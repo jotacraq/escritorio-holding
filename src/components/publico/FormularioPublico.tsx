@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AberturaFormularioPublico, PerguntaFormularioPublico } from "@/types/publico-ui";
 import { abrirLinkFormulario, conferirTipo, ErroLinkPublico, responderFormularioPublico } from "@/components/publico/cliente";
 import { useRecurso } from "@/hooks/useRecurso";
@@ -89,6 +89,35 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
   const perguntasVisiveisDoBloco = blocoAtual ? blocoAtual.perguntas.filter((p) => perguntaPublicaVisivel(p, respostas)) : [];
   const blocoCompleto = perguntasVisiveisDoBloco.every((p) => perguntaPublicaRespondida(p, respostas[p.id]));
 
+  /*
+   * Fase 7 r2 (§UX2.3) — o que faltava no passo a passo:
+   *
+   * 1. FOCO. Trocar de passo só trocava o conteúdo do `<fieldset>`. Quem usa
+   *    leitor de tela continuava com o foco no botão "Continuar" (que agora é
+   *    outro botão) e nunca ouvia que mudou de bloco; quem está no celular
+   *    ficava com a tela rolada no rodapé do bloco anterior. Agora o foco vai
+   *    para o passo novo (`tabIndex={-1}`, sem virar parada de Tab) e a rolagem
+   *    volta ao topo.
+   * 2. POR QUE O BOTÃO ESTÁ DESLIGADO. "Continuar" desabilitado sem motivo é
+   *    um beco sem saída para quem tem 60+ e está no celular. `faltando` diz o
+   *    nome das perguntas que faltam, em `aria-live` para o leitor de tela.
+   */
+  const refAnuncio = useRef<HTMLParagraphElement>(null);
+  const refPasso = useRef<HTMLFieldSetElement>(null);
+  const passoAnterior = useRef(passo);
+  useEffect(() => {
+    if (passoAnterior.current === passo) return; // montagem (e o remonte do StrictMode)
+    passoAnterior.current = passo;
+    // O foco vai para um parágrafo `sr-only`, NÃO para o `<fieldset>`: a regra
+    // global `:focus-visible` de `globals.css` pintaria um halo laranja de 2px
+    // em volta do cartão inteiro. O `sr-only` recorta o halo e o leitor de tela
+    // lê o passo novo — que é a única coisa que se queria aqui.
+    refAnuncio.current?.focus({ preventScroll: true });
+    refPasso.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [passo]);
+
+  const faltando = perguntasVisiveisDoBloco.filter((p) => !perguntaPublicaRespondida(p, respostas[p.id])).map((p) => p.rotulo);
+
   const consentimentosPendentes = abertura.payload.consentimentos.filter((c) => !aceites.has(c.chave));
   const podeEnviar = consentimentosPendentes.length === 0;
 
@@ -154,17 +183,27 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
       </div>
 
       {blocoAtual && (
-        <fieldset className="flex flex-col gap-6 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
-          <legend className="sr-only">{blocoAtual.bloco}</legend>
+        <fieldset ref={refPasso} className="flex flex-col gap-6 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
+          <legend className="sr-only">
+            {blocoAtual.bloco} — passo {passo + 1} de {totalPassos}
+          </legend>
+          <p ref={refAnuncio} tabIndex={-1} className="sr-only">
+            Passo {passo + 1} de {totalPassos}: {blocoAtual.bloco}
+          </p>
           {perguntasVisiveisDoBloco.map((pergunta) => (
             <div key={pergunta.id} className="flex flex-col gap-2">
               <label id={`pergunta-publica-${pergunta.id}-rotulo`} htmlFor={`pergunta-publica-${pergunta.id}`} className="text-base font-medium text-tinta">
                 {pergunta.rotulo}
                 {pergunta.obrigatoria && (
-                  <span aria-hidden="true" className="text-[color:var(--vermelho)]">
-                    {" "}
-                    *
-                  </span>
+                  <>
+                    {/* O asterisco é visual (`aria-hidden`); o leitor de tela ouve
+                        a palavra. Sem isto, "obrigatória" só existia para quem vê. */}
+                    <span aria-hidden="true" className="text-[color:var(--vermelho)]">
+                      {" "}
+                      *
+                    </span>
+                    <span className="sr-only"> (obrigatória)</span>
+                  </>
                 )}
               </label>
               <CampoPerguntaPublico pergunta={pergunta} valor={respostas[pergunta.id]} aoMudar={(v) => setRespostas((r) => ({ ...r, [pergunta.id]: v }))} />
@@ -174,8 +213,11 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
       )}
 
       {!blocoAtual && (
-        <fieldset className="flex flex-col gap-4 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
+        <fieldset ref={refPasso} className="flex flex-col gap-4 rounded-cartao border border-linha bg-papel-elevado px-5 py-6 shadow-cartao sm:px-8 sm:py-8">
           <legend className="text-subtitulo font-bold text-tinta">Antes de enviar</legend>
+          <p ref={refAnuncio} tabIndex={-1} className="sr-only">
+            Passo {passo + 1} de {totalPassos}: antes de enviar
+          </p>
           {abertura.payload.consentimentos.map((consentimento) => {
             const marcado = aceites.has(consentimento.chave);
             return (
@@ -206,6 +248,18 @@ function Assistente({ token, abertura }: { token: string; abertura: AberturaForm
             );
           })}
         </fieldset>
+      )}
+
+      {blocoAtual && faltando.length > 0 && (
+        <p aria-live="polite" className="text-sm text-tinta-suave">
+          Para continuar, falta responder: <span className="font-medium text-tinta">{faltando.join(", ")}</span>.
+        </p>
+      )}
+
+      {!blocoAtual && consentimentosPendentes.length > 0 && (
+        <p aria-live="polite" className="text-sm text-tinta-suave">
+          Para enviar, marque {consentimentosPendentes.length === 1 ? "a autorização acima" : `as ${consentimentosPendentes.length} autorizações acima`}.
+        </p>
       )}
 
       {erroEnvio && erroEnvio !== "link_invalido" && (

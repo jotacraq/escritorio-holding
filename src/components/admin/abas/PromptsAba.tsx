@@ -250,7 +250,7 @@ export function PromptsAba() {
                         v{versao.versao} — {versao.titulo}
                         <SeloAtivo ativo={versao.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />
                       </p>
-                      <p className="text-xs text-tinta-fraca">
+                      <p className="text-legenda text-tinta-fraca">
                         {versao.modelo_padrao} · esforço {versao.effort} · criada em {formatarData(versao.criado_em)}
                       </p>
                       {versao.notas && <p className="mt-1 break-words text-sm text-tinta-suave">{versao.notas}</p>}

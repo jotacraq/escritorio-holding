@@ -3,7 +3,7 @@ import type { Celula, FaltaParametro } from "@/types/croqui-calculo";
 /**
  * Construtores de célula e propagação de ausência (§4.1).
  *
- * INVARIANTE (teste C e D de `scripts/teste-motor-croqui.ts`):
+ * INVARIANTE (blocos C e D de `src/server/motor-croqui/calcular.test.ts`):
  *   - `procedencia === "ausente"` ⇒ `valor === null`. Sempre. Sem exceção.
  *   - qualquer parcela ausente torna o total ausente, com `falta` = união das
  *     faltas. Nunca existe soma parcial que pareça total.

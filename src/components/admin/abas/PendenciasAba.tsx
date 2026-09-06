@@ -133,7 +133,7 @@ export function PendenciasAba() {
                           </p>
                         )}
                         {item.ocorrido_em && (
-                          <p className="mt-0.5 text-xs text-tinta-fraca">
+                          <p className="mt-0.5 text-legenda text-tinta-fraca">
                             {formatarRelativo(item.ocorrido_em)} · {formatarDataHora(item.ocorrido_em)}
                           </p>
                         )}

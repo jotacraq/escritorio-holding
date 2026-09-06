@@ -317,7 +317,7 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
           <p className={`text-sm font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
             {item.rotulo}
           </p>
-          <p className={`inline-flex items-center gap-1.5 text-xs font-bold ${estilo.texto}`}>
+          <p className={`inline-flex items-center gap-1.5 text-legenda font-bold ${estilo.texto}`}>
             <IconeEstado estado={item.estado} />
             {ROTULO_ESTADO[item.estado]}
           </p>
@@ -459,7 +459,7 @@ export function PastaDoCliente({
             <span className="font-bold">{prontos}</span> de <span className="font-bold">{total}</span> prontos
           </p>
           {aindaNao > 0 && (
-            <p className="text-xs text-tinta-fraca" title="Estes itens dependem da Sessão de Viabilidade acontecer.">
+            <p className="text-legenda text-tinta-fraca" title="Estes itens dependem da Sessão de Viabilidade acontecer.">
               {aindaNao} depois da sessão
             </p>
           )}
@@ -512,7 +512,7 @@ export function PastaDoCliente({
                   <h2 id={`momento-${momento.id}`} className="text-subtitulo font-bold leading-tight text-tinta">
                     {momento.titulo}
                   </h2>
-                  <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+                  <span className="flex items-center gap-item text-legenda font-medium text-tinta-fraca">
                     {resumo}
                     <span aria-hidden="true" className="group-open:hidden">ver</span>
                     <span aria-hidden="true" className="hidden group-open:inline">esconder</span>

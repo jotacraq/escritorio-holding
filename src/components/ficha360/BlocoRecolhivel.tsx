@@ -38,7 +38,7 @@ export function BlocoRecolhivel({
           altura do alvo de toque. */}
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 marker:content-none">
         <h2 className="text-subtitulo font-bold leading-tight text-tinta">{titulo}</h2>
-        <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+        <span className="flex items-center gap-item text-legenda font-medium text-tinta-fraca">
           {resumo}
           <span aria-hidden="true" className="group-open:hidden">ver</span>
           <span aria-hidden="true" className="hidden group-open:inline">esconder</span>

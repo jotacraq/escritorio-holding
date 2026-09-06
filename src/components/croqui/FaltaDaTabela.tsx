@@ -30,7 +30,7 @@ const chaveDe = (f: FaltaParametro) => `${f.chave}-${f.uf ?? ""}-${f.municipio ?
 /** Rodapé de uma tabela: quantos parâmetros faltam e quais. */
 export function FaltaDaTabela({ falta }: { falta: FaltaParametro[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-legenda text-[color:var(--ambar)]">
       <span className="font-medium">
         {falta.length} {falta.length === 1 ? "parâmetro falta" : "parâmetros faltam"}
       </span>
@@ -56,10 +56,10 @@ export function PainelFaltas({ faltas }: { faltas: ResultadoCroqui["faltas"] }) 
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-item marker:content-none">
         <span className="flex items-center gap-item text-sm font-medium text-[color:var(--ambar)]">
           {faltas.length} {faltas.length === 1 ? "parâmetro a cadastrar" : "parâmetros a cadastrar"}
-          <span aria-hidden="true" className="text-xs opacity-70 group-open:hidden">
+          <span aria-hidden="true" className="text-legenda opacity-70 group-open:hidden">
             ver quais
           </span>
-          <span aria-hidden="true" className="hidden text-xs opacity-70 group-open:inline">
+          <span aria-hidden="true" className="hidden text-legenda opacity-70 group-open:inline">
             esconder
           </span>
         </span>
@@ -67,7 +67,7 @@ export function PainelFaltas({ faltas }: { faltas: ResultadoCroqui["faltas"] }) 
           Cadastrar
         </Link>
       </summary>
-      <ul className="flex flex-col gap-1 pb-item text-xs text-[color:var(--ambar)]">
+      <ul className="flex flex-col gap-1 pb-item text-legenda text-[color:var(--ambar)]">
         {faltas.map((falta) => (
           <li key={chaveDe(falta)} className="flex flex-wrap gap-x-2">
             <span className="font-medium" title={falta.chave}>
@@ -92,14 +92,14 @@ export function PainelDivergencias({ divergencias }: { divergencias: ResultadoCr
         <span className="text-sm font-medium text-[color:var(--vermelho)]">
           {divergencias.length} {divergencias.length === 1 ? "número em divergência" : "números em divergência"}
         </span>
-        <span aria-hidden="true" className="text-xs text-[color:var(--vermelho)] opacity-70 group-open:hidden">
+        <span aria-hidden="true" className="text-legenda text-[color:var(--vermelho)] opacity-70 group-open:hidden">
           ver quais
         </span>
-        <span aria-hidden="true" className="hidden text-xs text-[color:var(--vermelho)] opacity-70 group-open:inline">
+        <span aria-hidden="true" className="hidden text-legenda text-[color:var(--vermelho)] opacity-70 group-open:inline">
           esconder
         </span>
       </summary>
-      <ul className="flex flex-col gap-1 pb-item text-xs text-[color:var(--vermelho)]">
+      <ul className="flex flex-col gap-1 pb-item text-legenda text-[color:var(--vermelho)]">
         {divergencias.map((d) => (
           <li key={d.chave} title={d.onde}>
             <span className="font-medium">{rotuloDoParametro(d.chave)}</span> {d.valores.join(" × ")}

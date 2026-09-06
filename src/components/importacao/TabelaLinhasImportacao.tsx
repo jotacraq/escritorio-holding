@@ -103,7 +103,7 @@ export function TabelaLinhasImportacao({ importacaoId }: { importacaoId: string 
                 <tbody className="divide-y divide-linha">
                   {dados.itens.map((linha) => (
                     <tr key={linha.id} className="block px-4 py-3 align-top sm:table-row sm:p-0 hover:bg-papel">
-                      <td className="block text-legenda tabular-nums text-tinta-fraca sm:table-cell sm:px-5 sm:py-3 sm:text-xs">
+                      <td className="block text-legenda tabular-nums text-tinta-fraca sm:table-cell sm:px-5 sm:py-3 sm:text-legenda">
                         <span className="sm:hidden">linha </span>
                         {linha.numero}
                       </td>
@@ -116,7 +116,7 @@ export function TabelaLinhasImportacao({ importacaoId }: { importacaoId: string 
                       <td data-rotulo="Motivo:" className={`${CELULA_MOVEL} text-tinta-suave`}>
                         {formatarMotivo(linha.motivo)}
                       </td>
-                      <td data-rotulo="Avisos:" className={`${CELULA_MOVEL} text-xs ${linha.dados.avisos && linha.dados.avisos.length > 0 ? "text-[color:var(--ambar)]" : "text-tinta-fraca"}`}>
+                      <td data-rotulo="Avisos:" className={`${CELULA_MOVEL} text-legenda ${linha.dados.avisos && linha.dados.avisos.length > 0 ? "text-[color:var(--ambar)]" : "text-tinta-fraca"}`}>
                         {linha.dados.avisos && linha.dados.avisos.length > 0 ? linha.dados.avisos.join(" ") : "—"}
                       </td>
                     </tr>

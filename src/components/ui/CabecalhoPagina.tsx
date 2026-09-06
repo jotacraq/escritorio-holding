@@ -48,7 +48,7 @@ export function CabecalhoPagina({ rotulo, titulo, descricao, acoes, meta, acima,
         </div>
         {acoes && <div className="flex flex-wrap items-center gap-2">{acoes}</div>}
       </div>
-      {meta && <div className="flex flex-wrap items-center gap-2 text-xs text-tinta-fraca">{meta}</div>}
+      {meta && <div className="flex flex-wrap items-center gap-2 text-legenda text-tinta-fraca">{meta}</div>}
     </header>
   );
 }

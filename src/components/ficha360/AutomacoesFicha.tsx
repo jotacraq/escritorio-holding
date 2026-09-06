@@ -114,10 +114,10 @@ export function AutomacoesFicha({ jornadaId }: { jornadaId: string }) {
         <span className="font-bold text-tinta" title={TITULO_BLOCO}>
           O sistema fez {itens.length} {itens.length === 1 ? "coisa" : "coisas"} sozinho
         </span>
-        <span aria-hidden="true" className="text-xs text-tinta-fraca group-open:hidden">
+        <span aria-hidden="true" className="text-legenda text-tinta-fraca group-open:hidden">
           ver
         </span>
-        <span aria-hidden="true" className="hidden text-xs text-tinta-fraca group-open:inline">
+        <span aria-hidden="true" className="hidden text-legenda text-tinta-fraca group-open:inline">
           esconder
         </span>
       </summary>
@@ -152,7 +152,7 @@ function LinhaDeAutomacao({ item }: { item: LinhaAutomacao }) {
       {canal && <span className="text-tinta-fraca">· {canal}</span>}
       <span className={`font-medium ${ESTILO_ESTADO[item.estado]}`}>· {item.resultado ?? ROTULO_ESTADO[item.estado]}</span>
       {item.quando && (
-        <time dateTime={item.quando} className="ml-auto shrink-0 text-xs tabular-nums text-tinta-fraca">
+        <time dateTime={item.quando} className="ml-auto shrink-0 text-legenda tabular-nums text-tinta-fraca">
           {formatarData(item.quando)}
         </time>
       )}

@@ -97,10 +97,13 @@ function CartaoTipoDocumento({
         <p className="text-subtitulo font-bold text-tinta">
           {rotulo}
           {obrigatorio && (
-            <span aria-hidden="true" className="text-[color:var(--vermelho)]">
-              {" "}
-              *
-            </span>
+            <>
+              <span aria-hidden="true" className="text-[color:var(--vermelho)]">
+                {" "}
+                *
+              </span>
+              <span className="sr-only"> (obrigatório)</span>
+            </>
           )}
         </p>
         {recebidos.length > 0 && (
@@ -113,11 +116,19 @@ function CartaoTipoDocumento({
         )}
       </div>
 
-      {recebidos.map((doc, i) => (
-        <p key={`${doc.nome_arquivo}-${i}`} className="text-sm text-tinta-suave">
-          {doc.nome_arquivo} · enviado em {formatarData(doc.enviado_em)}
-        </p>
-      ))}
+      {/*
+       * Fase 7 r2 (§UX2.3): a barra de progresso some quando o envio termina e
+       * o arquivo aparece nesta lista — visualmente óbvio, silencioso para
+       * leitor de tela. `aria-live` faz o nome do arquivo recebido ser
+       * anunciado. `polite`: não interrompe quem está escolhendo o próximo.
+       */}
+      <div aria-live="polite" className="flex flex-col">
+        {recebidos.map((doc, i) => (
+          <p key={`${doc.nome_arquivo}-${i}`} className="text-sm text-tinta-suave">
+            {doc.nome_arquivo} · enviado em {formatarData(doc.enviado_em)}
+          </p>
+        ))}
+      </div>
 
       {bloqueado ? (
         <p className="text-sm text-tinta-suave">{motivoBloqueio}</p>

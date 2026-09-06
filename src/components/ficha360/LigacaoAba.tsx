@@ -70,7 +70,7 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
         {itens.map((frase, indice) => (
           <li key={indice} className="flex items-start gap-2 rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
             <span className="flex-1 italic">&ldquo;{frase}&rdquo;</span>
-            <button type="button" onClick={() => aoMudar(itens.filter((_, i) => i !== indice))} className="text-xs text-tinta-fraca hover:text-[color:var(--vermelho)]" aria-label={`Remover frase: ${frase}`}>
+            <button type="button" onClick={() => aoMudar(itens.filter((_, i) => i !== indice))} className="text-legenda text-tinta-fraca hover:text-[color:var(--vermelho)]" aria-label={`Remover frase: ${frase}`}>
               Remover
             </button>
           </li>
@@ -85,7 +85,7 @@ function ListaEditavel({ itens, aoMudar, rotulo, placeholder }: { itens: string[
             placeholder={placeholder}
             className="flex-1 rounded-controle border border-linha-forte bg-papel-elevado px-2.5 py-1.5 text-sm"
           />
-          <Botao variante="secundario" className="text-xs" onClick={adicionar}>
+          <Botao variante="secundario" className="text-legenda" onClick={adicionar}>
             Adicionar
           </Botao>
         </div>
@@ -159,7 +159,7 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
       ))}
       {bloco.observar.length > 0 && (
         <div className="rounded-controle border border-azul bg-azul-fraco px-3 py-2.5">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--azul)]">Observar na resposta</p>
+          <p className="mb-1 text-legenda font-bold uppercase tracking-wide text-[color:var(--azul)]">Observar na resposta</p>
           <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--azul)]">
             {bloco.observar.map((item, i) => (
               <li key={i}>{item}</li>
@@ -169,7 +169,7 @@ function RoteiroDeBanco({ chave, rotuloPop, respostas, aoMudarResposta }: { chav
       )}
       {bloco.proibido.length > 0 && (
         <div role="alert" className="rounded-controle border-2 border-vermelho bg-vermelho-fraco px-3 py-2.5">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Não fazer neste contato</p>
+          <p className="mb-1 text-legenda font-bold uppercase tracking-wide text-[color:var(--vermelho)]">Não fazer neste contato</p>
           <ul className="flex flex-col gap-0.5 text-sm text-[color:var(--vermelho)]">
             {bloco.proibido.map((item, i) => (
               <li key={i}>{item}</li>
@@ -208,7 +208,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
     <div className="flex flex-col gap-bloco">
       {/* §9.2: a sigla do método (POP 03 / POP 03-B) sai do fluxo e vai
           para o `title` — o nome humano vem do dicionário único. */}
-      <p className="text-xs text-tinta-fraca" title={`${titleDe("pop03")}${pop03b ? "-B" : ""}`}>
+      <p className="text-legenda text-tinta-fraca" title={`${titleDe("pop03")}${pop03b ? "-B" : ""}`}>
         {rotulo("pop03")}
         {pop03b ? " · sem seminário" : ""}
         {ligacaoInicial?.realizada_em && ` · ${formatarDataHora(ligacaoInicial.realizada_em)}`}
@@ -287,7 +287,7 @@ export function LigacaoAba({ jornadaId, ligacaoInicial, trilha, aoAtualizar }: {
                   type="button"
                   aria-pressed={ativo}
                   onClick={() => setLigacao((l) => ({ ...l, sinais: ativo ? l.sinais.filter((s) => s !== sinal) : [...l.sinais, sinal] }))}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${ativo ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)] text-tinta" : "border-linha-forte text-tinta-suave hover:text-tinta"}`}
+                  className={`rounded-full border px-2.5 py-1 text-legenda font-medium ${ativo ? "border-[color:var(--latao)] bg-[color:var(--latao-fraco)] text-tinta" : "border-linha-forte text-tinta-suave hover:text-tinta"}`}
                 >
                   {ROTULOS_SINAIS[sinal]}
                 </button>

@@ -82,7 +82,7 @@ export function CartaoJornada({
         {jornada.origem_dado === "exemplo" && <SeloDadoExemplo />}
       </div>
 
-      <p className="text-xs text-tinta-suave">
+      <p className="text-legenda text-tinta-suave">
         {formatarCidadeUf(jornada.cidade, jornada.uf)}
         <span aria-hidden="true" className="mx-1.5 text-tinta-fraca">
           ·
@@ -95,7 +95,7 @@ export function CartaoJornada({
       <ChipProximoPasso proximo={proximo} jornadaId={jornada.id} tamanho="compacto" />
 
       <div className="flex items-center justify-between gap-2 border-t border-linha pt-2">
-        <span title={TITULO_DIAS} className="text-xs text-tinta-fraca">
+        <span title={TITULO_DIAS} className="text-legenda text-tinta-fraca">
           {rotuloDiasNaEtapa(jornada.dias_na_etapa)}
         </span>
         <MenuMover etapaAtual={jornada.etapa} etapas={etapas} ocupado={emMovimento} aoEscolher={aoMoverParaEtapa} rotulo="Mover" />

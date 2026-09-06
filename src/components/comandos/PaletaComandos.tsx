@@ -345,7 +345,7 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
             </li>
           )}
           {!termoLongo && consulta.trim().length === 0 && (
-            <li role="presentation" className="px-4 pb-1 pt-3 text-xs text-tinta-fraca">
+            <li role="presentation" className="px-4 pb-1 pt-3 text-legenda text-tinta-fraca">
               Digite ao menos 2 letras para buscar um cliente.
             </li>
           )}

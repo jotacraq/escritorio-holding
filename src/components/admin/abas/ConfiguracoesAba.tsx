@@ -175,7 +175,7 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <p className="text-sm font-bold text-tinta">{meta.rotulo}</p>
-        <p className="text-xs text-tinta-suave">{meta.ajuda ?? config.descricao}</p>
+        <p className="text-legenda text-tinta-suave">{meta.ajuda ?? config.descricao}</p>
         <p className="mt-0.5 text-legenda text-tinta-fraca">
           <code>{config.chave}</code> · atualizada {formatarRelativo(config.atualizado_em)}
         </p>
@@ -198,7 +198,7 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
             <span className="text-[color:var(--ambar)]">nunca — o cron da Hostinger ainda não chamou /api/cron/regua</span>
           )}
         </p>
-        <p className="text-xs text-tinta-fraca">Escrita pelo sistema a cada passagem do cron. Só leitura.</p>
+        <p className="text-legenda text-tinta-fraca">Escrita pelo sistema a cada passagem do cron. Só leitura.</p>
       </div>
     );
   }
@@ -292,7 +292,7 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
             <Entrada value={janela.fuso} onChange={(e) => setRascunho({ ...janela, fuso: e.target.value })} />
           </Campo>
         </div>
-        <p className="text-xs text-tinta-fraca">
+        <p className="text-legenda text-tinta-fraca">
           Vale para a fila automática e para a retentativa. O botão “Ligar por IA agora” da Ficha continua ligando fora deste horário — é
           ordem de gente, e a Ficha avisa que está fora.
         </p>
@@ -368,7 +368,7 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
           Salvar
         </Botao>
       </div>
-      {config.valor === null && <p className="text-xs text-tinta-fraca">Valor atual: {TRACO}</p>}
+      {config.valor === null && <p className="text-legenda text-tinta-fraca">Valor atual: {TRACO}</p>}
     </div>
   );
 }

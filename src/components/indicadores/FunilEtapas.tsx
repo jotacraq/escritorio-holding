@@ -65,14 +65,14 @@ export function FunilEtapas({ etapas, tema, rotulo }: { etapas: EtapaFunil[]; te
               <span id={`${idTitulo}-valor`} className="flex items-baseline gap-2 text-sm sm:justify-end sm:text-right">
                 <span className={`min-w-[2.5ch] font-bold tabular-nums ${vazio ? "text-tinta-fraca" : "text-tinta"}`}>{vazio ? "—" : etapa.valor}</span>
                 {vazio ? (
-                  <span className="text-xs text-tinta-fraca">sem dado</span>
+                  <span className="text-legenda text-tinta-fraca">sem dado</span>
                 ) : passagem !== null ? (
-                  <span className="text-xs text-tinta-suave">
+                  <span className="text-legenda text-tinta-suave">
                     {Math.round(passagem)}% {etapa.baseDescricao ?? "da etapa anterior"}
                     {doTopo !== null && i > 1 ? ` · ${Math.round(doTopo)}% da coorte` : ""}
                   </span>
                 ) : i > 0 ? (
-                  <span className="text-xs text-tinta-fraca">sem base para taxa</span>
+                  <span className="text-legenda text-tinta-fraca">sem base para taxa</span>
                 ) : null}
               </span>
             </li>

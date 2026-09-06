@@ -17,7 +17,7 @@
  * Isso não é preciosismo: o recon do Drive achou um deck REAL entregue ao
  * cliente com "R$ 0,00" no custo do inventário e a frase "a família perde
  * aproximadamente R$ 0,00" — a sincronização Sheets→Slides falhou em silêncio.
- * O caso virou o teste C de `scripts/teste-motor-croqui.ts`.
+ * O caso virou o bloco C de `src/server/motor-croqui/calcular.test.ts`.
  */
 
 // ---------------------------------------------------------------------------

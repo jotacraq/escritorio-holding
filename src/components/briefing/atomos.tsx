@@ -47,7 +47,7 @@ const TONS_CHIP: Record<TomChip, string> = {
 /** Chip genérico para enum do briefing (DISC, tom, probabilidade, ritmo…). */
 export function Chip({ tom = "neutro", children }: { tom?: TomChip; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-controle border px-2 py-0.5 text-xs font-medium leading-none ${TONS_CHIP[tom]}`}>
+    <span className={`inline-flex items-center rounded-controle border px-2 py-0.5 text-legenda font-medium leading-none ${TONS_CHIP[tom]}`}>
       {children}
     </span>
   );
@@ -78,7 +78,7 @@ export function Hipotese({ evidencias }: { evidencias?: string[] }) {
 export function ListaEvidencias({ evidencias }: { evidencias?: string[] }) {
   if (!evidencias || evidencias.length === 0) return null;
   return (
-    <ul className="mt-1.5 flex flex-col gap-0.5 border-l-2 border-linha pl-2.5 text-xs text-tinta-fraca">
+    <ul className="mt-1.5 flex flex-col gap-0.5 border-l-2 border-linha pl-2.5 text-legenda text-tinta-fraca">
       {evidencias.map((ev, i) => (
         <li key={i}>&ldquo;{ev}&rdquo;</li>
       ))}
@@ -112,7 +112,7 @@ function BlocoCompacto({ titulo, tom = "neutro", children }: { titulo: string; t
   const bordas = tom === "vermelho" ? "border-vermelho/40" : "border-linha";
   return (
     <section className={`rounded-controle border ${bordas} px-3 py-2.5`}>
-      <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
+      <h3 className="mb-1.5 text-legenda font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       <div className="text-tinta">{children}</div>
     </section>
   );
@@ -164,7 +164,7 @@ export function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: 
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip tom="azul">{rotularDisc(c.perfil_disc.predominante)}</Chip>
           {c.perfil_disc.secundario && <Chip>secundário: {rotularDisc(c.perfil_disc.secundario)}</Chip>}
-          <span className="text-xs text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
+          <span className="text-legenda text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
         </div>
         {c.linguagem_recomendada.tom.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -218,7 +218,7 @@ export function ConteudoCompacto({ briefing, c }: { briefing: { grau_confianca: 
       )}
 
       {c.lacunas.length > 0 && (
-        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
+        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-legenda text-[color:var(--ambar)]">
           Lacunas nesta análise: {c.lacunas.join(" · ")}
         </p>
       )}

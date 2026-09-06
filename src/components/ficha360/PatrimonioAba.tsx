@@ -178,12 +178,12 @@ function BlocoEmpresa({ item, jornadaId, aoAtualizarItem }: { item: PatrimonioIt
               aria-describedby={`cnpj-novo-erro-${item.id}`}
               className="w-56 rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono text-sm"
             />
-            <Botao variante="secundario" className="text-xs" carregando={salvandoCnpj} disabled={!cnpjDigitosValidos} onClick={salvarCnpj}>
+            <Botao variante="secundario" className="text-legenda" carregando={salvandoCnpj} disabled={!cnpjDigitosValidos} onClick={salvarCnpj}>
               Salvar CNPJ
             </Botao>
           </div>
         </label>
-        <p id={`cnpj-novo-erro-${item.id}`} className="text-xs text-tinta-fraca" role={!cnpjDigitosValidos && !cnpjIncompleto && cnpjDigitando ? "alert" : undefined}>
+        <p id={`cnpj-novo-erro-${item.id}`} className="text-legenda text-tinta-fraca" role={!cnpjDigitosValidos && !cnpjIncompleto && cnpjDigitando ? "alert" : undefined}>
           {erroSalvarCnpj
             ? <span className="text-[color:var(--vermelho)]">{erroSalvarCnpj}</span>
             : !cnpjIncompleto && cnpjDigitando && !cnpjDigitosValidos
@@ -243,14 +243,14 @@ function BlocoEmpresaComCnpj({ item, cnpj, jornadaId }: { item: PatrimonioItem; 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-tinta">{consulta?.razao_social || item.descricao || "Empresa"}</p>
-          <p className="font-mono text-xs text-tinta-fraca">{cnpjFormatado}</p>
+          <p className="font-mono text-legenda text-tinta-fraca">{cnpjFormatado}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Botao variante="secundario" className="text-xs" carregando={consultando} onClick={() => consultar(false)}>
+          <Botao variante="secundario" className="text-legenda" carregando={consultando} onClick={() => consultar(false)}>
             {temDadoBom ? "Atualizar dados" : "Consultar dados públicos"}
           </Botao>
           {temDadoBom && (
-            <Botao variante="fantasma" className="text-xs" carregando={consultando} onClick={() => consultar(true)}>
+            <Botao variante="fantasma" className="text-legenda" carregando={consultando} onClick={() => consultar(true)}>
               Forçar nova consulta
             </Botao>
           )}
@@ -274,7 +274,7 @@ function BlocoEmpresaComCnpj({ item, cnpj, jornadaId }: { item: PatrimonioItem; 
       )}
 
       {(atualizacaoFalhouAgora || atualizacaoFalhouNoCache) && temDadoBom && (
-        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-1.5 text-xs text-[color:var(--ambar)]">
+        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-1.5 text-legenda text-[color:var(--ambar)]">
           Não foi possível atualizar agora{dados?.falha_motivo || consulta?.falha_motivo ? `: ${traduzirFalhaMotivo(dados?.falha_motivo ?? consulta?.falha_motivo)}` : ""}. Mostrando o dado consultado em {formatarData(consulta?.consultado_em)}.
         </p>
       )}
@@ -283,29 +283,29 @@ function BlocoEmpresaComCnpj({ item, cnpj, jornadaId }: { item: PatrimonioItem; 
         <>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-3">
             <div>
-              <dt className="text-xs text-tinta-fraca">Situação</dt>
+              <dt className="text-legenda text-tinta-fraca">Situação</dt>
               <dd>
                 <Selo tom={tomSituacao(consulta.situacao)}>{consulta.situacao || SEM_DADO}</Selo>
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-tinta-fraca">Capital social</dt>
+              <dt className="text-legenda text-tinta-fraca">Capital social</dt>
               <dd className="font-mono">{formatarMoeda(consulta.capital_social)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-tinta-fraca">Abertura</dt>
+              <dt className="text-legenda text-tinta-fraca">Abertura</dt>
               <dd>{formatarData(consulta.data_abertura)}</dd>
             </div>
             <div className="col-span-2 sm:col-span-3">
-              <dt className="text-xs text-tinta-fraca">CNAE principal</dt>
+              <dt className="text-legenda text-tinta-fraca">CNAE principal</dt>
               <dd>{consulta.cnae_principal ? `${consulta.cnae_principal} — ${consulta.cnae_descricao || SEM_DADO}` : SEM_DADO}</dd>
             </div>
             <div className="col-span-2 sm:col-span-3">
-              <dt className="text-xs text-tinta-fraca">Município</dt>
+              <dt className="text-legenda text-tinta-fraca">Município</dt>
               <dd>{consulta.municipio ? `${consulta.municipio}${consulta.uf ? `/${consulta.uf}` : ""}` : SEM_DADO}</dd>
             </div>
           </dl>
-          <p className="text-xs text-tinta-fraca">Consultado em {formatarData(consulta.consultado_em)} · fonte: BrasilAPI</p>
+          <p className="text-legenda text-tinta-fraca">Consultado em {formatarData(consulta.consultado_em)} · fonte: BrasilAPI</p>
 
           <QuadroSocietario
             razaoSocial={consulta.razao_social}
@@ -381,7 +381,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-tinta-fraca">Composição patrimonial — valor histórico e de mercado, como no Relatório da Sessão de Viabilidade.</p>
+      <p className="text-legenda text-tinta-fraca">Composição patrimonial — valor histórico e de mercado, como no Relatório da Sessão de Viabilidade.</p>
 
       {itens.length === 0 && !novo && <EstadoVazio titulo="Nenhum item patrimonial registrado" descricao="Registre os bens levantados na Sessão de Viabilidade." />}
 
@@ -405,12 +405,12 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
                     <td className="py-2 pr-3">{ROTULOS_TIPO[item.tipo]}</td>
                     <td className="py-2 pr-3">
                       <p>{item.descricao}</p>
-                      {subtitulo && <p className="text-xs text-tinta-fraca">{subtitulo}</p>}
+                      {subtitulo && <p className="text-legenda text-tinta-fraca">{subtitulo}</p>}
                     </td>
                     <td className="py-2 pr-3 font-mono">{formatarMoeda(item.valor_historico)}</td>
                     <td className="py-2 pr-3 font-mono">{formatarMoeda(item.valor_mercado)}</td>
                     <td className="py-2 text-right">
-                      <button type="button" onClick={() => excluir(item.id)} className="nao-imprimir text-xs text-tinta-fraca hover:text-[color:var(--vermelho)]">
+                      <button type="button" onClick={() => excluir(item.id)} className="nao-imprimir text-legenda text-tinta-fraca hover:text-[color:var(--vermelho)]">
                         Excluir
                       </button>
                     </td>
@@ -467,7 +467,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
 
           {novo.tipo === "empresa" && (
             <fieldset className="flex flex-col gap-3 border-t border-linha pt-3">
-              <legend className="text-xs font-medium uppercase tracking-wide text-tinta-fraca">Dados da empresa</legend>
+              <legend className="text-legenda font-medium uppercase tracking-wide text-tinta-fraca">Dados da empresa</legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-sm sm:col-span-2" htmlFor="cnpj-novo-item">
                   CNPJ
@@ -481,7 +481,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
                     className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5 font-mono"
                   />
                 </label>
-                <p id="cnpj-novo-item-ajuda" className="text-xs text-tinta-fraca sm:col-span-2">
+                <p id="cnpj-novo-item-ajuda" className="text-legenda text-tinta-fraca sm:col-span-2">
                   {cnpjNovoDigitado && !cnpjEhValido(cnpjNovoDigitado) && cnpjNovoDigitado.replace(/\D/g, "").length === 14
                     ? "CNPJ inválido — o dígito verificador não confere."
                     : "Opcional. Com o CNPJ salvo, a Ficha 360 traz razão social, situação, capital e sócios direto da Receita Federal."}
@@ -514,11 +514,11 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
             </fieldset>
           )}
 
-          {avisoCnpjNovo && <p role="alert" className="text-xs text-[color:var(--ambar)]">{avisoCnpjNovo}</p>}
-          {erroSalvar && <p className="text-xs text-[color:var(--vermelho)]">{erroSalvar}</p>}
+          {avisoCnpjNovo && <p role="alert" className="text-legenda text-[color:var(--ambar)]">{avisoCnpjNovo}</p>}
+          {erroSalvar && <p className="text-legenda text-[color:var(--vermelho)]">{erroSalvar}</p>}
           <div className="flex gap-2">
-            <Botao variante="primario" carregando={salvando} onClick={salvarNovo} className="text-xs">Adicionar</Botao>
-            <Botao variante="fantasma" className="text-xs" onClick={() => setNovo(null)}>Cancelar</Botao>
+            <Botao variante="primario" carregando={salvando} onClick={salvarNovo} className="text-legenda">Adicionar</Botao>
+            <Botao variante="fantasma" className="text-legenda" onClick={() => setNovo(null)}>Cancelar</Botao>
           </div>
         </div>
       ) : (
@@ -530,7 +530,7 @@ export function PatrimonioAba({ jornadaId }: { jornadaId: string }) {
       <section className="flex flex-col gap-3 border-t border-linha pt-4" aria-labelledby="empresas-titulo">
         <div>
           <h3 id="empresas-titulo" className="text-sm font-bold text-tinta">Empresas — dados públicos (CNPJ)</h3>
-          <p className="text-xs text-tinta-fraca">Objeto, composição societária, capital e situação cadastral, direto da Receita Federal (BrasilAPI) — sempre sob clique, nunca consultado sozinho.</p>
+          <p className="text-legenda text-tinta-fraca">Objeto, composição societária, capital e situação cadastral, direto da Receita Federal (BrasilAPI) — sempre sob clique, nunca consultado sozinho.</p>
         </div>
         {empresas.length === 0 ? (
           <EstadoVazio titulo="Nenhuma empresa registrada" descricao="Adicione um item do tipo Empresa acima para consultar dados públicos por CNPJ." />

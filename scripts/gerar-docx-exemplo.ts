@@ -5,7 +5,7 @@
  *
  * Gera DOIS arquivos em `tmp/squad/` (pasta não versionada) a partir de uma
  * fixture 100% sintética — a mesma entrada do bloco A de
- * `scripts/teste-motor-croqui.ts`, sem um único dado de cliente:
+ * `src/server/motor-croqui/calcular.test.ts`, sem um único dado de cliente:
  *
  *   1. `relatorio-exemplo.docx`          — cálculo completo.
  *   2. `relatorio-exemplo-faltando.docx` — os mesmos bens com parâmetros
@@ -46,7 +46,7 @@ const PYTHON = process.env.PYTHON_BIN ?? "C:\\Users\\João\\AppData\\Local\\Pyth
 const SAIDA = resolve(process.cwd(), "tmp", "squad");
 
 // ---------------------------------------------------------------------------
-// Fixture sintética (bloco A de scripts/teste-motor-croqui.ts)
+// Fixture sintética (bloco A de src/server/motor-croqui/calcular.test.ts)
 // ---------------------------------------------------------------------------
 
 let seq = 0;

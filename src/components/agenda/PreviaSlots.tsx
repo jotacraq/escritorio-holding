@@ -69,7 +69,7 @@ export function PreviaSlots({ advogadaId }: { advogadaId: string }) {
               <p className="mb-2 text-rotulo font-medium uppercase text-tinta-fraca">{dia}</p>
               <ul className="flex flex-wrap gap-1.5" aria-label={`Horários em ${dia}`}>
                 {slots.map((s) => (
-                  <li key={s.inicio_em} className="rounded-full border border-linha-forte bg-papel-elevado px-2.5 py-1 text-xs font-medium tabular-nums text-tinta">
+                  <li key={s.inicio_em} className="rounded-full border border-linha-forte bg-papel-elevado px-2.5 py-1 text-legenda font-medium tabular-nums text-tinta">
                     {formatarHora(s.inicio_em)}
                   </li>
                 ))}

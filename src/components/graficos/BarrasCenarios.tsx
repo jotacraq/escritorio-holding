@@ -144,7 +144,7 @@ export function BarrasCenarios({
       </svg>
 
       {omitidos > 0 && (
-        <p className="mt-2 text-xs" style={{ color: cores.tintaFraca }}>
+        <p className="mt-2 text-legenda" style={{ color: cores.tintaFraca }}>
           {omitidos} {omitidos === 1 ? "cenário não pôde" : "cenários não puderam"} ser calculado{omitidos === 1 ? "" : "s"} — faltam dados de alíquota/rubrica.
         </p>
       )}

@@ -65,7 +65,7 @@ export function CartaoCroqui({
           </p>
         )}
         {croquiInexistente && (
-          <p className="text-xs text-tinta-suave" title="A linha do tempo aponta para um croqui que não existe mais no banco.">
+          <p className="text-legenda text-tinta-suave" title="A linha do tempo aponta para um croqui que não existe mais no banco.">
             Havia um registro de croqui que não está mais no sistema.
           </p>
         )}

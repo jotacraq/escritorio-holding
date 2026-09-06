@@ -184,7 +184,7 @@ function VersaoModelo({ versao, aoMudar }: { versao: MaterialModeloAdmin; aoMuda
         </p>
         <SeloAtivo ativo={versao.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />
         {versao.origem_dado === "exemplo" && <Selo tom="ambar">rascunho de exemplo</Selo>}
-        <span className="text-xs text-tinta-fraca">criada em {formatarDataHora(versao.criado_em)}</span>
+        <span className="text-legenda text-tinta-fraca">criada em {formatarDataHora(versao.criado_em)}</span>
       </div>
       {versao.descricao && <p className="text-sm text-tinta-suave">{versao.descricao}</p>}
 

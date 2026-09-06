@@ -98,7 +98,7 @@ export function PainelBriefingSessao({
           {briefingAtual && (
             <Link
               href={`/jornadas/${jornadaId}#briefing`}
-              className="-my-2 inline-flex min-h-11 items-center rounded-controle px-1.5 text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+              className="-my-2 inline-flex min-h-11 items-center rounded-controle px-1.5 text-legenda text-tinta-suave underline decoration-linha-forte hover:text-tinta"
             >
               Ver completo
             </Link>
@@ -108,7 +108,7 @@ export function PainelBriefingSessao({
             aria-expanded={aberto}
             aria-controls="painel-briefing-sessao-conteudo"
             onClick={alternarAberto}
-            className="-my-2 flex min-h-11 items-center gap-1 rounded-controle border border-linha px-2.5 text-xs font-medium text-tinta-suave hover:bg-papel-fundo hover:text-tinta"
+            className="-my-2 flex min-h-11 items-center gap-1 rounded-controle border border-linha px-2.5 text-legenda font-medium text-tinta-suave hover:bg-papel-fundo hover:text-tinta"
           >
             {aberto ? "Recolher" : "Mostrar"}
             <svg aria-hidden="true" viewBox="0 0 20 20" className={`h-3 w-3 fill-current transition-transform ${aberto ? "rotate-180" : ""}`}>
@@ -154,12 +154,12 @@ function SemBriefing({ gerando, erro, aoGerar }: { gerando: boolean; erro: ApiEr
         Gerar briefing agora
       </Botao>
       {gerando && (
-        <p role="status" className="text-xs text-tinta-suave">
+        <p role="status" className="text-legenda text-tinta-suave">
           Gerando com IA — isso costuma levar de 30 segundos a 1 minuto. A tela não travou, aguarde.
         </p>
       )}
       {erro && (
-        <p role="alert" className="w-full rounded-controle border border-vermelho bg-vermelho-fraco px-2.5 py-2 text-xs text-[color:var(--vermelho)]">
+        <p role="alert" className="w-full rounded-controle border border-vermelho bg-vermelho-fraco px-2.5 py-2 text-legenda text-[color:var(--vermelho)]">
           {mensagemErroGerar(erro)}
         </p>
       )}

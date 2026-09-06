@@ -103,7 +103,7 @@ function FaixaVital({
     "-my-2 inline-flex min-h-11 items-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]";
 
   return (
-    <dl className="nao-imprimir flex flex-wrap items-center gap-x-cartao gap-y-0.5 text-xs">
+    <dl className="nao-imprimir flex flex-wrap items-center gap-x-cartao gap-y-0.5 text-legenda">
       {itens.map((item) => (
         <div key={item.rotulo} className="flex items-center gap-1.5">
           <dt title={item.title} className="text-tinta-fraca">
@@ -186,7 +186,7 @@ export function CabecalhoFicha({
               era uma grade de 4 campos abaixo do título — 3 linhas de altura
               para dado que quase nunca se lê, empurrando a ação para fora da
               dobra. O resto está na gaveta "Ficha completa". */}
-          <p className="flex flex-wrap items-baseline gap-x-item text-xs text-tinta-suave">
+          <p className="flex flex-wrap items-baseline gap-x-item text-legenda text-tinta-suave">
             {cidade && <span>{cidade}</span>}
             <a href={`tel:${pessoa.telefone}`} className="-my-2 inline-flex min-h-11 items-center font-mono text-tinta hover:text-[color:var(--latao)]">
               {formatarTelefone(pessoa.telefone)}
@@ -268,7 +268,7 @@ export function CabecalhoFicha({
             ) : (
               <div className="flex flex-col gap-item rounded-controle border border-linha bg-papel-fundo p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <label htmlFor="novo-desfecho" className="text-xs font-medium text-tinta-suave">
+                  <label htmlFor="novo-desfecho" className="text-legenda font-medium text-tinta-suave">
                     Nova situação
                   </label>
                   <select
@@ -295,7 +295,7 @@ export function CabecalhoFicha({
                   />
                 )}
                 {erro && (
-                  <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+                  <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
                     {erro}
                   </p>
                 )}
@@ -326,7 +326,7 @@ export function CabecalhoFicha({
                 o lugar dele é aqui embaixo: informação de que a funcionalidade
                 não existe, não uma porta. */}
             <SeloStub texto="Busca por dados públicos da pessoa: ainda não existe." className="self-start" />
-            <p className="text-xs text-tinta-suave">
+            <p className="text-legenda text-tinta-suave">
               Até existir, o que se sabe do cliente vem do formulário, do contato da equipe e do que a{" "}
               <Link href="#briefing" className="font-medium text-[color:var(--latao)] underline underline-offset-2">
                 análise da IA
@@ -344,7 +344,7 @@ export function CabecalhoFicha({
 function Campo({ rotulo: nome, valor, mono, quebrar }: { rotulo: string; valor: string | null; mono?: boolean; quebrar?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-tinta-fraca">{nome}</dt>
+      <dt className="text-legenda text-tinta-fraca">{nome}</dt>
       <dd className={`text-tinta ${mono ? "font-mono" : ""} ${quebrar ? "min-w-0 break-all" : ""}`}>{valor || "—"}</dd>
     </div>
   );

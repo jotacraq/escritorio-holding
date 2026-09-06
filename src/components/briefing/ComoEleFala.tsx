@@ -59,7 +59,7 @@ export function ComoEleFala({ briefing, compacto = false }: { briefing: Briefing
               </li>
             ))}
           </ul>
-          {!compacto && <p className="text-xs text-tinta-suave">Fonte: formulário, ligação e transcrição usados no briefing — a IA só pode citar o que está lá.</p>}
+          {!compacto && <p className="text-legenda text-tinta-suave">Fonte: formulário, ligação e transcrição usados no briefing — a IA só pode citar o que está lá.</p>}
         </div>
       )}
     </div>

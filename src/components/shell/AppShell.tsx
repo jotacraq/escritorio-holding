@@ -138,7 +138,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col lg:flex-row">
       <a
         href="#conteudo-principal"
-        className="sr-only z-[70] rounded-controle bg-papel-elevado px-4 py-3 text-sm font-bold text-tinta shadow-flutuante focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+        className="sr-only z-[70] rounded-controle bg-papel-elevado px-4 py-3 text-sm font-bold text-tinta shadow-flutuante focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:flex focus:min-h-11 focus:items-center"
       >
         Pular para o conteúdo
       </a>

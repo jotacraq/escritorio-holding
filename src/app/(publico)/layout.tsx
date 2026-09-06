@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { ContatoEquipe } from "@/components/publico/atomos";
 
 /**
  * Shell das páginas públicas (Fase 2, §2 e §2.5) — onde o CLIENTE, não a
@@ -35,8 +36,19 @@ export default function LayoutPublico({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <footer className="px-5 py-6 text-center text-xs leading-relaxed text-tinta-fraca sm:px-8">
-        <p>Este link é pessoal e sigiloso — não encaminhe para terceiros.</p>
+      {/*
+       * Rodapé ÚNICO das 5 páginas públicas (Fase 7 r2, §UX2.3). Antes só a
+       * tela de link inválido e as de agendamento/confirmação diziam como
+       * falar com o escritório — quem travava no formulário, no envio de
+       * documento ou no material ficava sem saída. `ContatoEquipe` é o mesmo
+       * componente das telas: sem `NEXT_PUBLIC_CONTATO_*` ele diz "fale com
+       * quem te enviou este link", nunca um número inventado.
+       * `text-sm` (13px) e não `text-legenda` (12px): quem lê é o cliente de
+       * 60+ no celular — 12px é o piso da equipe, não o da área pública.
+       */}
+      <footer className="mt-auto flex flex-col items-center gap-1.5 border-t border-linha px-5 py-6 text-center leading-relaxed sm:px-8">
+        <ContatoEquipe antes="Alguma dúvida sobre este link?" />
+        <p className="text-sm text-tinta-fraca">Este link é pessoal e sigiloso — não encaminhe para terceiros.</p>
       </footer>
     </div>
   );

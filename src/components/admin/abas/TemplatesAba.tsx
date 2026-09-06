@@ -185,7 +185,7 @@ export function TemplatesAba() {
                       <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-tinta">
                         v{versao.versao}
                         <SeloAtivo ativo={versao.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />
-                        <span className="text-xs font-normal text-tinta-fraca">criada em {formatarData(versao.criado_em)}</span>
+                        <span className="text-legenda font-normal text-tinta-fraca">criada em {formatarData(versao.criado_em)}</span>
                       </p>
                       {versao.assunto && <p className="text-sm text-tinta-suave">Assunto: {versao.assunto}</p>}
                     </div>

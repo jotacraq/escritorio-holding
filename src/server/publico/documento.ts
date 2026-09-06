@@ -61,6 +61,39 @@ export interface LinkParaUpload {
   linkId: string;
   jornadaId: string;
   pessoaId: string;
+  /**
+   * `links_publicos.usos` DESTE link — o denominador do teto de arquivos, e o
+   * mesmo que `registrar_documento_publico` usa (`v_link.usos >=
+   * app.limite_arquivos_por_link()`, 0075:212). Vem junto na consulta que já
+   * existia: zero consulta a mais. Ver `tetoDeArquivosBatido`.
+   */
+  usos: number;
+}
+
+/**
+ * Pré-checagem do teto de arquivos. **O denominador é POR LINK** (`usos`), não
+ * por jornada — decisão espelhada da 0075/0068, onde a recusa é
+ * `v_link.usos >= app.limite_arquivos_por_link()`.
+ *
+ * Até 06/09 esta pré-checagem contava `documentos` da JORNADA
+ * (`origem='cliente' and ativo`), um denominador que só por acaso coincidia com
+ * o do banco. Divergia em pelo menos três situações reais, todas recusando
+ * envio LEGÍTIMO antes mesmo de tentar:
+ *
+ *  - **link reemitido** (o caso comum): a equipe manda um link novo depois que o
+ *    cliente esgotou o primeiro. `usos` do link novo é 0 e o banco aceita 10
+ *    arquivos; a contagem por jornada já estava em 10 e a rota recusava tudo.
+ *  - **dois links ativos** na mesma jornada (0072 permite): cada um tem cota
+ *    própria no banco, mas somavam entre si na contagem por jornada.
+ *  - **upload interno** (`origem='cliente'` gravado pela equipe pela Ficha) e
+ *    documento inativado: mexem na contagem da jornada e não em `usos`.
+ *
+ * A recíproca — a rota deixar passar o que o banco recusaria — é inofensiva: a
+ * RPC recusa, a rota apaga o objeto do bucket. Este portão só existe para não
+ * gastar bytes de Storage à toa, nunca para ser a trava.
+ */
+export function tetoDeArquivosBatido(usosDoLink: number, limite: number): boolean {
+  return usosDoLink >= limite;
 }
 
 /**
@@ -87,7 +120,10 @@ export async function resolverLinkParaUpload(
 ): Promise<LinkParaUpload | null> {
   const { data: link, error: erroLink } = await supabaseAdmin
     .from("links_publicos")
-    .select("id, jornada_id, tipo, estado, expira_em")
+    // `usos` entra na consulta que já existia — é o denominador do teto de
+    // arquivos (0075) e sai daqui de graça. Sem ele a rota precisaria de uma
+    // segunda consulta só para contar.
+    .select("id, jornada_id, tipo, estado, expira_em, usos")
     .eq("token_hash", tokenHash)
     .maybeSingle();
 
@@ -104,7 +140,14 @@ export async function resolverLinkParaUpload(
 
   if (erroJornada || !jornada || jornada.desfecho !== "aberta") return null;
 
-  return { linkId: link.id as string, jornadaId: jornada.id as string, pessoaId: jornada.pessoa_id as string };
+  return {
+    linkId: link.id as string,
+    jornadaId: jornada.id as string,
+    pessoaId: jornada.pessoa_id as string,
+    // `usos` é `int not null default 0` (0028:79). O `?? 0` cobre só o banco
+    // sem a coluna no cache do PostgREST — nunca dado real.
+    usos: typeof link.usos === "number" ? link.usos : 0,
+  };
 }
 
 /**

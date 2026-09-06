@@ -35,7 +35,7 @@ export function ErroAoFixar({ erro }: { erro: unknown }) {
           <p className="text-sm font-medium text-[color:var(--ambar)]">
             {chaves.length} {chaves.length === 1 ? "parâmetro falta" : "parâmetros faltam"} para fixar
           </p>
-          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[color:var(--ambar)]">
+          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-legenda text-[color:var(--ambar)]">
             {chaves.map((c) => (
               <li key={`${c.chave}-${c.uf ?? ""}-${c.municipio ?? ""}`} title={c.chave}>
                 {c.rotulo}

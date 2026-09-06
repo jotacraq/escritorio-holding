@@ -55,7 +55,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import type {
   EntradaCroqui,
   HorasPorAto,
@@ -75,54 +75,28 @@ import {
   type FichaDoCroqui,
 } from "../src/server/motor-croqui/servico";
 import { chaveItemRadar } from "../src/lib/radar/derivar";
-
-// ---------------------------------------------------------------------------
-// Ambiente
-// ---------------------------------------------------------------------------
-
-const RAIZ = path.resolve(__dirname, "..");
-
-function carregarEnvLocal(): void {
-  const arquivo = path.resolve(RAIZ, ".env.local");
-  if (!fs.existsSync(arquivo)) return;
-  for (const linha of fs.readFileSync(arquivo, "utf8").split(/\r?\n/)) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(linha);
-    if (!m) continue;
-    const [, nome, bruto] = m;
-    if (process.env[nome] !== undefined && process.env[nome] !== "") continue;
-    const valor = bruto.replace(/^["']|["']$/g, "");
-    if (valor !== "") process.env[nome] = valor;
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- cliente sem generic Database, como em src/lib/supabase/admin.ts
-type Cliente = SupabaseClient<any, any, any>;
-
-function clienteAdmin(): Cliente {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !chave) {
-    console.error(
-      [
-        "",
-        "SUPABASE_SERVICE_ROLE_KEY ausente (ou vazia) em .env.local — nada foi escrito.",
-        "",
-        "Este script precisa dela porque, desde as migrations 0065b/0065c/0069/0070:",
-        "  · registrar_croqui_calculo / fixar_croqui_calculo / registrar_croqui_narrativa",
-        "    têm EXECUTE só para service_role;",
-        "  · pagamentos, webhooks_eventos, execucoes_ia e materiais_gerados não aceitam",
-        "    INSERT de `authenticated`;",
-        "  · DELETE foi revogado de `authenticated` em todas as tabelas — sem a chave",
-        "    o --limpar não conseguiria apagar nada do que criasse.",
-        "",
-        "Pegue em: Supabase → Settings → API → service_role, e ponha em .env.local.",
-        "",
-      ].join("\n"),
-    );
-    process.exit(2);
-  }
-  return createClient(url, chave, { auth: { autoRefreshToken: false, persistSession: false } });
-}
+import {
+  acharOuCriar,
+  apagar,
+  apagarJornadas,
+  apagarPessoas,
+  atualizar,
+  cancelarMensagensDaJornada,
+  carregarEnvLocal,
+  clienteAdmin,
+  contar,
+  DIA,
+  ErroSeed,
+  ids,
+  inserir,
+  perfilAutor,
+  produtoPorTipo,
+  quando,
+  RAIZ,
+  uidDe,
+  type Cliente,
+} from "./seed-comum";
+import { IDS_PESSOAS_DEMO, limparDemo, rodarDemo } from "./seed-demo";
 
 // ---------------------------------------------------------------------------
 // Esteira
@@ -227,12 +201,6 @@ function gravarManifesto(m: Manifesto): void {
 // Datas — ~90 dias terminando ontem
 // ---------------------------------------------------------------------------
 
-const DIA = 24 * 60 * 60 * 1000;
-const ONTEM = new Date(new Date().setHours(12, 0, 0, 0) - DIA);
-/** `d` dias ANTES de ontem, ao meio-dia (evita virada de fuso na tela). */
-const quando = (d: number, hora = 12): string =>
-  new Date(new Date(ONTEM.getTime() - d * DIA).setHours(hora, 0, 0, 0)).toISOString();
-
 const DATAS = {
   seminario_inicio: quando(90),
   seminario_fim: quando(88),
@@ -260,105 +228,6 @@ const DATAS = {
   execucao_inicio: 42,
   holding: quando(1),
 } as const;
-
-// ---------------------------------------------------------------------------
-// Helpers de escrita
-// ---------------------------------------------------------------------------
-
-class ErroSeed extends Error {}
-
-/** Insere e devolve a linha; erro do banco vira exceção com contexto legível. */
-async function inserir<T>(db: Cliente, tabela: string, linha: Record<string, unknown>): Promise<T> {
-  const { data, error } = await db.from(tabela).insert(linha).select("*").single();
-  if (error) throw new ErroSeed(`insert ${tabela}: ${error.code ?? ""} ${error.message}`);
-  return data as T;
-}
-
-async function atualizar(db: Cliente, tabela: string, filtro: Record<string, unknown>, campos: Record<string, unknown>): Promise<void> {
-  let q = db.from(tabela).update(campos);
-  for (const [k, v] of Object.entries(filtro)) q = q.eq(k, v);
-  const { error } = await q;
-  if (error) throw new ErroSeed(`update ${tabela}: ${error.code ?? ""} ${error.message}`);
-}
-
-/** Acha por chave natural ou cria. É o que faz rodar 2× não duplicar. */
-async function acharOuCriar<T extends { id: string }>(
-  db: Cliente,
-  tabela: string,
-  chave: Record<string, unknown>,
-  novo: Record<string, unknown>,
-): Promise<{ linha: T; criou: boolean }> {
-  let q = db.from(tabela).select("*");
-  for (const [k, v] of Object.entries(chave)) q = q.eq(k, v);
-  const { data, error } = await q.maybeSingle();
-  if (error) throw new ErroSeed(`select ${tabela}: ${error.code ?? ""} ${error.message}`);
-  if (data) return { linha: data as T, criou: false };
-  return { linha: await inserir<T>(db, tabela, { ...chave, ...novo }), criou: true };
-}
-
-async function apagar(db: Cliente, tabela: string, filtro: Record<string, unknown>): Promise<number> {
-  let q = db.from(tabela).delete();
-  for (const [k, v] of Object.entries(filtro)) {
-    if (Array.isArray(v)) {
-      if (v.length === 0) return 0;
-      q = q.in(k, v);
-    } else {
-      q = q.eq(k, v);
-    }
-  }
-  const { data, error } = await q.select("*");
-  // Tabela que não existe naquele banco não é falha do seed — só não há o que apagar.
-  if (error && error.code === "PGRST205") return 0;
-  if (error) throw new ErroSeed(`delete ${tabela}: ${error.code ?? ""} ${error.message}`);
-  return (data as unknown[] | null)?.length ?? 0;
-}
-
-/**
- * Solta a referência em vez de apagar a linha. Existe porque nem toda FK para
- * `jornadas` é `on delete cascade`: `transcricoes` (0032), `importacao_linhas`
- * (0035, RESTRICT), `documentos` (0012) e o `registrado_na_jornada_id` de
- * `familiares`/`patrimonio_itens` (0007) apontam para a jornada sem cascata.
- * Apagar a transcrição de um cliente REAL porque ela encostou numa jornada de
- * exemplo seria perda de dado; desvincular resolve a FK sem destruir nada.
- */
-async function desvincular(db: Cliente, tabela: string, coluna: string, valores: string[]): Promise<number> {
-  if (valores.length === 0) return 0;
-  const { data, error } = await db.from(tabela).update({ [coluna]: null }).in(coluna, valores).select(coluna);
-  if (error && error.code === "PGRST205") return 0;
-  if (error) throw new ErroSeed(`desvincular ${tabela}.${coluna}: ${error.code ?? ""} ${error.message}`);
-  return (data as unknown[] | null)?.length ?? 0;
-}
-
-async function contar(db: Cliente, tabela: string, filtro: Record<string, unknown>): Promise<number> {
-  let q = db.from(tabela).select("*", { count: "exact", head: true });
-  for (const [k, v] of Object.entries(filtro)) {
-    if (Array.isArray(v)) {
-      if (v.length === 0) return 0;
-      q = q.in(k, v);
-    } else {
-      q = q.eq(k, v);
-    }
-  }
-  const { count, error } = await q;
-  if (error && error.code === "PGRST205") return 0;
-  if (error) throw new ErroSeed(`count ${tabela}: ${error.code ?? ""} ${error.message}`);
-  return count ?? 0;
-}
-
-async function ids(db: Cliente, tabela: string, coluna: string, filtro: Record<string, unknown>): Promise<string[]> {
-  let q = db.from(tabela).select(coluna);
-  for (const [k, v] of Object.entries(filtro)) {
-    if (Array.isArray(v)) {
-      if (v.length === 0) return [];
-      q = q.in(k, v);
-    } else {
-      q = q.eq(k, v);
-    }
-  }
-  const { data, error } = await q;
-  if (error) throw new ErroSeed(`select ${tabela}.${coluna}: ${error.code ?? ""} ${error.message}`);
-  return ((data as unknown as Array<Record<string, string>> | null) ?? []).map((l) => l[coluna]).filter(Boolean);
-}
 
 // ---------------------------------------------------------------------------
 // Parâmetros do método que faltam para o croqui FECHAR
@@ -633,27 +502,6 @@ interface Contexto {
   registrar: (linha: string) => void;
 }
 
-async function perfilAutor(db: Cliente): Promise<string> {
-  const { data, error } = await db
-    .from("perfis_equipe")
-    .select("id, papel, nome")
-    .in("papel", ["advogada", "admin"])
-    .eq("ativo", true)
-    .order("papel", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new ErroSeed(`perfis_equipe: ${error.message}`);
-  if (!data) throw new ErroSeed("Nenhum perfil admin/advogada ATIVO em perfis_equipe — o mock não inventa autor.");
-  return (data as { id: string }).id;
-}
-
-async function produtoPorTipo(db: Cliente, tipo: string): Promise<string> {
-  const { data, error } = await db.from("produtos").select("id").eq("tipo", tipo).limit(1).maybeSingle();
-  if (error) throw new ErroSeed(`produtos: ${error.message}`);
-  if (!data) throw new ErroSeed(`Produto '${tipo}' não existe em produtos — cadastre antes.`);
-  return (data as { id: string }).id;
-}
-
 /** Evento de timeline com data retroativa, idempotente pelo título. */
 async function evento(
   ctx: Contexto,
@@ -801,6 +649,14 @@ async function pagamento(
       await atualizar(ctx.db, "produtos", { id: produtoId }, { hotmart_produto_id: null });
     }
   }
+  // `app.regua_boas_vindas` (0011:104) acabou de enfileirar e-mail e WhatsApp
+  // com `agendada_para = now()` — ja vencidos. O cron da Hostinger (a cada 5
+  // min) reivindica tudo que esta `pendente` e vencido: entre este ponto e a
+  // varredura do fim do seed havia uma janela real de mensagem saindo para o
+  // e-mail ficticio (achado M1 do pentest, 06/09). Selar aqui reduz a janela
+  // ao tempo de uma consulta.
+  const nSeladas = await cancelarMensagensDaJornada(ctx.db, [ctx.jornadaId], { agendadaPara: DATAS.boas_vindas });
+  if (nSeladas > 0) console.log(`  ${nSeladas} mensagem(ns) da regua canceladas na hora (pagamento ${sufixo})`);
 }
 
 async function linkPublico(ctx: Contexto, tipo: string, expiraEmDias: number): Promise<string> {
@@ -1681,80 +1537,6 @@ async function ajustarConfiguracoes(ctx: Contexto): Promise<void> {
 // Limpeza
 // ---------------------------------------------------------------------------
 
-/** Tudo que pende de uma lista de jornadas, na ordem em que as FKs permitem. */
-async function apagarJornadas(db: Cliente, jornadaIds: string[]): Promise<Record<string, number>> {
-  const conta: Record<string, number> = {};
-  const soma = (t: string, n: number) => {
-    if (n > 0) conta[t] = (conta[t] ?? 0) + n;
-  };
-  if (jornadaIds.length === 0) return conta;
-
-  const croquiIds = await ids(db, "croquis", "id", { jornada_id: jornadaIds });
-  const sessaoIds = await ids(db, "sessoes_viabilidade", "id", { jornada_id: jornadaIds });
-  const agendamentoIds = sessaoIds.length ? await ids(db, "agendamentos", "id", { sessao_id: sessaoIds }) : [];
-  const linkIds = await ids(db, "links_publicos", "id", { jornada_id: jornadaIds });
-  const cenarioIds = await ids(db, "cenarios_patrimoniais", "id", { jornada_id: jornadaIds });
-
-  soma("croqui_narrativas", croquiIds.length ? await apagar(db, "croqui_narrativas", { croqui_id: croquiIds }) : 0);
-  soma("croqui_apresentacoes", croquiIds.length ? await apagar(db, "croqui_apresentacoes", { croqui_id: croquiIds }) : 0);
-  soma("croqui_analises", croquiIds.length ? await apagar(db, "croqui_analises", { croqui_id: croquiIds }) : 0);
-  soma("croqui_calculos", await apagar(db, "croqui_calculos", { jornada_id: jornadaIds }));
-  soma("croquis", await apagar(db, "croquis", { jornada_id: jornadaIds }));
-  soma("diagnosticos_sv", await apagar(db, "diagnosticos_sv", { jornada_id: jornadaIds }));
-  soma("cenario_rubricas", cenarioIds.length ? await apagar(db, "cenario_rubricas", { cenario_id: cenarioIds }) : 0);
-  soma("cenarios_patrimoniais", await apagar(db, "cenarios_patrimoniais", { jornada_id: jornadaIds }));
-  soma("execucao_jornada_marcos", await apagar(db, "execucao_jornada_marcos", { jornada_id: jornadaIds }));
-  soma("materiais_gerados", await apagar(db, "materiais_gerados", { jornada_id: jornadaIds }));
-  soma("documentos_pedidos", await apagar(db, "documentos_pedidos", { jornada_id: jornadaIds }));
-  soma("mensagens_agendadas", await apagar(db, "mensagens_agendadas", { jornada_id: jornadaIds }));
-  soma("links_publicos_acessos", linkIds.length ? await apagar(db, "links_publicos_acessos", { link_id: linkIds }) : 0);
-  soma("agendamentos_sugestoes", linkIds.length ? await apagar(db, "agendamentos_sugestoes", { link_id: linkIds }) : 0);
-  soma("ligacoes_ia", await apagar(db, "ligacoes_ia", { jornada_id: jornadaIds }));
-  soma("links_publicos", await apagar(db, "links_publicos", { jornada_id: jornadaIds }));
-  soma("relatorios_sessao", sessaoIds.length ? await apagar(db, "relatorios_sessao", { sessao_id: sessaoIds }) : 0);
-  soma("agendamentos", agendamentoIds.length ? await apagar(db, "agendamentos", { id: agendamentoIds }) : 0);
-  soma("sessoes_viabilidade", await apagar(db, "sessoes_viabilidade", { jornada_id: jornadaIds }));
-  soma("ligacoes_estrategicas", await apagar(db, "ligacoes_estrategicas", { jornada_id: jornadaIds }));
-  soma("formularios_respostas", await apagar(db, "formularios_respostas", { jornada_id: jornadaIds }));
-  soma("tarefas", await apagar(db, "tarefas", { jornada_id: jornadaIds }));
-  soma("ofertas", await apagar(db, "ofertas", { jornada_id: jornadaIds }));
-  soma("pagamentos", await apagar(db, "pagamentos", { jornada_id: jornadaIds }));
-  soma("briefings", await apagar(db, "briefings", { jornada_id: jornadaIds }));
-  soma("execucoes_ia", await apagar(db, "execucoes_ia", { jornada_id: jornadaIds }));
-  soma("eventos_timeline", await apagar(db, "eventos_timeline", { jornada_id: jornadaIds }));
-  soma("jornadas_transicoes", await apagar(db, "jornadas_transicoes", { jornada_id: jornadaIds }));
-
-  // As FKs sem cascata: soltar a referência antes de apagar a jornada.
-  for (const [tabela, coluna] of [
-    ["transcricoes", "jornada_id"],
-    ["importacao_linhas", "jornada_id"],
-    ["mensagens_recebidas", "jornada_id"],
-    ["documentos", "jornada_id"],
-    ["familiares", "registrado_na_jornada_id"],
-    ["patrimonio_itens", "registrado_na_jornada_id"],
-  ] as const) {
-    const n = await desvincular(db, tabela, coluna, jornadaIds);
-    if (n > 0) conta[`${tabela} (desvinculadas)`] = (conta[`${tabela} (desvinculadas)`] ?? 0) + n;
-  }
-
-  soma("jornadas", await apagar(db, "jornadas", { id: jornadaIds }));
-  return conta;
-}
-
-async function apagarPessoas(db: Cliente, pessoaIds: string[]): Promise<Record<string, number>> {
-  const conta: Record<string, number> = {};
-  if (pessoaIds.length === 0) return conta;
-  const jornadaIds = await ids(db, "jornadas", "id", { pessoa_id: pessoaIds });
-  Object.assign(conta, await apagarJornadas(db, jornadaIds));
-  for (const tabela of ["respostas_seminario", "consentimentos", "familiares", "patrimonio_itens", "participacoes_seminario", "documentos"]) {
-    const n = await apagar(db, tabela, { pessoa_id: pessoaIds });
-    if (n > 0) conta[tabela] = (conta[tabela] ?? 0) + n;
-  }
-  const n = await apagar(db, "pessoas", { id: pessoaIds });
-  if (n > 0) conta.pessoas = n;
-  return conta;
-}
-
 /** Apaga só as camadas ACIMA da etapa alvo — é o que permite rebobinar. */
 async function limparAcimaDe(ctx: Contexto, alvo: Etapa): Promise<void> {
   const db = ctx.db;
@@ -1869,8 +1651,22 @@ async function limparTudo(db: Cliente, manifesto: Manifesto, registrar: (s: stri
  */
 async function apagarOutrosExemplos(db: Cliente, manterPessoaId: string | null, manifesto: Manifesto, registrar: (s: string) => void): Promise<void> {
   const todas = await ids(db, "pessoas", "id", { origem_dado: "exemplo" });
-  const alvo = todas.filter((id) => id !== manterPessoaId);
-  const jornadasSoltas = await ids(db, "jornadas", "id", { origem_dado: "exemplo" });
+  // As 4 famílias de demonstração (scripts/seed-demo.ts) sobrevivem a esta
+  // varredura DE PROPÓSITO: elas são o kanban que o João vai apresentar, e
+  // "rodar o seed da minha jornada apagou a apresentação" é exatamente o tipo
+  // de perda silenciosa que esta base não aceita. Quem quer removê-las tem um
+  // comando que diz isso: `--demo --limpar`.
+  const demoVivas = todas.filter((id) => IDS_PESSOAS_DEMO.includes(id));
+  const alvo = todas.filter((id) => id !== manterPessoaId && !IDS_PESSOAS_DEMO.includes(id));
+  if (demoVivas.length > 0) {
+    registrar(
+      `${demoVivas.length} pessoa(s) de DEMONSTRAÇÃO preservada(s) — remova com: npx tsx scripts/seed-demo.ts --limpar`,
+    );
+  }
+  const jornadasDemo = await ids(db, "jornadas", "id", { pessoa_id: demoVivas });
+  const jornadasSoltas = (await ids(db, "jornadas", "id", { origem_dado: "exemplo" })).filter(
+    (id) => !jornadasDemo.includes(id),
+  );
 
   const pre: Record<string, number> = {
     pessoas_exemplo: todas.length,
@@ -1887,7 +1683,9 @@ async function apagarOutrosExemplos(db: Cliente, manterPessoaId: string | null, 
   }
   const conta = await apagarPessoas(db, alvo);
   // Jornadas de exemplo penduradas em pessoa `real` (a "(exemplo)" de QA).
-  const orfas = (await ids(db, "jornadas", "id", { origem_dado: "exemplo" })).filter((id) => id !== manifesto.jornada_id);
+  const orfas = (await ids(db, "jornadas", "id", { origem_dado: "exemplo" })).filter(
+    (id) => id !== manifesto.jornada_id && !jornadasDemo.includes(id),
+  );
   Object.assign(conta, await apagarJornadas(db, orfas));
 
   manifesto.apagados_outros_exemplos = { ...pre, ...conta };
@@ -1925,12 +1723,7 @@ async function apagarOutrosExemplos(db: Cliente, manterPessoaId: string | null, 
 // `concluido_em` retroativo dos 19 marcos.
 // ---------------------------------------------------------------------------
 
-/** UUID estável a partir de uma chave — é o que torna o arquivo re-executável. */
-function uid(chave: string): string {
-  const h = crypto.createHash("md5").update(`${MARCA}:${chave}`).digest("hex");
-  const v4 = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
-  return v4;
-}
+const uid = (chave: string) => uidDe(MARCA, chave);
 
 const ID = {
   edicao: uid("edicao"),
@@ -3195,9 +2988,20 @@ seed-exemplo-completo.ts — a jornada de exemplo do SIC-HF, de ponta a ponta.
       configuracoes, execucao_marcos) — com SUPABASE_SERVICE_ROLE_KEY se houver,
       senão com SEED_EMAIL/SEED_SENHA do ambiente.
 
+  npx tsx scripts/seed-exemplo-completo.ts --demo
+  npx tsx scripts/seed-exemplo-completo.ts --demo --limpar
+      As 4 FAMÍLIAS DE DEMONSTRAÇÃO (Andrade, Bittencourt, Carvalho, Delmonte),
+      cada uma numa etapa diferente da esteira, para o kanban de Clientes ter o
+      que mostrar numa apresentação. Delega para scripts/seed-demo.ts — é o
+      mesmo comando, escrito nos dois lugares porque é onde as pessoas procuram.
+      Roteiro da apresentação: docs/APRESENTACAO.md.
+
 Opções:
   --manter-outros-exemplos   não apaga as outras pessoas origem_dado='exemplo'
                              (por padrão elas SÃO apagadas — ordem do dono do produto).
+                             As 4 famílias do --demo são preservadas SEMPRE: só
+                             "--demo --limpar" (ou o --limpar deste script, que
+                             limpa TODO exemplo) as remove.
   --help                     esta tela.
 
 O modo que escreve direto exige SUPABASE_SERVICE_ROLE_KEY; os dois exigem
@@ -3222,6 +3026,17 @@ async function main(): Promise<void> {
     linhas.push(s);
     console.log(s);
   };
+
+  // --- modo demo: as 4 famílias de demonstração (scripts/seed-demo.ts) -----
+  if (temFlag("demo")) {
+    const db = clienteAdmin();
+    if (temFlag("limpar")) {
+      await limparDemo(db, registrar);
+      return;
+    }
+    await rodarDemo(db, registrar);
+    return;
+  }
 
   const etapaBruta = argumento("etapa");
   if (etapaBruta && !(ETAPAS as readonly string[]).includes(etapaBruta)) {
@@ -3384,13 +3199,11 @@ async function main(): Promise<void> {
   // fictício: deixar `pendente` é deixar o cron mandando mensagem de mock para
   // o mundo. Ficam canceladas — a história continua na linha do tempo.
   {
-    const { data } = await ctx.db
-      .from("mensagens_agendadas")
-      .update({ status: "cancelada", agendada_para: DATAS.boas_vindas })
-      .eq("jornada_id", ctx.jornadaId)
-      .eq("status", "pendente")
-      .select("id");
-    const n = (data as unknown[] | null)?.length ?? 0;
+    // Varredura final (o cancelamento de verdade acontece colado em cada
+    // pagamento). `falhou` entra no filtro: sem chave de envio o cron marca
+    // `falhou` em vez de `pendente`, e um filtro só-`pendente` deixaria o lixo
+    // para sempre na tela de Pendências.
+    const n = await cancelarMensagensDaJornada(ctx.db, [ctx.jornadaId], { agendadaPara: DATAS.boas_vindas });
     if (n > 0) registrar(`${n} mensagem(ns) de exemplo canceladas (destinatário fictício)`);
   }
 

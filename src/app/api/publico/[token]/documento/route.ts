@@ -16,6 +16,7 @@ import {
   resolverLinkParaUpload,
   sha256DeBytes,
   TAMANHO_MAXIMO_DOCUMENTO_PUBLICO_BYTES,
+  tetoDeArquivosBatido,
   tetoDoMinutoJaBatido,
 } from "@/server/publico/documento";
 import {
@@ -55,10 +56,11 @@ const BUCKET = "documentos-sensiveis";
  * o Storage só aceita escrita via `service_role`, e esta rota nunca finge sucesso.
  *
  * Ordem: pepper -> service_role -> Origin -> parse do multipart -> tamanho/mime/
- * assinatura -> resolve o link (leitura mínima, só para achar `pessoa_id` — ver
- * comentário em `resolverLinkParaUpload`) -> **pré-checagem de rate limit** ->
- * teto de arquivos (`configuracoes['link.limite_arquivos']`, 0075) -> radar (em
- * cache) -> upload ao bucket -> RPC
+ * assinatura -> resolve o link (leitura mínima, só para achar `pessoa_id` e
+ * `usos` — ver comentário em `resolverLinkParaUpload`) -> **pré-checagem de rate
+ * limit** -> teto de arquivos (`usos` DO LINK contra
+ * `configuracoes['link.limite_arquivos']`, 0075 — mesmo denominador da RPC) ->
+ * radar (em cache) -> upload ao bucket -> RPC
  * `registrar_documento_publico` (fonte de verdade real: rate limit, estado do link,
  * teto de arquivos, dedupe por sha256) -> se a RPC recusar, remove o objeto do
  * bucket (mesmo padrão de limpeza de `src/server/ia/documentos.ts#processarUploadDocumento`).
@@ -141,24 +143,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Teto de arquivos também checado aqui, antes do upload, para não gastar
-    // bytes de Storage numa tentativa que a RPC vai recusar de qualquer jeito. A
-    // RPC (`registrar_documento_publico`) reconfere com `usos`, que é a fonte real.
+    // bytes de Storage numa tentativa que a RPC vai recusar de qualquer jeito.
+    //
+    // **O DENOMINADOR É POR LINK, não por jornada**: `links_publicos.usos` do
+    // link que acabou de ser resolvido — exatamente o que
+    // `registrar_documento_publico` compara (`v_link.usos >=
+    // app.limite_arquivos_por_link()`, 0075). Até 06/09 aqui se contava
+    // `documentos` da JORNADA, denominador que o banco não usa: link reemitido
+    // zerava a cota no banco e não aqui, e a rota recusava envio legítimo com um
+    // erro que a própria página do cliente dizia não existir. Ver
+    // `tetoDeArquivosBatido` para os três casos de divergência.
     //
     // O NÚMERO vem de `configuracoes['link.limite_arquivos']` (0075) — a mesma
     // chave que `app.limite_arquivos_por_link()` lê para o payload que o cliente
-    // vê e para a recusa da RPC. Não custa consulta: `tetoDoMinutoJaBatido`
-    // acabou de ler a tabela `configuracoes` e as duas chaves vieram juntas, no
-    // mesmo cache de 60 s.
-    const [limiteArquivos, { count: jaEnviados }] = await Promise.all([
-      limiteArquivosPorLink(admin),
-      admin
-        .from("documentos")
-        .select("id", { count: "exact", head: true })
-        .eq("jornada_id", linkParaUpload.jornadaId)
-        .eq("origem", "cliente")
-        .eq("ativo", true),
-    ]);
-    if ((jaEnviados ?? 0) >= limiteArquivos) {
+    // vê e para a recusa da RPC. Nenhuma consulta a mais: `usos` veio junto em
+    // `resolverLinkParaUpload`, e `tetoDoMinutoJaBatido` acabou de ler a tabela
+    // `configuracoes` com as duas chaves no mesmo cache de 60 s.
+    const limiteArquivos = await limiteArquivosPorLink(admin);
+    if (tetoDeArquivosBatido(linkParaUpload.usos, limiteArquivos)) {
       const corpo: ErroPublico = { erro: "limite_arquivos_atingido" };
       return comCabecalhosPublicos(NextResponse.json(corpo, { status: statusParaErroPublico("limite_arquivos_atingido") }));
     }

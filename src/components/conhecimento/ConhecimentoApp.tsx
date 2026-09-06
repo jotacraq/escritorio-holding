@@ -213,7 +213,7 @@ export function ConhecimentoApp() {
       <details open={termo.trim().length > 0} className="group rounded-cartao border border-linha bg-papel-elevado px-5 shadow-cartao sm:px-6">
         <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 py-2 marker:content-none">
           <h2 className="text-subtitulo font-bold text-tinta">Buscar no que já foi dito</h2>
-          <span className="flex items-center gap-item text-xs font-medium text-tinta-fraca">
+          <span className="flex items-center gap-item text-legenda font-medium text-tinta-fraca">
             <span title="Digite e os trechos aparecem sozinhos — “inventário”, “ITCMD”, “brigar”, “empresa”. Bom para lembrar como uma objeção surgiu na boca do cliente.">
               que palavra a família usou
             </span>
@@ -267,7 +267,7 @@ export function ConhecimentoApp() {
             />
           ) : (
             <div className={`flex flex-col gap-3 transition-opacity duration-[var(--transicao-rapida)] ${buscando ? "opacity-70" : ""}`}>
-              <p className="text-xs text-tinta-suave">
+              <p className="text-legenda text-tinta-suave">
                 {resultados.length} reuni{resultados.length === 1 ? "ão menciona" : "ões mencionam"} “{termoBuscado}”
                 {resultados.length >= 40 ? " — mostrando as 40 mais relevantes" : ""}
               </p>
@@ -281,7 +281,7 @@ export function ConhecimentoApp() {
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-bold text-tinta">{nomeDoSlug(r.rotulo)}</span>
                         <Selo tom={r.tipo === "apresentacao_croqui" ? "azul" : "neutro"}>{ROTULO_TIPO[r.tipo]}</Selo>
-                        {r.data_reuniao ? <span className="text-xs text-tinta-fraca">{formatarData(r.data_reuniao)}</span> : null}
+                        {r.data_reuniao ? <span className="text-legenda text-tinta-fraca">{formatarData(r.data_reuniao)}</span> : null}
                       </span>
                       <Trecho texto={r.trecho} />
                     </Link>
@@ -410,7 +410,7 @@ export function ConhecimentoApp() {
                       que a dobra inteira de quem trabalha a 1440×900. */}
                   <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
                     <span className="truncate font-medium text-tinta">{nomeDoSlug(caso.rotulo)}</span>
-                    <span className="truncate text-xs text-tinta-suave">
+                    <span className="truncate text-legenda text-tinta-suave">
                       Sessão em {formatarData(caso.sv_data_reuniao)}
                       {caso.sv_consultor ? ` · ${caso.sv_consultor}` : ""}
                       {caso.croqui_data_reuniao ? ` · croqui em ${formatarData(caso.croqui_data_reuniao)}` : ""}
@@ -432,7 +432,7 @@ export function ConhecimentoApp() {
             se está, não só para onde dá para ir. */}
         {!carregandoLista && !erroLista && casosFiltrados.length > 0 && (
           <nav aria-label="Páginas de casos" className="flex flex-wrap items-center justify-between gap-x-cartao gap-y-item border-t border-linha px-5 py-2 sm:px-6">
-            <p className="text-xs text-tinta-suave">
+            <p className="text-legenda text-tinta-suave">
               {inicio + 1}–{Math.min(inicio + CASOS_POR_PAGINA, casosFiltrados.length)} de {casosFiltrados.length} {casosFiltrados.length === 1 ? "caso" : "casos"}
               {totalPaginas > 1 ? ` · página ${paginaAtual} de ${totalPaginas}` : ""}
             </p>

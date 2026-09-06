@@ -51,7 +51,7 @@ function LinhaOferta({ jornadaId, oferta, aoAtualizar }: { jornadaId: string; of
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-sm font-medium text-tinta">{ROTULO_CONDICAO[oferta.condicao]}</span>
           <span className="text-subtitulo font-bold text-tinta">{formatarMoeda(oferta.valor_ofertado)}</span>
-          {oferta.condicao === "incentivo_resolvedor" && <span className="text-xs text-tinta-fraca line-through">{formatarMoeda(oferta.valor_padrao)}</span>}
+          {oferta.condicao === "incentivo_resolvedor" && <span className="text-legenda text-tinta-fraca line-through">{formatarMoeda(oferta.valor_padrao)}</span>}
         </div>
         {oferta.aceita === null ? (
           <div className="flex items-center gap-2">
@@ -69,11 +69,11 @@ function LinhaOferta({ jornadaId, oferta, aoAtualizar }: { jornadaId: string; of
         )}
       </div>
       {erro && (
-        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+        <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
           {erro}
         </p>
       )}
-      <p className="text-xs text-tinta-fraca">
+      <p className="text-legenda text-tinta-fraca">
         Ofertada em {formatarDataHora(oferta.ofertada_em)}
         {oferta.valida_ate && ` · válida até ${formatarDataHora(oferta.valida_ate)}`}
       </p>
@@ -238,7 +238,7 @@ export function PainelOferta({
               </Botao>
             )}
             {motivoBloqueio && (
-              <p id="motivo-oferta-bloqueada" className="text-xs text-tinta-fraca">
+              <p id="motivo-oferta-bloqueada" className="text-legenda text-tinta-fraca">
                 {motivoBloqueio}
               </p>
             )}

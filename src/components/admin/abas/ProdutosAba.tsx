@@ -143,7 +143,7 @@ export function ProdutosAba() {
       </div>
 
       {semId.length > 0 && <SeloStub texto={`${TEXTO_SEM_ID} Sem ID: ${semId.map((p) => p.nome).join(", ")}.`} />}
-      <p className="text-xs text-tinta-fraca">{TEXTO_SECRET}</p>
+      <p className="text-legenda text-tinta-fraca">{TEXTO_SECRET}</p>
 
       {novo && (
         <Cartao rotulo="Novo produto" titulo="Cadastro">

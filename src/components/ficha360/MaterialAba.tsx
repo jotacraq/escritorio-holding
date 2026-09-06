@@ -245,7 +245,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
               {atual.origem_dado !== "exemplo" && <SeloIA />}
               <Selo tom="neutro">Versão {atual.versao}</Selo>
               <Selo tom={atual.aprovado_em ? "verde" : "azul"}>{atual.aprovado_em ? "Aprovado" : "Pendente de aprovação"}</Selo>
-              <span className="text-xs text-tinta-suave">Fonte da dor: {ROTULOS_FONTE[atual.fonte_dor]}</span>
+              <span className="text-legenda text-tinta-suave">Fonte da dor: {ROTULOS_FONTE[atual.fonte_dor]}</span>
             </div>
             {atual.dor_principal && <p className="text-sm text-tinta-suave">Dor identificada: “{atual.dor_principal}”</p>}
 
@@ -258,7 +258,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
               ) : null}
             </p>
             {motivo && motivo.candidatos.length > 1 && (
-              <details className="text-xs text-tinta-suave">
+              <details className="text-legenda text-tinta-suave">
                 <summary className="min-h-11 cursor-pointer py-2 font-medium text-tinta">Outros modelos pontuados</summary>
                 <ul className="flex flex-col gap-0.5 pb-2">
                   {motivo.candidatos.map((c) => (
@@ -279,7 +279,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
                   Aprovar material
                 </Botao>
               ) : (
-                <p className="text-xs text-tinta-suave">Aprovado em {formatarDataHora(atual.aprovado_em)}</p>
+                <p className="text-legenda text-tinta-suave">Aprovado em {formatarDataHora(atual.aprovado_em)}</p>
               )}
             </div>
           </div>
@@ -292,7 +292,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
             <div className="flex flex-wrap items-center gap-2">
               <Selo tom={SELO_PDF[pdf].tom}>{SELO_PDF[pdf].rotulo}</Selo>
               {pdf === "gerado" && atual.pdf_gerado_em && (
-                <span className="text-xs text-tinta-suave">
+                <span className="text-legenda text-tinta-suave">
                   gerado em {formatarDataHora(atual.pdf_gerado_em)}
                   {atual.pdf_bytes ? ` · ${Math.round(atual.pdf_bytes / 1024)} KB` : ""}
                 </span>

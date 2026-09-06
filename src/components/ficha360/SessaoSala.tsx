@@ -79,7 +79,7 @@ export function SessaoSala({ sessao, temAgendamentoAtivo, aoAtualizar }: { sessa
               Sala pronta
             </Selo>
             {colunaOrigemExiste && <Selo tom="neutro">{origem === "n8n" ? "criada pela integração" : "colada à mão"}</Selo>}
-            {sessao.link_sala_atualizado_em && <span className="text-xs text-tinta-suave">atualizado em {formatarDataHora(sessao.link_sala_atualizado_em)}</span>}
+            {sessao.link_sala_atualizado_em && <span className="text-legenda text-tinta-suave">atualizado em {formatarDataHora(sessao.link_sala_atualizado_em)}</span>}
           </div>
           <a href={sessao.link_sala} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center break-all text-sm text-[color:var(--latao)] underline underline-offset-2">
             {sessao.link_sala}

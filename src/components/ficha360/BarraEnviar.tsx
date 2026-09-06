@@ -195,7 +195,7 @@ export function BarraEnviar({ jornadaId, ficha }: { jornadaId: string; ficha: Fi
           <p className="flex min-h-11 flex-wrap items-center gap-item rounded-controle border border-dashed border-linha bg-papel-fundo px-3 py-2 text-sm text-tinta-suave">
             <span aria-hidden="true">—</span>
             <span>{motivoUnico}</span>
-            <span className="text-xs text-tinta-fraca">Nenhum link novo pode ser enviado.</span>
+            <span className="text-legenda text-tinta-fraca">Nenhum link novo pode ser enviado.</span>
           </p>
         ) : (
         <ul className="grid gap-item sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -219,7 +219,7 @@ export function BarraEnviar({ jornadaId, ficha }: { jornadaId: string; ficha: Fi
                     do botao: o motivo precisa ser LIDO, nao ocupar tres linhas
                     em cinco cartoes ao mesmo tempo. */}
                 {item.motivo && (
-                  <p className="truncate text-xs text-tinta-suave" title={item.motivo}>
+                  <p className="truncate text-legenda text-tinta-suave" title={item.motivo}>
                     {item.motivo}
                   </p>
                 )}
@@ -253,9 +253,9 @@ export function BarraEnviar({ jornadaId, ficha }: { jornadaId: string; ficha: Fi
             <p className="text-sm font-bold text-tinta">
               {resultado.copiado ? "Copiado. Este endereço não volta a aparecer." : "Copie agora — este endereço não volta a aparecer."}
             </p>
-            <code className="break-all rounded-controle bg-papel-elevado px-2 py-1 text-xs text-tinta">{resultado.url}</code>
+            <code className="break-all rounded-controle bg-papel-elevado px-2 py-1 text-legenda text-tinta">{resultado.url}</code>
             {resultado.tipo === "agendamento" && (
-              <p className={`text-xs ${resultado.horariosOfertados ? "text-tinta-suave" : "text-[color:var(--vermelho)]"}`}>
+              <p className={`text-legenda ${resultado.horariosOfertados ? "text-tinta-suave" : "text-[color:var(--vermelho)]"}`}>
                 {resultado.horariosOfertados
                   ? `${resultado.horariosOfertados} horário(s) ofertado(s) ao cliente.`
                   : "Nenhum horário ofertado — a página do cliente abriria vazia."}
@@ -274,7 +274,7 @@ export function BarraEnviar({ jornadaId, ficha }: { jornadaId: string; ficha: Fi
                 ela não mede, e a Dra. Elaine pode mudá-lo em Admin sem deploy:
                 quem sabe o limite é a página do cliente, que o recebe do
                 servidor a cada abertura. */}
-            {resultado.tipo === "documentos" && <p className="text-xs text-tinta-suave">O limite de arquivos aparece para o cliente na própria página de envio.</p>}
+            {resultado.tipo === "documentos" && <p className="text-legenda text-tinta-suave">O limite de arquivos aparece para o cliente na própria página de envio.</p>}
           </div>
         )}
       </div>

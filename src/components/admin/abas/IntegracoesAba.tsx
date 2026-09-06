@@ -104,7 +104,7 @@ export function IntegracoesAba() {
               <ul className="mt-1 flex flex-wrap gap-2">
                 {VARIAVEIS_ESTATICAS[chave].map((nome) => (
                   <li key={nome}>
-                    <code className="inline-block rounded-controle bg-papel px-2 py-1 text-xs text-tinta">{nome}</code>
+                    <code className="inline-block rounded-controle bg-papel px-2 py-1 text-legenda text-tinta">{nome}</code>
                   </li>
                 ))}
               </ul>
@@ -170,7 +170,7 @@ function CartaoIntegracao({ item, aoMudar }: { item: IntegracaoEstado; aoMudar: 
             <ul className="mt-1 flex flex-wrap gap-2">
               {item.faltam.map((nome) => (
                 <li key={nome}>
-                  <code className="inline-block rounded-controle bg-papel px-2 py-1 text-xs text-tinta">{nome}</code>
+                  <code className="inline-block rounded-controle bg-papel px-2 py-1 text-legenda text-tinta">{nome}</code>
                 </li>
               ))}
             </ul>
@@ -219,7 +219,7 @@ function CartaoIntegracao({ item, aoMudar }: { item: IntegracaoEstado; aoMudar: 
               Testar
             </Botao>
           ) : (
-            <p className="text-xs text-tinta-fraca">Não dá para testar daqui — a outra ponta é quem chama.</p>
+            <p className="text-legenda text-tinta-fraca">Não dá para testar daqui — a outra ponta é quem chama.</p>
           )}
           {resultado && (
             <p role="status" className={`text-sm ${resultado.ok ? "text-[color:var(--verde)]" : "text-[color:var(--ambar)]"}`}>
@@ -308,7 +308,7 @@ function DetalhesLigacaoIa({ extras }: { extras: Record<string, unknown> }) {
       <dd className="break-all text-tinta">
         {typeof extras.callback_url === "string" ? (
           <>
-            <code className="text-xs">{extras.callback_url}</code>
+            <code className="text-legenda">{extras.callback_url}</code>
             <br />
             <span className="text-tinta-fraca">cole em Settings → Variables do n8n, na chave SICHF_CALLBACK_URL</span>
           </>
@@ -348,7 +348,7 @@ function ToggleConfiguracao({ chave, valor, descricaoBanco, aoSalvar }: { chave:
       <div className="flex flex-col gap-1.5">
         <Opcao tipo="checkbox" rotulo={meta.rotulo} descricao={meta.ajuda ?? descricaoBanco} checked={valor} disabled={salvando} onChange={(e) => salvar(e.target.checked)} />
         {chave === "ligacao_ia.automatica" && valor && (
-          <p role="alert" className="text-xs font-medium text-[color:var(--ambar)]">
+          <p role="alert" className="text-legenda font-medium text-[color:var(--ambar)]">
             Ligado: toda compra dispara uma ligação por IA sem ninguém olhar. Confirme que a decisão LGPD (B33) foi registrada.
           </p>
         )}

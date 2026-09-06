@@ -95,7 +95,7 @@ export function MapeamentoColunas({
                       {ehPergunta && <Selo tom="latao">pergunta</Selo>}
                     </label>
                   </th>
-                  <td className="block pt-1 text-xs text-tinta-suave sm:table-cell sm:px-4 sm:py-3 sm:pt-3">
+                  <td className="block pt-1 text-legenda text-tinta-suave sm:table-cell sm:px-4 sm:py-3 sm:pt-3">
                     <span className="text-legenda uppercase tracking-wide text-tinta-fraca sm:hidden">Amostra: </span>
                     {amostra.length > 0 ? (
                       <span className="line-clamp-2">{amostra.slice(0, 2).join(" · ")}</span>
@@ -152,7 +152,7 @@ export function MapeamentoColunas({
       )}
 
       {perguntas.length > 0 && (
-        <p className="text-xs text-tinta-suave">
+        <p className="text-legenda text-tinta-suave">
           {perguntas.length === 1 ? "1 coluna vira resposta do seminário" : `${perguntas.length} colunas viram respostas do seminário`}, ligadas à pessoa e a esta edição — é o que o Briefing usa para saber o que ela respondeu.
         </p>
       )}

@@ -220,7 +220,15 @@ export function Simulador({
         payback={resultado.tabelas.payback}
       />
 
-      <div className="grid gap-bloco lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+      {/* `[&>*]:min-w-0`: a partir de `lg` as duas trilhas já são `minmax(0,…)`,
+          mas ABAIXO de `lg` a grade é de uma coluna só e a coluna implícita é
+          `auto` — aí vale o `min-width:auto` do item, que é o max-content da
+          tabela mais larga (≈1.180 px). O item estourava a trilha e levava a
+          PÁGINA junto: a 390 px o `document.scrollWidth` dava 1.196 px. Com
+          `min-width:0` o item obedece a coluna e quem rola é a tabela, dentro
+          do próprio contêiner. Nada muda em 1440 px (lá as trilhas já zeram o
+          mínimo). */}
+      <div className="grid gap-bloco [&>*]:min-w-0 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <Controles entrada={entradaAtual} editar={editar} editarBem={editarBem} />
 
         <div className="flex flex-col gap-bloco">

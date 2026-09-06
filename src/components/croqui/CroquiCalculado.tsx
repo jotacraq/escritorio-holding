@@ -195,7 +195,7 @@ export function CroquiCalculado({
                   </span>
                 )}
               </span>
-              <time dateTime={versao.criado_em} className="text-xs text-tinta-fraca">
+              <time dateTime={versao.criado_em} className="text-legenda text-tinta-fraca">
                 {formatarDataHora(versao.criado_em)}
               </time>
               {!versao.atual && (
@@ -208,7 +208,7 @@ export function CroquiCalculado({
                   Fixar esta versão
                 </Botao>
               )}
-              {versao.nota && <p className="w-full text-xs text-tinta-suave">{versao.nota}</p>}
+              {versao.nota && <p className="w-full text-legenda text-tinta-suave">{versao.nota}</p>}
             </li>
           ))}
         </ul>
@@ -228,7 +228,7 @@ function EstadoDaVersao({ atual, desatualizado }: { atual: CroquiCalculo | null;
     <span className="flex items-center gap-2">
       <Selo tom={selo.tom}>{selo.texto}</Selo>
       {atual && (
-        <time dateTime={atual.criado_em} className="text-xs text-tinta-fraca">
+        <time dateTime={atual.criado_em} className="text-legenda text-tinta-fraca">
           {desatualizado && `v${atual.versao} · `}
           {formatarDataHora(atual.criado_em)}
         </time>

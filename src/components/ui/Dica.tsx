@@ -85,7 +85,7 @@ export function Dica({ texto, children, posicao = "acima" }: DicaProps) {
           role="tooltip"
           id={id}
           style={{ transform: `translateX(calc(-50% + ${desloque}px))` }}
-          className={`anim-esmaecer pointer-events-none absolute left-1/2 z-50 w-max max-w-[min(16rem,calc(100vw-2rem))] rounded-controle bg-[color:var(--tinta)] px-3 py-2 text-xs font-medium leading-snug text-[color:var(--papel-elevado)] shadow-flutuante ${
+          className={`anim-esmaecer pointer-events-none absolute left-1/2 z-50 w-max max-w-[min(16rem,calc(100vw-2rem))] rounded-controle bg-[color:var(--tinta)] px-3 py-2 text-legenda font-medium leading-snug text-[color:var(--papel-elevado)] shadow-flutuante ${
             posicao === "acima" ? "bottom-full mb-2" : "top-full mt-2"
           }`}
         >

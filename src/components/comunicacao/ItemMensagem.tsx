@@ -133,7 +133,7 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
         {modo === "agenda" ? (
           <time dateTime={mensagem.agendada_para} className="flex items-baseline gap-2 sm:flex-col sm:gap-0">
             <span className="text-titulo font-bold tabular-nums text-tinta">{formatarHora(mensagem.agendada_para)}</span>
-            <span className="text-xs text-tinta-fraca">
+            <span className="text-legenda text-tinta-fraca">
               {formatarData(mensagem.agendada_para)} · {formatarRelativo(mensagem.agendada_para)}
             </span>
           </time>
@@ -178,7 +178,7 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
         {/* "O link é montado na hora do envio" era explicação de mecanismo dentro
             do fluxo (lei de texto): virou `title` do rótulo do canal, acima. */}
         {mensagem.tentativas > 0 && (
-          <p className="text-xs text-tinta-fraca">
+          <p className="text-legenda text-tinta-fraca">
             {mensagem.tentativas} tentativa{mensagem.tentativas === 1 ? "" : "s"}
             {mensagem.proxima_tentativa_em && mensagem.status === "pendente" && ` · próxima ${formatarRelativo(mensagem.proxima_tentativa_em)}`}
           </p>

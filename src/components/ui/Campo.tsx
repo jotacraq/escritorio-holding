@@ -63,13 +63,13 @@ export function Campo({ rotulo, ajuda, erro, obrigatorio, extra, id: idExterno, 
         {extra && <span className="text-legenda text-tinta-fraca">{extra}</span>}
       </div>
       {ajuda && (
-        <p id={idAjuda} className="text-xs text-tinta-suave">
+        <p id={idAjuda} className="text-legenda text-tinta-suave">
           {ajuda}
         </p>
       )}
       <Contexto.Provider value={{ id, describedBy, invalido: Boolean(erro) }}>{children}</Contexto.Provider>
       {erro && (
-        <p id={idErro} role="alert" className="flex items-start gap-1.5 text-xs font-medium text-[color:var(--vermelho)]">
+        <p id={idErro} role="alert" className="flex items-start gap-1.5 text-legenda font-medium text-[color:var(--vermelho)]">
           <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-current">
             <path d="M10 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16Zm0 4a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V7a1 1 0 0 0-1-1Zm0 7.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z" />
           </svg>
@@ -178,7 +178,7 @@ export function Opcao({
       <input id={id} type={tipo} className="mt-1 h-5 w-5 shrink-0 accent-[color:var(--latao-cta)]" {...props} />
       <span className="flex min-w-0 flex-col">
         <span className="text-sm font-medium text-tinta">{rotulo}</span>
-        {descricao && <span className="text-xs text-tinta-suave">{descricao}</span>}
+        {descricao && <span className="text-legenda text-tinta-suave">{descricao}</span>}
       </span>
     </label>
   );

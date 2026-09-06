@@ -69,7 +69,7 @@ export function PendenciasSistema({ itens, papel }: { itens: PendenciaSistemaCom
                   {rotuloTipo(item.tipo)}
                   {item.pessoa_nome && <span className="font-normal text-tinta-suave"> · {item.pessoa_nome}</span>}
                 </p>
-                {item.ocorrido_em && <p className="mt-0.5 text-xs text-tinta-fraca">{formatarRelativo(item.ocorrido_em)}</p>}
+                {item.ocorrido_em && <p className="mt-0.5 text-legenda text-tinta-fraca">{formatarRelativo(item.ocorrido_em)}</p>}
               </div>
               {acao && (
                 <Link

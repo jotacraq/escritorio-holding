@@ -67,10 +67,23 @@ export function Cartao({
             preenchimento === "sem" ? "border-b border-linha px-5 py-4 sm:px-6" : `${PREENCHIMENTO[preenchimento]} ${children ? "pb-0 sm:pb-0" : ""}`
           }`}
         >
-          <div className="min-w-0 flex-1">
+          {/* `basis-56` + `flex-wrap` no `header`: a coluna do título PEDE
+              14rem antes de dividir a linha com as ações. Sem isso ela
+              encolhia a 87px em Admin → Parâmetros a 390px (medido) — o selo
+              e o botão ficavam com quase toda a largura e a descrição vazava.
+              Com a base declarada, quando não cabem os dois, é a AÇÃO que
+              desce para a linha de baixo, que é a ordem de leitura certa. */}
+          <div className="min-w-0 flex-1 basis-56">
             {rotulo && <p className="text-rotulo font-medium uppercase text-tinta-fraca">{rotulo}</p>}
+            {/* `break-words` (Fase 7 r2, 390px): `min-w-0 flex-1` deixa a caixa
+                encolher, mas um título SEM espaço — `cartorio.certidao.valor`,
+                um e-mail, uma URL — não tem onde quebrar e VAZA por baixo do
+                selo da coluna `acao` (medido em Admin → Parâmetros a 390px:
+                o valor "R$ 2.000,00" ficava por cima da chave). `break-word`
+                só age quando não há outra saída — título com espaço continua
+                quebrando pelo espaço, como antes. */}
             {titulo && (
-              <h2 title={tituloTitle} className={`font-bold text-tinta ${rotulo ? "mt-1" : ""} text-subtitulo`}>
+              <h2 title={tituloTitle} className={`break-words font-bold text-tinta ${rotulo ? "mt-1" : ""} text-subtitulo`}>
                 {titulo}
               </h2>
             )}

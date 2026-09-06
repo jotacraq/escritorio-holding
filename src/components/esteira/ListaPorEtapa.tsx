@@ -39,12 +39,20 @@ function LinhaJornada({
     >
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
-          <Link href={`/jornadas/${jornada.id}`} className="-my-3 truncate py-3 text-sm font-bold text-tinta hover:text-[color:var(--latao)]">
-            {jornada.nome}
+          {/* DS §2.2: alvo pequeno declara `min-h-11` — não confie no padding.
+              `py-3` sobre 13px/1.45 dava 42,8px (medido a 390px na Fase 7 r2),
+              1,2px abaixo do alvo mínimo. O `-my-3` continua cancelando o
+              padding para a linha da lista não crescer; o `truncate` desceu
+              para o `<span>` porque elipse precisa de caixa de bloco. */}
+          <Link
+            href={`/jornadas/${jornada.id}`}
+            className="-my-3 flex min-h-11 min-w-0 items-center py-3 text-sm font-bold text-tinta hover:text-[color:var(--latao)]"
+          >
+            <span className="truncate">{jornada.nome}</span>
           </Link>
           {jornada.origem_dado === "exemplo" && <SeloDadoExemplo />}
         </div>
-        <p className="text-xs text-tinta-suave">
+        <p className="text-legenda text-tinta-suave">
           {formatarCidadeUf(jornada.cidade, jornada.uf)}
           <span aria-hidden="true" className="mx-1.5 text-tinta-fraca">
             ·
@@ -54,7 +62,7 @@ function LinhaJornada({
       </div>
       <Trilho passos={passos} variante="compacto" rotulo={`Trilho de ${jornada.nome}`} className="lg:w-44" />
       <ChipProximoPasso proximo={proximo} jornadaId={jornada.id} tamanho="compacto" />
-      <span title={TITULO_DIAS} className="text-xs text-tinta-fraca lg:text-right">
+      <span title={TITULO_DIAS} className="text-legenda text-tinta-fraca lg:text-right">
         {rotuloDiasNaEtapa(jornada.dias_na_etapa)}
       </span>
       <div className="flex justify-end">

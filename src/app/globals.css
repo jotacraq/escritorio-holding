@@ -213,15 +213,15 @@
      Decisão 1 do João: corpo 16 → 14. A escala inteira desceu junto para o
      contraste entre degraus continuar legível. `text-legenda`/`text-rotulo`
      NÃO descem: 12px é o piso absoluto do DS §6 e da WCAG.
-     `--text-xs` passa a coincidir com `--text-legenda` (12px) — são o mesmo
-     tamanho com entrelinhas diferentes; unificar os dois nomes tocaria ~90
-     arquivos e ficou FORA desta rodada.
      `.area-publica` (o cliente de 60+ no celular) NÃO é afetada: ela declara
      o próprio `font-size: 1.0625rem` mais abaixo neste arquivo. */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: 1.4;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.45;
+
+  /* Fase 7 r2 — UNIFICAÇÃO. Na Fase 6 `--text-xs` e `--text-legenda` já eram
+     o MESMO valor (0.75rem/1.4) com dois nomes; dois nomes para um degrau é
+     como a escala volta a divergir sozinha. O nome que fica é o do DS §6 —
+     `text-legenda`, "o piso absoluto". `--text-xs` não existe mais. */
   --text-legenda: 0.75rem;
   --text-legenda--line-height: 1.4;
   --text-rotulo: 0.75rem;

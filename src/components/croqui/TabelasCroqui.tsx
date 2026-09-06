@@ -122,7 +122,7 @@ export function TabelasCroqui({ resultado }: TabelasCroquiProps) {
         >
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-item marker:content-none">
             <h2 className="text-subtitulo font-bold text-tinta">{bloco.rotulo}</h2>
-            <span className="flex items-center gap-item text-xs text-tinta-fraca">
+            <span className="flex items-center gap-item text-legenda text-tinta-fraca">
               {bloco.tabelas.length} {bloco.tabelas.length === 1 ? "tabela" : "tabelas"}
               <span aria-hidden="true" className="group-open:hidden">ver</span>
               <span aria-hidden="true" className="hidden group-open:inline">esconder</span>

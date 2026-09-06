@@ -76,7 +76,7 @@ export function FormularioLogin() {
             type="button"
             onClick={() => setMostrarSenha((v) => !v)}
             aria-pressed={mostrarSenha}
-            className="-my-2 inline-flex min-h-11 items-center text-xs font-medium text-[color:var(--latao)] underline-offset-4 hover:underline"
+            className="-my-2 inline-flex min-h-11 items-center text-legenda font-medium text-[color:var(--latao)] underline-offset-4 hover:underline"
           >
             {mostrarSenha ? "Esconder senha" : "Mostrar senha"}
           </button>

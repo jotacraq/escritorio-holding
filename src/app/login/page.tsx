@@ -17,7 +17,7 @@ export default function PaginaLogin() {
           </Suspense>
         </div>
 
-        <p className="mt-7 border-t border-linha pt-5 text-xs text-tinta-suave">
+        <p className="mt-7 border-t border-linha pt-5 text-legenda text-tinta-suave">
           O acesso é só por convite. Se você ainda não tem conta ou esqueceu a senha, fale com quem administra o sistema no escritório.
         </p>
       </main>

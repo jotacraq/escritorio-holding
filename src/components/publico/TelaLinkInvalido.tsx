@@ -1,4 +1,4 @@
-import { CartaoPublico, ContatoEquipe } from "@/components/publico/atomos";
+import { CartaoPublico } from "@/components/publico/atomos";
 
 /**
  * A UMA tela para todo caso ruim de link (inexistente, expirado, revogado, esgotado, de jornada
@@ -6,8 +6,9 @@ import { CartaoPublico, ContatoEquipe } from "@/components/publico/atomos";
  * oráculo de existência. Por isso este componente não recebe motivo nenhum como prop: só existe
  * uma mensagem possível.
  *
- * Contato do escritório: `ContatoEquipe` (nunca número/e-mail inventado — vem de
- * `NEXT_PUBLIC_CONTATO_*`; sem eles, "fale com quem te mandou este link").
+ * Contato do escritório: no RODAPÉ do layout público (`ContatoEquipe`, nunca
+ * número/e-mail inventado — vem de `NEXT_PUBLIC_CONTATO_*`; sem eles, "fale
+ * com quem te mandou este link"). Não repita aqui dentro.
  */
 export function TelaLinkInvalido() {
   return (
@@ -26,12 +27,16 @@ export function TelaLinkInvalido() {
         </p>
       </div>
 
+      {/*
+       * Fase 7 r2: o `ContatoEquipe` que ficava AQUI saiu — ele agora é o
+       * rodapé de TODAS as páginas públicas (`app/(publico)/layout.tsx`), a
+       * dois dedos daqui. Duas vezes a mesma frase na mesma tela não é
+       * insistência, é ruído: quem lê para de ler. O contato continua na
+       * tela, uma vez, no lugar em que está nas outras quatro páginas.
+       */}
       <CartaoPublico className="w-full max-w-sm text-left">
         <p className="text-rotulo font-medium uppercase text-tinta-fraca">O que fazer agora</p>
-        <p className="mt-2 text-tinta">Peça um link novo — é rápido de gerar.</p>
-        <div className="mt-3">
-          <ContatoEquipe antes="" />
-        </div>
+        <p className="mt-2 text-tinta">Peça um link novo — é rápido de gerar. Quem te enviou este consegue gerar outro na hora.</p>
       </CartaoPublico>
     </div>
   );

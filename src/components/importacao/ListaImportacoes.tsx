@@ -72,7 +72,7 @@ export function ListaImportacoes() {
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate font-medium text-tinta">{importacao.arquivo_nome}</span>
-                  <span className="text-xs text-tinta-suave">{resumoDe(importacao)}</span>
+                  <span className="text-legenda text-tinta-suave">{resumoDe(importacao)}</span>
                 </span>
                 <span className="flex items-center gap-3">
                   <Selo tom={status.tom}>{status.rotulo}</Selo>

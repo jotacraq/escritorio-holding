@@ -207,3 +207,28 @@ export function rotuloDeEtapa(rotuloDoBanco: string): { rotulo: string; title?: 
     title: detalhes.length > 0 ? detalhes.join(" · ") : undefined,
   };
 }
+
+/**
+ * Rótulo humano de uma OPÇÃO de formulário. O valor gravado continua sendo o
+ * do banco (`formularios.definicao[].opcoes`, ex.: `uniao_estavel`) — só a tela
+ * muda. Fase 7: o cliente via "viuvo" e "uniao_estavel" cruas no /p/f.
+ * Opção que não é slug (tem espaço, maiúscula ou acento) volta como está.
+ */
+const ROTULO_OPCAO: Record<string, string> = {
+  solteiro: "Solteiro(a)",
+  casado: "Casado(a)",
+  divorciado: "Divorciado(a)",
+  viuvo: "Viúvo(a)",
+  uniao_estavel: "União estável",
+  separado: "Separado(a)",
+};
+
+export function rotuloOpcao(opcao: string): string {
+  if (typeof opcao !== "string") return "";
+  // `Object.hasOwn`: "constructor"/"__proto__"/"toString" vindos de
+  // `formularios.definicao[].opcoes` não podem cair no protótipo (pentest r2, B1).
+  if (Object.hasOwn(ROTULO_OPCAO, opcao)) return ROTULO_OPCAO[opcao];
+  if (!/^[a-z0-9]+(_[a-z0-9]+)*$/.test(opcao)) return opcao;
+  const frase = opcao.replace(/_/g, " ");
+  return frase.charAt(0).toUpperCase() + frase.slice(1);
+}

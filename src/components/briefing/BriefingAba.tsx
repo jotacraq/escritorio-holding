@@ -57,7 +57,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-controle border border-linha bg-papel-fundo px-3.5 py-2.5">
         <BadgeConfianca valor={briefing.grau_confianca} />
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-tinta-suave">
+        <div className="flex flex-wrap items-center gap-1.5 text-legenda text-tinta-suave">
           <span className="font-medium text-tinta">Fontes usadas:</span>
           {briefing.fontes_usadas.length === 0 ? (
             <span className="italic">nenhuma fonte estruturada</span>
@@ -69,7 +69,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         </div>
       </div>
 
-      <p className="border-t border-linha pt-4 text-xs font-bold uppercase tracking-wide text-tinta-fraca">Análise completa — 13 seções</p>
+      <p className="border-t border-linha pt-4 text-legenda font-bold uppercase tracking-wide text-tinta-fraca">Análise completa — 13 seções</p>
 
       {(briefing.modo_reduzido ?? !briefing.fontes_usadas.includes("transcricao")) && (
         <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-sm text-[color:var(--ambar)]">
@@ -93,7 +93,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip tom="azul">{rotularDisc(c.perfil_disc.predominante)}</Chip>
           {c.perfil_disc.secundario && <Chip>secundário: {rotularDisc(c.perfil_disc.secundario)}</Chip>}
-          <span className="text-xs text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
+          <span className="text-legenda text-tinta-fraca">confiança {c.perfil_disc.confianca}%</span>
         </div>
         <ListaEvidencias evidencias={c.perfil_disc.evidencias} />
       </Secao>
@@ -188,7 +188,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
         <p><strong>Decisores:</strong> {c.processo_decisorio.decisores.join(", ") || "—"}</p>
       </section>
 
-      <p className="nao-imprimir border-t border-linha pt-3 text-xs text-tinta-fraca">
+      <p className="nao-imprimir border-t border-linha pt-3 text-legenda text-tinta-fraca">
         Versão {briefing.versao} · gerado em {formatarDataHora(briefing.criado_em)}
         {briefing.prompt_versao && ` · prompt ${briefing.prompt_versao.chave} v${briefing.prompt_versao.versao}`}
         {briefing.custo_usd != null && ` · custo ${formatarMoeda(briefing.custo_usd)}`}
@@ -206,7 +206,7 @@ function ConteudoBriefing({ briefing }: { briefing: Briefing }) {
 function ChecklistCompletude({ resultado }: { resultado: ResultadoCompletude }) {
   return (
     <div className="rounded-controle border border-linha bg-papel-elevado">
-      <p className="border-b border-linha px-3.5 py-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">
+      <p className="border-b border-linha px-3.5 py-2 text-legenda font-bold uppercase tracking-wide text-tinta-fraca">
         Dado insuficiente para um briefing confiável
         <span className="ml-1.5 rounded-full bg-vermelho-fraco px-1.5 py-0.5 text-legenda font-bold text-[color:var(--vermelho)]">
           {resultado.score} de {resultado.minimo} pontos necessários
@@ -223,7 +223,7 @@ function ChecklistCompletude({ resultado }: { resultado: ResultadoCompletude }) 
               <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--ambar)]" />
             )}
             <span className={`flex-1 ${item.atendido ? "text-tinta-suave" : "text-tinta"}`}>{item.rotulo}</span>
-            <span className="text-xs text-tinta-fraca">{item.peso} pts</span>
+            <span className="text-legenda text-tinta-fraca">{item.peso} pts</span>
           </li>
         ))}
       </ul>
@@ -264,7 +264,13 @@ export function BriefingAba({
   const [confirmandoForcar, setConfirmandoForcar] = useState(false);
 
   useEffect(() => {
-    listarBriefingsDaJornada(jornadaId).then((res) => setHistorico(res?.itens ?? null));
+    // `.catch` obrigatório: o histórico é um EXTRA da aba (só aparece com 2+
+    // versões, linha 331). Sem o `.catch`, uma falha aqui virava promessa
+    // rejeitada sem dono no console — barulho sem ação, num lugar em que a
+    // tela nem promete o dado. `null` é o mesmo estado de "não há histórico".
+    listarBriefingsDaJornada(jornadaId)
+      .then((res) => setHistorico(res?.itens ?? null))
+      .catch(() => setHistorico(null));
   }, [jornadaId]);
 
   async function gerar(forcar: boolean, forcarMesmoAssim = false) {
@@ -323,7 +329,7 @@ export function BriefingAba({
             {briefing && <Botao variante="secundario" onClick={() => window.print()}>Salvar em PDF</Botao>}
           </div>
           {gerando && (
-            <p role="status" className="text-xs text-tinta-suave">
+            <p role="status" className="text-legenda text-tinta-suave">
               Gerando com IA — isso costuma levar de 30 segundos a 1 minuto. A tela não travou, aguarde.
             </p>
           )}

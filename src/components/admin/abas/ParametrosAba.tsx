@@ -190,7 +190,7 @@ export function ParametrosAba() {
                       v{v.versao} — {formatarValor(v)}
                       <SeloAtivo ativo={v.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />
                     </p>
-                    <p className="mt-0.5 text-xs text-tinta-suave">
+                    <p className="mt-0.5 text-legenda text-tinta-suave">
                       Vigente desde {formatarData(v.vigente_de)} · criada em {formatarDataHora(v.criado_em)}
                       {v.ativado_em && ` · ativada em ${formatarDataHora(v.ativado_em)}`}
                     </p>

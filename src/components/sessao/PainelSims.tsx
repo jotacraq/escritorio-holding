@@ -93,7 +93,7 @@ function LinhaSim({
       </div>
 
       {erro && (
-        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+        <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
           {erro}
         </p>
       )}
@@ -245,7 +245,7 @@ function LinhaSimGravacao({
       </div>
 
       {erro && (
-        <p role="alert" className="text-xs text-[color:var(--vermelho)]">
+        <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
           {erro}
         </p>
       )}
@@ -256,7 +256,7 @@ function LinhaSimGravacao({
         </blockquote>
       )}
       {consentimento && (
-        <p className="text-xs text-tinta-fraca">
+        <p className="text-legenda text-tinta-fraca">
           Texto congelado no momento do registro · versão {consentimento.versao_texto} · canal {consentimento.canal}
         </p>
       )}

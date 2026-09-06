@@ -54,7 +54,7 @@ function ListaAfirmacoes({ itens }: { itens: Afirmacao[] }) {
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="rounded-controle border border-linha px-3.5 py-3">
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
+      <h3 className="mb-2 text-legenda font-bold uppercase tracking-wide text-tinta-fraca">{titulo}</h3>
       {children}
     </section>
   );
@@ -183,13 +183,13 @@ export function AnaliseSessaoPainel({
           {briefingAtualId && (
             <a
               href={`/jornadas/${jornadaId}#briefing`}
-              className="rounded-controle text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta"
+              className="rounded-controle text-legenda text-tinta-suave underline decoration-linha-forte hover:text-tinta"
             >
               Briefing Estratégico gerado antes desta sessão
             </a>
           )}
           {analiseAtual && (
-            <Botao variante="secundario" className="text-xs" onClick={() => window.print()}>Salvar em PDF</Botao>
+            <Botao variante="secundario" className="text-legenda" onClick={() => window.print()}>Salvar em PDF</Botao>
           )}
         </div>
       </div>
@@ -197,9 +197,9 @@ export function AnaliseSessaoPainel({
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-tinta">Transcrição da Sessão de Viabilidade</h3>
-          {carregandoTranscricao && <span className="text-xs text-tinta-fraca">Carregando…</span>}
+          {carregandoTranscricao && <span className="text-legenda text-tinta-fraca">Carregando…</span>}
           {transcricaoResp?.transcricao && (
-            <span className="text-xs text-tinta-fraca">
+            <span className="text-legenda text-tinta-fraca">
               Salva em {new Date(transcricaoResp.transcricao.importado_em).toLocaleDateString("pt-BR")}
               {transcricaoResp.total_versoes > 1 ? ` (v${transcricaoResp.total_versoes})` : ""}
             </span>
@@ -227,11 +227,11 @@ export function AnaliseSessaoPainel({
           <Botao variante="primario" carregando={gerando} disabled={texto.trim().length < 200} onClick={gerar}>
             {analiseAtual ? "Gerar nova análise" : "Rodar Análise da Sessão"}
           </Botao>
-          {!sessaoId && <span className="text-xs text-tinta-fraca">Sem Sessão de Viabilidade registrada — o texto acima é usado direto, sem ficar salvo.</span>}
-          {salvo && !erroSalvar && <span role="status" className="text-xs text-[color:var(--verde)]">Transcrição salva.</span>}
+          {!sessaoId && <span className="text-legenda text-tinta-fraca">Sem Sessão de Viabilidade registrada — o texto acima é usado direto, sem ficar salvo.</span>}
+          {salvo && !erroSalvar && <span role="status" className="text-legenda text-[color:var(--verde)]">Transcrição salva.</span>}
         </div>
         {gerando && (
-          <p role="status" className="text-xs text-tinta-suave">
+          <p role="status" className="text-legenda text-tinta-suave">
             Gerando com IA — isso pode levar até 1 minuto. A tela não travou, aguarde.
           </p>
         )}
@@ -316,9 +316,9 @@ function ConteudoAnalise({
               <li key={i} className="text-sm">
                 <span className="font-medium text-tinta">{d.decisor}</span>{" "}
                 <Chip tom="azul">{rotularDisc(d.perfil_predominante)}</Chip>{" "}
-                <span className="text-xs text-tinta-fraca">confiança {d.confianca}%</span>
+                <span className="text-legenda text-tinta-fraca">confiança {d.confianca}%</span>
                 {d.evidencias.length > 0 && (
-                  <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-linha pl-2.5 text-xs text-tinta-fraca">
+                  <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-linha pl-2.5 text-legenda text-tinta-fraca">
                     {d.evidencias.map((ev, j) => (
                       <li key={j}>&ldquo;{ev}&rdquo;</li>
                     ))}
@@ -390,7 +390,7 @@ function ConteudoAnalise({
       <Secao titulo="Fechamento"><p className="text-sm text-tinta">{analise.fechamento}</p></Secao>
 
       {analise.lacunas.length > 0 && (
-        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-xs text-[color:var(--ambar)]">
+        <p role="note" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-2.5 py-2 text-legenda text-[color:var(--ambar)]">
           Lacunas nesta análise: {analise.lacunas.join(" · ")}
         </p>
       )}
@@ -406,17 +406,17 @@ function ConteudoAnalise({
           Gerar croqui a partir desta análise
         </Botao>
         {versaoDetectada !== 2 && (
-          <span className="text-xs text-tinta-fraca">
+          <span className="text-legenda text-tinta-fraca">
             Indisponível para esta análise (formato v1) — edite o croqui manualmente usando as seções acima.
           </span>
         )}
-        {aplicado && <span role="status" className="text-xs text-[color:var(--verde)]">Aplicado ao croqui.</span>}
+        {aplicado && <span role="status" className="text-legenda text-[color:var(--verde)]">Aplicado ao croqui.</span>}
         {aplicado && (
-          <Link href="#croqui" className="text-xs text-tinta-suave underline decoration-linha-forte hover:text-tinta">
+          <Link href="#croqui" className="text-legenda text-tinta-suave underline decoration-linha-forte hover:text-tinta">
             Ver no Editor do Croqui
           </Link>
         )}
-        {erroAplicar && <span role="alert" className="text-xs text-[color:var(--vermelho)]">{erroAplicar}</span>}
+        {erroAplicar && <span role="alert" className="text-legenda text-[color:var(--vermelho)]">{erroAplicar}</span>}
       </div>
     </div>
   );

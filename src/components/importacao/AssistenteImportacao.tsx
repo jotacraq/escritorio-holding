@@ -153,7 +153,7 @@ export function AssistenteImportacao({ aoCriada }: { aoCriada: (importacao: Impo
               <span className="text-sm font-bold text-tinta" id="rotulo-arquivo-csv">
                 Arquivo CSV <span className="text-[color:var(--latao)]" aria-hidden="true">*</span>
               </span>
-              <p id="arquivo-csv-ajuda" className="text-xs text-tinta-suave">
+              <p id="arquivo-csv-ajuda" className="text-legenda text-tinta-suave">
                 Exportado da planilha em CSV — separador vírgula ou ponto e vírgula, UTF-8 ou Windows-1252, tanto faz.
               </p>
               <label
@@ -189,25 +189,25 @@ export function AssistenteImportacao({ aoCriada }: { aoCriada: (importacao: Impo
                 {arquivo && amostra ? (
                   <span className="flex flex-col items-center gap-1">
                     <span className="text-sm font-bold text-tinta">{arquivo.name}</span>
-                    <span className="text-xs text-tinta-suave">
+                    <span className="text-legenda text-tinta-suave">
                       {formatarTamanho(arquivo.size)} · {amostra.cabecalho.length} colunas · {amostra.totalLinhas} linha{amostra.totalLinhas === 1 ? "" : "s"} de dado
                     </span>
-                    <span className="text-xs text-[color:var(--latao)] underline underline-offset-4">Trocar arquivo</span>
+                    <span className="text-legenda text-[color:var(--latao)] underline underline-offset-4">Trocar arquivo</span>
                   </span>
                 ) : (
                   <span className="flex flex-col items-center gap-1">
                     <span className="text-sm font-bold text-tinta">{edicaoId ? "Escolher o arquivo CSV" : "Escolha a edição primeiro"}</span>
-                    <span className="text-xs text-tinta-suave">{edicaoId ? "ou arraste e solte aqui" : "o arquivo só pode ser lido depois de saber a edição de origem"}</span>
+                    <span className="text-legenda text-tinta-suave">{edicaoId ? "ou arraste e solte aqui" : "o arquivo só pode ser lido depois de saber a edição de origem"}</span>
                   </span>
                 )}
               </label>
               {erroLeitura && (
-                <p role="alert" className="text-xs font-medium text-[color:var(--vermelho)]">
+                <p role="alert" className="text-legenda font-medium text-[color:var(--vermelho)]">
                   {erroLeitura}
                 </p>
               )}
               {arquivo && arquivo.size > TAMANHO_MAXIMO_AVISO_BYTES && (
-                <p className="text-xs text-[color:var(--ambar)]">
+                <p className="text-legenda text-[color:var(--ambar)]">
                   Arquivo com {formatarTamanho(arquivo.size)} — acima dos 5 MB configurados hoje. O servidor pode recusar; se precisar de um teto maior, ajuste em Admin → Configurações.
                 </p>
               )}
@@ -272,7 +272,7 @@ export function AssistenteImportacao({ aoCriada }: { aoCriada: (importacao: Impo
               <div>
                 <dt className="text-rotulo font-medium uppercase text-tinta-fraca">Arquivo</dt>
                 <dd className="mt-0.5 break-all font-medium text-tinta">{arquivo.name}</dd>
-                <dd className="text-xs text-tinta-suave">{formatarTamanho(arquivo.size)} · {amostra.totalLinhas} linha{amostra.totalLinhas === 1 ? "" : "s"} de dado (contagem do navegador; a oficial vem do servidor)</dd>
+                <dd className="text-legenda text-tinta-suave">{formatarTamanho(arquivo.size)} · {amostra.totalLinhas} linha{amostra.totalLinhas === 1 ? "" : "s"} de dado (contagem do navegador; a oficial vem do servidor)</dd>
               </div>
               <div>
                 <dt className="text-rotulo font-medium uppercase text-tinta-fraca">Campos do cadastro</dt>

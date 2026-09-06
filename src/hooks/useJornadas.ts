@@ -13,7 +13,16 @@ export function useEtapasOrdem() {
 export function useEquipe() {
   const [equipe, setEquipe] = useState<MembroEquipe[] | null>(null);
   useEffect(() => {
-    listarEquipe().then((dados) => setEquipe(dados?.itens ?? []));
+    // `.catch` obrigatório: sem ele, um 500 em `/api/equipe` virava PROMISE
+    // REJEITADA SEM DONO — medido na Fase 7 r2 forçando 500 em `**/api/**`:
+    // a tela de Clientes mostrava o erro certinho E cuspia
+    // `Uncaught (in promise) ApiError` no console (2×, com o remonte do
+    // StrictMode). Cair para lista vazia é a verdade da tela: o seletor
+    // "Responsável" fica só com "Todos", que é o que se sabe. Mesmo padrão do
+    // `opcoesEdicoes` em `KanbanEsteira.tsx:70`.
+    listarEquipe()
+      .then((dados) => setEquipe(dados?.itens ?? []))
+      .catch(() => setEquipe([]));
   }, []);
   return equipe;
 }

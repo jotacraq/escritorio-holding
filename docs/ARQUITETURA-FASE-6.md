@@ -563,11 +563,11 @@ sem esperar o BACK terminar. Quem quebrar contrato avisa no scratchpad antes de 
 
 - [ ] **B1 — espinha das 3 sessões** (§1.2): `ChaveSessao`, `ROTULO_SESSAO`, `SESSAO_POR_PASSO`,
       `agruparPorSessao` em `src/lib/pasta/trilho.ts`; `SESSAO_POR_ITEM` em `catalogo.ts`.
-      *Aceite:* `npx tsx scripts/teste-trilho.ts` continua passando nas 6 bordas **e** ganha 3 casos
+      *Aceite:* `npm test` (`src/lib/pasta/trilho.test.ts`, vitest desde a Fase 7) continua passando nas 6 bordas **e** ganha 3 casos
       novos (tudo `null` → nenhuma sessão atual; jornada completa → 3 sessões `feito`; croqui sem
       sessão → sessão 1 com passos `pulado` e sessão 2 `atual`).
 - [ ] **B2 — `src/lib/pasta/envios.ts`** (§5.2), função pura, com teste de mesa em
-      `scripts/teste-envios.ts` cobrindo os 6 motivos da tabela. *Aceite:* `npx tsx scripts/teste-envios.ts`
+      `src/lib/pasta/envios.test.ts` cobrindo os 6 motivos da tabela. *Aceite:* `npm test`
       imprime 6/6; nenhum motivo inventado (cada um cita a fonte no comentário).
 - [ ] **B3 — `POST /api/jornadas/[id]/links` aceita `confirmacao`** (§5.3). *Aceite:* `agendamento_id`
       lido no servidor (nunca do corpo); sem agendamento → 409 com código estável; sem `service_role`

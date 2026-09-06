@@ -42,7 +42,7 @@ export function BlocoRoteiro({ sessaoId, bloco, indice, total }: { sessaoId: str
               {fala.locutor && <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">{fala.locutor}</p>}
               <blockquote className="text-subtitulo leading-relaxed text-tinta sm:text-[1.25rem]">“{fala.texto}”</blockquote>
               {fala.rotulo_sim && (
-                <p className="mt-1 text-xs font-medium text-[color:var(--latao)]">{fala.rotulo_sim} — ver painel dos 4 SIMs acima</p>
+                <p className="mt-1 text-legenda font-medium text-[color:var(--latao)]">{fala.rotulo_sim} — ver painel dos 4 SIMs acima</p>
               )}
             </li>
           ))}

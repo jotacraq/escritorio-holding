@@ -45,9 +45,9 @@ export function Kpi({ rotulo, valor, unidade, comparacao, visual, motivoVazio, a
           </div>
         )}
       </div>
-      {vazio && motivoVazio && <p className="text-xs text-tinta-suave">{motivoVazio}</p>}
+      {vazio && motivoVazio && <p className="text-legenda text-tinta-suave">{motivoVazio}</p>}
       {!vazio && comparacao && (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-tinta-suave">
+        <p className="flex flex-wrap items-center gap-2 text-legenda text-tinta-suave">
           <span className={`rounded-full px-2 py-0.5 font-bold ${COR_SENTIDO[comparacao.sentido]}`}>
             {comparacao.sentido === "bom" ? "▲ " : comparacao.sentido === "ruim" ? "▼ " : ""}
             {comparacao.delta}

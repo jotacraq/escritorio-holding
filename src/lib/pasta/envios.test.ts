@@ -1,37 +1,59 @@
 /**
- * scripts/teste-envios.ts
+ * Barra "Enviar" (`src/lib/pasta/envios.ts`, `docs/ARQUITETURA-FASE-6.md`
+ * §5.2 e §5.4): os 6 motivos da tabela do §5.2, os 6 estados de linha do §5.4
+ * e as duas invariantes que a tela depende — os 5 tipos aparecem SEMPRE, e
+ * emitir sobre link ativo pede confirmação.
  *
- * Teste de mesa da barra "Enviar" (`src/lib/pasta/envios.ts`,
- * `docs/ARQUITETURA-FASE-6.md` §5.2). Cobre os 6 motivos da tabela do §5.2,
- * os 6 estados de linha do §5.4 e as duas invariantes que a tela depende:
- * os 5 tipos aparecem SEMPRE, e emitir sobre link ativo pede confirmação.
+ * Convertido de `scripts/teste-envios.ts` (Fase 7 · rodada 2) — mesmos casos,
+ * mesmos números, agora sob `npm test` / CI.
  *
- *   npx tsx scripts/teste-envios.ts
- *
- * Sem framework de teste no projeto — script standalone, mesmo padrão de
- * `scripts/teste-trilho.ts`. Sai com código 1 em qualquer falha.
- *
- * A função sob teste é PURA: nenhum banco, nenhuma env, `agora` injetado.
+ * `derivarEnvios` é PURA: nenhum banco, nenhuma env, `agora` injetado.
  */
-import { derivarEnvios, MOTIVO_ENVIO, TIPOS_ENVIO, type ItemEnvio, type TipoEnvio } from "../src/lib/pasta/envios";
-import type { Ficha360 } from "../src/lib/api";
-import type { LinkPublicoResumo } from "../src/types/publico";
+import { describe, expect, it } from "vitest";
+
+import { derivarEnvios, MOTIVO_ENVIO, TIPOS_ENVIO, type ItemEnvio, type TipoEnvio } from "@/lib/pasta/envios";
+import type { Ficha360 } from "@/lib/api";
+import type { LinkPublicoResumo } from "@/types/publico";
 
 const AGORA = Date.parse("2026-09-05T12:00:00Z");
 const EM_7_DIAS = new Date(AGORA + 7 * 24 * 60 * 60 * 1000).toISOString();
 const HA_2_DIAS = new Date(AGORA - 2 * 24 * 60 * 60 * 1000).toISOString();
 const HA_10_DIAS = new Date(AGORA - 10 * 24 * 60 * 60 * 1000).toISOString();
 
-let falhas = 0;
-let passaram = 0;
+// ---------------------------------------------------------------------------
+// Harness — cada `conferir` do script original vira um `it` do vitest.
+//
+// As condições são avaliadas na COLETA (código puro, síncrono) e asseguradas
+// dentro do `it`: o placar por caso é o mesmo do script, mas quem reporta é
+// o vitest — e o CI reprova o PR.
+// ---------------------------------------------------------------------------
+interface Caso {
+  secao: string;
+  nome: string;
+  ok: boolean;
+  detalhe: string;
+}
+
+const casos: Caso[] = [];
+let secaoAtual = "geral";
+
+function secao(nome: string): void {
+  secaoAtual = nome;
+}
 
 function conferir(nome: string, ok: boolean, detalhe: string): void {
-  if (ok) {
-    passaram += 1;
-    console.log(`  PASS  ${nome}`);
-  } else {
-    falhas += 1;
-    console.log(`  FAIL  ${nome} — ${detalhe}`);
+  casos.push({ secao: secaoAtual, nome, ok, detalhe });
+}
+
+function publicar(): void {
+  for (const nome of [...new Set(casos.map((c) => c.secao))]) {
+    describe(nome, () => {
+      for (const caso of casos.filter((c) => c.secao === nome)) {
+        it(caso.nome, () => {
+          expect(caso.ok, caso.detalhe || caso.nome).toBe(true);
+        });
+      }
+    });
   }
 }
 
@@ -105,8 +127,8 @@ const mapa = (itens: ItemEnvio[]) =>
 // ---------------------------------------------------------------------------
 // Invariantes da barra
 // ---------------------------------------------------------------------------
+secao("BARRA ENVIAR — invariantes (§5.4)");
 
-console.log("\n=== BARRA ENVIAR — invariantes (§5.4) ===\n");
 
 {
   const itens = derivarEnvios([], ficha({ temSessao: false }), AGORA);
@@ -131,7 +153,8 @@ console.log("\n=== BARRA ENVIAR — invariantes (§5.4) ===\n");
 // Os 6 motivos da tabela do §5.2 — um a um, com a fonte no comentário
 // ---------------------------------------------------------------------------
 
-console.log("\n=== BARRA ENVIAR — os 6 motivos do §5.2 ===\n");
+secao("BARRA ENVIAR — os 6 motivos do §5.2");
+
 
 // 1 · Jornada encerrada trava TODOS os tipos (0028:816-818).
 {
@@ -223,7 +246,8 @@ console.log("\n=== BARRA ENVIAR — os 6 motivos do §5.2 ===\n");
 // Os estados de linha do §5.4
 // ---------------------------------------------------------------------------
 
-console.log("\n=== BARRA ENVIAR — estados de linha (§5.4) ===\n");
+secao("BARRA ENVIAR — estados de linha (§5.4)");
+
 
 {
   const itens = derivarEnvios(
@@ -290,6 +314,4 @@ console.log("\n=== BARRA ENVIAR — estados de linha (§5.4) ===\n");
   conferir("link de confirmação emitido pela régua aparece na barra", c.estado === "ativo", mapa(itens));
   conferir("e emitir outro exige confirmação de 1 linha", c.substituiAtivo === true, mapa(itens));
 }
-
-console.log(`\n${falhas === 0 ? "PASS" : "FAIL"} — ${passaram} conferências ok, ${falhas} falhas.\n`);
-process.exit(falhas === 0 ? 0 : 1);
+publicar();

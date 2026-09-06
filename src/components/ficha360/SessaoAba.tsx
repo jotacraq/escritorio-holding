@@ -284,7 +284,7 @@ function ComposicaoFamiliar({ jornadaId }: { jornadaId: string }) {
   useEffect(carregar, [jornadaId]);
 
   return (
-    <Cartao titulo="Composição familiar" acao={familiares && familiares.length > 0 ? <span className="text-xs text-tinta-fraca">{familiares.length} pessoas</span> : null}>
+    <Cartao titulo="Composição familiar" acao={familiares && familiares.length > 0 ? <span className="text-legenda text-tinta-fraca">{familiares.length} pessoas</span> : null}>
       <div className="flex flex-col gap-cartao">
         {familiares === undefined ? (
           <div className="flex flex-col gap-2" role="status" aria-label="Carregando familiares">

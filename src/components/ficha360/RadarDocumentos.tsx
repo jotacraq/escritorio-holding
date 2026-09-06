@@ -219,7 +219,7 @@ function BlocoLado({
             {titulo}
           </h2>
           {total > 0 && (
-            <span className="text-xs font-medium text-tinta-suave">
+            <span className="text-legenda font-medium text-tinta-suave">
               {prontos} de {total} prontos
             </span>
           )}
@@ -238,7 +238,7 @@ function BlocoLado({
                 {!item.obrigatorio && <span className="text-tinta-fraca"> · opcional</span>}
               </span>
               {item.recebido_em && (
-                <time dateTime={item.recebido_em} className="shrink-0 text-xs tabular-nums text-tinta-fraca">
+                <time dateTime={item.recebido_em} className="shrink-0 text-legenda tabular-nums text-tinta-fraca">
                   {formatarData(item.recebido_em)}
                 </time>
               )}

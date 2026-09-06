@@ -104,14 +104,14 @@ export function Travado({
                   </p>
                 </div>
 
-                {item.ocorrido_em && <span className="whitespace-nowrap text-xs text-tinta-fraca">{formatarRelativo(item.ocorrido_em)}</span>}
+                {item.ocorrido_em && <span className="whitespace-nowrap text-legenda text-tinta-fraca">{formatarRelativo(item.ocorrido_em)}</span>}
 
                 {destino ? (
                   <LinkBotao href={destino} className="sm:ml-auto">
                     Resolver
                   </LinkBotao>
                 ) : (
-                  <span className="text-xs text-tinta-fraca sm:ml-auto">Sem cliente ligado</span>
+                  <span className="text-legenda text-tinta-fraca sm:ml-auto">Sem cliente ligado</span>
                 )}
               </LinhaFila>
             );

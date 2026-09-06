@@ -29,8 +29,9 @@
  * ausência: falta de dado nunca vira "não aconteceu".
  * ---------------------------------------------------------------------------
  *
- * TESTES DE MESA — as 6 bordas do §8.1 estão em `scripts/teste-trilho.ts`
- * (`npx tsx scripts/teste-trilho.ts`), não em comentário: comentário não roda.
+ * TESTES DE MESA — as 6 bordas do §8.1 estão em `src/lib/pasta/trilho.test.ts`
+ * (`npm test`, e o CI do GitHub roda em todo PR), não em comentário: comentário
+ * não roda.
  *
  * | # | borda                                        | esperado                                        |
  * |---|----------------------------------------------|-------------------------------------------------|

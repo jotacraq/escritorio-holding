@@ -39,7 +39,7 @@ function LinhaDisponibilidade({ disponibilidade, aoAtualizar }: { disponibilidad
     <li className="flex min-h-11 flex-wrap items-center justify-between gap-3 px-5 py-3 transition-colors duration-[var(--transicao-rapida)] hover:bg-papel sm:px-6">
       <div className="min-w-0">
         <p className="text-sm font-bold text-tinta">{rotulo}</p>
-        <p className="text-xs text-tinta-suave">
+        <p className="text-legenda text-tinta-suave">
           Sessões de {disponibilidade.duracao_minutos} min · vale de {formatarDataCalendario(disponibilidade.vale_de)}
           {disponibilidade.vale_ate ? ` até ${formatarDataCalendario(disponibilidade.vale_ate)}` : ", sem data de término"}
         </p>
@@ -99,10 +99,10 @@ export function PainelDisponibilidade() {
           <details className="group rounded-cartao border border-linha bg-papel-elevado px-cartao py-item shadow-cartao">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-item marker:content-none">
               <span className="text-subtitulo font-bold text-tinta">Adicionar um dia de atendimento</span>
-              <span aria-hidden="true" className="text-xs text-tinta-fraca group-open:hidden">
+              <span aria-hidden="true" className="text-legenda text-tinta-fraca group-open:hidden">
                 abrir
               </span>
-              <span aria-hidden="true" className="hidden text-xs text-tinta-fraca group-open:inline">
+              <span aria-hidden="true" className="hidden text-legenda text-tinta-fraca group-open:inline">
                 fechar
               </span>
             </summary>

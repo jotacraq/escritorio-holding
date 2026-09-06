@@ -92,13 +92,13 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
                 ) : (
                   <Selo tom="ambar">Sem correspondência</Selo>
                 )}
-                <time dateTime={item.recebida_em} className="text-xs text-tinta-fraca" title={formatarDataHora(item.recebida_em)}>
+                <time dateTime={item.recebida_em} className="text-legenda text-tinta-fraca" title={formatarDataHora(item.recebida_em)}>
                   {formatarRelativo(item.recebida_em)}
                 </time>
               </div>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta">{item.corpo}</p>
               {item.anexos.length > 0 && (
-                <p className="text-xs text-tinta-fraca" title={`Anexo abre na ${rotulo("provedor_whatsapp")} (${titleDe("provedor_whatsapp")}).`}>
+                <p className="text-legenda text-tinta-fraca" title={`Anexo abre na ${rotulo("provedor_whatsapp")} (${titleDe("provedor_whatsapp")}).`}>
                   {item.anexos.length} anexo{item.anexos.length === 1 ? "" : "s"}
                 </p>
               )}
@@ -110,7 +110,7 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
                 </div>
               )}
               {item.pessoa_id && item.vinculada_em && (
-                <p className="text-xs text-tinta-fraca">Vinculada à mão em {formatarDataHora(item.vinculada_em)}</p>
+                <p className="text-legenda text-tinta-fraca">Vinculada à mão em {formatarDataHora(item.vinculada_em)}</p>
               )}
             </li>
           ))}
@@ -279,7 +279,7 @@ function VincularPessoa({
                       }`}
                     >
                       <span className="text-sm font-bold text-tinta">{pessoa.nome}</span>
-                      <span className="text-xs text-tinta-suave">
+                      <span className="text-legenda text-tinta-suave">
                         {pessoa.telefone ? formatarTelefone(pessoa.telefone) : "sem telefone"}
                         {pessoa.cidade ? ` · ${pessoa.cidade}${pessoa.uf ? `/${pessoa.uf}` : ""}` : ""}
                         {pessoa.desfecho !== "aberta" ? ` · jornada ${pessoa.desfecho}` : ""}

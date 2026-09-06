@@ -134,17 +134,27 @@ function TabelaCroquiInterna({
             {tabela.titulo}
           </Titulo>
           {tabela.nota && (
-            <p className="text-xs" style={{ color: paleta.tintaFraca }}>
+            <p className="text-legenda" style={{ color: paleta.tintaFraca }}>
               {tabela.nota}
             </p>
           )}
         </div>
       )}
 
+      {/* `relative` NÃO é decoração: cada célula tem um `<span class="sr-only">`
+          com a explicação, e `.sr-only` é `position:absolute`. Descendente
+          absoluto só é cortado pelo `overflow` de um ancestral que seja o
+          CONTAINING BLOCK dele — e um contêiner `static` não é. Sem isto os
+          spans ficavam ancorados no bloco inicial, na coluna x≈1.200 px da
+          tabela rolada, e esticavam a PÁGINA inteira: a 390 px o
+          `document.scrollWidth` dava 1.200 px e o croqui rolava na horizontal.
+          `relative` faz o próprio contêiner de rolagem ser o containing block,
+          e a rolagem volta a ser da tabela, não da tela. Não muda um pixel do
+          desenho — nem em 390, nem em 1440. */}
       <div
         className={`rounded-controle border ${
           rolavel
-            ? "overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--latao-cta)]"
+            ? "relative overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--latao-cta)]"
             : ""
         }`}
         style={{ borderColor: paleta.linha, background: paleta.papel }}
@@ -232,7 +242,7 @@ export const TabelaCroqui = memo(TabelaCroquiInterna);
 /** Legenda dos glifos — uma linha, fora do fluxo das tabelas. */
 export function LegendaGlifos({ mostrarProcedencia }: { mostrarProcedencia: boolean }) {
   return (
-    <p className="text-xs text-tinta-fraca">
+    <p className="text-legenda text-tinta-fraca">
       <span aria-hidden="true">—</span> falta cadastrar · <span aria-hidden="true">✎</span> digitado ·{" "}
       <span aria-hidden="true">≈</span> estimativa
       {mostrarProcedencia && (

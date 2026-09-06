@@ -242,7 +242,7 @@ function SecaoPatrimonial({ patrimonio }: { patrimonio: PatrimonioItem[] }) {
     <div className="flex flex-col gap-4">
       {[...grupos.entries()].map(([tipo, itens]) => (
         <div key={tipo} className="flex flex-col gap-1.5">
-          <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">{ROTULOS_TIPO_PATRIMONIO[tipo]}</p>
+          <p className="text-legenda font-bold uppercase tracking-wide text-tinta-fraca">{ROTULOS_TIPO_PATRIMONIO[tipo]}</p>
           <ul className="flex flex-col gap-1">
             {itens.map((item) => (
               <li key={item.id} className="rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm text-tinta">
@@ -324,7 +324,7 @@ function SecaoFamiliar({ jornadaId, familiares, aoAtualizar }: { jornadaId: stri
               <li key={f.id} className="rounded-controle bg-papel-fundo px-2.5 py-1.5 text-sm">
                 <span className="font-medium text-tinta">{f.nome || f.parentesco}</span>
                 <span className="text-tinta-fraca"> — {f.parentesco}</span>
-                {partes.length > 0 && <p className="text-xs text-tinta-suave">{partes.join(" · ")}</p>}
+                {partes.length > 0 && <p className="text-legenda text-tinta-suave">{partes.join(" · ")}</p>}
               </li>
             );
           })}
@@ -363,10 +363,10 @@ function SecaoFamiliar({ jornadaId, familiares, aoAtualizar }: { jornadaId: stri
               <input value={novo.observacoes} onChange={(e) => setNovo({ ...novo, observacoes: e.target.value })} className="rounded-controle border border-linha-forte bg-papel-elevado px-2 py-1.5" />
             </label>
           </div>
-          {erro && <p className="text-xs text-[color:var(--vermelho)]">{erro}</p>}
+          {erro && <p className="text-legenda text-[color:var(--vermelho)]">{erro}</p>}
           <div className="flex gap-2">
-            <Botao variante="primario" carregando={salvando} onClick={salvar} className="text-xs">Adicionar</Botao>
-            <Botao variante="fantasma" className="text-xs" onClick={() => setNovo(null)}>Cancelar</Botao>
+            <Botao variante="primario" carregando={salvando} onClick={salvar} className="text-legenda">Adicionar</Botao>
+            <Botao variante="fantasma" className="text-legenda" onClick={() => setNovo(null)}>Cancelar</Botao>
           </div>
         </div>
       ) : (
@@ -457,7 +457,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
   return (
     <div className="flex flex-col gap-bloco">
       <div className="nao-imprimir flex items-center justify-between gap-3">
-        <p className="text-xs text-tinta-fraca">Relatório da Sessão de Viabilidade — espelha o formulário em papel, campo a campo.</p>
+        <p className="text-legenda text-tinta-fraca">Relatório da Sessão de Viabilidade — espelha o formulário em papel, campo a campo.</p>
         <Botao variante="secundario" tamanho="compacto" onClick={() => window.print()}>Imprimir relatório</Botao>
       </div>
 
@@ -483,7 +483,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
                 {ROTULO_CENARIO_RESUMO[t.cenario] ?? t.cenario}: {t.total !== null ? formatarMoeda(t.total) : `faltam ${t.rubricas_ausentes}`}
               </Selo>
             ))}
-            <span className="text-xs text-tinta-suave">
+            <span className="text-legenda text-tinta-suave">
               {cenariosCompletos} de {totaisCenario.length} {totaisCenario.length === 1 ? "cenário completo" : "cenários completos"}
             </span>
           </div>
@@ -529,13 +529,13 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
         <legend className="text-base font-bold text-tinta">Composição familiar</legend>
-        <p className="text-xs text-tinta-fraca">Casal — idade, ocupação, regime de casamento, ano do casamento. Filhos — idade, ocupação, regime de casamento, netos.</p>
+        <p className="text-legenda text-tinta-fraca">Casal — idade, ocupação, regime de casamento, ano do casamento. Filhos — idade, ocupação, regime de casamento, netos.</p>
         <SecaoFamiliar jornadaId={jornadaId} familiares={familiares} aoAtualizar={aoAtualizar} />
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 border-t border-linha pt-4">
         <legend className="text-base font-bold text-tinta">Composição patrimonial</legend>
-        <p className="nao-imprimir text-xs text-tinta-fraca">Mesma fonte de Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
+        <p className="nao-imprimir text-legenda text-tinta-fraca">Mesma fonte de Patrimônio — imóveis (ano de aquisição, valor histórico e de mercado, destinação e locação), veículos, investimentos e empresas (objeto, sócios, capital social, PL, faturamento).</p>
         <SecaoPatrimonial patrimonio={patrimonio} />
       </fieldset>
 
@@ -563,12 +563,12 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
 
       <fieldset className="flex flex-col gap-4 border-t border-linha pt-4">
         <legend className="text-base font-bold text-tinta">Dados para início da execução do croqui</legend>
-        <p className="nao-imprimir rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-xs text-[color:var(--ambar)]">
+        <p className="nao-imprimir rounded-controle border border-ambar-borda bg-ambar-fraco px-3 py-2 text-legenda text-[color:var(--ambar)]">
           Alíquota e link de legislação são digitados pela advogada — o sistema não calcula tributo nenhum.
         </p>
 
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">ITCMD</p>
+          <p className="text-legenda font-bold uppercase tracking-wide text-tinta-fraca">ITCMD</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Texto id="itcmd-dispositivo" rotulo="Dispositivo legal (Lei Estadual)" valor={t.itcmd?.dispositivo_legal ?? ""} aoMudar={(v) => mudarTributo("itcmd", "dispositivo_legal", v)} />
             <Texto id="itcmd-link" rotulo="Link da legislação aplicável" valor={t.itcmd?.link_legislacao ?? ""} aoMudar={(v) => mudarTributo("itcmd", "link_legislacao", v)} placeholder="https://…" />
@@ -583,7 +583,7 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
         </div>
 
         <div className="flex flex-col gap-2 border-t border-linha pt-3">
-          <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">ITBI</p>
+          <p className="text-legenda font-bold uppercase tracking-wide text-tinta-fraca">ITBI</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Texto id="itbi-dispositivo" rotulo="Dispositivo legal (Lei Municipal)" valor={t.itbi?.dispositivo_legal ?? ""} aoMudar={(v) => mudarTributo("itbi", "dispositivo_legal", v)} />
             <Texto id="itbi-link" rotulo="Link da legislação aplicável" valor={t.itbi?.link_legislacao ?? ""} aoMudar={(v) => mudarTributo("itbi", "link_legislacao", v)} placeholder="https://…" />
@@ -594,15 +594,15 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
         </div>
 
         <div className="flex flex-col gap-2 border-t border-linha pt-3">
-          <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">Cartório de notas</p>
-          <p className="text-xs text-tinta-fraca">Estimativa das despesas para escritura de inventário extrajudicial — consultar atos da corregedoria.</p>
+          <p className="text-legenda font-bold uppercase tracking-wide text-tinta-fraca">Cartório de notas</p>
+          <p className="text-legenda text-tinta-fraca">Estimativa das despesas para escritura de inventário extrajudicial — consultar atos da corregedoria.</p>
           <AreaTexto id="cartorio-notas-estimativa" rotulo="Estimativa das despesas" valor={t.cartorio_notas?.estimativa_despesas ?? ""} aoMudar={(v) => mudarTributo("cartorio_notas", "estimativa_despesas", v)} />
           <Texto id="cartorio-notas-link" rotulo="Link da página consultada" valor={t.cartorio_notas?.link ?? ""} aoMudar={(v) => mudarTributo("cartorio_notas", "link", v)} placeholder="https://…" />
         </div>
 
         <div className="flex flex-col gap-2 border-t border-linha pt-3">
-          <p className="text-xs font-bold uppercase tracking-wide text-tinta-fraca">Cartório de registro de imóveis</p>
-          <p className="text-xs text-tinta-fraca">Estimativa das despesas com registro de imóveis — consultar atos.</p>
+          <p className="text-legenda font-bold uppercase tracking-wide text-tinta-fraca">Cartório de registro de imóveis</p>
+          <p className="text-legenda text-tinta-fraca">Estimativa das despesas com registro de imóveis — consultar atos.</p>
           <AreaTexto id="cartorio-registro-estimativa" rotulo="Estimativa das despesas" valor={t.cartorio_registro_imoveis?.estimativa_despesas ?? ""} aoMudar={(v) => mudarTributo("cartorio_registro_imoveis", "estimativa_despesas", v)} />
           <Texto id="cartorio-registro-link" rotulo="Link da página consultada" valor={t.cartorio_registro_imoveis?.link ?? ""} aoMudar={(v) => mudarTributo("cartorio_registro_imoveis", "link", v)} placeholder="https://…" />
         </div>

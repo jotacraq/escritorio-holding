@@ -120,7 +120,7 @@ export function IndicadoresApp() {
               ))}
             </Selecao>
           </Campo>
-          <p className="min-h-11 py-3 text-xs text-tinta-fraca" title="Indicador sem fonte de dado aparece vazio, nunca zero.">
+          <p className="min-h-11 py-3 text-legenda text-tinta-fraca" title="Indicador sem fonte de dado aparece vazio, nunca zero.">
             Só o que a view calcula de fato.
           </p>
         </div>

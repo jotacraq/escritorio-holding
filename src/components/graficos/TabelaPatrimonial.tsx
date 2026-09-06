@@ -122,7 +122,7 @@ export function TabelaPatrimonial({
       </div>
 
       {notasRodape.length > 0 && (
-        <p className="mt-2 text-xs" style={{ color: cores.tintaFraca }}>
+        <p className="mt-2 text-legenda" style={{ color: cores.tintaFraca }}>
           {notasRodape.map((nota) => `${nota}.`).join(" ")}
         </p>
       )}
@@ -134,7 +134,7 @@ type Cores = (typeof PALETA_GRAFICO)["claro"];
 
 function Th({ children, align = "left", cores }: { children: React.ReactNode; align?: "left" | "right"; cores: Cores }) {
   return (
-    <th scope="col" className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${align === "right" ? "text-right" : "text-left"}`} style={{ color: cores.tintaSuave }}>
+    <th scope="col" className={`px-3 py-2 text-legenda font-bold uppercase tracking-wide ${align === "right" ? "text-right" : "text-left"}`} style={{ color: cores.tintaSuave }}>
       {children}
     </th>
   );

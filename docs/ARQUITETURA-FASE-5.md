@@ -55,7 +55,7 @@ src/server/motor-croqui/
   tabelas/*.ts    uma função pura por tabela (19 arquivos)
   calcular.ts     calcularCroqui(entrada, parametros): ResultadoCroqui
   index.ts        superfície pública
-scripts/teste-motor-croqui.ts   testes de mesa (npx tsx); `--fixture <arquivo>` opcional
+src/server/motor-croqui/*.test.ts   testes de mesa (vitest, Fase 7; antes `scripts/teste-motor-croqui.ts`); fixture E via `FIXTURE_MOTOR_CROQUI=<arquivo>`
 ```
 
 ### 4.1 `Celula` — a unidade do resultado
@@ -245,7 +245,7 @@ As abas 15–19 da planilha (alíquotas ITCMD, IRPF, tabela progressiva, tabela 
 - **T18 `pagamento`** — **`sinal = p32% × T17.novo_saldo` do modelo em `configuracoes['croqui.sinal_modelo_referencia']`** (default `celula_3`), **o mesmo para os três modelos**; `saldo_a_vista = T17.novo_saldo(modelo) − sinal`; parcelas 2…`p33` = `saldo_a_vista ÷ n`.
 - **T19 `membership`** — `mensalidade = p34`, `meses_isentos = p35`. Enquanto `p34` estiver em divergência (1 plano × 3 planos), a tabela nasce `ausente` com o motivo — não escolhe um dos preços.
 
-### 4.8 Testes de mesa (`scripts/teste-motor-croqui.ts`)
+### 4.8 Testes de mesa (`src/server/motor-croqui/calcular.test.ts` + `servico.test.ts` — vitest desde a Fase 7; nasceram como `scripts/teste-motor-croqui.ts`)
 Três blocos. **Nenhum valor de cliente entra no repositório.**
 
 **A — exemplo sintético completo (commitado).** SP; ITCMD causa mortis isento até 400.000 · 2% até 4M · 4% até 10M · 6% acima; doação isento até 92.500 · 2% até 370.200 · 4% até 3.146.700 · 6% acima; notas SP por faixa (550 / 1.650 / 2.950 / 17.800 teto); IR ganho isento até 35.000 depois 15%; certidões 7.000; honorários de inventário 7%; cartório imóveis 0,5%; deságio 20%; ITBI 3%; hora 1.800; horas 50/47/35; domicílio vantajoso 2%; `itcmd.fixo.celula_3` 4.000; CDI 10% a.a. Bens: imóvel A (DIRPF 300.000 · mercado 1.000.000 · aluguel 20.000/mês) · imóvel B (200.000 · 600.000 · marcado para venda) · veículo (50.000 · 40.000) · investimento (360.000 · 360.000). **`Σd = 910.000` · `Σm = 2.000.000` · `Σd_im = 500.000` · `Σm_im = 1.600.000`.**
@@ -279,7 +279,7 @@ Três blocos. **Nenhum valor de cliente entra no repositório.**
 
 **C — regressão do deck zerado (commitado).** Reproduz o caso real do Drive: parâmetro de ITCMD removido no meio do cálculo. Assertivas: nenhuma célula sai com `valor === 0` e `procedencia === "ausente"`; `T4.custo_da_inercia.valor === null`; o renderizador de `.docx`/slide desse resultado **não contém a string "R$ 0,00"** em nenhuma célula ausente; e a frase de fechamento não é montada quando o valor é `null`.
 
-**D — propriedade (commitado).** 200 entradas aleatórias: determinismo (duas chamadas, JSON idêntico), nunca lança, nenhuma célula com `valor` não-nulo e `procedencia === "ausente"`, `aplicarFaixas` monotônica na base. **E — conferência contra a planilha real (LOCAL, nunca commitado).** `npx tsx scripts/teste-motor-croqui.ts --fixture tmp/squad/fixture-motor-croqui.json`, com os valores de célula da planilha do cliente. O `tmp/` já está fora do versionamento; o M1 cola no relatório **só** o placar (quantas células bateram, quais divergiram e por quê), nunca os valores.
+**D — propriedade (commitado).** 200 entradas aleatórias: determinismo (duas chamadas, JSON idêntico), nunca lança, nenhuma célula com `valor` não-nulo e `procedencia === "ausente"`, `aplicarFaixas` monotônica na base. **E — conferência contra a planilha real (LOCAL, nunca commitado).** `FIXTURE_MOTOR_CROQUI=tmp/squad/fixture-motor-croqui.json npm test` (Fase 7; antes `npx tsx scripts/teste-motor-croqui.ts --fixture …`), com os valores de célula da planilha do cliente. O `tmp/` já está fora do versionamento; o M1 cola no relatório **só** o placar (quantas células bateram, quais divergiram e por quê), nunca os valores.
 
 ## 5. Persistência
 ### 5.1 `croqui_calculos` — versão reproduzível
@@ -509,7 +509,7 @@ Cada agente recebe: este documento, `tmp/squad/fase5-brief.md`, `brain/06 - Mate
 ### 11.1 Onda 1
 | agente | entrega testável | globs exclusivos |
 |---|---|---|
-| **M1 · Motor + faixas** | `npx tsx scripts/teste-motor-croqui.ts` com PASS em A, B, C e D; placar (sem valores) do bloco E contra a planilha; `tsc` limpo; 0062/0063 com roteiro rodado e saída colada | `src/server/motor-croqui/**` · `src/types/croqui-calculo.ts` · `supabase/migrations/0062_*.sql` · `supabase/migrations/0063_*.sql` · `scripts/teste-motor-croqui.ts` |
+| **M1 · Motor + faixas** | `npm test` (motor: 149 casos em vitest, Fase 7) com PASS em A, B, C e D; placar (sem valores) do bloco E contra a planilha; `tsc` limpo; 0062/0063 com roteiro rodado e saída colada | `src/server/motor-croqui/**` · `src/types/croqui-calculo.ts` · `supabase/migrations/0062_*.sql` · `supabase/migrations/0063_*.sql` · `scripts/teste-motor-croqui.ts` |
 | **M2 · Trilho 9 passos + automações + radar + execução** | mesa do trilho (6 bordas do §8.1); `GET /automacoes` e `GET /radar` em `curl` autenticado; 0064/0065/0067 verificadas e o seed dos 15 marcos conferido contra o cronograma | `src/lib/pasta/trilho.ts` · `src/lib/pasta/sinais.ts` *(só campos novos)* · `src/lib/radar/**` · `src/server/{automacoes,radar,execucao}/**` · `src/app/api/jornadas/[id]/{automacoes,radar,execucao}/**` · `src/types/jornada-automacoes.ts` · `supabase/migrations/0064_*.sql` · `0065_*.sql` · `0067_*.sql` |
 | **M3 · Vocabulário + painel por papel + lei de texto** | palavras visíveis antes/depois em Painel e Comunicação (meta ≤ 50%); captura nos 2 temas e em 390 px; nenhum bloco de sistema no DOM como advogada | `src/lib/vocabulario.ts` · `src/components/painel/**` · `src/components/comunicacao/**` · `src/app/globals.css` · `docs/DESIGN-SYSTEM.md` |
 

@@ -118,7 +118,7 @@ export function DocumentosAba({
       <p
         role="note"
         title="Bucket privado, link assinado de 5 minutos, todo acesso registrado em auditoria."
-        className="text-xs text-tinta-suave"
+        className="text-legenda text-tinta-suave"
       >
         Dado sensível · acesso registrado
       </p>
@@ -142,7 +142,7 @@ export function DocumentosAba({
         </select>
 
         {itemEscolhido ? (
-          <p className="text-xs text-tinta-fraca">{ROTULOS_TIPO[itemEscolhido.tipo]}</p>
+          <p className="text-legenda text-tinta-fraca">{ROTULOS_TIPO[itemEscolhido.tipo]}</p>
         ) : (
           <>
             <label htmlFor="tipo-documento" className="text-sm font-medium text-tinta">
@@ -187,7 +187,7 @@ export function DocumentosAba({
             aria-label={`Enviar arquivo — ${itemEscolhido?.rotulo ?? ROTULOS_TIPO[tipoAvulso]}`}
             onChange={(e) => processarArquivo(e.target.files?.[0])}
           />
-          <p className="text-xs text-tinta-fraca">PDF, JPEG ou PNG · até 20 MB</p>
+          <p className="text-legenda text-tinta-fraca">PDF, JPEG ou PNG · até 20 MB</p>
         </div>
 
         {progresso !== null && (
@@ -212,7 +212,7 @@ export function DocumentosAba({
               <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-controle border border-linha bg-papel-fundo px-3 py-2 text-sm">
                 <div className="min-w-0">
                   <p className="truncate font-medium text-tinta">{doc.nome_arquivo}</p>
-                  <p className="text-xs text-tinta-fraca">
+                  <p className="text-legenda text-tinta-fraca">
                     {ROTULOS_TIPO[doc.tipo] ?? doc.tipo} · {formatarTamanho(doc.tamanho_bytes)} · {formatarDataHora(doc.criado_em)}
                   </p>
                 </div>
@@ -220,7 +220,7 @@ export function DocumentosAba({
                   {item && <Selo tom="verde">{item.rotulo}</Selo>}
                   {doc.item_ref === null && <Selo tom="neutro" title="Sem item: o radar não consegue casar este arquivo com um bem ou familiar.">Sem item</Selo>}
                   {urlAbertaId === doc.id && urlAtual ? (
-                    <a href={urlAtual.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-xs font-medium text-[color:var(--latao)] underline">
+                    <a href={urlAtual.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-legenda font-medium text-[color:var(--latao)] underline">
                       Abrir · expira {formatarDataHora(urlAtual.expiraEm)}
                     </a>
                   ) : (

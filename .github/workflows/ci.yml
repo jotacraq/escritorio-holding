@@ -1,0 +1,98 @@
+# =============================================================================
+# SIC-HF — quality gate
+#
+# Regra da casa (memória do projeto, 2026): o gate de qualidade fica NO PR do
+# GitHub, não em hook local — hook local vira opt-in e some no primeiro `--no-verify`.
+#
+# Roda em `push` e `pull_request` para `main`, na ordem em que o retorno é útil:
+# tipos → lint → testes → build. Os três primeiros são baratos e apontam a linha
+# errada; o build é o caro e vem por último, então quando ele quebra os outros
+# resultados já estão no log.
+#
+# Node 22: é o runtime da Hostinger (Node.js App), onde este projeto roda em
+# produção. `package.json#engines` declara `>=22 <23`; a versão daqui tem de
+# bater com ela.
+#
+# TZ=America/Sao_Paulo: agenda e régua dependem do fuso (README §Variáveis). A
+# suíte passa igual em UTC (medido em 06/09/2026), mas o CI roda no fuso de
+# produção de propósito — se um teste um dia depender do relógio, ele vai
+# depender do relógio CERTO.
+#
+# SEGREDO: nenhum. As duas únicas variáveis do build são as PÚBLICAS do Supabase
+# e vão com valor falso — `next.config.ts` as embute no bundle, então elas
+# precisam existir, mas nada no build fala com o banco (as rotas de API são
+# todas `force-dynamic` e as páginas pré-renderizadas são cascas que buscam no
+# cliente). Segredo de verdade (service_role, Hotmart, OpenRouter, pepper dos
+# links) NÃO entra em CI: nenhum passo daqui precisa deles, e é o que garante
+# que um PR de fora não consiga lê-los.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Só leitura do repositório. Nenhum passo publica, comenta ou escreve.
+permissions:
+  contents: read
+
+# Um push novo na mesma branch cancela a execução anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: America/Sao_Paulo
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  verificacao:
+    name: tipos · lint · testes · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22 (mesma versão da Hostinger)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # `npm ci` (não `npm install`): instala EXATAMENTE o lockfile e falha se
+      # ele estiver fora de sincronia com o package.json. Também evita a poda de
+      # dependências opcionais de Linux que o `npm install` no Windows provoca.
+      - name: Instalar dependências
+        run: npm ci
+
+      # Os quatro passos abaixo são os MESMOS comandos do `npm run verificar`
+      # local — o gate e a bancada do dev não podem divergir.
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # A suíte é de lógica pura (motor do croqui, trilho, barra Enviar, ligação
+      # por IA, links públicos). O que depende de RLS, trigger e RPC continua
+      # sendo provado pelos roteiros `scripts/verificacao-NNNN.sql`, rodados à
+      # mão contra o banco — CI não fala com o Supabase.
+      #
+      # O bloco E do motor confere o resultado contra uma planilha real cuja
+      # fixture mora em `tmp/` (fora do versionamento, por conter valor de
+      # cliente). Aqui ela não existe: os 11 casos saem como `skipped`
+      # explícito, nunca como verde silencioso.
+      - name: Testes (vitest)
+        run: npm test
+
+      - name: Build
+        env:
+          # Falsas de propósito — ver o cabeçalho deste arquivo.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-sem-banco.supabase.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_ci_valor_falso
+          NEXT_PUBLIC_APP_URL: https://ci-sem-banco.invalid
+        run: npm run build

@@ -43,7 +43,7 @@ export function MaterialCroquiPublico({ resultado }: { resultado: ResultadoCroqu
           ))}
         </div>
       ))}
-      <p className="text-xs text-tinta-fraca">
+      <p className="text-legenda text-tinta-fraca">
         <span aria-hidden="true">—</span> valor ainda não fechado.
       </p>
     </section>

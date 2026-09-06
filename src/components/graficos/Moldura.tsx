@@ -32,7 +32,7 @@ export function Moldura({ titulo, fonte, legenda, tabela, tema, children, classN
           {titulo}
         </h3>
         {fonte && (
-          <span className="text-xs" style={{ color: cores.tintaFraca }}>
+          <span className="text-legenda" style={{ color: cores.tintaFraca }}>
             {fonte}
           </span>
         )}
@@ -41,7 +41,7 @@ export function Moldura({ titulo, fonte, legenda, tabela, tema, children, classN
       <div className="w-full">{children}</div>
 
       {legenda && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs" style={{ color: cores.tintaSuave }}>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-legenda" style={{ color: cores.tintaSuave }}>
           {legenda}
         </div>
       )}

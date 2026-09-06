@@ -216,7 +216,7 @@ export function EquipeAba() {
                   <Td rotulo="Estado">
                     <SeloAtivo ativo={perfil.ativo} rotuloAtivo="Ativo" rotuloInativo="Desativado" />
                   </Td>
-                  <Td rotulo="Convite" className="text-xs text-tinta-suave">
+                  <Td rotulo="Convite" className="text-legenda text-tinta-suave">
                     {perfil.convite_enviado_em ? `enviado em ${formatarDataHora(perfil.convite_enviado_em)}` : <Selo tom="ambar">não enviado</Selo>}
                   </Td>
                   <Td acoes>

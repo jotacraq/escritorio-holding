@@ -109,7 +109,7 @@ export function SessaoTarefaCroqui({ jornadaId, tarefa, aoAtualizar }: { jornada
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Selo tom="ambar">Tarefa da advogada</Selo>
-        {tarefa.vence_em && <span className="text-xs text-tinta-suave">vence {formatarRelativo(tarefa.vence_em)}</span>}
+        {tarefa.vence_em && <span className="text-legenda text-tinta-suave">vence {formatarRelativo(tarefa.vence_em)}</span>}
         {mensagem?.valor_croqui != null && <Selo tom="neutro">Croqui: {formatarMoeda(mensagem.valor_croqui)}</Selo>}
       </div>
       <p className="text-sm text-tinta-suave">
