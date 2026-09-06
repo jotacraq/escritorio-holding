@@ -1,6 +1,6 @@
 # Estado Atual — SIC-HF
 
-**Atualizado em:** 2026-09-06 (Fase 7 em andamento). Histórico do dia 1 ficou em [[Fase 2 — o que entrou]] e no `Diário/`.
+**Atualizado em:** 2026-09-06, 13:10 (Fase 7 fechada e publicada em `9bf5ed6`). Histórico do dia 1 ficou em [[Fase 2 — o que entrou]] e no `Diário/`.
 
 ## O que é
 
@@ -13,10 +13,10 @@ Nome e método vêm do documento institucional da própria advogada — [[02 - M
 | | |
 |---|---|
 | **Produção** | `escritorio.grupoparticipa.app.br`, Hostinger Node.js App, deploy automático por push no remote `infra` (`origin` = backup; empurrar nos dois). Versão publicada em `/versao.txt`. |
-| **Banco** | Supabase `fcfsnqqaphtamhrpuyoh` (sa-east-1), migrations até **0072** aplicadas e provadas (`scripts/verificacao-*.sql`). RLS em toda tabela; links públicos só por RPC (0072). |
+| **Banco** | Supabase `fcfsnqqaphtamhrpuyoh` (sa-east-1), migrations até **0077** aplicadas e provadas (`scripts/verificacao-*.sql`). RLS em toda tabela; links públicos só por RPC (0072). |
 | **Dados** | Só a pessoa do próprio João (`origem_dado='exemplo'`), controlada por `scripts/seed-exemplo-completo.ts`. As 70 transcrições de clientes vivem só no banco (sigilo). **Nenhum cliente real passou pelo sistema ainda.** |
 | **Fases fechadas** | MVP · 2 · 3 (IA via OpenRouter) · 4 (esteira automatizada, design system) · 5 (Motor do Croqui) · 6 (3 sessões, menu de 5, Ficha em uma tela). Todas com trava do Fable aprovada. |
-| **Fase atual** | **7 — "Pronto para apresentar"**: ligação por IA madura e testada, pendências da trava da Fase 6, polimento de UX, suíte de testes (vitest). |
+| **Fase 7 (fechada 06/09)** | "Pronto para apresentar": ligação por IA madura (n8n republicado, pentest ALTO fechado), 0073–0077, vitest 470 testes + CI no GitHub, seed de demo (4 famílias) + `docs/APRESENTACAO.md`, mobile/a11y/consistência. Próximo passo é configuração do João (topo do `CONTINUAR-AQUI.md`). |
 | **Acessos** | `elaine@advmais.com` (admin, criado 06/09 — trocar senha no 1º acesso) · `juliano.alfredo86@gmail.com` (admin de teste). |
 
 ## O que roda de verdade × o que roda em modo manual rotulado
