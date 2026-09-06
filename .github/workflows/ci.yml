@@ -71,6 +71,9 @@ jobs:
 
       # Os quatro passos abaixo são os MESMOS comandos do `npm run verificar`
       # local — o gate e a bancada do dev não podem divergir.
+      # `typecheck` roda `next typegen` antes do `tsc`: os tipos globais que o
+      # Next gera (`LayoutProps`, `PageProps` em `.next/types`) só existem depois
+      # de um dev/build — num checkout limpo o `tsc` sozinho reprova.
       - name: Tipos
         run: npm run typecheck
 
