@@ -25,7 +25,7 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
 };
 
 export const TAMANHO_MAXIMO_DOCUMENTO_PUBLICO_BYTES = 20 * 1024 * 1024; // 20 MB, §2.4
-export const LIMITE_ARQUIVOS_POR_LINK = 5; // §2.4
+export const LIMITE_ARQUIVOS_POR_LINK = 10; // §2.4 · 5→10 em 06/09/2026: o radar pede 10+ documentos por família (decisão delegada ao orquestrador pelo João)
 
 export function mimeSuportadoPublico(mime: string): boolean {
   return mime in ASSINATURAS_MIME_PUBLICO;
