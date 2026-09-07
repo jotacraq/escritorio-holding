@@ -7,7 +7,18 @@ import { pendenciaVisivelPara } from "@/components/painel/blocosPorPapel";
 import type { PapelEquipe } from "@/lib/api";
 import type { PendenciaSistemaComunicacao } from "./api-comunicacao";
 
-/** Tipos de `vw_pendencias_sistema` que dizem respeito a comunicação. `cron_parado` já é a linha de envio automático. */
+/**
+ * Tipos de `vw_pendencias_sistema` que dizem respeito a comunicação.
+ * `cron_parado` já é a linha de envio automático.
+ *
+ * **`numero_desconhecido` (0089) fica FORA de propósito.** Ele é derivado de
+ * `mensagens_recebidas` sem `pessoa_id` — exatamente a mesma coisa que a aba
+ * Recebidas já conta no selo "N sem pessoa", com a mesma ação a um clique. Pôr
+ * a linha aqui faria a MESMA pendência aparecer duas vezes na mesma tela, e é o
+ * que já se corrigiu com `cron_parado` no Painel. `telefone_fora_do_padrao`
+ * também não entra: é conserto de cadastro (Clientes), não de comunicação. As
+ * duas continuam no Painel do Dia e no Admin → Pendências, onde há UMA ocorrência.
+ */
 const TIPOS_DESTA_TELA = new Set(["sessao_sem_sala", "mensagem_falhou", "ligacao_ia_falhou"]);
 
 const ROTULO_TIPO: Record<string, string> = {

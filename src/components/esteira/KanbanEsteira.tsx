@@ -74,9 +74,30 @@ const ICONE_ETAPAS = (
  * Mover de etapa continua otimista, com toast "Desfazer", e volta ao lugar com
  * o motivo se o servidor recusar.
  */
+/**
+ * `/clientes?busca=<termo>` — a pendência "Telefone fora do padrão" (0089)
+ * manda para cá com a pessoa já indicada, em vez de despejar quem clicou numa
+ * lista de todo mundo. `buscar_pessoas_por_termo` (0022) casa nome, e-mail e
+ * telefone, então o termo pode ser qualquer um dos três.
+ *
+ * Lido de `window.location` num efeito, e não num `useState` inicial: a rota é
+ * renderizada no servidor, onde `window` não existe — semear o estado no
+ * primeiro render faria o `value` do campo de busca divergir do HTML entregue
+ * (mesmo motivo pelo qual a visão salva no navegador é lida aqui embaixo).
+ */
+function buscaDaUrl(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("busca")?.trim() ?? "";
+}
+
 export function KanbanEsteira() {
   const { notificar } = useToast();
   const [filtrosDigitados, setFiltrosDigitados] = useState<FiltrosJornadas>({});
+  useEffect(() => {
+    const inicial = buscaDaUrl();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (inicial) setFiltrosDigitados((atual) => ({ ...atual, busca: inicial }));
+  }, []);
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const [fase, setFase] = useState<ChaveFase | null>(null);
   const buscaDebatida = useDebounce(filtrosDigitados.busca, 350);

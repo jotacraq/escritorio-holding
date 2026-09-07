@@ -13,7 +13,16 @@ import type { EstadoBloco, PendenciaSistema, TipoPendenciaSistemaConhecido } fro
  * na tela de quem só queria saber com quem falar: viraram nome de negócio,
  * com a sigla no `title`.
  */
-const ROTULO_TIPO: Record<TipoPendenciaSistemaConhecido, string> = {
+/**
+ * Fase 9 (0089) — dois tipos novos, e nenhum deles está em
+ * `TIPOS_PENDENCIA_SISTEMA_CONHECIDOS` (`types/painel-ui.ts` é de outro dono
+ * nesta rodada). O `Record` é declarado com a união estendida aqui mesmo: a
+ * tela precisa do rótulo hoje, e `rotuloTipoPendencia` já tinha o caminho de
+ * fallback para tipo que ela não conhece — o que faltava era o rótulo bom.
+ */
+type TipoNaTela = TipoPendenciaSistemaConhecido | "numero_desconhecido" | "telefone_fora_do_padrao";
+
+const ROTULO_TIPO: Record<TipoNaTela, string> = {
   webhook_falho: "Pagamento não entrou",
   mensagem_falhou: "Envio falhou",
   link_expirando: "Link expirando",
@@ -21,14 +30,22 @@ const ROTULO_TIPO: Record<TipoPendenciaSistemaConhecido, string> = {
   cron_parado: "Envio automático parado",
   sessao_sem_sala: "Sessão sem sala",
   ligacao_ia_falhou: "Ligação por IA falhou",
+  // "Número desconhecido" seria a leitura do sistema; a da equipe é que alguém
+  // escreveu e ninguém sabe quem é. O verbo é o que faz a linha acionável.
+  numero_desconhecido: "Escreveu e não é do cadastro",
+  telefone_fora_do_padrao: "Telefone fora do padrão",
 };
 
 /** A sigla do método/infra que fica no `title` da linha — nunca no fluxo. */
-const TITLE_TIPO: Partial<Record<TipoPendenciaSistemaConhecido, string | undefined>> = {
+const TITLE_TIPO: Partial<Record<TipoNaTela, string | undefined>> = {
   webhook_falho: titleDe("aviso_pagamento"),
   cron_parado: titleDe("envio_automatico"),
   mensagem_falhou: titleDe("regua"),
   ligacao_ia_falhou: titleDe("provedor_ligacao"),
+  numero_desconhecido:
+    "Chegou uma mensagem de um número que não casa com ninguém do cadastro. O agente não respondeu — silêncio é a única resposta que não confirma que existe um sistema atrás do número. Vincule a uma pessoa ou responda à mão em Mensagens.",
+  telefone_fora_do_padrao:
+    "O telefone está gravado fora do padrão internacional (+55…). Enquanto estiver assim, mensagem recebida desse número não casa com o cadastro e o agente não responde. A correção é à mão: o sistema não reescreve telefone de ninguém sozinho.",
 };
 
 /** Tipo novo que a tela ainda não conhece vira texto legível — nunca derruba o bloco. */
@@ -40,7 +57,18 @@ export function rotuloTipoPendencia(tipo: string): string {
 function destinoSemJornada(tipo: string): string | null {
   if (tipo === "cron_parado" || tipo === "mensagem_falhou") return "/mensagens";
   if (tipo === "webhook_falho") return "/admin";
+  // Fase 9. As duas pendências novas chegam SEM `jornada_id` de propósito
+  // (0089): o número desconhecido não tem processo, e o telefone torto é da
+  // pessoa, não de um processo. Cada uma vai para a tela onde a ação existe.
+  if (tipo === "numero_desconhecido") return "/mensagens#recebidas";
   return null;
+}
+
+/** O verbo do botão: "Resolver" genérico não diz o que vai acontecer no clique. */
+function rotuloDoBotao(tipo: string): string {
+  if (tipo === "numero_desconhecido") return "Ver a mensagem";
+  if (tipo === "telefone_fora_do_padrao") return "Corrigir o telefone";
+  return "Resolver";
 }
 
 /**
@@ -89,10 +117,21 @@ export function Travado({
       {(itens) => (
         <ul className="divide-y divide-linha">
           {itens.map((item) => {
-            const destino = item.jornada_id ? `/jornadas/${item.jornada_id}` : destinoSemJornada(item.tipo);
+            // `telefone_fora_do_padrao` não tem `jornada_id` (é da PESSOA), mas
+            // tem o nome — e `/clientes?busca=` abre a lista já na pessoa certa,
+            // com a mesma busca que quem clicou faria à mão. Sem nome, cai na
+            // lista inteira: melhor a tela certa do que um link inventado.
+            const destino =
+              item.tipo === "telefone_fora_do_padrao"
+                ? item.pessoa_nome
+                  ? `/clientes?busca=${encodeURIComponent(item.pessoa_nome)}`
+                  : "/clientes"
+                : item.jornada_id
+                  ? `/jornadas/${item.jornada_id}`
+                  : destinoSemJornada(item.tipo);
             return (
               <LinhaFila key={item.id}>
-                <span title={TITLE_TIPO[item.tipo as TipoPendenciaSistemaConhecido]} className="inline-flex">
+                <span title={TITLE_TIPO[item.tipo as TipoNaTela]} className="inline-flex">
                   <Selo tom="vermelho">{rotuloTipoPendencia(item.tipo)}</Selo>
                 </span>
 
@@ -108,7 +147,7 @@ export function Travado({
 
                 {destino ? (
                   <LinkBotao href={destino} className="sm:ml-auto">
-                    Resolver
+                    {rotuloDoBotao(item.tipo)}
                   </LinkBotao>
                 ) : (
                   <span className="text-legenda text-tinta-fraca sm:ml-auto">Sem cliente ligado</span>

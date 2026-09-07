@@ -50,8 +50,24 @@ const ROTULO_TIPO_PAGAMENTO: Record<TipoPendenciaPagamento, { titulo: string; de
   },
 };
 
+/** O que a 0089 acrescenta (Fase 9): as duas formas de o agente de WhatsApp ficar mudo. */
+type TipoPendenciaAgente = "numero_desconhecido" | "telefone_fora_do_padrao";
+
+const ROTULO_TIPO_AGENTE: Record<TipoPendenciaAgente, { titulo: string; descricao: string }> = {
+  numero_desconhecido: {
+    titulo: "Escreveu e não é do cadastro",
+    descricao:
+      "Um número mandou mensagem e não casou com ninguém. O agente não respondeu de propósito: qualquer texto confirmaria que existe um sistema atrás do número. Alguém precisa vincular a mensagem a uma pessoa ou responder à mão.",
+  },
+  telefone_fora_do_padrao: {
+    titulo: "Telefone fora do padrão",
+    descricao:
+      "O telefone está gravado fora do padrão internacional (+55…). Enquanto estiver assim, mensagem desse número não casa com o cadastro e nem o agente nem a régua de WhatsApp falam com essa pessoa. A correção é à mão — o sistema não reescreve telefone de ninguém sozinho.",
+  },
+};
+
 /** Ordem de urgência para a Dra. Elaine: o que trava a máquina inteira primeiro. */
-const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd | TipoPendenciaPagamento)[] = [
+const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd | TipoPendenciaPagamento | TipoPendenciaAgente)[] = [
   "cron_parado",
   "expurgo_storage_pendente",
   "produto_nao_mapeado",
@@ -59,7 +75,11 @@ const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd | TipoPendenciaPagamento)
   "webhook_falho",
   "mensagem_falhou",
   "ligacao_ia_falhou",
+  // Cliente esperando resposta vem antes de link vencendo: do outro lado há
+  // alguém que escreveu e não recebeu nada.
+  "numero_desconhecido",
   "material_aguardando_aprovacao",
+  "telefone_fora_do_padrao",
   "link_expirando",
 ];
 
@@ -80,7 +100,7 @@ function mapearProdutoDoWebhook(eventoId: string, produtoId: string) {
 }
 
 function rotuloDe(tipo: string): { titulo: string; descricao: string } {
-  const mapa = { ...ROTULO_TIPO, ...ROTULO_TIPO_LGPD, ...ROTULO_TIPO_PAGAMENTO } as Record<string, { titulo: string; descricao: string }>;
+  const mapa = { ...ROTULO_TIPO, ...ROTULO_TIPO_LGPD, ...ROTULO_TIPO_PAGAMENTO, ...ROTULO_TIPO_AGENTE } as Record<string, { titulo: string; descricao: string }>;
   return mapa[tipo] ?? { titulo: tipo.replace(/_/g, " "), descricao: "" };
 }
 
@@ -109,6 +129,16 @@ function destino(item: PendenciaSistema): { href: string; rotulo: string; recarr
   if (item.tipo === "expurgo_storage_pendente") {
     if (!item.pessoa_nome) return { href: "#titulares", rotulo: "Concluir o expurgo" };
     return { href: `/admin?titular=${encodeURIComponent(item.pessoa_nome)}#titulares`, rotulo: "Concluir o expurgo", recarrega: true };
+  }
+  // Fase 9 (0089). As duas chegam SEM `jornada_id`: o número desconhecido não
+  // tem processo, e o telefone torto é da pessoa. Cada uma vai para onde a ação
+  // existe — o botão diz o que vai acontecer, não "Resolver".
+  if (item.tipo === "numero_desconhecido") return { href: "/mensagens#recebidas", rotulo: "Ver a mensagem" };
+  if (item.tipo === "telefone_fora_do_padrao") {
+    // A linha é da PESSOA (sem `jornada_id`) e traz o nome: `?busca=` abre
+    // Clientes já na pessoa certa (`buscar_pessoas_por_termo`, 0022).
+    const href = item.pessoa_nome ? `/clientes?busca=${encodeURIComponent(item.pessoa_nome)}` : "/clientes";
+    return { href, rotulo: "Corrigir o telefone" };
   }
   if (item.tipo === "sessao_sem_sala" && item.jornada_id) return { href: `/jornadas/${item.jornada_id}#sessao`, rotulo: "Colar o link da sala" };
   if (item.tipo === "material_aguardando_aprovacao" && item.jornada_id) return { href: `/jornadas/${item.jornada_id}#material`, rotulo: "Aprovar o material" };

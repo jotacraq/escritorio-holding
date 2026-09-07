@@ -29,17 +29,48 @@ export function eMensagemRecebida(evento: EventoChatwoot): boolean {
   return false;
 }
 
+/**
+ * Mensagem que SAIU pela conversa (C8/D24).
+ *
+ * Até a Fase 9 o webhook descartava tudo que não fosse `incoming`, e por isso
+ * era impossível "calar quando o humano responde": o sistema simplesmente não
+ * via a resposta da equipe. Agora `outgoing` é LIDO — só para carimbar
+ * `humano_respondeu_em`. **Nunca é gravado** em `mensagens_recebidas`, que é a
+ * tabela de ENTRADA: misturar os dois lados ali criaria um segundo vocabulário
+ * para o mesmo fato.
+ *
+ * Nota privada (`private: true`) não conta: é conversa interna da equipe, não
+ * resposta ao cliente.
+ */
+export function eMensagemDeSaida(evento: EventoChatwoot): boolean {
+  if (evento.event !== "message_created") return false;
+  const tipo = evento.message_type;
+  if (tipo === "outgoing" || tipo === 1) return evento.private !== true;
+  return false;
+}
+
+/**
+ * Casa a pessoa pelo telefone com CARDINALIDADE 1.
+ *
+ * Fase 9 (C1/D3): antes era `.limit(1)`, o que significa que dois cadastros com
+ * o mesmo número em formatos diferentes casariam com a PRIMEIRA — em silêncio,
+ * e possivelmente com a pessoa errada. Duas pessoas é motivo para recusar, não
+ * para escolher. As variantes agora cobrem `+55DDDN`, `55DDDN` e `DDDN` (com e
+ * sem o nono dígito), porque o MEDIDO no banco é que a única pessoa real está
+ * gravada sem o `+`.
+ */
 export async function resolverPessoaPorTelefone(
   admin: SupabaseClient,
   telefone: string | null,
 ): Promise<{ pessoaId: string | null; jornadaId: string | null }> {
   if (!telefone) return { pessoaId: null, jornadaId: null };
-  const { data: pessoa } = await admin
+  const { data: encontradas } = await admin
     .from("pessoas")
     .select("id")
     .in("telefone", variantesTelefone(telefone))
-    .limit(1)
-    .maybeSingle<{ id: string }>();
+    .limit(2)
+    .returns<Array<{ id: string }>>();
+  const pessoa = (encontradas ?? []).length === 1 ? encontradas![0] : null;
   if (!pessoa) return { pessoaId: null, jornadaId: null };
   const { data: jornada } = await admin
     .from("jornadas")

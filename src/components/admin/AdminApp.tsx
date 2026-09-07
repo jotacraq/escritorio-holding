@@ -30,6 +30,9 @@ const IntegracoesAba = dynamic(() => import("./abas/IntegracoesAba").then((m) =>
 const CustoIaAba = dynamic(() => import("./abas/CustoIaAba").then((m) => m.CustoIaAba), {
   loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo o custo de IA…" />,
 });
+const AgenteWhatsappAba = dynamic(() => import("./abas/AgenteWhatsappAba").then((m) => m.AgenteWhatsappAba), {
+  loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo o agente de WhatsApp…" />,
+});
 const ListaImportacoes = dynamic(() => import("@/components/importacao/ListaImportacoes").then((m) => m.ListaImportacoes), {
   loading: () => <EsqueletoLista linhas={5} rotulo="Abrindo as importações…" />,
 });
@@ -161,6 +164,18 @@ export function AdminApp() {
       abas={[
         { id: "pendencias", grupo: "Operação", rotulo: "Pendências", descricao: "O que travou e depende de alguém. Cada linha leva à ação que resolve.", conteudo: <PendenciasAba /> },
         { id: "integracoes", grupo: "Operação", rotulo: "Integrações", descricao: "O que o sistema faz sozinho: e-mail, ligação, sala e cobrança — e o que ainda falta ligar.", conteudo: <IntegracoesAba /> },
+        {
+          /* Aba própria, não um cartão dentro de Integrações (Fase 9): o agente
+             tem um interruptor, dois avisos que mudam o que o cliente recebe e
+             uma auditoria de 20 linhas. Empilhar isso em Integrações — que já é
+             a lista de "o que falta ligar" — enterraria o interruptor no meio de
+             um inventário. `dynamic()` mantém a carga inicial de /admin igual. */
+          id: "agente-whatsapp",
+          grupo: "Operação",
+          rotulo: "Agente de WhatsApp",
+          descricao: "O robô que responde o onboarding no WhatsApp: se está ligado, o que ele respondeu hoje e quanto custou.",
+          conteudo: <AgenteWhatsappAba />,
+        },
         { id: "custo-ia", grupo: "Operação", rotulo: "Custo de IA", descricao: "Quanto a análise por IA custou, por período e por tipo de análise.", conteudo: <CustoIaAba /> },
         { id: "importacoes", grupo: "Operação", rotulo: "Importações", descricao: "As planilhas de alunos e compras que já entraram no sistema.", conteudo: <ListaImportacoes /> },
         { id: "parametros", grupo: "Método", rotulo: "Parâmetros do método", descricao: "Os valores que o croqui usa para calcular: impostos por estado, custos de cartório e horas por ato.", conteudo: <ParametrosAba /> },

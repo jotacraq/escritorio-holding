@@ -11,9 +11,10 @@ import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { Selo, SeloStub } from "@/components/ui/Selo";
-import { formatarDataHora, formatarRelativo, formatarTelefone } from "@/lib/formatar";
+import { formatarDataHora, formatarRelativo, formatarTelefone, linkWhatsapp } from "@/lib/formatar";
 import { rotulo, titleDe } from "@/lib/vocabulario";
 import { mensagemDeErro } from "@/components/admin/http";
+import { RespostaDoAgente } from "./agente";
 import { vincularMensagemRecebida, type MensagemRecebidaItem, type RespostaMensagensRecebidas } from "./api-comunicacao";
 
 interface Props {
@@ -28,6 +29,18 @@ interface Props {
  * Telefone que casou mostra a pessoa; sem correspondência, "Vincular a uma
  * pessoa" abre a busca. Tabela ausente no banco = "ainda não disponível"
  * rotulado, nunca lista vazia disfarçada.
+ *
+ * Fase 9 — cada linha diz **quem respondeu**. O selo "Respondido pelo agente"
+ * nasce com a lista, sem clique e sem requisição extra: `item.agente` vem do
+ * próprio `GET /api/mensagens/recebidas`, casado no servidor pelo `unique
+ * (mensagem_recebida_id)`. A primeira versão desta tela reconstruía essa
+ * ligação por `conversa_externa_id` + relógio e só depois de um clique — duas
+ * mensagens no mesmo minuto trocavam de resposta, e a informação mais
+ * importante da fila ficava escondida atrás de um "Quem respondeu?".
+ *
+ * Linha sem `agente` não ganha um "o agente não respondeu esta": com o robô
+ * desligado isso seria a mesma frase em cem linhas. O motivo é por processo e
+ * mora na Ficha (`RecebidasFicha`, `impedimentos`), a um clique no nome.
  */
 export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
   const [vinculando, setVinculando] = useState<MensagemRecebidaItem | null>(null);
@@ -102,13 +115,30 @@ export function Recebidas({ dados, carregando, erro, recarregar }: Props) {
                   {item.anexos.length} anexo{item.anexos.length === 1 ? "" : "s"}
                 </p>
               )}
+              {/* Número desconhecido: as DUAS saídas, lado a lado. Vincular é o
+                  conserto (a próxima mensagem dele já casa); responder à mão é o
+                  que resolve HOJE, porque o agente nunca responde a quem não está
+                  no cadastro — silêncio é a única resposta que não confirma que
+                  existe um sistema atrás do número (D1). */}
               {!item.pessoa_id && (
-                <div>
+                <div className="flex flex-wrap items-center gap-alvo">
                   <Botao variante="secundario" tamanho="compacto" onClick={() => setVinculando(item)}>
                     Vincular a uma pessoa
                   </Botao>
+                  {linkWhatsapp(item.telefone) && (
+                    <a
+                      href={linkWhatsapp(item.telefone) as string}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Abre a conversa no WhatsApp Web. O agente não responde a número fora do cadastro."
+                      className="inline-flex min-h-11 items-center rounded-controle border border-linha-controle bg-papel-elevado px-3.5 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
+                    >
+                      Responder à mão
+                    </a>
+                  )}
                 </div>
               )}
+              {item.agente && <RespostaDoAgente resposta={item.agente} hrefTarefa={item.jornada_id ? `/jornadas/${item.jornada_id}` : null} className="rounded-controle bg-papel px-3.5 py-2.5" />}
               {item.pessoa_id && item.vinculada_em && (
                 <p className="text-legenda text-tinta-fraca">Vinculada à mão em {formatarDataHora(item.vinculada_em)}</p>
               )}

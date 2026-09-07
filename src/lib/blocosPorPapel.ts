@@ -97,7 +97,27 @@ export const PENDENCIAS_DE_PESSOA: ReadonlySet<string> = new Set([
   "link_expirando",
 ]);
 
+/**
+ * Pendências de ATENDIMENTO (Fase 9, 0089): alguém escreveu no WhatsApp e o
+ * agente não respondeu, ou o telefone de um cliente está gravado fora do
+ * padrão e por isso nenhuma mensagem dele casa com o cadastro.
+ *
+ * Não entram em `PENDENCIAS_DE_PESSOA` porque não são de TODO papel interno:
+ * quem responde a WhatsApp e quem corrige cadastro é admin, advogada ou
+ * relacionamento. O assistente não atende conversa — a linha viraria, para
+ * ele, um aviso sem ação a tomar, e aviso assim treina o time a fechar a fila
+ * sem ler.
+ */
+export const PENDENCIAS_DE_ATENDIMENTO: ReadonlySet<string> = new Set([
+  "numero_desconhecido",
+  "telefone_fora_do_padrao",
+]);
+
+const PAPEIS_DE_ATENDIMENTO: ReadonlySet<PapelEquipe> = new Set<PapelEquipe>(["admin", "advogada", "relacionamento"]);
+
 export function pendenciaVisivelPara(papel: PapelEquipe | null | undefined, tipo: string): boolean {
   if (papel === "admin") return true;
-  return PENDENCIAS_DE_PESSOA.has(tipo);
+  if (PENDENCIAS_DE_PESSOA.has(tipo)) return true;
+  if (PENDENCIAS_DE_ATENDIMENTO.has(tipo)) return papel != null && PAPEIS_DE_ATENDIMENTO.has(papel);
+  return false;
 }

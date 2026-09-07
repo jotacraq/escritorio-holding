@@ -70,6 +70,30 @@ describe("telefoneParaLigacao (discagem — estrita)", () => {
 
 describe("variantesTelefone", () => {
   it("gera a forma com e sem o nono dígito para BUSCAR", () => {
-    expect(variantesTelefone("+5521987654321").sort()).toEqual(["+552187654321", "+5521987654321"]);
+    const v = variantesTelefone("+5521987654321");
+    expect(v).toContain("+5521987654321");
+    expect(v).toContain("+552187654321");
+  });
+
+  /**
+   * Fase 9, CONFLITO C1. Medido no banco em 07/09/2026: a única pessoa
+   * `origem_dado='real'` está gravada como `11988887777` — 11 dígitos, SEM
+   * `+`. Antes disto o casamento por telefone acertava as 4 famílias de
+   * demonstração e errava justamente quem é real.
+   */
+  it("cobre também as grafias sem `+` e sem DDI (é como o cadastro real está)", () => {
+    const v = variantesTelefone("+5511988887777");
+    expect(v).toContain("+5511988887777");
+    expect(v).toContain("5511988887777");
+    expect(v).toContain("11988887777");
+    // e as mesmas três sem o nono dígito
+    expect(v).toContain("+551188887777");
+    expect(v).toContain("551188887777");
+    expect(v).toContain("1188887777");
+    expect(new Set(v).size).toBe(v.length);
+  });
+
+  it("número fora do Brasil não ganha variante inventada", () => {
+    expect(variantesTelefone("+351912345678")).toEqual(["+351912345678", "351912345678"]);
   });
 });

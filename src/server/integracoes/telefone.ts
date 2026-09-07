@@ -104,15 +104,42 @@ export function telefoneParaLigacao(bruto: string | null | undefined): Resultado
   return { valido: true, e164: normalizado, alterado: normalizado !== original };
 }
 
-/** Variantes que podem estar gravadas em `pessoas.telefone` para o mesmo número
- * (com/sem o 9 do celular). Usado só para BUSCAR, nunca para gravar. */
+/**
+ * Variantes que podem estar gravadas em `pessoas.telefone` para o mesmo número.
+ * Usado só para BUSCAR, nunca para gravar.
+ *
+ * Fase 9 (CONFLITO C1, D3): até 07/09/2026 só gerava as formas `+55…`, e o
+ * MEDIDO no banco é que a única pessoa `origem_dado='real'` está gravada como
+ * `11988887777` — 11 dígitos, sem `+`. Ou seja: o casamento por telefone
+ * falhava justamente para quem é real e acertava as quatro famílias de
+ * demonstração. Agora cada forma sai em quatro grafias:
+ *
+ *   +55DDD9XXXXXXXX  ·  55DDD9XXXXXXXX  ·  DDD9XXXXXXXX  ·  (as três sem o 9)
+ *
+ * O `.in()` sobre `uniq_pessoas_telefone` (0003:24) continua usando índice —
+ * é uma busca por igualdade em lista curta, não um `like`.
+ *
+ * Isto NÃO normaliza o cadastro: quem está fora do padrão continua fora, e a
+ * correção é ato humano (pendência `telefone_fora_do_padrao`, 0089). Backfill
+ * que reclassifica gente em silêncio é proibido nesta casa.
+ */
 export function variantesTelefone(e164: string): string[] {
-  const variantes = new Set<string>([e164]);
+  const comMais = new Set<string>([e164]);
   const m = /^\+55(\d{2})(\d{8,9})$/.exec(e164);
   if (m) {
     const [, ddd, numero] = m;
-    if (numero.length === 9 && numero.startsWith("9")) variantes.add(`+55${ddd}${numero.slice(1)}`);
-    if (numero.length === 8) variantes.add(`+55${ddd}9${numero}`);
+    if (numero.length === 9 && numero.startsWith("9")) comMais.add(`+55${ddd}${numero.slice(1)}`);
+    if (numero.length === 8) comMais.add(`+55${ddd}9${numero}`);
   }
-  return [...variantes];
+
+  const todas = new Set<string>();
+  for (const forma of comMais) {
+    todas.add(forma);
+    const digitos = forma.replace(/^\+/, "");
+    todas.add(digitos); // 55DDD…
+    if (digitos.startsWith("55") && (digitos.length === 12 || digitos.length === 13)) {
+      todas.add(digitos.slice(2)); // DDD… (o formato que o cadastro real tem hoje)
+    }
+  }
+  return [...todas];
 }

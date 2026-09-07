@@ -140,6 +140,79 @@ export async function enviarWhatsapp(params: { telefone: string; texto: string; 
   return { sucesso: true, provedorId: envio.dados.id != null ? String(envio.dados.id) : null, conversaId: String(conversa.id), erro: null };
 }
 
+/**
+ * De quem é ESTA conversa, segundo o Chatwoot — não segundo o payload.
+ *
+ * Existe por causa do achado MÉDIO do pentest da Fase 9: `conversation.id` vem
+ * inteiro do corpo do webhook e nada o amarrava ao telefone que o porteiro
+ * casou. Quem tivesse o `CHATWOOT_WEBHOOK_SECRET` podia forjar um
+ * `message_created` com `sender.phone_number` de um cliente real e
+ * `conversation.id` de uma conversa que ele mesmo controla — e o onboarding do
+ * cliente (passo, documentos que faltam, link `/p/d`) sairia na conversa do
+ * atacante.
+ *
+ * A resposta certa é perguntar ao Chatwoot de quem é a conversa. O `sender` da
+ * conversa é dado do PROVEDOR, não do payload, e é isso que faz a checagem
+ * valer alguma coisa.
+ *
+ * `telefone` é `null` quando a conversa existe e o contato não tem número
+ * gravado — e `null` NÃO casa com ninguém: quem chama trata como divergência.
+ */
+export type ContatoDaConversa =
+  | { ok: true; telefone: string | null }
+  | { ok: false; erro: string };
+
+export async function telefoneDaConversa(conversaId: string): Promise<ContatoDaConversa> {
+  if (!chatwootConfigurado()) return { ok: false, erro: "chatwoot nao configurado" };
+  const id = String(conversaId).trim();
+  if (!/^\d+$/.test(id)) return { ok: false, erro: "conversa invalida" };
+
+  const { conta } = base();
+  const r = await chamar<{ meta?: { sender?: { phone_number?: string | null; identifier?: string | null } } }>(
+    "GET",
+    `/api/v1/accounts/${conta}/conversations/${id}`,
+  );
+  if (!r.ok) return { ok: false, erro: r.erro };
+  const bruto = r.dados?.meta?.sender?.phone_number ?? r.dados?.meta?.sender?.identifier ?? null;
+  return { ok: true, telefone: normalizarTelefoneE164(bruto) };
+}
+
+/**
+ * Responde NA conversa que o webhook trouxe — UMA chamada (D27).
+ *
+ * `enviarWhatsapp` faz três (busca/cria contato → busca/cria conversa → envia)
+ * e pode CRIAR UMA CONVERSA NOVA. Para responder a quem acabou de escrever
+ * isso é errado duas vezes: gasta três viagens onde uma basta e, quando a
+ * heurística de busca falha, começa uma segunda thread com o mesmo cliente.
+ * Aqui a conversa já veio identificada no `message_created`.
+ *
+ * A janela de 24 h do WhatsApp está sempre aberta neste caminho — o cliente
+ * acabou de mandar mensagem. Iniciar conversa fora dela continua sendo da
+ * régua, com template (D23).
+ */
+export async function responderNaConversa(conversaId: string, texto: string): Promise<EnvioWhatsappResultado> {
+  if (!chatwootConfigurado()) {
+    return { sucesso: false, provedorId: null, conversaId, erro: "chatwoot nao configurado" };
+  }
+  const id = String(conversaId).trim();
+  if (!/^\d+$/.test(id)) {
+    return { sucesso: false, provedorId: null, conversaId, erro: "conversa invalida" };
+  }
+  const corpo = texto.trim();
+  if (corpo.length === 0) {
+    return { sucesso: false, provedorId: null, conversaId: id, erro: "texto vazio" };
+  }
+
+  const { conta } = base();
+  const envio = await chamar<{ id?: number }>("POST", `/api/v1/accounts/${conta}/conversations/${id}/messages`, {
+    content: corpo,
+    message_type: "outgoing",
+    private: false,
+  });
+  if (!envio.ok) return { sucesso: false, provedorId: null, conversaId: id, erro: envio.erro };
+  return { sucesso: true, provedorId: envio.dados.id != null ? String(envio.dados.id) : null, conversaId: id, erro: null };
+}
+
 /** "Testar" do Admin → Integrações: lê a inbox configurada (sem mandar mensagem). */
 export async function testarChatwoot(): Promise<{ ok: boolean; detalhe: string }> {
   const faltam = faltamChatwootEnvio();

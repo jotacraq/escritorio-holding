@@ -23,6 +23,7 @@ import { TrilhoDaFicha, acaoDeAgora } from "@/components/ficha360/TrilhoDaFicha"
 import { PrazosDaFicha } from "@/components/ficha360/PrazosDaFicha";
 import { AutomacoesFicha } from "@/components/ficha360/AutomacoesFicha";
 import { RadarDocumentos } from "@/components/ficha360/RadarDocumentos";
+import { RecebidasFicha } from "@/components/ficha360/RecebidasFicha";
 import { BarraEnviar } from "@/components/ficha360/BarraEnviar";
 import { CartaoCroqui } from "@/components/ficha360/CartaoCroqui";
 import type { SinaisSessaoPasta } from "@/components/pasta/PastaDoCliente";
@@ -242,6 +243,16 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       }
       // O croqui não é gaveta: é cartão + botão para `/croquis/[id]`. Um
       // `#croqui` vindo da Pasta ou de um link antigo leva ao cartão.
+      // `#conversa` (Fase 9) — vem de Mensagens → Recebidas e das pendências do
+      // agente. Mesmo tratamento do croqui: o bloco é um `<details>` que nasce
+      // fechado, então abrir ANTES de rolar; senão o link leva a um título e o
+      // conteúdo continua escondido.
+      if (chave === "conversa") {
+        const bloco = document.getElementById("conversa");
+        bloco?.querySelector("details")?.setAttribute("open", "");
+        bloco?.scrollIntoView({ block: "center" });
+        return;
+      }
       if (chave === "croqui") {
         // O cartao do croqui vive dentro de um `<details>` que nasce SEMPRE
         // fechado (Fase 7). Abrir antes de rolar, senao o link leva a um
@@ -290,9 +301,18 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       {/* O QUE JÁ ACONTECEU / O QUE FALTA. O histórico anda junto: são as duas
           formas de olhar para trás, e cada uma numa linha própria custava
           55 px de dobra por nada. */}
-      <div className="flex flex-wrap items-center gap-item">
-        <div className="min-w-0 flex-1">
+      {/* `items-start`: os dois blocos da esquerda são `<details>` que crescem
+          ao abrir, e com `items-center` o botão Histórico descia junto até o
+          meio da conversa aberta — alvo que muda de lugar conforme o conteúdo. */}
+      <div className="flex flex-wrap items-start gap-item">
+        <div className="flex min-w-0 flex-1 flex-col gap-item">
           <AutomacoesFicha jornadaId={id} />
+          {/* Fase 9 — o lado do robô na conversa do WhatsApp. Mesmo formato de
+              `AutomacoesFicha`: UMA linha que abre em `<details>`, e que não
+              chega ao DOM quando não há nada acontecendo. */}
+          <div id="conversa">
+            <RecebidasFicha jornadaId={id} />
+          </div>
         </div>
         <button
           type="button"

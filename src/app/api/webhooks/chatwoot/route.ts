@@ -4,7 +4,9 @@ import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { registrarErro } from "@/server/erros";
 import { segredosIguais } from "@/server/integracoes/assinatura";
 import { criarLimitador, ipDaRequisicao } from "@/server/integracoes/rate-limit";
-import { eMensagemRecebida, registrarMensagemRecebida, type EventoChatwoot } from "@/server/chatwoot/recebidas";
+import { eMensagemDeSaida, eMensagemRecebida, registrarMensagemRecebida, type EventoChatwoot } from "@/server/chatwoot/recebidas";
+import { carimbarRespostaHumana } from "@/server/agente-whatsapp/estado";
+import { processarMensagemDoAgente } from "@/server/agente-whatsapp/responder";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,6 +81,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ erro: "payload_invalido" }, { status: 400 });
   }
 
+  // C8/D24 — `outgoing` passa a ser LIDO (nunca gravado em `mensagens_recebidas`,
+  // que é tabela de ENTRADA) só para carimbar `humano_respondeu_em`. Sem isto,
+  // "calar quando o humano responde" não teria como funcionar: até a Fase 9 o
+  // sistema simplesmente não via a resposta da equipe.
+  if (eMensagemDeSaida(evento)) {
+    const conversa = evento.conversation?.id != null ? String(evento.conversation.id) : null;
+    if (!conversa) return NextResponse.json({ recebido: true, efeito: "nenhum" }, { status: 200 });
+    try {
+      const carimbo = await carimbarRespostaHumana(supabaseAdmin, {
+        conversaExternaId: conversa,
+        provedorId: evento.id != null ? String(evento.id) : null,
+        quandoIso: new Date().toISOString(),
+      });
+      return NextResponse.json({ recebido: true, efeito: carimbo.carimbou ? "humano_respondeu" : "nenhum", motivo: carimbo.motivo }, { status: 200 });
+    } catch (erro) {
+      registrarErro("POST /api/webhooks/chatwoot#outgoing", erro, { conversa });
+      return NextResponse.json({ recebido: true, efeito: "nenhum" }, { status: 200 });
+    }
+  }
+
   if (!eMensagemRecebida(evento)) {
     return NextResponse.json({ recebido: true, efeito: "nenhum" }, { status: 200 });
   }
@@ -86,11 +108,41 @@ export async function POST(request: NextRequest) {
   try {
     const resultado = await registrarMensagemRecebida(supabaseAdmin, evento);
     if (resultado.situacao === "gravada") {
+      // O agente decide e responde NO MESMO request (D12), com orçamento de
+      // tempo próprio. Ele NUNCA impede a gravação de aparecer: qualquer falha
+      // dele vira `agente: "falha_ao_avaliar"` e a mensagem continua registrada.
+      const agente = await processarMensagemDoAgente(supabaseAdmin, {
+        evento,
+        mensagemRecebidaId: resultado.mensagem.id,
+        conversaExternaId: resultado.mensagem.conversa_externa_id,
+        telefoneBruto: evento.sender?.phone_number ?? evento.sender?.identifier ?? null,
+        corpo: resultado.mensagem.corpo,
+        temAnexo: (evento.attachments ?? []).length > 0,
+      }).catch((erro) => {
+        registrarErro("POST /api/webhooks/chatwoot#agente", erro, { mensagem_id: resultado.mensagem.id });
+        return null;
+      });
+
       return NextResponse.json(
         {
           recebido: true,
           mensagem_id: resultado.mensagem.id,
-          correspondencia: resultado.mensagem.pessoa_id ? "pessoa" : "sem_correspondencia",
+          // Em produção só o VEREDITO. `correspondencia` ("pessoa" vs
+          // "sem_correspondencia") e `agente_motivo`
+          // ("sem_consentimento_whatsapp", "origem_demonstracao") dizem, a quem
+          // tem o token do webhook, se um número qualquer é cliente do
+          // escritório — é o mesmo oráculo que o §F queria fechar, por canal
+          // lateral de CORPO em vez de status (achado BAIXO do pentest da
+          // Fase 9). O Chatwoot não lê nenhum dos dois: este corpo é só ack.
+          // Fora de produção os dois saem, porque é deles que o
+          // `scripts/simular-chatwoot.ts` vive.
+          agente: agente ? (agente.respondeu ? "respondeu" : "silencio") : "falha_ao_avaliar",
+          ...(process.env.NODE_ENV === "production"
+            ? {}
+            : {
+                correspondencia: resultado.mensagem.pessoa_id ? "pessoa" : "sem_correspondencia",
+                ...(agente ? { agente_motivo: agente.motivo } : {}),
+              }),
         },
         { status: 200 },
       );

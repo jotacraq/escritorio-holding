@@ -92,6 +92,31 @@ export const SCHEMAS_CONFIGURACAO: Record<ConfiguracaoChave, z.ZodType> = {
     .array(z.string().regex(/^[a-z][a-z0-9_]{1,40}$/, "rubrica: minúsculas, dígitos e _"))
     .min(1)
     .max(20),
+  // 0088 — agente de WhatsApp de onboarding.
+  //
+  // `ativo` é o interruptor: `false` é o valor semeado e o estado seguro (o
+  // webhook grava a mensagem e não responde nada). Sem estes 7 schemas o
+  // `PATCH /api/admin/configuracoes/[chave]` respondia 404 e o botão do Admin
+  // não salvava — mesmo defeito que `link.limite_global_por_minuto` e
+  // `link.limite_arquivos` já tiveram: chave existe no banco, some daqui.
+  "agente_whatsapp.ativo": z.boolean(),
+  // Silêncio depois que um humano fala, e duração da pausa de "Assumir
+  // conversa". `min(1)`: zero equivaleria a "o robô volta a falar por cima do
+  // humano no segundo seguinte", que é o defeito que a trava veio evitar.
+  // 8 h de teto: acima disso é desligar o agente, e para isso existe `ativo`.
+  "agente_whatsapp.silencio_humano_minutos": z.number().int().min(1).max(480),
+  // Quantas vezes devolve ao passo antes de chamar a equipe (B57). `min(1)`:
+  // 0 faria a primeira mensagem fora do tema virar tarefa direto.
+  "agente_whatsapp.esquivas_ate_humano": z.number().int().min(1).max(5),
+  // Intervalo mínimo entre duas emissões do MESMO tipo de link. Emitir revoga
+  // o anterior (0028): `0` deixaria o cliente derrubar o próprio link a cada
+  // mensagem. Teto de 7 dias — além disso o link já expirou sozinho.
+  "agente_whatsapp.intervalo_link_horas": z.number().int().min(1).max(168),
+  "agente_whatsapp.teto_respostas_hora": z.number().int().min(1).max(60),
+  // Orçamento próprio de IA (C3/D19). `min(0)` de propósito: 0 é uma forma
+  // legítima de desligar SÓ a IA e manter as respostas fixas.
+  "agente_whatsapp.teto_ia_jornada_dia": z.number().int().min(0).max(200),
+  "agente_whatsapp.teto_ia_dia": z.number().int().min(0).max(5000),
 };
 
 export const CHAVES_CONFIGURACAO = Object.keys(SCHEMAS_CONFIGURACAO) as ConfiguracaoChave[];

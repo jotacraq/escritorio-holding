@@ -127,7 +127,18 @@ export type ConfiguracaoChave =
   | "ligacao_ia.retencao_dias"
   | "material.anexar_pdf"
   | "material.rodape_juridico"
-  | "cenario.rubricas";
+  | "cenario.rubricas"
+  // Fase 9 (0088): o agente de WhatsApp de onboarding. `ativo` é o interruptor
+  // do Admin; as outras 6 são as travas (silêncio, esquivas, links, tetos).
+  // Sem estas 7 linhas aqui E o schema em `server/admin/configuracoes.ts`, o
+  // PATCH responde 404 e o interruptor da tela não salva.
+  | "agente_whatsapp.ativo"
+  | "agente_whatsapp.silencio_humano_minutos"
+  | "agente_whatsapp.esquivas_ate_humano"
+  | "agente_whatsapp.intervalo_link_horas"
+  | "agente_whatsapp.teto_respostas_hora"
+  | "agente_whatsapp.teto_ia_jornada_dia"
+  | "agente_whatsapp.teto_ia_dia";
 
 /** Chaves que só o sistema escreve (cron, jobs). A tela mostra, nunca edita. */
 export type ConfiguracaoChaveSomenteLeitura = "regua.ultimo_cron_em";
