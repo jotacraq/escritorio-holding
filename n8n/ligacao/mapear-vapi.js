@@ -244,13 +244,14 @@ module.exports = { mapear: mapear, destinoValido: destinoValido, SEM_RESPOSTA: S
  * COLA NO NÓ (n8n → workflow OXetB37jgJgmif3d → nó "Mapear Vapi → evento
  * SIC-HF e assinar", tipo Code · JavaScript · Run Once for All Items).
  *
- * VERSÃO 06/09/2026 · substitui a anterior INTEIRA (correção A1 do pentest).
- * Novidades: (1) confere `x-vapi-secret` ANTES de qualquer coisa;
+ * VERSÃO 07/09/2026 · substitui a anterior INTEIRA (06/09: correção A1 do
+ * pentest; 07/09: `lerConfig` $vars → $env). Novidades: (1) confere `x-vapi-secret` ANTES de qualquer coisa;
  *            (2) `callback_url` vem de `$vars.SICHF_CALLBACK_URL`, nunca do corpo.
  *
  * O n8n não faz `require` de arquivo do repo: o bloco abaixo é o MESMO código
- * acima, inline, mais a assinatura HMAC. Nada de `$env` (bloqueado nesta
- * instância) — tudo vem de `$vars` (Settings → Variables). São TRÊS:
+ * acima, inline, mais a assinatura HMAC. O plano Community não tem Variables:
+ * `lerConfig` tenta `$vars` e cai para `$env` (env do container no Easypanel,
+ * exige `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`). São TRÊS:
  *   LIGACAO_IA_WEBHOOK_SECRET · VAPI_SERVER_SECRET · SICHF_CALLBACK_URL
  * ===========================================================================
 
@@ -259,18 +260,27 @@ const crypto = require('crypto');
 // <<< cole aqui, sem alterar, de `const SEM_RESPOSTA = [` até o fim de `function mapear(...) { ... }` >>>
 // <<< e, de `n8n/ligacao/verificar-vapi.js`, de `const CABECALHO = ` até o fim de `function verificarSegredoVapi(...) { ... }` >>>
 
+// Configuração (07/09/2026): o plano Community do n8n não tem Variables.
+// Lê `$vars` (se um dia existir) e cai para `$env` — env do container no
+// Easypanel, que exige N8N_BLOCK_ENV_ACCESS_IN_NODE=false. Fail-closed: vazio = ''.
+function lerConfig(nome) {
+  try { const v = $vars && $vars[nome]; if (v != null && String(v).trim() !== '') return String(v).trim(); } catch (e) {}
+  try { const v = $env && $env[nome]; if (v != null && String(v).trim() !== '') return String(v).trim(); } catch (e) {}
+  return '';
+}
+
 const item = $input.first();
 
 // 1. AUTENTICAÇÃO. Sem isto, qualquer um POSTa uma "mensagem da Vapi" forjada
 //    e o n8n a assina com o segredo real (achado A1 — ALTO).
-const segredoVapi = ($vars && $vars.VAPI_SERVER_SECRET) || '';
+const segredoVapi = lerConfig('VAPI_SERVER_SECRET');
 const auth = verificarSegredoVapi(item.json.headers || {}, segredoVapi);
-if (auth.fatal) throw new Error('Variável VAPI_SERVER_SECRET ausente no n8n (Settings → Variables)');
+if (auth.fatal) throw new Error('Variável VAPI_SERVER_SECRET ausente no n8n (env do container no Easypanel)');
 if (!auth.valido) return [];   // tentativa de terceiro: nada é assinado, nada sai
 
 // 2. DESTINO fixo da configuração — NUNCA do corpo recebido.
-const callbackUrl = String(($vars && $vars.SICHF_CALLBACK_URL) || '');
-if (!callbackUrl) throw new Error('Variável SICHF_CALLBACK_URL ausente no n8n (Settings → Variables)');
+const callbackUrl = lerConfig('SICHF_CALLBACK_URL');
+if (!callbackUrl) throw new Error('Variável SICHF_CALLBACK_URL ausente no n8n (env do container no Easypanel)');
 
 const entrada = item.json;
 const resultado = mapear(entrada.body?.message ?? entrada.message ?? {}, callbackUrl);
@@ -278,8 +288,8 @@ if (!resultado) return [];
 
 const corpo = JSON.stringify(resultado.payload);
 const ts = String(Math.floor(Date.now() / 1000));
-const segredo = String(($vars && $vars.LIGACAO_IA_WEBHOOK_SECRET) || '');
-if (!segredo) throw new Error('Variável LIGACAO_IA_WEBHOOK_SECRET ausente no n8n (Settings → Variables)');
+const segredo = lerConfig('LIGACAO_IA_WEBHOOK_SECRET');
+if (!segredo) throw new Error('Variável LIGACAO_IA_WEBHOOK_SECRET ausente no n8n (env do container no Easypanel)');
 const assinatura = 'sha256=' + crypto.createHmac('sha256', segredo).update(ts + '.' + corpo).digest('hex');
 return [{ json: { corpo, ts, assinatura, callback_url: resultado.callback_url } }];
 

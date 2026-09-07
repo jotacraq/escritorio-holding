@@ -23,8 +23,9 @@ const crypto = require('crypto');
  *     variável `LIGACAO_IA_WEBHOOK_SECRET` o resultado é INVÁLIDO, nunca
  *     "deixa passar porque não dá para conferir".
  *
- * `$env` está bloqueado nesta instância (`N8N_BLOCK_ENV_ACCESS_IN_NODE`); o
- * segredo vem de `$vars` (Settings → Variables).
+ * O plano Community não tem Variables (`$vars`); o segredo vem de `$env`
+ * (env do container no Easypanel, com `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`).
+ * `lerConfig` tenta `$vars` primeiro e cai para `$env`.
  */
 
 const JANELA_SEGUNDOS = 300;
@@ -103,13 +104,22 @@ module.exports = {
  * COLA NO NÓ (workflow zh5tjDcSoHaPaRRL → nó "Ler corpo cru e verificar HMAC",
  * tipo Code · JavaScript · Run Once for All Items). É o código acima inline.
  *
- * VERSÃO 06/09/2026 · substitui a anterior INTEIRA (correção A1 do pentest).
+ * VERSÃO 07/09/2026 · substitui a anterior INTEIRA. 06/09: correção A1 do pentest;
+ * 07/09: `lerConfig` ($vars → $env) porque o plano não tem Variables.
  * Novidades: (1) `motivo: 'corpo_cru_ausente'` quando falta o Raw Body (I2);
  *            (2) recusa o disparo se `VAPI_SERVER_SECRET` ou `SICHF_CALLBACK_URL`
  *                não existirem — nunca discar sem caminho de volta.
  * ===========================================================================
 
 const crypto = require('crypto');
+// Configuração (07/09/2026): o plano Community do n8n não tem Variables.
+// Lê `$vars` (se um dia existir) e cai para `$env` — env do container no
+// Easypanel, que exige N8N_BLOCK_ENV_ACCESS_IN_NODE=false. Fail-closed: vazio = ''.
+function lerConfig(nome) {
+  try { const v = $vars && $vars[nome]; if (v != null && String(v).trim() !== '') return String(v).trim(); } catch (e) {}
+  try { const v = $env && $env[nome]; if (v != null && String(v).trim() !== '') return String(v).trim(); } catch (e) {}
+  return '';
+}
 const item = $input.first();
 let cru = '';
 let bruto = false;
@@ -125,9 +135,9 @@ const agora = Math.floor(Date.now() / 1000);
 const naJanela = /^\d{9,11}$/.test(ts) && Math.abs(agora - Number(ts)) <= 300;
 let dados = item.json.body ?? {};
 if (!dados || Object.keys(dados).length === 0) { try { dados = JSON.parse(cru); } catch (e) { dados = {}; } }
-const segredo = String(($vars && $vars.LIGACAO_IA_WEBHOOK_SECRET) || '');
-const segredoVapi = String(($vars && $vars.VAPI_SERVER_SECRET) || '').trim();
-const callbackUrl = String(($vars && $vars.SICHF_CALLBACK_URL) || '').trim();
+const segredo = lerConfig('LIGACAO_IA_WEBHOOK_SECRET');
+const segredoVapi = lerConfig('VAPI_SERVER_SECRET');
+const callbackUrl = lerConfig('SICHF_CALLBACK_URL');
 let valido = false;
 let motivo = null;
 if (!segredo) motivo = 'variavel_LIGACAO_IA_WEBHOOK_SECRET_ausente';
@@ -148,7 +158,7 @@ return [{ json: { valido, motivo, dados, callback_url: callbackUrl, segredo_vapi
  *    `{ erro: "nao_autorizado", motivo: {{ $json.motivo }} }`.
  *  - IF `{{ $json.dados.teste }}` → verdadeiro: Respond 200 `{ok:true,teste:true}`.
  *    (O "Testar" do Admin passa a acusar 401 enquanto faltar qualquer das três
- *    Variables — é exatamente o que a tela precisa mostrar.)
+ *    variáveis — é exatamente o que a tela precisa mostrar.)
  *  - DISPARO · Vapi `POST https://api.vapi.ai/call` — jsonBody em
  *    `n8n/ligacao/disparo-vapi.jsonbody.js`.
  *  - Respond to Webhook 200 `{ id_externo: {{ $json.id ?? null }} }`.

@@ -326,10 +326,14 @@ no nó antes da primeira ligação real.**
 
 Nada aqui é código: é configuração, e sem ela nenhuma ligação acontece.
 
-1. **n8n → Settings → Variables**: criar as **TRÊS** (valores em
-   `tmp/squad/segredos-producao.txt`, fora do git):
+1. **Easypanel → serviço n8n → Environment** (07/09/2026: o n8n é Community e
+   **não tem Variables**; os nós leem `$env` via `lerConfig`): colar o bloco de
+   `C:\Users\João\Downloads\n8n-easypanel.env` — as **TRÊS** abaixo mais
+   `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` — e **reiniciar o serviço** (env nova só
+   vale depois do restart). Valores também em `tmp/squad/segredos-producao.txt`,
+   fora do git.
 
-   | Variable | Valor | O que acontece sem ela |
+   | Variável de ambiente | Valor | O que acontece sem ela |
    |---|---|---|
    | `LIGACAO_IA_WEBHOOK_SECRET` | o mesmo segredo da env da Hostinger | LANCADOR responde 401 `variavel_LIGACAO_IA_WEBHOOK_SECRET_ausente` — é o que ele responde hoje |
    | `VAPI_SERVER_SECRET` | 64 hex novos (`openssl rand -hex 32`) | LANCADOR responde 401 `variavel_VAPI_SERVER_SECRET_ausente` e **não disca**; o nó do WEBHOOK lança |

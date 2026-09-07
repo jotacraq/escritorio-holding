@@ -38,19 +38,34 @@ em algum lugar, e que a diferença é visível.
 1. Mudou a função pura? Rode `npx vitest run` — os testes cobrem
    `status-update` (queued/ringing/in-progress) e `end-of-call-report` para cada
    `endedReason` que a Vapi devolve.
-2. Abra o workflow no n8n → o nó da tabela acima → cole o bloco "COLA NO NÓ"
-   inteiro (ele já inclui a função inline).
+2. **Caminho mecânico (07/09/2026):** `node n8n/gerar-sdk.mjs tmp/squad` monta o
+   `jsCode` de cada nó a partir destes arquivos e emite `sdk-lancador.js` /
+   `sdk-webhook.js` (n8n Workflow SDK). Passe cada um a `validate_workflow` →
+   `update_workflow` (ids `zh5tjDcSoHaPaRRL` / `OXetB37jgJgmif3d`) →
+   `publish_workflow` no MCP do n8n. A API **não devolve nem prova credencial**
+   do nó HTTP: depois de publicar, abra `DISPARO · Vapi POST /call` e confirme
+   `Vapi API - RSVP (org nova)` selecionada.
+   *Caminho manual:* abra o workflow no n8n → o nó da tabela acima → cole o
+   bloco "COLA NO NÓ" inteiro (ele já inclui a função inline).
 3. Salve e **ative**. Confira em Executions que a próxima execução real passou.
 4. Anote no `brain/Diário/AAAA-MM-DD.md` o que foi publicado.
 
 ## O que NÃO vive aqui
 
-- **Segredos.** São **três** *Variables* do n8n (Settings → Variables), desde 06/09:
+- **Segredos.** São **três** valores de configuração, desde 06/09:
   `LIGACAO_IA_WEBHOOK_SECRET` (também env da Hostinger), `VAPI_SERVER_SECRET`
   (também gravado como Server Secret do assistant na Vapi) e `SICHF_CALLBACK_URL`
   (endereço, não segredo, mas é configuração: é o único destino para onde o n8n
   devolve resultado). Nunca no JSON do workflow, nunca neste repositório.
-  `$env` está bloqueado nesta instância — sempre `$vars`.
+  **Onde vivem (07/09/2026):** o n8n do João é Community (auto-hospedado no
+  Easypanel) e **não tem Variables**. Os nós leem por `lerConfig(nome)`, que
+  tenta `$vars` e cai para **`$env`** — variáveis de ambiente do container
+  (Easypanel → serviço n8n → Environment), o que exige
+  `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` no mesmo lugar. Trade-off aceito: com
+  esse flag, qualquer nó Code da instância enxerga todas as envs do container
+  (inclusive as do próprio n8n) — aceitável porque a instância tem um único
+  usuário; se um dia houver mais gente editando workflows, migrar para o plano
+  com Variables e o `lerConfig` passa a usar `$vars` sem mudar nada.
 - **O JSON do workflow.** Exportar o workflow inteiro traria ids de credencial e
   ruído de posição de nó; o que importa (e o que quebra) é o código dos nós Code.
 - **O prompt da assistente.** Vive na Vapi e está versionado em
