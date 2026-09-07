@@ -53,7 +53,11 @@ export type StatusPagamento =
   | "aprovado"
   | "cancelado"
   | "estornado"
-  | "reembolsado";
+  | "reembolsado"
+  // Fase 8 (0083): estado vem do EVENTO da Hotmart, não de purchase.status
+  | "boleto_gerado"
+  | "expirado"
+  | "atrasado";
 
 export type TipoBem = "imovel" | "veiculo" | "investimento" | "previdencia" | "empresa" | "outro";
 
@@ -507,9 +511,23 @@ export interface JornadaKanbanLinha {
   sessao_realizada_em?: string | null;
   tem_relatorio?: boolean;
   croqui_status?: StatusCroqui | null;
+  /**
+   * 0086 (Fase 8, D12) — a FASE do croqui (`sem_croqui | rascunho | calculado
+   * | fixado | pronto | apresentado`), derivada por `vw_croqui_estado` e
+   * trazida no MESMO select da lista: é a mesma que a Ficha 360 mostra.
+   *
+   * `null` NÃO é "sem croqui": é sem informação. A view devolve NULL quando o
+   * papel não vê patrimônio, e afirmar "sem croqui" para quem não pode saber
+   * seria vazar um fato pela ausência dele. Quem consome usa
+   * `faseDoCroqui(sinais)` (`lib/pasta/sinais.ts`), nunca este campo cru.
+   */
+  croqui_fase?: FaseCroquiKanban | null;
   material_estado?: EstadoMaterialKanban;
   tarefas_abertas?: TarefaAbertaKanban[];
 }
+
+/** As seis fases de `vw_croqui_estado` (0086). Chaves do catálogo de estados. */
+export type FaseCroquiKanban = "sem_croqui" | "rascunho" | "calculado" | "fixado" | "pronto" | "apresentado";
 
 export type EstadoMaterialKanban = "nenhum" | "rascunho" | "aprovado";
 

@@ -6,11 +6,12 @@ import { useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
 import { Selo } from "@/components/ui/Selo";
+import { SeloEstado } from "@/components/ui/SeloEstado";
 import { formatarData, formatarDataHora, formatarHora, formatarRelativo, formatarTelefone, linkWhatsapp } from "@/lib/formatar";
 import { rotulo } from "@/lib/vocabulario";
 import { mensagemDeErro } from "@/components/admin/http";
 import { marcarMensagemEnviada, prepararMensagem, type MensagemDaFila } from "./api-comunicacao";
-import { ROTULO_STATUS, TOM_STATUS, rotuloCanal, rotuloTemplate } from "./humanizar";
+import { rotuloCanal, rotuloTemplate } from "./humanizar";
 
 const ICONE_COPIAR = (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -157,7 +158,9 @@ export function ItemMensagem({ mensagem, modo, aoMudar }: Props) {
           >
             <Selo tom={mensagem.canal === "whatsapp" ? "verde" : "azul"}>{rotuloCanal(mensagem.canal)}</Selo>
           </span>
-          {modo === "historico" && <Selo tom={TOM_STATUS[mensagem.status]}>{ROTULO_STATUS[mensagem.status]}</Selo>}
+          {/* Fase 8 (D19): o estado do envio vem do catálogo único — o mesmo
+              "Falhou" vermelho aqui, no Painel e na Ficha. */}
+          {modo === "historico" && <SeloEstado dominio="mensagem" estado={mensagem.status} />}
           {ehWhatsappPendente && <Selo tom="ambar">Pela sua mão</Selo>}
         </div>
         {/* Destinatário é dado do cliente: nome + endereço, sem a palavra "Para". */}

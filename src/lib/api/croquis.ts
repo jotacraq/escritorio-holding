@@ -1,6 +1,7 @@
 /** Croqui Estrutural: slides, versões e a apresentação que avança a etapa. */
 import { chamar } from "./nucleo";
 import type { EventoTimeline } from "./jornadas";
+import type { CroquiFase } from "@/lib/pasta/sinais";
 
 export type StatusCroqui = "rascunho" | "pronto" | "apresentado";
 
@@ -46,6 +47,8 @@ export interface Croqui {
   titulo: string;
   status: StatusCroqui;
   conteudo: { slides: CroquiSlide[] };
+  /** Fase 8 (0086): fase de `vw_croqui_estado`; `null` = sem informação. Só `GET /api/croquis/[id]` preenche. */
+  fase?: CroquiFase | null;
 }
 
 /**

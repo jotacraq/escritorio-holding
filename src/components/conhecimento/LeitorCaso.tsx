@@ -9,7 +9,7 @@ import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Selo } from "@/components/ui/Selo";
-import { formatarData } from "@/lib/formatar";
+import { formatarDataPura } from "@/components/admin/comum";
 import { nomeDoSlug } from "@/components/conhecimento/rotulo";
 import type { CasoComTranscricoes, Transcricao } from "@/types/conhecimento";
 
@@ -62,7 +62,7 @@ function Coluna({ titulo, transcricao, vazio }: { titulo: string; transcricao: T
       preenchimento="sem"
       className="min-w-0 flex-1"
       rotulo={titulo}
-      titulo={transcricao ? formatarData(transcricao.data_reuniao) : "—"}
+      titulo={transcricao ? formatarDataPura(transcricao.data_reuniao) : "—"}
       descricao={
         transcricao
           ? `${transcricao.consultor ? `${transcricao.consultor} · ` : ""}${Math.round(transcricao.tamanho_bytes / 1024)} KB de transcrição`
@@ -76,7 +76,16 @@ function Coluna({ titulo, transcricao, vazio }: { titulo: string; transcricao: T
         ) : undefined
       }
     >
-      <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6" tabIndex={transcricao ? 0 : undefined} aria-label={transcricao ? `Texto da ${titulo}` : undefined}>
+      {/* Região rolável: `tabindex=0` é EXIGIDO pela WCAG 2.1.1 — sem ele,
+          quem navega só por teclado não consegue rolar a transcrição. Faltava
+          o `role="region"`: sem papel nem nome, o Tab parava num destino
+          anônimo (e era isso, não o `tabindex`, que o lint apontava). */}
+      <div
+        className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6"
+        role={transcricao ? "region" : undefined}
+        tabIndex={transcricao ? 0 : undefined}
+        aria-label={transcricao ? `Texto da ${titulo}` : undefined}
+      >
         {transcricao ? <CorpoTranscricao conteudo={transcricao.conteudo} /> : <EstadoVazio compacto titulo={vazio} />}
       </div>
     </Cartao>
@@ -107,8 +116,8 @@ export function LeitorCaso({ casoId }: { casoId: string }) {
         meta={
           <>
             {apresentacao_croqui ? <Selo tom="verde">croqui apresentado</Selo> : <Selo tom="neutro">sem desfecho conhecido</Selo>}
-            {sessao_viabilidade?.data_reuniao && <span>Sessão em {formatarData(sessao_viabilidade.data_reuniao)}</span>}
-            {apresentacao_croqui?.data_reuniao && <span>· Croqui em {formatarData(apresentacao_croqui.data_reuniao)}</span>}
+            {sessao_viabilidade?.data_reuniao && <span>Sessão em {formatarDataPura(sessao_viabilidade.data_reuniao)}</span>}
+            {apresentacao_croqui?.data_reuniao && <span>· Croqui em {formatarDataPura(apresentacao_croqui.data_reuniao)}</span>}
           </>
         }
       />
@@ -138,7 +147,7 @@ export function LeitorTranscricao({ transcricaoId }: { transcricaoId: string }) 
         meta={
           <>
             <Selo tom={transcricao.tipo === "apresentacao_croqui" ? "azul" : "neutro"}>{ROTULO_TIPO[transcricao.tipo]}</Selo>
-            <span>{formatarData(transcricao.data_reuniao)}</span>
+            <span>{formatarDataPura(transcricao.data_reuniao)}</span>
             {transcricao.consultor ? <span>· {transcricao.consultor}</span> : null}
             <span>· {Math.round(transcricao.tamanho_bytes / 1024)} KB</span>
           </>

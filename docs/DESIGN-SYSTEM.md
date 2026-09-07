@@ -339,3 +339,133 @@ bundle não passou por minificação nem tree-shaking. O que vale aqui é a
 - **CLS:** a pior tela é a Ficha com 0,046 — folgado abaixo do limite de 0,1.
 - **`React.memo`:** nenhum foi acrescentado. A regra da casa é `memo` só com
   prova de rerender no profiler; sem a prova, é ruído que envelhece mal.
+
+## 12. Estado, prazo, escala de texto e mobile (Fase 8)
+
+A fase da usabilidade. Ordem do João: *"refinar visualmente todo o sistema, com foco em USABILIDADE…
+o próprio sistema indica o que está acontecendo… bem no ramo da advocacia: intuitivo para um advogado
+entender o que funciona e como funciona o processo"*, com dois adendos que mudam o alvo: **usuário de
+mais idade** e **mobile de verdade**. Este parágrafo é o contrato; os números foram medidos, não estimados.
+
+### 12.1 A lei: nenhum ícone sem rótulo
+
+Vale em toda tela, sem exceção declarada: **todo ícone ou é `aria-hidden` ao lado de um texto que diz a
+mesma coisa, ou tem rótulo visível.** Ícone sozinho como única pista de uma ação é proibido — e "sozinho"
+inclui o botão-ícone com `sr-only`: para quem enxerga e não decorou o pictograma, o `sr-only` não existe.
+Onde o espaço não permite rótulo (barra de ferramentas de tabela densa), a exceção é **declarada aqui**,
+com `title` + `aria-label`, nunca improvisada na tela.
+
+O corolário, que já era regra e agora é impossível de violar: **status é cor + ícone + rótulo, nunca só
+cor.** O teste é o grayscale: se, sem matiz, dois estados do mesmo domínio ficam indistinguíveis, o
+componente está errado — e o `catalogo.test.ts` reprova o commit ("dois estados nunca dividem o mesmo glifo").
+
+### 12.2 Escala de texto do usuário
+
+| Escolha | Corpo | `--fator-escala` | Para quem |
+|---|---|---|---|
+| **Padrão** (default) | 14 px | 1 | o João, que mediu a V2 e pediu compacto |
+| Média | 16 px | 1,1429 | o piso que a pesquisa exige para 55+ |
+| Grande | 18 px | 1,2857 | leitura longa, tela pequena, vista cansada |
+
+Seletor `EscalaTexto` (`shell/`), no rodapé da lateral ao lado do `TemaToggle`; `localStorage`
+(`sic-hf-escala`) com `try/catch`; aplicado antes do primeiro paint por script inline no `AppShell`.
+O fator multiplica **só os degraus tipográficos** (`--text-*`). O que NÃO se mexe: `--alvo-minimo` (44 px),
+o ritmo vertical (`--espaco-*`) e a `.area-publica`, que zera o fator — a preferência é da equipe, e o
+cliente não tem seletor. `html { font-size }` continua nunca sendo declarado (a trava do `globals.css`):
+mexer na raiz mudaria todo alvo de toque de uma vez, em silêncio.
+
+### 12.3 Catálogo de estados — um dicionário, um componente
+
+`src/lib/estados/catalogo.ts` é a fonte única. Oito domínios (`croqui`, `croqui_fato`, `pagamento`,
+`processo`, `prazo`, `agendamento`, `mensagem`, `integracao` — mais `presenca`, alias de `agendamento`),
+cada entrada `{ rotulo, icone, tom, explique }`, com a chave sendo **o valor cru do banco**.
+Duas leituras que o catálogo tranca porque a tela errava sozinha: **C23** — `status_agendamento =
+'confirmado'` é *"o cliente escolheu o horário"* (rótulo **"Horário marcado"**), NÃO "confirmou
+presença", que mora em `agendamentos.presenca_confirmada_em`; e **integração sem informação do
+servidor é "Estado desconhecido", nunca "desligada"** (`classificarIntegracao`). `ui/SeloEstado.tsx` é o único selo de status e o consome:
+
+```tsx
+<SeloEstado dominio="pagamento" estado={pagamento.status} />      // "Pago", check, verde
+<SeloEstado dominio="processo" estado={jornada.desfecho} />       // congelada → "Arquivado"
+<SeloEstado dominio="croqui" estado={fase} anunciar />            // role="status" quando muda sozinho
+```
+
+**Nenhuma tela escolhe `tom` na mão a partir da Fase 8.** O tom é do ESTADO, não da tela — era assim que
+a mesma situação aparecia âmbar num lugar e cinza no outro. Não há prop de cor nem de rótulo, de propósito.
+Chave que o catálogo não conhece vira **"Sem informação"**, nunca um rótulo plausível (§7, "vazio é vazio").
+`Selo` continua existindo para chip que **não** é status (contagem, marcador, `SeloStub`, `SeloIA`).
+
+Contraste: selo de status e prazo usam `--estado-*`, medidos em **≥ 7:1** (AAA) sobre o fundo `-fraco` do
+próprio tom e sobre as três superfícies, nos dois temas — a pesquisa para 55+ pede mais que o AA de 4,5:1.
+Claro: verde `#26563f` 7,17 · âmbar `#694707` 7,16 · vermelho `#843227` 7,03 · azul `#324f70` 7,08 ·
+latão `#7a3800` 7,15 · neutro `#43454f` 8,93. Escuro: `#90c1a9` 7,01 · `#e4b23c` 7,25 · `#e59b8e` 7,10 ·
+`#8fb0d6` 7,01 · `#ffa559` 7,06 · `#b3b0a3` 8,16. Os tokens `--verde`/`--ambar`/… **não** mudaram: quem
+precisa de AAA pede `--estado-*`.
+
+### 12.4 Prazo é informação própria
+
+`ui/Prazo.tsx`, separado do status (padrão ADVBOX/Astrea — o advogado procura a data antes do resto):
+
+```tsx
+<Prazo vence={tarefa.vence_em} />                 // "Vence hoje · 07/09"
+<Prazo vence={tarefa.vence_em} rotulo="Prazo" />  // o rótulo vai para o leitor de tela
+```
+
+Mostra **as duas leituras**: a relativa, que decide ("Vencido há 3 dias"), e a absoluta em `<time>`, que se
+anota. Quatro classes com glifo próprio: vencido (vermelho) · vence hoje (âmbar) · vence em breve, ≤ 3 dias
+(âmbar) · no prazo (neutro). Sem data é **"Sem prazo"**, que não é o mesmo que estar em dia.
+Compara por **dia**, não por 24 h corridas, e trata o `date` do Postgres como data local — `new Date("2026-09-07")`
+é meia-noite UTC e, em São Paulo, vira 06/09: sem isso o prazo de hoje aparece vencido. O mesmo furo
+existia em `formatarData()` e em duas cópias da correção (`agenda/rotulos.ts`, `admin/comum.tsx`) —
+na rodada FIX virou **uma** função, `formatarDataPura()` em `lib/formatar.ts`, e `formatarData()`
+passou a reconhecer `YYYY-MM-DD` puro e formatá-lo sem fuso. Data de calendário nunca mais converte.
+
+### 12.5 Tabela: uma API, duas formas
+
+`ui/Tabela.tsx` substitui o par "`<table>` com `hidden sm:block` + pilha de cartões com `sm:hidden`" que se
+mantinha na mão em dois lugares (foi assim que coluna nova entrou numa forma e não na outra, na Fase 7).
+
+```tsx
+<Tabela legenda="Compras do processo" colunas={COLUNAS} linhas={linhas}
+        chaveDaLinha={(l) => l.id} hrefDaLinha={(l) => `/clientes/${l.id}`}
+        vazio={<EstadoVazio … />} acoes={(l) => <Botao tamanho="compacto">Reprocessar</Botao>} />
+```
+
+`legenda` é obrigatória (vira `<caption class="sr-only">` — tabela sem legenda é grade anônima); todo `<th>`
+leva `scope="col"`; o mesmo `cabecalho` vira o rótulo do par `<dl>` no cartão, então desktop e celular
+**não podem** divergir de nome. Acima de `md` (configurável em `quebra`) é `<table>`; abaixo, cartões — a
+360 px nunca há rolagem horizontal. `hrefDaLinha` põe o link na primeira célula e, no cartão, no título com
+`after:absolute inset-0`: o cartão inteiro é clicável com **um** ponto de Tab e semântica de link de verdade
+(nada de `onClick` em `<tr>`). `acoes` é declarado **uma vez** e aparece nos dois lugares — última coluna
+da grade (cabeçalho `sr-only`, `gap-alvo` entre botões) e rodapé do cartão; declarar uma coluna de ação
+na mão é o contorno que esta prop existe para apagar.
+
+### 12.6 Mobile
+
+| Regra | Como se cumpre |
+|---|---|
+| Barra inferior com os 5 itens, ícone **+ rótulo** | `shell/NavInferior.tsx` — mesmos `ITENS_NAVEGACAO`, mesma ordem, mesmos rótulos da lateral; `aria-current="page"`; landmark com nome próprio ("Áreas do sistema"), porque a lateral continua no DOM com o dela |
+| Tabela vira cartão, 0 rolagem horizontal a 360 px | `ui/Tabela.tsx` |
+| Ação primária na zona do polegar | `ui/BarraAcaoMobile.tsx` — fixa acima da `NavInferior`, `nao-imprimir`, com **espaçador no fluxo** |
+| Foco nunca atrás de barra fixa (WCAG 2.4.11) | `scroll-margin-block` global no `:focus-visible` + os espaçadores das duas barras |
+| Gap entre alvos adjacentes ≥ 8 px | token `--alvo-gap` → classe `gap-alvo` |
+| `Gaveta` em tela cheia volta, não fecha | `< sm` o botão é **← Voltar**; de `sm` para cima, **✕ Fechar**. Tela cheia é página, não janela |
+| Piso de 16 px na área do cliente | token `--text-publico` → classe `text-publico`, fixo e sem `--fator-escala` (a escala da equipe não vaza para `/p/*`) |
+| Mesma nomenclatura e ordem desktop ↔ celular | os dois consomem a MESMA fonte (`ITENS_NAVEGACAO`, `colunas`) |
+
+`--altura-nav-inferior` vale 3,75rem abaixo de `md` e **0 a partir de `md`** — é o que faz `BarraAcaoMobile`
+e o `scroll-margin` se posicionarem sozinhos, sem media query própria.
+
+### 12.7 Como se verifica (três camadas, e o que cada uma NÃO prova)
+
+| Camada | Ferramenta | Onde roda | Cobre |
+|---|---|---|---|
+| estática | `eslint-plugin-jsx-a11y`, 31 regras declaradas em `eslint.config.mjs` | `npm run lint` → **CI** | rótulo, `aria-*`, papel, clique em elemento não interativo |
+| componente | `vitest-axe` + jsdom nos `*.test.tsx` | `npm test` → **CI** | árvore de acessibilidade do componente isolado |
+| página | `node scripts/a11y.mjs` | **local**, contra `next dev` | ordem de leitura, landmark duplicado, contraste computado, rolagem horizontal, altura |
+
+O axe de página **não entra no CI**: o CI não tem banco nem segredo e toda tela interna exige sessão —
+ele rodaria contra o login e passaria verde sem ter visto nada. Nenhuma das três dispensa o que só a mão
+pega: **Tab sem mouse** com a gaveta aberta e a **captura em grayscale** de Hoje, Clientes e Ficha.
+Dívida herdada de `jsx-a11y` (10 avisos em 8 arquivos de outros donos) está listada, com dono, dentro do
+`eslint.config.mjs` — a lista só encolhe.

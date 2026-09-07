@@ -29,7 +29,7 @@ type Opcao =
  */
 const DESTINOS_INTERNOS: { href: string; rotulo: string; descricao: string }[] = [
   { href: "/agenda#disponibilidade", rotulo: "Disponibilidade da equipe", descricao: "Os dias e horários em que a equipe atende — é daqui que saem as opções que o cliente escolhe." },
-  { href: "/hoje#numeros", rotulo: "Números", descricao: "O funil por turma do seminário: sessões, croquis e holdings." },
+  { href: "/hoje#numeros", rotulo: "Números", descricao: "As fases do processo por turma do seminário: sessões, croquis e holdings." },
   { href: "/admin#repertorio", rotulo: "Repertório da IA", descricao: "É o que a IA usa para analisar: o histórico de eventos e reuniões anteriores." },
   { href: "/admin#importacoes", rotulo: "Importações", descricao: "Planilhas de alunos e compras que entram no sistema." },
 ];
@@ -237,15 +237,21 @@ export function PaletaComandos({ aberta, aoFechar }: { aberta: boolean; aoFechar
   let indiceGlobal = -1;
 
   return (
-    <div
-      className="anim-esmaecer fixed inset-0 z-50 flex items-start justify-center bg-[color:var(--veu)] px-3 pt-[10vh] sm:px-4"
-      onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}
-    >
+    <div className="anim-esmaecer fixed inset-0 z-50 flex items-start justify-center bg-[color:var(--veu)] px-3 pt-[10vh] sm:px-4">
+      {/* O véu é um `<button>`, não uma `div onMouseDown` (Fase 8, camada
+          estática do lint). Fechar clicando fora é uma AÇÃO: numa `div` ela só
+          existe para o mouse — sem Enter, sem leitor de tela. `tabIndex={-1}`
+          porque o teclado já tem dois caminhos melhores (Esc e o botão de
+          fechar), e um ponto de Tab invisível seria ruído. Mesmo padrão do véu
+          de `ui/ConfirmarAcao` e do menu do `AppShell`. */}
+      <button type="button" aria-label="Fechar a busca" tabIndex={-1} onClick={aoFechar} className="absolute inset-0" />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Buscar cliente ou tela"
-        className="anim-surgir flex w-full max-w-xl flex-col overflow-hidden rounded-cartao border border-linha bg-papel-elevado shadow-flutuante"
+        /* `relative`: o véu é `absolute inset-0` e, sem posicionamento aqui,
+           o diálogo ficaria ATRÁS dele — clique nenhum chegaria à lista. */
+        className="anim-surgir relative flex w-full max-w-xl flex-col overflow-hidden rounded-cartao border border-linha bg-papel-elevado shadow-flutuante"
       >
         <div className="flex items-center gap-3 border-b border-linha px-4 py-2">
           <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 shrink-0 fill-current text-tinta-fraca">

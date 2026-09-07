@@ -1,7 +1,7 @@
 import type { Ficha360 } from "@/lib/api";
 import { CATALOGO_PASTA, type ChaveItemPasta, type DonoItemPasta, type ProcedenciaItemPasta } from "./catalogo";
 import { derivarProximoPasso, type ProximoPasso } from "./proximo-passo";
-import { sinaisDaFicha, type Sinais } from "./sinais";
+import { faseDoCroqui, sinaisDaFicha, type Sinais } from "./sinais";
 
 /**
  * 4 estados possíveis por item da Pasta do Cliente — a parte central do
@@ -134,17 +134,31 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
     // Pré-requisito é a sessão ter acontecido — croqui nasce a partir da
     // Análise da Sessão ou é iniciado manualmente depois da sessão.
     croqui: () => {
-      if (sinais.croquiStatus === "nenhum" || sinais.croquiStatus === null) {
+      // Fase 8 (D12): a fase vem de `faseDoCroqui()` — a MESMA função que o
+      // trilho e o cartão da Ficha usam, alimentada por `vw_croqui_estado`.
+      // Antes este ramo tinha o seu próprio `if` sobre `croquiStatus`, e era
+      // um dos quatro lugares onde a mesma pergunta era respondida sozinha.
+      // O ganho não é só de código: `calculado` e `fixado` deixam de virar
+      // "em rascunho" na Pasta, que era o que a advogada via depois de rodar
+      // o motor e fixar a versão.
+      const fase = faseDoCroqui(sinais);
+      if (fase === null) {
+        // Sem informação: nunca vira alarme. O item fica onde a etapa manda.
+        if (!sessaoRealizada) return { estado: "ainda_nao", nota: SO_DEPOIS_DA_SESSAO };
+        return { estado: "ainda_nao", nota: "Sem informação sobre o croqui." };
+      }
+      if (fase === "sem_croqui") {
         if (!sessaoRealizada) return { estado: "ainda_nao", nota: SO_DEPOIS_DA_SESSAO };
         return { estado: "falta" };
       }
-      // `status` vem do evento de timeline (0014) — 'rascunho' ainda está em
-      // elaboração (sinal de atenção, não erro: a revisão dos 13 slides deixou
-      // de ser trava obrigatória, 0049); 'pronto'/'apresentado' contam como
-      // pronto. Contagem fina de slides não revisados exige o conteúdo
-      // completo, que não está neste payload — quem mostra isso é
-      // `croquiAtalho` (`jornadas/[id]/page.tsx`), não este catálogo.
-      if (sinais.croquiStatus === "rascunho") return { estado: "em_revisao", nota: "Em rascunho." };
+      // Antes de estar `pronto` o croqui existe mas ainda pede a advogada —
+      // é atenção, não erro (a revisão dos 13 slides deixou de ser trava
+      // obrigatória, 0049). A nota diz em que pé está, com a palavra do
+      // catálogo. Contagem fina de slides não revisados exige o conteúdo
+      // completo, que não está neste payload.
+      if (fase === "rascunho") return { estado: "em_revisao", nota: "Em rascunho, sem cálculo." };
+      if (fase === "calculado") return { estado: "em_revisao", nota: "Calculado, sem versão fixada." };
+      if (fase === "fixado") return { estado: "em_revisao", nota: "Versão fixada, falta fechar." };
       return { estado: "pronto" };
     },
 

@@ -133,7 +133,7 @@ export function ConfiguracoesAba() {
 
   return (
     <div className="flex flex-col gap-bloco">
-      <IntroAba>Ajustes que valem na hora, sem deploy. Chave nova é migration — esta tela só muda o valor de chave que já existe.</IntroAba>
+      <IntroAba>Valem na hora, sem deploy. Chave nova é migration — aqui só se muda o valor de chave que já existe.</IntroAba>
       {ordenados.map((grupo) => (
         <Cartao key={grupo} preenchimento="sem" rotulo={grupo} titulo={`${grupos.get(grupo)!.length} ${grupos.get(grupo)!.length === 1 ? "ajuste" : "ajustes"}`}>
           <ul className="divide-y divide-linha">
@@ -281,7 +281,8 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
             ))}
           </div>
         </fieldset>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {/* Fase 8 §C3 M4: uma coluna abaixo de `sm`. A 360 px, dois `type="time"` lado a lado davam ~150 px cada — o campo mais estreito do sistema para o dedo mais impreciso. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Campo rotulo="Começa às">
             <Entrada type="time" value={janela.inicio} onChange={(e) => setRascunho({ ...janela, inicio: e.target.value })} />
           </Campo>
@@ -311,7 +312,7 @@ function LinhaConfiguracao({ config, aoSalvar }: { config: ConfiguracaoAdmin; ao
       { chave: "material", rotulo: "Material" },
     ];
     editor = (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         {CAMPOS.map((campo) => (
           <Campo key={campo.chave} rotulo={`${campo.rotulo} (dias)`}>
             <Entrada type="number" min={1} value={rascunho[campo.chave]} onChange={(e) => setRascunho({ ...rascunho, [campo.chave]: Number(e.target.value) })} />

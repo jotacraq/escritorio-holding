@@ -6,6 +6,7 @@ import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estad
 import { CroquiCalculado } from "@/components/croqui/CroquiCalculado";
 import { useCroquiDaRota } from "@/components/croqui/useCroquiDaRota";
 import { rotulo } from "@/lib/vocabulario";
+import { faseDoCroqui } from "@/lib/pasta/sinais";
 
 /**
  * `/croquis/[croquiId]` — o Croqui Estrutural calculado: as 19 tabelas do
@@ -31,6 +32,7 @@ export default function PaginaCroquiCalculado({ params }: { params: Promise<{ cr
       <CroquiCalculado
         jornadaId={jornadaId}
         croquiId={croquiId}
+        fase={faseDoCroqui({ croquiFase: croqui.fase ?? null, croquiStatus: croqui.status })}
         voltar={{ href: `/jornadas/${jornadaId}#croqui`, rotulo: "Ficha" }}
         hrefSimular={`/croquis/${croquiId}/simular`}
         hrefApresentar={`/croquis/${croquiId}/apresentar`}

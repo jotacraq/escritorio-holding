@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback } from "react";
-import Link from "next/link";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Cartao } from "@/components/ui/Cartao";
 import { EsqueletoCartao } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
 import { Selo, SeloStub } from "@/components/ui/Selo";
+import { Tabela, type ColunaTabela } from "@/components/ui/Tabela";
 import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
+import type { CustoIaMensal, CustoIaPorJornada, CustoIaPorPrompt } from "@/types/admin";
 import { buscarCustoIa } from "../adminApi";
-import { IntroAba, Tabela, Tbody, Td, Th, Thead, Tr } from "../comum";
+import { IntroAba } from "../comum";
 
 const FORMATADOR_MES = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", month: "long", year: "numeric" });
 
@@ -24,6 +25,46 @@ function formatarMes(iso: string): string {
 function SeloModo({ modo }: { modo: "real" | "demonstracao" }) {
   return modo === "real" ? <Selo tom="latao">real</Selo> : <Selo tom="neutro">demonstração</Selo>;
 }
+
+
+/* As três tabelas de custo passaram a usar `ui/Tabela` (Fase 8 §C3 M2): uma
+   descrição de colunas, duas formas. Antes eram `<table>` com `display:block`
+   no celular e o rótulo da coluna vindo de `content: attr(data-rotulo)` — o
+   par cabeçalho/valor se mantinha na mão em dois lugares, e a 360 px a grade
+   rolava para o lado dentro do cartão. */
+const COLUNAS_MES: readonly ColunaTabela<CustoIaMensal>[] = [
+  { chave: "mes", cabecalho: "Mês", celula: (l) => formatarMes(l.mes) },
+  { chave: "modo", cabecalho: "Modo", celula: (l) => <SeloModo modo={l.modo} /> },
+  { chave: "execucoes", cabecalho: "Execuções", numerica: true, celula: (l) => l.execucoes },
+  { chave: "custo", cabecalho: "Custo", numerica: true, celula: (l) => formatarMoeda(l.custo_usd_total) },
+];
+
+const COLUNAS_PROMPT: readonly ColunaTabela<CustoIaPorPrompt>[] = [
+  { chave: "prompt", cabecalho: "Prompt", celula: (l) => l.chave },
+  {
+    chave: "versao",
+    cabecalho: "Versão",
+    celula: (l) => (
+      <span className="inline-flex items-center gap-2">
+        v{l.versao}
+        {l.versao_ativa && <Selo tom="verde">ativa</Selo>}
+      </span>
+    ),
+  },
+  { chave: "modo", cabecalho: "Modo", celula: (l) => <SeloModo modo={l.modo} /> },
+  { chave: "execucoes", cabecalho: "Execuções", numerica: true, celula: (l) => l.execucoes },
+  { chave: "custo", cabecalho: "Custo", numerica: true, celula: (l) => formatarMoeda(l.custo_usd_total) },
+];
+
+const COLUNAS_JORNADA: readonly ColunaTabela<CustoIaPorJornada>[] = [
+  /* O processo aparece pelo LINK, não pelo nome: a view de custo não traz o
+     nome da pessoa, e inventar um rótulo aqui seria dado plausível na tela. */
+  { chave: "processo", cabecalho: "Processo", celula: () => "Abrir a Ficha" },
+  { chave: "modo", cabecalho: "Modo", celula: (l) => <SeloModo modo={l.modo} /> },
+  { chave: "execucoes", cabecalho: "Execuções", numerica: true, celula: (l) => l.execucoes },
+  { chave: "custo", cabecalho: "Custo", numerica: true, celula: (l) => formatarMoeda(l.custo_usd_total) },
+  { chave: "ultima", cabecalho: "Última execução", celula: (l) => formatarDataHora(l.ultima_execucao_em) },
+];
 
 /**
  * Custo é informação de gestão — mesmo recorte de quem vê patrimônio
@@ -44,7 +85,7 @@ export function CustoIaAba() {
 
   return (
     <div className="flex flex-col gap-bloco">
-      <IntroAba>Quanto a IA custou, em dólar, por mês, por versão de prompt e por cliente. Só execução real conta; demonstração aparece separada.</IntroAba>
+      <IntroAba>Valores em dólar. Só execução real conta; demonstração aparece separada.</IntroAba>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Kpi
@@ -69,108 +110,37 @@ export function CustoIaAba() {
 
       {por_mes.length > 0 && (
         <Cartao preenchimento="sem" rotulo="Por mês" titulo="Custo mensal">
-          <Tabela resumo="Custo de IA por mês e modo">
-            <Thead>
-              <tr>
-                <Th>Mês</Th>
-                <Th>Modo</Th>
-                <Th>Execuções</Th>
-                <Th>Custo</Th>
-              </tr>
-            </Thead>
-            <Tbody>
-              {por_mes.map((linha, i) => (
-                <Tr key={`${linha.mes}-${linha.modo}-${i}`}>
-                  <Td rotulo="Mês" className="font-medium">
-                    {formatarMes(linha.mes)}
-                  </Td>
-                  <Td rotulo="Modo">
-                    <SeloModo modo={linha.modo} />
-                  </Td>
-                  <Td rotulo="Execuções" className="tabular-nums">
-                    {linha.execucoes}
-                  </Td>
-                  <Td rotulo="Custo" className="tabular-nums">
-                    {formatarMoeda(linha.custo_usd_total)}
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Tabela>
+          <div className="px-cartao py-item">
+            <Tabela legenda="Custo de IA por mês e modo" colunas={COLUNAS_MES} linhas={por_mes} chaveDaLinha={(l) => `${l.mes}-${l.modo}`} tituloDoCartao={(l) => formatarMes(l.mes)} />
+          </div>
         </Cartao>
       )}
 
       {por_prompt.length > 0 && (
         <Cartao preenchimento="sem" rotulo="Por versão de prompt" titulo="Onde o dinheiro vai">
-          <Tabela resumo="Custo de IA por versão de prompt">
-            <Thead>
-              <tr>
-                <Th>Prompt</Th>
-                <Th>Versão</Th>
-                <Th>Modo</Th>
-                <Th>Execuções</Th>
-                <Th>Custo</Th>
-              </tr>
-            </Thead>
-            <Tbody>
-              {por_prompt.map((linha, i) => (
-                <Tr key={`${linha.prompt_versao_id}-${linha.modo}-${i}`}>
-                  <Td rotulo="Prompt" className="font-medium">
-                    {linha.chave}
-                  </Td>
-                  <Td rotulo="Versão">
-                    v{linha.versao} {linha.versao_ativa && <Selo tom="verde">ativa</Selo>}
-                  </Td>
-                  <Td rotulo="Modo">
-                    <SeloModo modo={linha.modo} />
-                  </Td>
-                  <Td rotulo="Execuções" className="tabular-nums">
-                    {linha.execucoes}
-                  </Td>
-                  <Td rotulo="Custo" className="tabular-nums">
-                    {formatarMoeda(linha.custo_usd_total)}
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Tabela>
+          <div className="px-cartao py-item">
+            <Tabela
+              legenda="Custo de IA por versão de prompt"
+              colunas={COLUNAS_PROMPT}
+              linhas={por_prompt}
+              chaveDaLinha={(l) => `${l.prompt_versao_id}-${l.modo}`}
+              tituloDoCartao={(l) => `${l.chave} · v${l.versao}`}
+            />
+          </div>
         </Cartao>
       )}
 
       {por_jornada.length > 0 && (
         <Cartao preenchimento="sem" rotulo="Por cliente" titulo="Os 50 que mais custaram">
-          <Tabela resumo="Custo de IA por jornada">
-            <Thead>
-              <tr>
-                <Th>Cliente</Th>
-                <Th>Modo</Th>
-                <Th>Execuções</Th>
-                <Th>Custo</Th>
-                <Th>Última execução</Th>
-              </tr>
-            </Thead>
-            <Tbody>
-              {por_jornada.map((linha, i) => (
-                <Tr key={`${linha.jornada_id}-${linha.modo}-${i}`}>
-                  <Td rotulo="Cliente">
-                    <Link href={`/jornadas/${linha.jornada_id}`} className="inline-flex min-h-11 items-center font-medium text-[color:var(--latao)] underline-offset-2 hover:underline">
-                      abrir a Ficha
-                    </Link>
-                  </Td>
-                  <Td rotulo="Modo">
-                    <SeloModo modo={linha.modo} />
-                  </Td>
-                  <Td rotulo="Execuções" className="tabular-nums">
-                    {linha.execucoes}
-                  </Td>
-                  <Td rotulo="Custo" className="tabular-nums">
-                    {formatarMoeda(linha.custo_usd_total)}
-                  </Td>
-                  <Td rotulo="Última">{formatarDataHora(linha.ultima_execucao_em)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Tabela>
+          <div className="px-cartao py-item">
+            <Tabela
+              legenda="Custo de IA por processo"
+              colunas={COLUNAS_JORNADA}
+              linhas={por_jornada}
+              chaveDaLinha={(l) => `${l.jornada_id}-${l.modo}`}
+              hrefDaLinha={(l) => `/jornadas/${l.jornada_id}`}
+            />
+          </div>
         </Cartao>
       )}
     </div>

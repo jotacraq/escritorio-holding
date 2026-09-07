@@ -7,6 +7,7 @@ import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoIndisponivel, EstadoVazio } from "@/components/ui/Estado";
 import { Kpi } from "@/components/ui/Kpi";
 import { LinkBotao } from "@/components/ui/LinkBotao";
+import { BarraAcaoMobile } from "@/components/ui/BarraAcaoMobile";
 import type { AgendamentoAgenda } from "@/types/agenda";
 import { listarAgendamentos } from "./api-agendamentos";
 import { LinhaAgendamento } from "./LinhaAgendamento";
@@ -142,6 +143,21 @@ export function ListaSessoes() {
           <BlocoDias grupos={resumo.gruposDepois} aoAtualizar={recarregar} />
         </Cartao>
       )}
+
+      {/* Fase 8 §C3 M5: no celular o cabeçalho da página sai da tela ao rolar
+          a lista, e com ele o botão "Marcar sessão". A barra devolve a ação ao
+          polegar e diz, em uma linha, o que a lista está mostrando. */}
+      <BarraAcaoMobile
+        contexto={
+          resumo.proximos.length === 0
+            ? "Nenhuma sessão nos próximos 7 dias"
+            : `${resumo.proximos.length} ${resumo.proximos.length === 1 ? "sessão" : "sessões"} nos próximos 7 dias`
+        }
+      >
+        <LinkBotao href="/clientes" variante="cta" tamanho="normal" className="w-full">
+          Marcar sessão
+        </LinkBotao>
+      </BarraAcaoMobile>
     </div>
   );
 }

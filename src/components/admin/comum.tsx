@@ -7,6 +7,9 @@ import { formatarData } from "@/lib/formatar";
  * a mesma língua (mesmo selo de "ativa", mesma tabela-que-vira-lista).
  */
 
+/** Célula/valor "vazio é vazio". */
+export const TRACO = "—";
+
 /** Selo de estado ativo/inativo — sempre com texto, nunca só cor. */
 export function SeloAtivo({ ativo, rotuloAtivo = "Ativa", rotuloInativo = "Inativa" }: { ativo: boolean; rotuloAtivo?: string; rotuloInativo?: string }) {
   return ativo ? <Selo tom="verde">{rotuloAtivo}</Selo> : <Selo tom="neutro">{rotuloInativo}</Selo>;
@@ -65,13 +68,21 @@ export function Td({ children, className = "", rotulo, acoes = false }: { childr
   );
 }
 
+/**
+ * `date` do Postgres formatado como data de calendário, sem fuso no caminho.
+ *
+ * A implementação saiu daqui na rodada FIX da Fase 8: a MESMA função existia
+ * em `agenda/rotulos.ts` e dentro de `ui/Prazo`, e três cópias da mesma
+ * correção é a quarta esperando para nascer errada. O dono agora é
+ * `lib/formatar.ts`; este re-export existe para as abas do Admin continuarem
+ * importando de `../comum`, como sempre importaram.
+ */
+export { formatarDataPura } from "@/lib/formatar";
+
 /** Texto de apoio no topo de uma aba: o que ela faz por quem a usa. */
 export function IntroAba({ children }: { children: ReactNode }) {
   return <p className="max-w-3xl text-corpo text-tinta-suave">{children}</p>;
 }
-
-/** Célula/valor "vazio é vazio". */
-export const TRACO = "—";
 
 /**
  * "publicada em 03/09/2026" · "ativada em 05/09/2026". A lista de versões

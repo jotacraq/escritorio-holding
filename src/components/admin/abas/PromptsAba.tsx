@@ -144,10 +144,7 @@ export function PromptsAba() {
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <IntroAba>
-          O texto que guia a IA em cada geração. Toda mudança nasce como versão nova — a versão em uso nunca é editada, e cada briefing guarda com
-          qual foi produzido. Antes de ativar uma versão com schema maior, rode a Sonda de schema.
-        </IntroAba>
+        <IntroAba>Toda mudança nasce como versão nova, e cada briefing guarda com qual foi produzido. Antes de ativar uma versão com schema maior, rode a Sonda de schema.</IntroAba>
         {!novo && (
           <Botao variante="primario" onClick={() => setNovo(formularioVazio())}>
             Nova versão de prompt

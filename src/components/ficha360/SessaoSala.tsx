@@ -8,6 +8,7 @@ import { Botao } from "@/components/ui/Botao";
 import { Campo, Entrada } from "@/components/ui/Campo";
 import { Selo } from "@/components/ui/Selo";
 import { ErroFicha360Api } from "./api";
+import { useFocoAoAbrir } from "./useFocoAoAbrir";
 import { gravarLinkSala, linkSalaValido } from "./api-sessao";
 import type { ExtrasFicha360 } from "./api-extras";
 
@@ -30,6 +31,9 @@ export function SessaoSala({ sessao, temAgendamentoAtivo, aoAtualizar }: { sessa
   const [texto, setTexto] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // O campo só ganha foco quando o formulário APARECE (clique em "Colar link
+  // da sala") — nunca na montagem da Ficha. Ver `useFocoAoAbrir`.
+  const refEndereco = useFocoAoAbrir<HTMLInputElement>(editando);
 
   if (!sessao) {
     return <p className="text-sm text-tinta-suave">Marque o horário primeiro</p>;
@@ -108,7 +112,7 @@ export function SessaoSala({ sessao, temAgendamentoAtivo, aoAtualizar }: { sessa
           }}
         >
           <Campo rotulo="Endereço da sala" ajuda="Zoom, Google Meet ou Teams — cole o link completo." erro={erro} obrigatorio>
-            <Entrada type="url" inputMode="url" autoComplete="off" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="https://…" autoFocus />
+            <Entrada ref={refEndereco} type="url" inputMode="url" autoComplete="off" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="https://…" />
           </Campo>
           <div className="flex flex-wrap gap-2">
             <Botao type="submit" variante="primario" carregando={salvando}>

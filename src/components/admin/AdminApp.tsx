@@ -177,7 +177,7 @@ export function AdminApp() {
         { id: "repertorio", grupo: "Método", rotulo: "Repertório da IA", descricao: FRASE_REPERTORIO, conteudo: <ConhecimentoApp /> },
         { id: "equipe", grupo: "Cadastro", rotulo: "Equipe", descricao: "Quem entra no sistema e com que papel — o papel decide o que a pessoa vê.", conteudo: <EquipeAba /> },
         { id: "produtos", grupo: "Cadastro", rotulo: "Produtos", descricao: "O que o escritório vende e por qual link de pagamento.", conteudo: <ProdutosAba /> },
-        { id: "edicoes", grupo: "Cadastro", rotulo: "Edições do seminário", descricao: "As turmas do seminário — é por elas que os números do funil são contados.", conteudo: <EdicoesAba /> },
+        { id: "edicoes", grupo: "Cadastro", rotulo: "Edições do seminário", descricao: "As turmas do seminário — é por elas que os números por fase do processo são contados.", conteudo: <EdicoesAba /> },
         { id: "configuracoes", grupo: "Cadastro", rotulo: "Configurações", descricao: "Ajustes gerais do sistema: prazos, canais e o que roda sozinho.", conteudo: <ConfiguracoesAba /> },
         {
           id: "titulares",

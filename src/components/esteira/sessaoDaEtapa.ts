@@ -39,3 +39,34 @@ export function agruparColunasPorSessao<T extends { etapa: string }>(colunas: T[
     colunas: colunas.filter((c) => (SESSAO_POR_ETAPA[c.etapa as EtapaJornada] ?? "viabilidade") === chave),
   })).filter((grupo) => grupo.colunas.length > 0);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Fase (Fase 8, §B3/D18)                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "Fase" é como o advogado brasileiro chama isto (ADVBOX filtra por fase
+ * processual; PJe e Astrea falam de fase do processo). No banco continua sendo
+ * `etapa`; aqui só o rótulo muda, e a fase é o agrupamento nas TRÊS sessões
+ * que já existia — não um conceito novo. Uma coisa, um nome, um mapa.
+ */
+export type ChaveFase = ChaveSessao;
+
+export const ORDEM_FASES: ChaveFase[] = ORDEM_SESSOES;
+
+/**
+ * Rótulo curto para caber em coluna de tabela e em chip de filtro. O nome
+ * longo (`ROTULO_SESSAO`) continua valendo no trilho da Ficha, onde há espaço:
+ * é a mesma palavra-chave nos dois ("Viabilidade", "Croqui", "Holding"), então
+ * ninguém precisa traduzir de uma tela para a outra.
+ */
+export const ROTULO_FASE: Record<ChaveFase, string> = {
+  viabilidade: "Viabilidade",
+  croqui: "Croqui estrutural",
+  entrega: "Holding",
+};
+
+/** Etapa desconhecida cai na primeira fase — perder a linha seria pior que agrupá-la no lugar provável. */
+export function faseDaEtapa(etapa: string): ChaveFase {
+  return SESSAO_POR_ETAPA[etapa as EtapaJornada] ?? "viabilidade";
+}

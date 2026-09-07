@@ -28,8 +28,11 @@ export default function LayoutPublico({ children }: { children: ReactNode }) {
   return (
     <div className="area-publica flex min-h-screen flex-col bg-papel-fundo">
       <header className="px-5 pb-2 pt-7 text-center sm:px-8 sm:pt-9">
-        <p className="text-rotulo font-medium uppercase text-tinta-fraca">Planejamento Patrimonial</p>
-        <p className="mt-1.5 text-subtitulo font-bold leading-tight text-tinta">Time Holding Brasil · Dra. Elaine Montenegro</p>
+        <p className="text-publico tracking-[0.08em] font-medium uppercase text-tinta-fraca">Planejamento Patrimonial</p>
+        {/* O rótulo acima subiu de 12 para 16px (piso público); o nome sobe
+            junto, senão os dois ficariam do mesmo tamanho e a hierarquia do
+            cabeçalho — o que é seção, o que é escritório — desapareceria. */}
+        <p className="mt-1.5 text-[1.25rem] font-bold leading-tight text-tinta">Time Holding Brasil · Dra. Elaine Montenegro</p>
       </header>
 
       <main id="conteudo-principal" className="mx-auto flex w-full max-w-lg flex-1 flex-col px-5 py-7 sm:px-6 sm:py-8">
@@ -43,12 +46,14 @@ export default function LayoutPublico({ children }: { children: ReactNode }) {
        * documento ou no material ficava sem saída. `ContatoEquipe` é o mesmo
        * componente das telas: sem `NEXT_PUBLIC_CONTATO_*` ele diz "fale com
        * quem te enviou este link", nunca um número inventado.
-       * `text-sm` (13px) e não `text-legenda` (12px): quem lê é o cliente de
-       * 60+ no celular — 12px é o piso da equipe, não o da área pública.
+       * Fase 8: o piso tipográfico da ÁREA PÚBLICA é **1rem (16px)**, não os
+       * 12–13px da área da equipe. Medido em 07/09 nas 4 páginas: o rodapé
+       * saía a 13px e o rótulo do cabeçalho a 12px, na tela de quem tem 60+
+       * anos e nenhum seletor de escala para corrigir.
        */}
       <footer className="mt-auto flex flex-col items-center gap-1.5 border-t border-linha px-5 py-6 text-center leading-relaxed sm:px-8">
         <ContatoEquipe antes="Alguma dúvida sobre este link?" />
-        <p className="text-sm text-tinta-fraca">Este link é pessoal e sigiloso — não encaminhe para terceiros.</p>
+        <p className="text-publico text-tinta-fraca">Este link é pessoal e sigiloso — não encaminhe para terceiros.</p>
       </footer>
     </div>
   );

@@ -21,6 +21,22 @@ Vocabulário do negócio. **Estes são os nomes que valem no código, no banco e
 | **Os 4 SIMs** | Abertura da SV: sigilo/gravação · licitude · presença dos decisores · aceite do próximo passo (croqui). | — |
 | **Decisor conjunto / Influenciador / Comunicador** | Três papéis distintos na decisão familiar. Só o **decisor conjunto** trava a contratação. Distinção obrigatória no Briefing. | — |
 
+## A língua do advogado (Fase 8, 07/09/2026)
+
+Quatro termos que o advogado brasileiro já usa em PJe, e-SAJ, Astrea, Projuris e ADVBOX. Eles
+entram no glossário como **rótulo de tela**: o banco e o código continuam com os nomes de sempre
+(`jornadas`, `eventos_timeline`, `etapa`, `tarefas.vence_em`, `desfecho='congelada'`), e a tradução
+vive num lugar só, `src/lib/vocabulario.ts`. Inventar sinônimo na tela sem registrar aqui é o que
+faz um sistema ter dois vocabulários.
+
+| Termo | O que é | O que NÃO é | No código |
+|---|---|---|---|
+| **Processo** | O caminho de um cliente, do seminário à holding contratada. É a unidade de trabalho do escritório — o que o advogado abre, acompanha e fecha. | **Não é "pipeline", "funil" nem "deal".** Não é o processo judicial: aqui não há tribunal. | `jornadas` |
+| **Andamento** | Cada movimentação registrada de um processo: contato feito, sessão realizada, croqui calculado, pagamento confirmado. Sempre datado, sempre do mais recente para o mais antigo. | Não é "atividade", não é "log", não é "histórico do sistema". | `eventos_timeline` |
+| **Fase** | Em qual das três sessões o processo está: Viabilidade · Croqui Estrutural · Holding. É por ela que se filtra a lista de clientes. | Não é o passo do trilho (são 9); a fase agrupa os 9 em 3. Não é o desfecho. | `etapa` (`etapa_jornada`), agrupada por `agruparPorSessao` |
+| **Prazo** | A data-limite de uma tarefa do processo. Tem destaque visual próprio — vencido, vence hoje, vence em breve — separado do status do andamento. | Não é a data da sessão (essa é agendamento). Não é o mesmo que "status": um processo em dia pode ter prazo vencido. | `tarefas.vence_em` |
+| **Arquivado** | Processo que não andou e saiu da lista ativa, sem afirmar ganho nem perda. Reversível: desarquivar devolve o processo à lista. | Não é "perdido" (isso é decisão comercial) nem "descartado" (isso é inelegível/duplicado). | `desfecho = 'congelada'` |
+
 ## Princípios que não se negociam (do documento institucional)
 
 1. A Sessão de Viabilidade **não é reunião de vendas** — é diagnóstico estratégico.

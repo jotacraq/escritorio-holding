@@ -107,7 +107,7 @@ function CartaoTipoDocumento({
           )}
         </p>
         {recebidos.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-verde-fraco px-2.5 py-1 text-sm font-medium text-[color:var(--verde)]">
+          <span className="inline-flex items-center gap-1 rounded-full bg-verde-fraco px-2.5 py-1 text-publico font-medium text-[color:var(--verde)]">
             <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-current">
               <path d="M8.5 13.5 4.7 9.7l1.4-1.4 2.4 2.4 5.4-5.4 1.4 1.4z" />
             </svg>
@@ -124,14 +124,14 @@ function CartaoTipoDocumento({
        */}
       <div aria-live="polite" className="flex flex-col">
         {recebidos.map((doc, i) => (
-          <p key={`${doc.nome_arquivo}-${i}`} className="text-sm text-tinta-suave">
+          <p key={`${doc.nome_arquivo}-${i}`} className="text-publico text-tinta-suave">
             {doc.nome_arquivo} · enviado em {formatarData(doc.enviado_em)}
           </p>
         ))}
       </div>
 
       {bloqueado ? (
-        <p className="text-sm text-tinta-suave">{motivoBloqueio}</p>
+        <p className="text-publico text-tinta-suave">{motivoBloqueio}</p>
       ) : (
         <>
           <button
@@ -155,7 +155,7 @@ function CartaoTipoDocumento({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14" />
             </svg>
             <span className="text-base font-bold text-tinta">Toque para escolher o arquivo</span>
-            <span className="text-sm text-tinta-suave">ou arraste aqui · {extensoesAceitas.map((e) => `.${e}`).join(", ")} · até {tamanhoMaximoMb} MB</span>
+            <span className="text-publico text-tinta-suave">ou arraste aqui · {extensoesAceitas.map((e) => `.${e}`).join(", ")} · até {tamanhoMaximoMb} MB</span>
           </button>
           <input
             ref={inputRef}
@@ -174,9 +174,9 @@ function CartaoTipoDocumento({
 
       {envios.map((envio) => (
         <div key={envio.id} className="flex flex-col gap-1">
-          <p className="truncate text-sm text-tinta-suave">{envio.nome}</p>
+          <p className="truncate text-publico text-tinta-suave">{envio.nome}</p>
           {envio.erro ? (
-            <p role="alert" className="text-sm font-medium text-[color:var(--vermelho)]">
+            <p role="alert" className="text-publico font-medium text-[color:var(--vermelho)]">
               {envio.erro}
             </p>
           ) : (
@@ -232,7 +232,7 @@ export function DocumentosPublico({ token }: { token: string }) {
         <p className="text-tinta-suave">Olá, {abertura.primeiro_nome}. Estes são os documentos que a equipe precisa para dar andamento.</p>
       </div>
 
-      <div className="flex items-start gap-2.5 rounded-controle border border-linha-forte bg-papel px-4 py-3 text-sm text-tinta-suave">
+      <div className="flex items-start gap-2.5 rounded-controle border border-linha-forte bg-papel px-4 py-3 text-publico text-tinta-suave">
         <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 shrink-0 fill-current text-tinta-fraca">
           <path d="M10 2a5 5 0 0 0-5 5v2H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2Z" />
         </svg>
@@ -244,7 +244,7 @@ export function DocumentosPublico({ token }: { token: string }) {
       </div>
 
       {limiteAtingido && (
-        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-4 py-3 text-sm font-medium text-[color:var(--ambar)]">
+        <p role="status" className="rounded-controle border border-ambar-borda bg-ambar-fraco px-4 py-3 text-publico font-medium text-[color:var(--ambar)]">
           Você já enviou o máximo de arquivos permitido neste link ({abertura.payload.limite_arquivos}).
         </p>
       )}

@@ -16,7 +16,7 @@ import { Campo, Entrada, Selecao } from "@/components/ui/Campo";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Selo, SeloStub } from "@/components/ui/Selo";
-import { formatarData } from "@/lib/formatar";
+import { formatarDataPura } from "@/components/admin/comum";
 import { nomeDoSlug } from "@/components/conhecimento/rotulo";
 import type { DesfechoObservado, ResultadoBusca, TipoTranscricao } from "@/types/conhecimento";
 
@@ -281,7 +281,7 @@ export function ConhecimentoApp() {
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-bold text-tinta">{nomeDoSlug(r.rotulo)}</span>
                         <Selo tom={r.tipo === "apresentacao_croqui" ? "azul" : "neutro"}>{ROTULO_TIPO[r.tipo]}</Selo>
-                        {r.data_reuniao ? <span className="text-legenda text-tinta-fraca">{formatarData(r.data_reuniao)}</span> : null}
+                        {r.data_reuniao ? <span className="text-legenda text-tinta-fraca">{formatarDataPura(r.data_reuniao)}</span> : null}
                       </span>
                       <Trecho texto={r.trecho} />
                     </Link>
@@ -411,9 +411,9 @@ export function ConhecimentoApp() {
                   <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
                     <span className="truncate font-medium text-tinta">{nomeDoSlug(caso.rotulo)}</span>
                     <span className="truncate text-legenda text-tinta-suave">
-                      Sessão em {formatarData(caso.sv_data_reuniao)}
+                      Sessão em {formatarDataPura(caso.sv_data_reuniao)}
                       {caso.sv_consultor ? ` · ${caso.sv_consultor}` : ""}
-                      {caso.croqui_data_reuniao ? ` · croqui em ${formatarData(caso.croqui_data_reuniao)}` : ""}
+                      {caso.croqui_data_reuniao ? ` · croqui em ${formatarDataPura(caso.croqui_data_reuniao)}` : ""}
                     </span>
                   </span>
                   <span className="flex items-center gap-3">

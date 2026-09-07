@@ -254,7 +254,7 @@ export function AssistenteFormulario({
                   }
                   className="mt-1 h-6 w-6 shrink-0 accent-[color:var(--latao-cta)]"
                 />
-                <span className="text-sm leading-relaxed text-tinta">
+                <span className="text-publico leading-relaxed text-tinta">
                   <span className="block text-base font-bold">{consentimento.titulo}</span>
                   {consentimento.texto}
                 </span>
@@ -262,7 +262,7 @@ export function AssistenteFormulario({
             );
           })}
           {consentimentos.length === 0 && (
-            <p className="text-sm text-tinta-suave">
+            <p className="text-publico text-tinta-suave">
               {modoPrevia
                 ? "Aqui o cliente marca os textos de consentimento vigentes. A pré-visualização não os carrega — eles são resolvidos na hora em que o link é aberto."
                 : "Nenhum texto de consentimento vigente — não há nada para marcar."}
@@ -272,19 +272,19 @@ export function AssistenteFormulario({
       )}
 
       {blocoAtual && faltando.length > 0 && (
-        <p aria-live="polite" className="text-sm text-tinta-suave">
+        <p aria-live="polite" className="text-publico text-tinta-suave">
           Para continuar, falta responder: <span className="font-medium text-tinta">{faltando.join(", ")}</span>.
         </p>
       )}
 
       {!blocoAtual && !modoPrevia && consentimentosPendentes.length > 0 && (
-        <p aria-live="polite" className="text-sm text-tinta-suave">
+        <p aria-live="polite" className="text-publico text-tinta-suave">
           Para enviar, marque {consentimentosPendentes.length === 1 ? "a autorização acima" : `as ${consentimentosPendentes.length} autorizações acima`}.
         </p>
       )}
 
       {erro && (
-        <p role="alert" className="text-sm font-medium text-[color:var(--vermelho)]">
+        <p role="alert" className="text-publico font-medium text-[color:var(--vermelho)]">
           {erro}
         </p>
       )}

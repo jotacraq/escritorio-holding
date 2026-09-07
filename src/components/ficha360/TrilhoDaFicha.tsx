@@ -60,6 +60,42 @@ const LINK_DO_PASSO: Partial<Record<ChaveItemPasta | string, { tipo: string; rot
   documentos: { tipo: "documentos", rotulo: "Copiar link dos documentos" },
 };
 
+/**
+ * **A ação de agora** — uma só, derivada, exportada, e **pura**.
+ *
+ * Ela aparece em dois lugares e precisa ser a MESMA nos dois: no trilho (topo
+ * da Ficha, no desktop) e na `BarraAcaoMobile` (zona do polegar, no celular).
+ * Duas derivações dariam dois botões dizendo coisas diferentes na mesma tela —
+ * que é exatamente o tipo de divergência que a Fase 8 veio matar.
+ *
+ * Devolve o QUE fazer, não COMO: quem chama liga o `onClick`/`href`. Assim a
+ * função não recebe handler nenhum (nem os que leem `ref`), continua testável
+ * de mesa e nunca é chamada com um efeito colateral dentro de um `useMemo`.
+ *
+ * "Ninguém" devendo nada devolve `null`: um botão aqui seria verbo sem objeto.
+ */
+export type AcaoDeAgora =
+  | { tipo: "copiar-link"; rotulo: string; title?: string; tipoDeLink: string }
+  | { tipo: "abrir-gaveta"; rotulo: string; title?: string; chave: ChaveItemPasta }
+  | { tipo: "ir"; rotulo: string; title?: string; href: string };
+
+export function acaoDeAgora(ficha: Ficha360, opcoes: { temBarraEnviar: boolean }): AcaoDeAgora | null {
+  const proximo = derivarProximoPasso(sinaisDaFicha(ficha));
+  if (proximo.dono === "ninguem") return null;
+
+  // §5.5 — o passo que se resolve mandando um link vira o botão de copiar.
+  const link = LINK_DO_PASSO[proximo.chave];
+  if (link && opcoes.temBarraEnviar) {
+    return { tipo: "copiar-link", rotulo: link.rotulo, title: proximo.title ?? proximo.passo, tipoDeLink: link.tipo };
+  }
+
+  const chave = proximo.chave as ChaveItemPasta;
+  if (ITENS_EM_GAVETA.has(chave)) return { tipo: "abrir-gaveta", rotulo: proximo.passo, title: proximo.title, chave };
+
+  if (!proximo.rota) return null;
+  return { tipo: "ir", rotulo: proximo.passo, title: proximo.title, href: hrefDoPasso(ficha.jornada.id, proximo) };
+}
+
 export function TrilhoDaFicha({
   ficha,
   aoAbrirGaveta,
@@ -90,36 +126,32 @@ export function TrilhoDaFicha({
   const sessoes = useMemo(() => agruparPorSessao(passos), [passos]);
 
   const { acao, nota, notaTitle } = useMemo<{ acao: AcaoTrilho | null; nota: string | null; notaTitle?: string }>(() => {
-    const proximo = derivarProximoPasso(sinaisDaFicha(ficha));
-    // "Ninguém" = nada pendente ou sem informação: um botão aqui seria um
-    // verbo sem objeto. Vazio rotulado é melhor que ação inventada.
-    if (proximo.dono === "ninguem") return { acao: null, nota: null };
-
-    // §5.5 — o passo que se resolve mandando um link vira o botão de copiar.
-    const link = LINK_DO_PASSO[proximo.chave];
-    if (link && aoCopiarLink) {
-      return { acao: { rotulo: link.rotulo, title: proximo.title ?? proximo.passo, onClick: () => aoCopiarLink(link.tipo) }, nota: null };
+    const agora = acaoDeAgora(ficha, { temBarraEnviar: Boolean(aoCopiarLink) });
+    if (agora) {
+      const acao: AcaoTrilho =
+        agora.tipo === "ir"
+          ? { rotulo: agora.rotulo, title: agora.title, href: agora.href }
+          : agora.tipo === "abrir-gaveta"
+            ? { rotulo: agora.rotulo, title: agora.title, onClick: () => aoAbrirGaveta(agora.chave) }
+            : { rotulo: agora.rotulo, title: agora.title, onClick: () => aoCopiarLink?.(agora.tipoDeLink) };
+      return { acao, nota: null };
     }
 
-    const chave = proximo.chave as ChaveItemPasta;
-    if (ITENS_EM_GAVETA.has(chave)) return { acao: { rotulo: proximo.passo, title: proximo.title, onClick: () => aoAbrirGaveta(chave) }, nota: null };
-
-    // Sem rota não há botão — mas o passo continua sendo informação: quem
-    // está devendo o quê ("Aguardando a compra · Cliente").
+    // Sem botão, o passo continua sendo informação: quem está devendo o quê
+    // ("Aguardando a compra · Cliente").
     //
     // Só que a frase só vale quando ela fala do passo ACESO. `derivarTrilho`
     // avança para o primeiro passo não concluído quando o alvo já terminou,
     // então "Aguardando a compra" pode acabar embaixo de "Contato" — duas
     // frases se contradizendo na mesma linha. Nesse caso a linha fica só com
     // o resumo: melhor calar do que confundir.
-    if (!proximo.rota) {
-      const aceso = passoAtual(passos)?.chave ?? null;
-      const alvo = PASSO_POR_CHAVE[proximo.chave];
-      if (aceso === null || aceso !== alvo) return { acao: null, nota: null };
-      return { acao: null, nota: `aguardando · ${ROTULO_DONO[proximo.dono]}`, notaTitle: proximo.title ?? proximo.passo };
-    }
-    return { acao: { rotulo: proximo.passo, title: proximo.title, href: hrefDoPasso(jornadaId, proximo) }, nota: null };
-  }, [ficha, jornadaId, aoAbrirGaveta, aoCopiarLink, passos]);
+    const proximo = derivarProximoPasso(sinaisDaFicha(ficha));
+    if (proximo.dono === "ninguem" || proximo.rota) return { acao: null, nota: null };
+    const aceso = passoAtual(passos)?.chave ?? null;
+    const alvo = PASSO_POR_CHAVE[proximo.chave];
+    if (aceso === null || aceso !== alvo) return { acao: null, nota: null };
+    return { acao: null, nota: `aguardando · ${ROTULO_DONO[proximo.dono]}`, notaTitle: proximo.title ?? proximo.passo };
+  }, [ficha, aoAbrirGaveta, aoCopiarLink, passos]);
 
   return (
     <Trilho
@@ -130,7 +162,7 @@ export function TrilhoDaFicha({
       nota={nota}
       notaTitle={notaTitle}
       desfecho={ficha.jornada.desfecho === "aberta" ? null : ROTULO_DESFECHO[ficha.jornada.desfecho] ?? ficha.jornada.desfecho}
-      rotulo="As três sessões desta jornada"
+      rotulo="As três sessões deste processo"
       className="nao-imprimir rounded-cartao border border-linha-forte bg-papel-elevado px-cartao py-item shadow-cartao"
     />
   );

@@ -32,12 +32,18 @@ const ROTULO_ESTADO: Record<EstadoAutomacao, string> = {
   aguardando: "Na fila",
 };
 
+/**
+ * Fase 8, DS §12.3 — texto de STATUS pede `--estado-*`, que é medido em ≥ 7:1
+ * (AAA) sobre as três superfícies e nos dois temas. `--verde`/`--ambar`/… são
+ * AA (4,5–6:1) e continuam valendo para o resto; aqui, onde a palavra É o
+ * estado e a leitura é de relance por quem tem 55+, o piso é o AAA.
+ */
 const ESTILO_ESTADO: Record<EstadoAutomacao, string> = {
-  agendado: "text-[color:var(--azul)]",
-  enviado: "text-[color:var(--verde)]",
-  falhou: "text-[color:var(--vermelho)]",
-  sem_resposta: "text-[color:var(--ambar)]",
-  concluido: "text-[color:var(--verde)]",
+  agendado: "text-[color:var(--estado-azul)]",
+  enviado: "text-[color:var(--estado-verde)]",
+  falhou: "text-[color:var(--estado-vermelho)]",
+  sem_resposta: "text-[color:var(--estado-ambar)]",
+  concluido: "text-[color:var(--estado-verde)]",
   aguardando: "text-tinta-fraca",
 };
 
@@ -57,7 +63,7 @@ const GLIFO_ESTADO: Record<EstadoAutomacao, React.ReactNode> = {
 };
 
 /** A explicação do bloco vive no `title`, nunca no fluxo (lei de texto §2.2). */
-const TITULO_BLOCO = "O que o sistema fez sozinho nesta jornada";
+const TITULO_BLOCO = "O que o sistema fez sozinho neste processo";
 
 const ROTULO_CANAL: Record<string, string> = {
   email: "e-mail",

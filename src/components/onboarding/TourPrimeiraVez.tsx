@@ -37,7 +37,7 @@ const PASSOS: PassoTour[] = [
     texto: (
       <>
         <p>Comece o dia por aqui. A aba “O dia” mostra, em ordem de urgência, o que precisa de você: as sessões marcadas, quem pagou e ainda não recebeu contato, e o que travou.</p>
-        <p>A aba “Números” tem o funil por turma do seminário: quantas pessoas fizeram a sessão, contrataram o croqui e a holding.</p>
+        <p>A aba “Números” mostra as fases do processo por turma do seminário: quantas pessoas fizeram a sessão, contrataram o croqui e a holding.</p>
       </>
     ),
   },

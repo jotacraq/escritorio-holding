@@ -236,7 +236,7 @@ export function MaterialAba({ jornadaId }: { jornadaId: string }) {
         ) : !atual ? (
           <EstadoVazio
             ilustracao="pasta"
-            titulo="Nenhum material gerado para esta jornada"
+            titulo="Nenhum material gerado para este processo"
             descricao="Gerar cruza o contato da equipe, o formulário e o relatório para achar a dor principal do cliente. Sem fonte, sai rotulado como material padrão."
           />
         ) : (

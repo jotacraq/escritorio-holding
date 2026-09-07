@@ -62,6 +62,13 @@ export function FormularioLogin() {
           autoComplete="email"
           inputMode="email"
           required
+          /* Exceção declarada a `jsx-a11y/no-autofocus` (Fase 8): a tela de
+             login não tem outro conteúdo para ler antes do campo — o foco
+             automático aqui poupa um Tab de quem usa teclado e, no celular,
+             evita que a Dra. Elaine precise mirar num alvo pequeno. A regra
+             existe contra autofoco no MEIO de uma página; esta é a exceção
+             que a própria documentação da regra descreve. */
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           value={email}
           onChange={(evento) => setEmail(evento.target.value)}

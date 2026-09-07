@@ -16,6 +16,19 @@ import { defineConfig } from "vitest/config";
  *   - ligação por IA e integrações: janela de discagem, normalização de
  *     telefone, HMAC, montagem de payload, mapeamento Vapi → evento.
  *
+ * Fase 8 — entra a camada de COMPONENTE da verificação de acessibilidade
+ * (`*.test.tsx`): `@testing-library/react` monta o componente em `jsdom` e o
+ * `vitest-axe` roda o axe-core em cima do DOM resultante. Sem navegador, sem
+ * banco, custo perto de zero — pega rótulo faltando, contraste declarado,
+ * `aria-*` inválido e papel errado antes de virar tela. O que ele NÃO pega
+ * (foco de verdade, ordem de leitura na página inteira, sobreposição) fica
+ * para `node scripts/a11y.mjs`, que roda LOCAL contra o `next dev` porque o CI
+ * não tem banco nem sessão (CONFLITO C1 do plano da fase).
+ *
+ * O ambiente é escolhido POR ARQUIVO, pelo docblock `@vitest-environment
+ * jsdom` no topo de cada `*.test.tsx`: os testes de lógica pura continuam em
+ * `node`, que é mais rápido e não carrega DOM à toa.
+ *
  * Esta é a suíte que o gate do GitHub roda em todo PR (`.github/workflows/ci.yml`).
  * Um caso é condicional e só isso: o bloco E do motor confere contra uma
  * planilha real cuja fixture mora em `tmp/` (não versionada). Sem ela, o caso
@@ -25,7 +38,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     passWithNoTests: false,
   },
   resolve: {

@@ -31,7 +31,7 @@ function TelaConfirmado({ horario, podeRemarcar, aoRemarcar }: { horario: Horari
         <p className="text-subtitulo font-bold text-tinta">
           {formatarDiaPorExtenso(horario.inicio_em)} às {formatarHoraSimples(horario.inicio_em)}
         </p>
-        <p className="text-sm text-tinta-suave">Horário de São Paulo · o link da sala chega no seu e-mail no dia.</p>
+        <p className="text-publico text-tinta-suave">Horário de São Paulo · o link da sala chega no seu e-mail no dia.</p>
       </div>
       {podeRemarcar ? (
         <BotaoPublico variante="secundario" onClick={aoRemarcar}>
@@ -85,7 +85,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-tinta-suave">Toque num horário. Todos estão no fuso de São Paulo.</p>
+      <p className="text-publico text-tinta-suave">Toque num horário. Todos estão no fuso de São Paulo.</p>
 
       <div className="flex flex-col gap-5">
         {diasAtuais.map((dia) => (
@@ -105,7 +105,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
                     }`}
                   >
                     {formatarHoraSimples(slot.inicio_em)}
-                    {slot.motivo_sugestao && slot.posicao === 1 && <span className="text-legenda font-medium uppercase text-tinta-suave">Recomendado</span>}
+                    {slot.motivo_sugestao && slot.posicao === 1 && <span className="text-publico font-medium uppercase text-tinta-suave">Recomendado</span>}
                   </button>
                 );
               })}
@@ -115,7 +115,7 @@ function SeletorDeHorario({ token, slots, aoConfirmar }: { token: string; slots:
       </div>
 
       {erro && (
-        <p role="alert" className="text-sm font-medium text-[color:var(--vermelho)]">
+        <p role="alert" className="text-publico font-medium text-[color:var(--vermelho)]">
           {erro}
         </p>
       )}

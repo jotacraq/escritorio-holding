@@ -89,10 +89,7 @@ export function MateriaisModelosAba() {
 
 function Intro() {
   return (
-    <IntroAba>
-      O texto-base do material pós-sessão, um por dor. O sistema escolhe o modelo que mais casa com a dor principal, o arquétipo e as preocupações
-      do cliente — sem IA nessa escolha — e a IA só personaliza por cima.
-    </IntroAba>
+    <IntroAba>Um modelo por dor. Quem escolhe o modelo é o sistema, sem IA; a IA só personaliza por cima.</IntroAba>
   );
 }
 

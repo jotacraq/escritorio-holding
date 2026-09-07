@@ -9,6 +9,15 @@ import { forwardRef, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type 
  *
  * Quem toca é o cliente da Dra. Elaine, no celular, muitas vezes com 60+
  * anos: alvo ≥ 52px nos botões, fonte ≥ 16px, um único CTA por tela.
+ *
+ * **Piso tipográfico da área pública (Fase 8): `text-publico` = 16px.** Os
+ * degraus `text-sm` (13px), `text-legenda` e `text-rotulo` (12px) são da ÁREA
+ * DA EQUIPE — a equipe tem o seletor de escala, o cliente não tem nada. A
+ * medição de 07/09 achou 12px no rótulo do cabeçalho e 13px em 30 trechos das
+ * 4 páginas públicas; todos subiram para 1rem. `1rem` e não um token porque
+ * `--text-*` é do escopo da equipe e vive em `globals.css` (fora desta
+ * fronteira) — o lugar certo de morar é um `--text-publico` lá, e isso está
+ * anotado para a próxima rodada do design system.
  */
 
 type VarianteBotaoPublico = "primario" | "secundario";
@@ -70,7 +79,7 @@ export function LinkBotaoPublico({
 
 /** Rótulo pequeno em caixa alta acima do título — a "seção" do seminário. */
 export function RotuloPublico({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <p className={`text-rotulo font-medium uppercase text-tinta-fraca ${className}`}>{children}</p>;
+  return <p className={`text-publico tracking-[0.08em] font-medium uppercase text-tinta-fraca ${className}`}>{children}</p>;
 }
 
 /** Cartão branco, raio grande, sombra marrom — a superfície do seminário. */
@@ -120,13 +129,13 @@ const CONTATO_EMAIL = process.env.NEXT_PUBLIC_CONTATO_EMAIL?.trim() || null;
 export function ContatoEquipe({ antes = "Precisa de ajuda?" }: { antes?: string }) {
   if (!CONTATO_WHATSAPP && !CONTATO_EMAIL) {
     return (
-      <p className="text-sm text-tinta-suave">
+      <p className="text-publico text-tinta-suave">
         {antes} Fale com quem te enviou este link — a equipe da Dra. Elaine Montenegro.
       </p>
     );
   }
   return (
-    <p className="text-sm text-tinta-suave">
+    <p className="text-publico text-tinta-suave">
       {antes}{" "}
       {CONTATO_WHATSAPP && (
         <>

@@ -78,7 +78,7 @@ function link(tipo: string, campos: Partial<LinkPublicoResumo> = {}): LinkPublic
 }
 
 interface Cenario {
-  desfecho?: "aberta" | "ganha" | "perdida";
+  desfecho?: "aberta" | "ganha" | "perdida" | "congelada";
   advogadaId?: string | null;
   /** `null` = jornada sem sessão nenhuma. */
   temSessao?: boolean;
@@ -170,6 +170,28 @@ secao("BARRA ENVIAR — os 6 motivos do §5.2");
     JSON.stringify(itens.map((i) => i.motivo)),
   );
   conferir("1 · e nada 'substitui ativo' (não há o que emitir)", itens.every((i) => !i.substituiAtivo), mapa(itens));
+}
+
+// 1b · ARQUIVADO trava igual, mas a frase é outra (Fase 8): arquivar é
+// reversível, então o aviso diz COMO voltar. "Encerrado" não tem essa saída.
+{
+  const itens = derivarEnvios([link("formulario")], ficha({ desfecho: "congelada", statusAgendamento: "agendado" }), AGORA);
+  conferir(
+    "1b · arquivado trava os 5 tipos",
+    itens.every((i) => i.podeEmitir === false && i.estado === "indisponivel"),
+    mapa(itens),
+  );
+  conferir(
+    "1b · e a frase diz que dá para reabrir",
+    itens.every((i) => i.motivo === MOTIVO_ENVIO.jornada_arquivada) && MOTIVO_ENVIO.jornada_arquivada.includes("Reabra"),
+    JSON.stringify(itens.map((i) => i.motivo)),
+  );
+  conferir(
+    "1b · e nenhuma frase visível diz 'jornada'",
+    !MOTIVO_ENVIO.jornada_arquivada.toLowerCase().includes("jornada") &&
+      !MOTIVO_ENVIO.jornada_encerrada.toLowerCase().includes("jornada"),
+    `${MOTIVO_ENVIO.jornada_encerrada} | ${MOTIVO_ENVIO.jornada_arquivada}`,
+  );
 }
 
 // 2 · Agendamento sem advogada: EMITE com aviso, não bloqueia (links/route.ts:115-119).

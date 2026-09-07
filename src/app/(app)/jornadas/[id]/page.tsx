@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useFicha360 } from "@/hooks/useFicha360";
 import { useBriefingAtual } from "@/hooks/useBriefingAtual";
@@ -10,13 +10,17 @@ import { EsqueletoFicha, EsqueletoLista } from "@/components/ui/Esqueleto";
 import { CabecalhoFicha } from "@/components/ficha360/CabecalhoFicha";
 import { PastaDoCliente } from "@/components/pasta/PastaDoCliente";
 import { Gaveta } from "@/components/ui/Gaveta";
+import { Botao } from "@/components/ui/Botao";
+import { LinkBotao } from "@/components/ui/LinkBotao";
+import { BarraAcaoMobile } from "@/components/ui/BarraAcaoMobile";
 import { derivarPasta } from "@/lib/pasta/derivar";
 import { sinaisDaFicha } from "@/lib/pasta/sinais";
 import { agruparPorSessao, derivarTrilho } from "@/lib/pasta/trilho";
 import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
 import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/api-extras";
-import { TrilhoDaFicha } from "@/components/ficha360/TrilhoDaFicha";
+import { TrilhoDaFicha, acaoDeAgora } from "@/components/ficha360/TrilhoDaFicha";
+import { PrazosDaFicha } from "@/components/ficha360/PrazosDaFicha";
 import { AutomacoesFicha } from "@/components/ficha360/AutomacoesFicha";
 import { RadarDocumentos } from "@/components/ficha360/RadarDocumentos";
 import { BarraEnviar } from "@/components/ficha360/BarraEnviar";
@@ -253,15 +257,30 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
     return () => window.removeEventListener("hashchange", aplicar);
   }, []);
 
+  // A MESMA ação do trilho, para a barra do polegar no celular (§C3 M5). Uma
+  // derivação só: dois botões dizendo coisas diferentes na mesma tela é o tipo
+  // de divergência que esta fase veio matar.
+  const acaoAgora = useMemo(() => acaoDeAgora(ficha, { temBarraEnviar: true }), [ficha]);
+
   return (
     <div className="flex flex-col gap-item">
       <CabecalhoFicha ficha={ficha} aoAtualizar={recarregar} briefing={briefing} aoAbrirGaveta={abrir} />
 
       {/* ONDE ESTÁ + A AÇÃO DE AGORA. Sticky: some da vista só quem rolou de
-          propósito. É o bloco que o contador de aceite mede. */}
-      <div className="nao-imprimir sticky top-0 z-20">
+          propósito. É o bloco que o contador de aceite mede.
+
+          Abaixo de `md` o botão do trilho fica escondido: como o trilho é
+          `sticky top-0`, ele e a `BarraAcaoMobile` ficariam os DOIS na tela ao
+          mesmo tempo, com o mesmo verbo — dois botões laranja iguais a 90 px
+          um do outro (medido a 390×844). Fica o de baixo, que é o que a mão
+          alcança. A ação continua sendo a mesma (`acaoDeAgora`), e no desktop
+          nada muda. */}
+      <div className="nao-imprimir sticky top-0 z-20 [&_[data-acao-agora]]:hidden md:[&_[data-acao-agora]]:inline-flex">
         <TrilhoDaFicha ficha={ficha} aoAbrirGaveta={abrir} aoCopiarLink={focarEnvio} />
       </div>
+
+      {/* O QUE FALTA E QUANDO VENCE. Uma linha, e só quando há prazo aberto. */}
+      <PrazosDaFicha tarefas={ficha.tarefasAbertas} />
 
       {/* O QUE ENVIAR. */}
       <div ref={barraRef} id="enviar">
@@ -294,9 +313,15 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
           dentro no cabeçalho ("15 de 18 prontos · 3 a pedir", "Croqui
           Estrutural"). Na Fase 6 eles abriam sozinhos a partir da segunda
           sessão e a Ficha avançada media 1.503 px — o dobro da dobra útil de
-          quem trabalha a 1440×900. Nada some: espera ser pedido. */}
+          quem trabalha a 1440×900. Nada some: espera ser pedido.
+
+          Fase 8 — `[&>*]:min-w-0` na grade: item de grade nasce com
+          `min-width: auto`, então a trilha cresce até o min-content do filho, e
+          o par Documentos/Croqui esticava a Ficha para 489 px de largura num
+          viewport de 360 px (medido, com as gavetas abertas). Com o piso em
+          zero, o conteúdo quebra dentro da coluna em vez de esticá-la. */}
       {podeVerPatrimonio && (
-        <div className="grid items-start gap-x-cartao gap-y-item sm:grid-cols-2">
+        <div className="grid items-start gap-x-cartao gap-y-item [&>*]:min-w-0 sm:grid-cols-2">
           <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} recolhivel />
           <div ref={croquiRef} id="croqui">
             <CartaoCroqui estadoCroqui={estadoCroqui} recolhivel />
@@ -351,6 +376,31 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
             <DiagnosticoSv jornadaId={id} hrefApresentar={`/jornadas/${id}/diagnostico?apresentar=1`} aoMudar={recarregar} />
           </Gaveta>
         </>
+      )}
+
+      {/* A AÇÃO DE AGORA, na zona do polegar (§C3 M5). No celular o botão do
+          trilho fica no topo da página: quem segura o aparelho com uma mão não
+          alcança, e no primeiro paint o que se vê é cabeçalho. Aqui a ação vem
+          até o polegar e fica lá enquanto a pessoa lê o resto. A `Gaveta`
+          aberta cobre a barra, então não há dois botões primários disputando.
+          A partir de `md` a barra some — no desktop a ação é a do trilho. */}
+      {acaoAgora && !gavetaAberta && (
+        <BarraAcaoMobile contexto="O que fazer agora">
+          {acaoAgora.tipo === "ir" ? (
+            <LinkBotao href={acaoAgora.href} variante="cta" title={acaoAgora.title} className="w-full">
+              {acaoAgora.rotulo}
+            </LinkBotao>
+          ) : (
+            <Botao
+              variante="primario"
+              largo
+              title={acaoAgora.title}
+              onClick={() => (acaoAgora.tipo === "abrir-gaveta" ? abrir(acaoAgora.chave) : focarEnvio(acaoAgora.tipoDeLink))}
+            >
+              {acaoAgora.rotulo}
+            </Botao>
+          )}
+        </BarraAcaoMobile>
       )}
     </div>
   );

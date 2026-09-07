@@ -53,10 +53,10 @@ function TelaConcluida({ abertura }: { abertura: AberturaFormularioPublico }) {
           if (visiveis.length === 0) return null;
           return (
             <div key={bloco} className="flex flex-col gap-2.5">
-              <h2 className="text-rotulo font-medium uppercase text-tinta-fraca">{bloco}</h2>
+              <h2 className="text-publico tracking-[0.08em] font-medium uppercase text-tinta-fraca">{bloco}</h2>
               {visiveis.map(({ pergunta, texto }) => (
                 <div key={pergunta.id} className="flex flex-col gap-0.5">
-                  <p className="text-sm text-tinta-suave">{pergunta.rotulo}</p>
+                  <p className="text-publico text-tinta-suave">{pergunta.rotulo}</p>
                   <p className="text-base font-medium text-tinta">{texto}</p>
                 </div>
               ))}

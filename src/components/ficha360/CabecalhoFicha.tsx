@@ -6,29 +6,24 @@ import { useEtapasOrdem } from "@/hooks/useJornadas";
 import { atualizarEtapa, ApiError, type Briefing, type DesfechoJornada, type Ficha360 } from "@/lib/api";
 import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
 import { Selo, SeloDadoExemplo, SeloStub } from "@/components/ui/Selo";
+import { SeloEstado } from "@/components/ui/SeloEstado";
+import { estadoDe } from "@/lib/estados/catalogo";
+import { Prazo } from "@/components/ui/Prazo";
 import { Botao } from "@/components/ui/Botao";
 import { Gaveta } from "@/components/ui/Gaveta";
+import { useToast } from "@/hooks/useToast";
 import { objecaoPrincipal } from "@/components/briefing/atomos";
 import { rotularDisc } from "@/components/briefing/tipos";
 import { rotulo, rotuloDeEtapa, titleDe } from "@/lib/vocabulario";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
-
-/**
- * Como cada desfecho aparece. `Record<string, …>` e não `Record<DesfechoJornada, …>`
- * porque `anonimizada` (0079, Fase 7 r3) só existe no enum depois da migration
- * aplicada — e a tela tem de funcionar antes disso. Desfecho desconhecido cai
- * no fallback legível de `desfechoNaTela`, nunca em `undefined.rotulo`.
- */
-const ROTULOS_DESFECHO: Record<string, { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" }> = {
-  aberta: { rotulo: "Aberta", tom: "azul" },
-  ganha: { rotulo: "Ganha", tom: "verde" },
-  perdida: { rotulo: "Perdida", tom: "vermelho" },
-  descartada: { rotulo: "Descartada", tom: "vermelho" },
-  congelada: { rotulo: "Congelada", tom: "neutro" },
-  // Tom NEUTRO de propósito: encerrar o tratamento a pedido do titular não é
-  // derrota comercial nem vitória — é um direito exercido.
-  anonimizada: { rotulo: "Anonimizada", tom: "neutro" },
-};
+import { faseDoCroqui, sinaisDaFicha } from "@/lib/pasta/sinais";
+import {
+  ErroArquivamento,
+  arquivarProcesso,
+  desarquivarProcesso,
+  resumoDoArquivamento,
+  resumoDoDesarquivamento,
+} from "./api-arquivar";
 
 /**
  * Os desfechos que alguém ESCOLHE na tela. `anonimizada` fica de fora: ela é
@@ -37,8 +32,19 @@ const ROTULOS_DESFECHO: Record<string, { rotulo: string; tom: "verde" | "vermelh
  */
 const DESFECHOS_ESCOLHIVEIS: DesfechoJornada[] = ["aberta", "ganha", "perdida", "descartada", "congelada"];
 
-function desfechoNaTela(desfecho: string): { rotulo: string; tom: "verde" | "vermelho" | "azul" | "neutro" } {
-  return ROTULOS_DESFECHO[desfecho] ?? { rotulo: desfecho.replace(/_/g, " "), tom: "neutro" };
+/**
+ * **Um catálogo, um rótulo** (Fase 8, D19). Até aqui este arquivo tinha um mapa
+ * próprio de rótulo + tom por desfecho, paralelo ao `lib/estados/catalogo.ts`.
+ * Dois dicionários para o mesmo enum é como "congelada" vira "Congelada" numa
+ * tela e "Arquivado" na outra — que era exatamente o caso. O mapa local morreu;
+ * quem responde é o catálogo, pelo `SeloEstado` (quando é selo) e por
+ * `estadoDe` (quando é só texto). `anonimizada` (0079) entrou no catálogo na
+ * trava da Fase 8 — nenhuma exceção local sobrou.
+ */
+
+/** Só o texto. Cor e ícone, quando houver, vêm do `SeloEstado`. */
+function rotuloDoDesfecho(desfecho: string): string {
+  return estadoDe("processo", desfecho)?.rotulo ?? desfecho.replace(/_/g, " ");
 }
 
 // "Sessão paga" aparecia aqui E como rótulo da etapa `sessao_contratada`:
@@ -120,7 +126,7 @@ function FaixaVital({
   if (itens.length === 0) return null;
 
   const CLASSE_VALOR =
-    "-my-2 inline-flex min-h-11 items-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]";
+    "-my-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]";
 
   return (
     <dl className="nao-imprimir flex flex-wrap items-center gap-x-cartao gap-y-0.5 text-legenda">
@@ -171,10 +177,72 @@ export function CabecalhoFicha({
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [arquivarAberto, setArquivarAberto] = useState(false);
+  const [salvandoArquivo, setSalvandoArquivo] = useState(false);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const { notificar } = useToast();
 
   // "Qualificado (MQL)" vem do banco, a sigla vai para o `title`.
   const doBanco = etapas?.find((e) => e.etapa === jornada.etapa)?.rotulo ?? jornada.etapa;
   const etapaNaTela = rotuloDeEtapa(doBanco);
+
+  // A MESMA derivação da lista de Clientes e do trilho (D12) — o payload da
+  // Ficha já carrega `croquiEstado` (`vw_croqui_estado`), então isto não custa
+  // requisição nenhuma.
+  const fase = faseDoCroqui(sinaisDaFicha(ficha));
+
+  // O próximo prazo é a tarefa aberta que vence primeiro. `tarefasAbertas` já
+  // vem ordenada por `vence_em` do servidor; tarefa sem data não é prazo.
+  const proximoPrazo = (ficha.tarefasAbertas ?? []).find((t) => Boolean(t.vence_em)) ?? null;
+
+  const arquivado = jornada.desfecho === "congelada";
+  // Processo encerrado por decisão comercial (ganho/perdido/descartado) ou
+  // anonimizado não é "parado": arquivar por cima apagaria o que ele afirma.
+  const podeArquivar = jornada.desfecho === "aberta";
+
+  async function arquivar(motivo: string, revogarLinks: boolean) {
+    setSalvandoArquivo(true);
+    setErroArquivo(null);
+    try {
+      const resultado = await arquivarProcesso(jornada.id, { motivo, revogarLinks });
+      setArquivarAberto(false);
+      aoAtualizar();
+      // Reversível de verdade: o Desfazer chama a rota de desarquivar, não um
+      // estado local. Nada de "Tem certeza?" antes (DS §8) — a saída fica
+      // DEPOIS da ação, que é onde ela é útil.
+      notificar({
+        tom: "sucesso",
+        titulo: "Processo arquivado",
+        descricao: resumoDoArquivamento(resultado),
+        duracao: 10_000,
+        acao: { rotulo: "Desfazer", aoClicar: () => void reabrir() },
+      });
+    } catch (e) {
+      setErroArquivo(e instanceof ErroArquivamento || e instanceof Error ? e.message : "Não foi possível arquivar.");
+    } finally {
+      setSalvandoArquivo(false);
+    }
+  }
+
+  async function reabrir() {
+    setSalvandoArquivo(true);
+    try {
+      const resultado = await desarquivarProcesso(jornada.id);
+      aoAtualizar();
+      notificar({ tom: "sucesso", titulo: "Processo reaberto", descricao: resumoDoDesarquivamento(resultado) });
+    } catch (e) {
+      // O caso frequente não é falha técnica: a pessoa ganhou OUTRO processo
+      // enquanto este estava arquivado. A mensagem do servidor já diz o que
+      // fazer, e o toast de erro fica na tela até ser fechado.
+      notificar({
+        tom: "erro",
+        titulo: "Não deu para reabrir",
+        descricao: e instanceof ErroArquivamento || e instanceof Error ? e.message : "Tente de novo.",
+      });
+    } finally {
+      setSalvandoArquivo(false);
+    }
+  }
 
   async function salvarDesfecho() {
     if (novoDesfecho !== "aberta" && !motivo.trim()) {
@@ -219,19 +287,61 @@ export function CabecalhoFicha({
           </p>
         </div>
 
-        <div className="nao-imprimir flex flex-wrap items-center gap-1.5">
-          <Selo tom="neutro" title={etapaNaTela.title ?? "Em que coluna da lista de clientes esta pessoa está"}>
-            {etapaNaTela.rotulo}
-          </Selo>
-          <Selo tom={desfechoNaTela(jornada.desfecho).tom}>{desfechoNaTela(jornada.desfecho).rotulo}</Selo>
-          <Selo tom="neutro">{ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}</Selo>
+        <div className="nao-imprimir flex flex-wrap items-center gap-1.5 gap-alvo">
           <Botao variante="secundario" tamanho="compacto" onClick={() => setFichaCompleta(true)}>
             Ficha completa
           </Botao>
+          {/* "Arquivar processo" é o verbo que a Dra. Elaine usa; até a Fase 8
+              a ação existia só como um valor ("Congelada") dentro de um combo
+              chamado "Situação", dois cliques abaixo. Processo já arquivado
+              mostra o inverso — reabrir, no mesmo lugar. */}
+          {arquivado ? (
+            <Botao variante="secundario" tamanho="compacto" carregando={salvandoArquivo} onClick={reabrir}>
+              Reabrir processo
+            </Botao>
+          ) : (
+            podeArquivar && (
+              <Botao variante="secundario" tamanho="compacto" onClick={() => setArquivarAberto(true)}>
+                Arquivar processo
+              </Botao>
+            )
+          )}
         </div>
       </div>
 
+      {/* ------------------------------------------------------------------
+          A BARRA DE STATUS (Fase 8, D21). É a primeira coisa que o advogado
+          procura ao abrir um processo, e é o padrão de Astrea/Clio: fase ·
+          situação · pagamento · próximo prazo, sempre no mesmo lugar, antes
+          das abas.
+
+          Todo selo vem do CATÁLOGO (`SeloEstado`) — nenhuma cor é escolhida
+          aqui. O prazo tem componente próprio e tom próprio: "em dia" e "no
+          prazo" são coisas diferentes, e misturar os dois foi o que fez a
+          data-limite sumir no meio dos status.
+          ------------------------------------------------------------------ */}
+      <div className="nao-imprimir flex flex-wrap items-center gap-1.5 gap-alvo">
+        <Selo tom="neutro" title={etapaNaTela.title ?? `Em que ${rotulo("fase")} da esteira este processo está`}>
+          {etapaNaTela.rotulo}
+        </Selo>
+        <SeloEstado dominio="processo" estado={jornada.desfecho} />
+        <SeloEstado dominio="croqui" estado={fase} mostrarDesconhecido={false} />
+        <Selo tom="neutro" title="Até onde o cliente já pagou">
+          {ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}
+        </Selo>
+        {proximoPrazo && <Prazo vence={proximoPrazo.vence_em} rotulo={proximoPrazo.titulo} />}
+      </div>
+
       <FaixaVital ficha={ficha} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} aoAbrirGaveta={aoAbrirGaveta} />
+
+      <GavetaArquivar
+        aberta={arquivarAberto}
+        aoFechar={() => setArquivarAberto(false)}
+        nome={pessoa.nome}
+        salvando={salvandoArquivo}
+        erro={erroArquivo}
+        aoConfirmar={arquivar}
+      />
 
       <Gaveta
         aberta={fichaCompleta}
@@ -264,7 +374,7 @@ export function CabecalhoFicha({
               <Campo rotulo="Turma do seminário" valor={jornada.edicao_id ? jornada.edicao_id.slice(0, 8) : null} mono />
               <Campo rotulo="Caminho" valor={jornada.trilha === "seminario" ? "Seminário" : "Preliminar"} />
               <Campo rotulo="Patrimônio declarado" valor={jornada.faixa_patrimonio_declarada ?? null} />
-              <Campo rotulo="Situação" valor={desfechoNaTela(jornada.desfecho).rotulo} />
+              <Campo rotulo="Situação" valor={rotuloDoDesfecho(jornada.desfecho)} />
               <Campo rotulo="Já pagou" valor={ROTULOS_NIVEL_PAGO[jornada.nivel_pago]} />
             </dl>
             {jornada.motivo_desfecho && jornada.desfecho !== "aberta" && (
@@ -299,7 +409,7 @@ export function CabecalhoFicha({
                   >
                     {DESFECHOS_ESCOLHIVEIS.map((valor) => (
                       <option key={valor} value={valor}>
-                        {desfechoNaTela(valor).rotulo}
+                        {rotuloDoDesfecho(valor)}
                       </option>
                     ))}
                   </select>
@@ -367,5 +477,115 @@ function Campo({ rotulo: nome, valor, mono, quebrar }: { rotulo: string; valor: 
       <dt className="text-legenda text-tinta-fraca">{nome}</dt>
       <dd className={`text-tinta ${mono ? "font-mono" : ""} ${quebrar ? "min-w-0 break-all" : ""}`}>{valor || "—"}</dd>
     </div>
+  );
+}
+
+/**
+ * A gaveta de "Arquivar processo" (Fase 8, D16).
+ *
+ * **Não é `ConfirmarAcao`.** O DS §8 proíbe "Tem certeza?": pergunta genérica
+ * antes da ação não protege ninguém — quem lê aperta "Sim" no automático. O
+ * que protege é (a) pedir o motivo, que obriga a pensar por um segundo e fica
+ * registrado no processo, e (b) o **Desfazer** depois, no toast.
+ *
+ * A caixa de revogar links nasce DESMARCADA (B51) e diz, embaixo, que aquilo
+ * não tem volta — é a única parte irreversível de uma ação que se anuncia
+ * reversível, então ela precisa estar escrita, não subentendida.
+ *
+ * `Gaveta` e não modal: no celular ela abre em tela cheia, com "Voltar" em vez
+ * de "X" (regra M6 da fase).
+ */
+function GavetaArquivar({
+  aberta,
+  aoFechar,
+  nome,
+  salvando,
+  erro,
+  aoConfirmar,
+}: {
+  aberta: boolean;
+  aoFechar: () => void;
+  nome: string;
+  salvando: boolean;
+  erro: string | null;
+  aoConfirmar: (motivo: string, revogarLinks: boolean) => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const [revogarLinks, setRevogarLinks] = useState(false);
+  const semMotivo = motivo.trim().length === 0;
+
+  return (
+    <Gaveta
+      aberta={aberta}
+      aoFechar={aoFechar}
+      rotulo={rotulo("arquivado")}
+      titulo="Arquivar processo"
+      descricao={`${nome} sai da lista principal e a automação para. Dá para reabrir a qualquer momento.`}
+      rodape={
+        <>
+          <Botao variante="fantasma" onClick={aoFechar}>
+            Cancelar
+          </Botao>
+          <Botao variante="primario" carregando={salvando} disabled={semMotivo} onClick={() => aoConfirmar(motivo.trim(), revogarLinks)}>
+            Arquivar processo
+          </Botao>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-item">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="motivo-arquivar" className="text-legenda font-medium text-tinta-suave">
+            Por que este processo está parando?
+          </label>
+          <textarea
+            id="motivo-arquivar"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            rows={3}
+            maxLength={1000}
+            placeholder="Ex.: cliente parou de responder desde julho."
+            className="rounded-controle border border-linha-controle bg-papel-elevado px-2 py-1.5 text-sm"
+          />
+          <p className="text-legenda text-tinta-fraca">
+            O motivo fica registrado nos {rotulo("andamentos")} e aparece na lista de arquivados.
+          </p>
+        </div>
+
+        {/* O que a ação faz, em três linhas, ANTES de acontecer. Não é
+            tutorial: é a consequência, que é o que a pessoa precisa saber. */}
+        <ul className="flex flex-col gap-1 rounded-controle bg-papel-fundo px-3 py-2 text-sm text-tinta-suave">
+          <li>As mensagens ainda não enviadas são canceladas.</li>
+          <li>A ligação por IA sai da fila.</li>
+          <li>O processo sai da lista principal e vai para “Arquivados”.</li>
+        </ul>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="revogar-links" className="flex min-h-11 items-center gap-2 text-sm text-tinta">
+            <input
+              id="revogar-links"
+              type="checkbox"
+              checked={revogarLinks}
+              onChange={(e) => setRevogarLinks(e.target.checked)}
+              className="h-5 w-5 rounded border-linha-controle"
+            />
+            Revogar também os links já enviados ao cliente
+          </label>
+          <p className="text-legenda text-tinta-fraca">
+            Deixe desmarcado se o cliente ainda pode voltar a usar o link de agendamento ou de documentos.{" "}
+            <strong className="font-medium text-tinta-suave">Revogar não tem volta</strong> — reabrir o processo não devolve os links.
+          </p>
+        </div>
+
+        {erro && (
+          <p role="alert" className="text-sm text-[color:var(--vermelho)]">
+            {erro}
+          </p>
+        )}
+
+        {/* As ações moram no RODAPÉ fixo da gaveta (ver `rodape` acima): a
+            360 px o corpo rola e um botão no fim do conteúdo sairia da tela —
+            a ação primária tem de estar visível no primeiro paint (regra M5). */}
+      </div>
+    </Gaveta>
   );
 }

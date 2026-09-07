@@ -56,14 +56,26 @@ export function ConfirmarAcao({
   if (!aberto) return null;
 
   return (
-    <div className="anim-esmaecer fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--veu)] px-4" onClick={aoCancelar}>
+    <div className="anim-esmaecer fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* O véu é um `<button>`, não uma `<div onClick>` (Fase 8, camada
+          estática do lint). Clicar fora para cancelar é uma AÇÃO: numa `div`
+          ela existe só para o mouse — sem Enter, sem leitor de tela, sem foco.
+          `tabIndex={-1}` porque o teclado já tem dois caminhos melhores (Esc e
+          o botão Cancelar) e um ponto de Tab invisível seria ruído. Mesmo
+          padrão do véu do menu em `AppShell`. */}
+      <button
+        type="button"
+        aria-label={rotuloCancelar}
+        tabIndex={-1}
+        onClick={aoCancelar}
+        className="absolute inset-0 bg-[color:var(--veu)]"
+      />
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={tituloId}
         aria-describedby={efeitoId}
-        className="anim-surgir w-full max-w-md rounded-cartao border border-linha bg-papel-elevado p-6 shadow-flutuante"
-        onClick={(evento) => evento.stopPropagation()}
+        className="anim-surgir relative w-full max-w-md rounded-cartao border border-linha bg-papel-elevado p-6 shadow-flutuante"
       >
         {perigo && <p className="mb-2 text-rotulo font-medium uppercase text-[color:var(--vermelho)]">Não dá para desfazer</p>}
         <h2 id={tituloId} className="text-titulo font-bold text-tinta">

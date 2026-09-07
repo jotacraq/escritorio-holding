@@ -45,7 +45,7 @@
  * Função pura, sem I/O. `agora` é injetável para teste.
  */
 import { derivarProximoPasso, type ChavePasso } from "./proximo-passo";
-import type { Sinais } from "./sinais";
+import { faseDoCroqui, type Sinais } from "./sinais";
 
 export type EstadoPasso = "feito" | "atual" | "futuro" | "pulado";
 
@@ -248,6 +248,7 @@ function derivarBases(s: Sinais, agora: number): Record<ChaveTrilho, Base> {
 
   const marcos = s.marcosExecucao;
   const execucaoCompleta = marcos !== null && marcos.total > 0 && marcos.feitos >= marcos.total;
+  const faseCroqui = faseDoCroqui(s);
 
   return {
     pagou: pagouNivel
@@ -285,14 +286,31 @@ function derivarBases(s: Sinais, agora: number): Record<ChaveTrilho, Base> {
         ? { estado: "pulado", quando: null, motivo: "croqui contratado sem sessão" }
         : { estado: "futuro", quando: s.proximaSessaoEm },
 
+    // Fase 8 (D12): a fase sai de `faseDoCroqui()` — a mesma leitura da Pasta
+    // e do cartão. `apresentado` é o único que fecha o passo por mérito
+    // próprio; `fixado`/`calculado` continuam sendo caminho, não chegada, e o
+    // motivo passa a dizer em que pé o croqui parou em vez de calar.
     croqui:
-      s.croquiStatus === "apresentado"
+      faseCroqui === "apresentado"
         ? { estado: "feito", quando: null }
         : contratoAssinado || entregue
           ? { estado: "feito", quando: null, motivo: "implícito pelo contrato" }
-          : holdingContratada && s.croquiStatus === "nenhum"
+          : holdingContratada && faseCroqui === "sem_croqui"
             ? { estado: "pulado", quando: null, motivo: "holding fechada sem croqui" }
-            : { estado: "futuro", quando: null, motivo: s.croquiStatus === null ? "sem informação" : undefined },
+            : {
+                estado: "futuro",
+                quando: null,
+                motivo:
+                  faseCroqui === null
+                    ? "sem informação"
+                    : faseCroqui === "pronto"
+                      ? "pronto para apresentar"
+                      : faseCroqui === "fixado"
+                        ? "versão fixada"
+                        : faseCroqui === "calculado"
+                          ? "calculado"
+                          : undefined,
+              },
 
     contrato: contratoAssinado
       ? { estado: "feito", quando: s.contratoAssinadoEm }

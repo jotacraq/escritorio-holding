@@ -5,15 +5,16 @@ import Link from "next/link";
 import { useRecurso } from "@/hooks/useRecurso";
 import { useToast } from "@/hooks/useToast";
 import { Botao } from "@/components/ui/Botao";
+import { Campo, Selecao } from "@/components/ui/Campo";
 import { Cartao } from "@/components/ui/Cartao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Selo, SeloStub } from "@/components/ui/Selo";
 import { formatarDataHora, formatarRelativo } from "@/lib/formatar";
-import { buscarPendencias, reenfileirarMensagem, reprocessarWebhook } from "../adminApi";
-import { mensagemDeErro } from "../http";
-import type { PendenciaSistema, TipoPendenciaSistema } from "@/types/admin";
+import { buscarPendencias, listarProdutos, reenfileirarMensagem, reprocessarWebhook } from "../adminApi";
+import { chamar, mensagemDeErro } from "../http";
+import type { PendenciaSistema, ProdutoAdmin, TipoPendenciaSistema } from "@/types/admin";
 
 const ROTULO_TIPO: Record<TipoPendenciaSistema, { titulo: string; descricao: string }> = {
   cron_parado: { titulo: "Régua parada — o cron não passou", descricao: "Nada sai sozinho (e-mail, ligação por IA, sala) até o cron voltar." },
@@ -26,12 +27,14 @@ const ROTULO_TIPO: Record<TipoPendenciaSistema, { titulo: string; descricao: str
 };
 
 /**
- * Tipos que a 0080 acrescenta a `vw_pendencias_sistema` (Fase 7 r3, §B4.1).
- * Ficam separados porque `TipoPendenciaSistema` é do backend: enquanto a
- * migration não estiver aplicada, a view não emite a linha e a aba simplesmente
- * não a mostra — nada quebra, e nada é inventado.
+ * Tipos que a 0080 acrescenta a `vw_pendencias_sistema` (Fase 7 r3, §B4.1) e o
+ * que a 0085 acrescenta (Fase 8, D8). Ficam separados porque
+ * `TipoPendenciaSistema` é do backend: enquanto a migration não estiver
+ * aplicada, a view não emite a linha e a aba simplesmente não a mostra — nada
+ * quebra, e nada é inventado.
  */
 type TipoPendenciaLgpd = "expurgo_storage_pendente";
+type TipoPendenciaPagamento = "produto_nao_mapeado";
 
 const ROTULO_TIPO_LGPD: Record<TipoPendenciaLgpd, { titulo: string; descricao: string }> = {
   expurgo_storage_pendente: {
@@ -40,10 +43,18 @@ const ROTULO_TIPO_LGPD: Record<TipoPendenciaLgpd, { titulo: string; descricao: s
   },
 };
 
+const ROTULO_TIPO_PAGAMENTO: Record<TipoPendenciaPagamento, { titulo: string; descricao: string }> = {
+  produto_nao_mapeado: {
+    titulo: "Venda de produto não mapeado",
+    descricao: "A Hotmart avisou de uma compra cujo ID de produto não está ligado a nenhum produto daqui. O dinheiro entrou e a jornada não anda até alguém dizer de qual produto se trata.",
+  },
+};
+
 /** Ordem de urgência para a Dra. Elaine: o que trava a máquina inteira primeiro. */
-const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd)[] = [
+const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd | TipoPendenciaPagamento)[] = [
   "cron_parado",
   "expurgo_storage_pendente",
+  "produto_nao_mapeado",
   "sessao_sem_sala",
   "webhook_falho",
   "mensagem_falhou",
@@ -52,8 +63,24 @@ const ORDEM: (TipoPendenciaSistema | TipoPendenciaLgpd)[] = [
   "link_expirando",
 ];
 
+/** Os tipos que pedem o realce vermelho: dinheiro parado ou máquina parada. */
+const CRITICOS = new Set<string>(["cron_parado", "webhook_falho", "expurgo_storage_pendente", "produto_nao_mapeado"]);
+
+interface RespostaMapear {
+  ok: boolean;
+  hotmart_produto_id: string;
+  produto: { id: string; nome: string };
+}
+
+function mapearProdutoDoWebhook(eventoId: string, produtoId: string) {
+  return chamar<RespostaMapear>(`/api/admin/webhooks/${eventoId}/mapear-produto`, {
+    method: "POST",
+    body: JSON.stringify({ produto_id: produtoId }),
+  });
+}
+
 function rotuloDe(tipo: string): { titulo: string; descricao: string } {
-  const mapa = { ...ROTULO_TIPO, ...ROTULO_TIPO_LGPD } as Record<string, { titulo: string; descricao: string }>;
+  const mapa = { ...ROTULO_TIPO, ...ROTULO_TIPO_LGPD, ...ROTULO_TIPO_PAGAMENTO } as Record<string, { titulo: string; descricao: string }>;
   return mapa[tipo] ?? { titulo: tipo.replace(/_/g, " "), descricao: "" };
 }
 
@@ -76,6 +103,9 @@ function rotuloDe(tipo: string): { titulo: string; descricao: string } {
  */
 function destino(item: PendenciaSistema): { href: string; rotulo: string; recarrega?: boolean } | null {
   if (item.tipo === "cron_parado") return { href: "#integracoes", rotulo: "Ver a régua em Integrações" };
+  // `produto_nao_mapeado` resolve aqui mesmo, no seletor abaixo. O link é a
+  // saída alternativa, para quem prefere editar o produto inteiro.
+  if (item.tipo === "produto_nao_mapeado") return { href: "#produtos", rotulo: "Abrir Produtos" };
   if (item.tipo === "expurgo_storage_pendente") {
     if (!item.pessoa_nome) return { href: "#titulares", rotulo: "Concluir o expurgo" };
     return { href: `/admin?titular=${encodeURIComponent(item.pessoa_nome)}#titulares`, rotulo: "Concluir o expurgo", recarrega: true };
@@ -102,7 +132,49 @@ export function PendenciasAba() {
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, []);
   const [confirmacao, setConfirmacao] = useState<Confirmacao>(null);
   const [executando, setExecutando] = useState(false);
+  /** Id do evento cuja gaveta de mapeamento está aberta, e a escolha atual. */
+  const [mapeando, setMapeando] = useState<{ eventoId: string; produtoId: string } | null>(null);
+  const [produtos, setProdutos] = useState<ProdutoAdmin[] | null>(null);
+  const [erroProdutos, setErroProdutos] = useState<string | null>(null);
   const { notificar } = useToast();
+
+  /**
+   * A lista de produtos só é buscada quando alguém abre "Mapear para…" — a aba
+   * de Pendências não pode pagar uma chamada a mais em toda visita por causa de
+   * um caso que quase nunca aparece.
+   */
+  async function abrirMapeamento(eventoId: string) {
+    setMapeando({ eventoId, produtoId: "" });
+    if (produtos) return;
+    try {
+      const resposta = await listarProdutos();
+      const ativos = resposta.itens.filter((p) => p.ativo);
+      setProdutos(ativos);
+      setErroProdutos(ativos.length === 0 ? "Nenhum produto ativo cadastrado. Cadastre em Admin → Produtos." : null);
+    } catch (e) {
+      setErroProdutos(mensagemDeErro(e, "Não foi possível carregar os produtos."));
+    }
+  }
+
+  async function confirmarMapeamento() {
+    if (!mapeando || !mapeando.produtoId) return;
+    setExecutando(true);
+    try {
+      const resposta = await mapearProdutoDoWebhook(mapeando.eventoId, mapeando.produtoId);
+      notificar({
+        tom: "sucesso",
+        titulo: "Produto mapeado",
+        descricao: `ID ${resposta.hotmart_produto_id} ligado a "${resposta.produto.nome}". O evento foi reprocessado com o produto certo.`,
+      });
+      setMapeando(null);
+      setProdutos(null);
+      recarregar();
+    } catch (e) {
+      notificar({ tom: "erro", titulo: "Não foi possível mapear", descricao: mensagemDeErro(e, "Tente de novo em instantes.") });
+    } finally {
+      setExecutando(false);
+    }
+  }
 
   if (erro) return <EstadoErro erro={erro} tentarNovamente={recarregar} titulo="Não foi possível carregar as pendências" />;
   if (carregando && !dados) return <EsqueletoLista linhas={4} rotulo="Carregando pendências…" />;
@@ -156,10 +228,10 @@ export function PendenciasAba() {
             <Cartao
               key={tipo}
               preenchimento="sem"
-              realce={tipo === "cron_parado" || tipo === "webhook_falho" || tipo === "expurgo_storage_pendente" ? "vermelho" : "ambar"}
+              realce={CRITICOS.has(tipo) ? "vermelho" : "ambar"}
               titulo={rotulo.titulo}
               descricao={rotulo.descricao}
-              acao={<Selo tom={tipo === "cron_parado" || tipo === "webhook_falho" || tipo === "expurgo_storage_pendente" ? "vermelho" : "ambar"}>{itens.length}</Selo>}
+              acao={<Selo tom={CRITICOS.has(tipo) ? "vermelho" : "ambar"}>{itens.length}</Selo>}
             >
               <ul className="divide-y divide-linha">
                 {itens.map((item) => {
@@ -201,6 +273,47 @@ export function PendenciasAba() {
                           {acaoBotao.rotulo}
                         </Botao>
                       )}
+                      {tipo === "produto_nao_mapeado" &&
+                        (mapeando?.eventoId === item.id ? (
+                          <div className="flex w-full flex-wrap items-end gap-3 border-t border-linha pt-3">
+                            <div className="min-w-56 flex-1">
+                              <Campo rotulo="Este pagamento é de qual produto?" ajuda="O ID da Hotmart é gravado no produto escolhido e o evento é reprocessado na hora.">
+                                <Selecao
+                                  value={mapeando.produtoId}
+                                  onChange={(e) => setMapeando({ eventoId: item.id, produtoId: e.target.value })}
+                                  disabled={produtos === null && erroProdutos === null}
+                                >
+                                  <option value="">Escolha o produto…</option>
+                                  {(produtos ?? []).map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.nome}
+                                      {p.hotmart_produto_id ? ` (já tem ID ${p.hotmart_produto_id})` : ""}
+                                    </option>
+                                  ))}
+                                </Selecao>
+                              </Campo>
+                              {erroProdutos && <p className="mt-1 text-legenda text-[color:var(--vermelho)]">{erroProdutos}</p>}
+                            </div>
+                            <div className="flex gap-2">
+                              <Botao variante="fantasma" tamanho="compacto" onClick={() => setMapeando(null)}>
+                                Cancelar
+                              </Botao>
+                              <Botao
+                                variante="primario"
+                                tamanho="compacto"
+                                carregando={executando}
+                                disabled={!mapeando.produtoId}
+                                onClick={confirmarMapeamento}
+                              >
+                                Mapear e reprocessar
+                              </Botao>
+                            </div>
+                          </div>
+                        ) : (
+                          <Botao variante="secundario" tamanho="compacto" onClick={() => abrirMapeamento(item.id)}>
+                            Mapear para…
+                          </Botao>
+                        ))}
                     </li>
                   );
                 })}

@@ -35,7 +35,7 @@ export function TelaLinkInvalido() {
        * tela, uma vez, no lugar em que está nas outras quatro páginas.
        */}
       <CartaoPublico className="w-full max-w-sm text-left">
-        <p className="text-rotulo font-medium uppercase text-tinta-fraca">O que fazer agora</p>
+        <p className="text-publico tracking-[0.08em] font-medium uppercase text-tinta-fraca">O que fazer agora</p>
         <p className="mt-2 text-tinta">Peça um link novo — é rápido de gerar. Quem te enviou este consegue gerar outro na hora.</p>
       </CartaoPublico>
     </div>

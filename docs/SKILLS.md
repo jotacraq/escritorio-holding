@@ -41,6 +41,22 @@ CLI — não precisou de ponte/symlink). `.gitignore` do projeto não bloqueia
 | `docx` | anthropics/claude-agent-sdk-demos | gera/edita .docx via docx-js ou OOXML bruto |
 | `pdf` | anthropics/claude-agent-sdk-demos | manipula PDF (pypdf), preenche formulário, extrai texto/tabela — **flag "High Risk" do scanner do CLI** (scripts Python revisados, sem código malicioso; risco é heurística por rodar scripts, não achado concreto) |
 | `webapp-testing` | anthropics/skills | testa app web local com Playwright (Python), screenshot, DOM |
+| `accessibility` | addyosmani/web-quality-skills | checklist de auditoria WCAG 2.2 (POUR, teclado, leitor de tela, contraste, foco) + `references/{WCAG,A11Y-PATTERNS}.md` |
+
+### `accessibility` — por que esta e não as outras (Fase 8, D24)
+
+Instalada em 07/09/2026 na Rodada 0 da Fase 8: `npx skills add addyosmani/web-quality-skills@accessibility -a claude-code -y`.
+50,7 K installs, autor conhecido (Addy Osmani, ex-Chrome), avaliação do próprio CLI **Safe · 0 alerts · Low Risk**.
+`SKILL.md` (464 linhas) e as duas referências lidas antes de instalar, como manda a regra de segurança abaixo:
+só checklist e exemplo de código, nenhuma instrução de rede além de links de documentação (W3C, Deque).
+Complementa `web-design-guidelines`, que é de layout/visual — não se sobrepõe.
+
+**Recusadas na mesma rodada**, com o motivo (a pesquisa da fase avaliou 8):
+`wshobson/agents@responsive-design` (18,2 K) — autor sem org oficial e conteúdo genérico de breakpoint que
+colidiria com os tokens próprios do `docs/DESIGN-SYSTEM.md`, mesma ressalva que já reprovou `tailwind-design-system`;
+`nextlevelbuilder@ui-ux-pro-max`, `arvindrk/extract-design-system`, `designed-by-ai/skills@design-mobile-apps`,
+`owl-listener@aesthetic-usability` — fonte não confiável pelo critério desta página, ou serve ao problema inverso
+(extrair um design system de onde não há; aqui já existe um, e ele é lei).
 
 ## Não instaladas (sem fonte oficial confiável achada)
 - **pptx**: só existe `anthropics/financial-services@pptx-author`, baseado em

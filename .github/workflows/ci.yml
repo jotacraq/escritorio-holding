@@ -77,7 +77,12 @@ jobs:
       - name: Tipos
         run: npm run typecheck
 
-      - name: Lint
+      # Camada 1 de 3 da acessibilidade (Fase 8, D23): `eslint-plugin-jsx-a11y`
+      # com as 31 regras recomendadas DECLARADAS em `eslint.config.mjs` (o
+      # preset do Next empacota o plugin mas não fixa o conjunto). Pega rótulo
+      # faltando, `aria-*` inválido, papel errado e clique em elemento não
+      # interativo antes de virar tela.
+      - name: Lint (inclui a11y estática)
         run: npm run lint
 
       # A suíte é de lógica pura (motor do croqui, trilho, barra Enviar, ligação
@@ -89,7 +94,19 @@ jobs:
       # fixture mora em `tmp/` (fora do versionamento, por conter valor de
       # cliente). Aqui ela não existe: os 11 casos saem como `skipped`
       # explícito, nunca como verde silencioso.
-      - name: Testes (vitest)
+      #
+      # Camada 2 de 3 da acessibilidade (Fase 8): os `*.test.tsx` montam os
+      # componentes de `ui/` e `shell/` em jsdom e rodam o axe-core em cima
+      # (`vitest-axe`) — sem navegador, sem banco.
+      #
+      # A camada 3 (axe da PÁGINA INTEIRA, `node scripts/a11y.mjs`) fica de
+      # fora daqui de propósito, e isso está no plano da fase como CONFLITO C1:
+      # o CI não tem banco nem segredo, e toda tela interna exige sessão. Um
+      # axe de página aqui rodaria contra a tela de login e passaria verde sem
+      # ter visto nada — trava verde que não prova nada é pior que trava
+      # nenhuma. Ela roda LOCAL, contra o `next dev` com o seed de demonstração,
+      # e o resultado vai no relatório da rodada.
+      - name: Testes (vitest · inclui a11y de componente)
         run: npm test
 
       - name: Build

@@ -10,12 +10,12 @@ import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Selo, SeloStub } from "@/components/ui/Selo";
-import { formatarData, formatarDataHora, formatarMoeda } from "@/lib/formatar";
+import { formatarDataHora, formatarMoeda } from "@/lib/formatar";
 import { ApiError } from "@/lib/api";
 import { CHAVE_PARAMETRO, type CorpoCriarParametro, type ParametroMetodo, type UnidadeParametro } from "@/types/cenario";
 import { ativarParametro, criarParametro, listarParametros } from "../adminApi";
 import { mensagemDeErro } from "../http";
-import { IntroAba, SeloAtivo, TRACO } from "../comum";
+import { IntroAba, SeloAtivo, TRACO, formatarDataPura } from "../comum";
 
 /** Texto exato do §4.10 — vale enquanto não houver nenhuma linha `itcmd.*`. */
 const TEXTO_SEM_ITCMD = "Nenhuma alíquota de ITCMD cadastrada. O sistema não calcula imposto sem uma alíquota com base legal registrada aqui pela Dra. Elaine.";
@@ -172,7 +172,7 @@ export function ParametrosAba() {
             preenchimento="sem"
             rotulo={jurisdicao(cabeca) || (ehTributo(cabeca.chave) ? "sem jurisdição" : "geral")}
             titulo={rotuloChave(cabeca.chave)}
-            descricao={ativa ? `Em uso: ${formatarValor(ativa)} (v${ativa.versao}, vigente desde ${formatarData(ativa.vigente_de)})` : "Nenhuma versão ativa — o sistema não usa este parâmetro."}
+            descricao={ativa ? `Em uso: ${formatarValor(ativa)} (v${ativa.versao}, vigente desde ${formatarDataPura(ativa.vigente_de)})` : "Nenhuma versão ativa — o sistema não usa este parâmetro."}
             acao={
               <>
                 {ativa ? <Selo tom="verde">{formatarValor(ativa)}</Selo> : <Selo tom="ambar">Sem versão ativa</Selo>}
@@ -185,21 +185,28 @@ export function ParametrosAba() {
             <ul className="divide-y divide-linha">
               {versoes.map((v) => (
                 <li key={v.id} className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-4 sm:px-6">
-                  <div className="min-w-0 flex-1">
+                  {/* Fase 8: `basis-full` abaixo de `sm` (a 360 px o botão ao
+                      lado não descia) e `break-words` nas notas — a nota de
+                      método traz fórmula sem espaço, e sem quebra ela vazava
+                      14 px para fora da caixa, invisível ao olho e ao
+                      `scrollWidth` da página. */}
+                  <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
                     <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-tinta">
                       v{v.versao} — {formatarValor(v)}
                       <SeloAtivo ativo={v.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />
                     </p>
                     <p className="mt-0.5 text-legenda text-tinta-suave">
-                      Vigente desde {formatarData(v.vigente_de)} · criada em {formatarDataHora(v.criado_em)}
+                      {/* `vigente_de` é `date` puro (0056:61): `formatarData` o
+                          empurraria um dia para trás. */}
+                      Vigente desde {formatarDataPura(v.vigente_de)} · criada em {formatarDataHora(v.criado_em)}
                       {v.ativado_em && ` · ativada em ${formatarDataHora(v.ativado_em)}`}
                     </p>
                     {v.base_legal && (
-                      <p className="mt-1 text-sm text-tinta">
+                      <p className="mt-1 break-words text-sm text-tinta">
                         <span className="text-tinta-fraca">Base legal:</span> {v.base_legal}
                       </p>
                     )}
-                    {v.notas && <p className="mt-1 text-sm text-tinta-suave">{v.notas}</p>}
+                    {v.notas && <p className="mt-1 break-words text-sm text-tinta-suave">{v.notas}</p>}
                   </div>
                   {!v.ativo && (
                     <Botao variante="secundario" tamanho="compacto" onClick={() => setConfirmarAtivar(v)}>
@@ -232,10 +239,7 @@ export function ParametrosAba() {
 
 function Intro() {
   return (
-    <IntroAba>
-      Os números do método, com versão e base legal: honorários do croqui, alíquotas de ITCMD por UF e de ITBI por município. Uma versão nunca é
-      editada — cria-se outra e ela passa a valer.
-    </IntroAba>
+    <IntroAba>Cada número tem versão e base legal. Uma versão nunca é editada — cria-se outra, e ela passa a valer.</IntroAba>
   );
 }
 

@@ -22,6 +22,25 @@ import type { Agendamento, EtapaJornada, Ficha360, JornadaKanban } from "@/lib/a
 export type CroquiStatusSinal = "rascunho" | "pronto" | "apresentado";
 export type MaterialEstadoSinal = "nenhum" | "rascunho" | "aprovado";
 
+/**
+ * As SEIS fases do croqui (Fase 8, D12) — não confundir com `status_croqui`,
+ * que é o enum de três valores do banco e conta só o estado editorial do
+ * documento. As outras três (`sem_croqui`, `calculado`, `fixado`) saem de
+ * `croqui_calculos`, e quem as junta é `vw_croqui_estado` — **uma** derivação,
+ * no banco, para a Ficha e para a lista de Clientes lerem o MESMO valor.
+ *
+ * As chaves são exatamente as do catálogo (`lib/estados/catalogo.ts` → domínio
+ * `croqui`): quem tem uma fase na mão faz `<SeloEstado dominio="croqui"
+ * estado={fase} />` e recebe rótulo, ícone e tom prontos.
+ */
+export type CroquiFase = "sem_croqui" | "rascunho" | "calculado" | "fixado" | "pronto" | "apresentado";
+
+/** Os dois FATOS que acontecem em qualquer fase (§B1) — chip próprio, não fase. */
+export interface CroquiFatos {
+  exportadoEm: string | null;
+  narradoEm: string | null;
+}
+
 export interface TarefaAbertaSinal {
   tipo: string;
   /** Papel de quem deve fazer — `null` quando a tarefa não diz. */
@@ -48,8 +67,22 @@ export interface Sinais {
   temLinkSala: boolean | null;
   sessaoRealizadaEm: string | null;
   temRelatorio: boolean | null;
-  /** Estado do croqui mais recente; `"nenhum"` quando a fonte sabe que não há. */
+  /**
+   * Estado EDITORIAL do croqui mais recente (o enum de três valores);
+   * `"nenhum"` quando a fonte sabe que não há croqui. Continua tri-estado e
+   * continua sendo o que `proximo-passo.ts` lê — D13: nenhum consumidor de
+   * hoje muda de comportamento por causa da fase nova.
+   */
   croquiStatus: CroquiStatusSinal | "nenhum" | null;
+  /**
+   * A FASE (as seis), vinda de `vw_croqui_estado`. `null` = a fonte não
+   * carrega a coluna (payload antigo, view ainda não aplicada, ou papel sem
+   * permissão de ver croqui) — e aí `faseDoCroqui()` cai no estado editorial
+   * em vez de inventar fase.
+   */
+  croquiFase: CroquiFase | null;
+  /** `exportado` / `narrado` — fatos, não fases. `null` = sem informação. */
+  croquiFatos: CroquiFatos | null;
   materialEstado: MaterialEstadoSinal | null;
   temDiagnostico: boolean | null;
   temDocumentos: boolean | null;
@@ -82,6 +115,8 @@ export function sinaisVazios(): Sinais {
     sessaoRealizadaEm: null,
     temRelatorio: null,
     croquiStatus: null,
+    croquiFase: null,
+    croquiFatos: null,
     materialEstado: null,
     temDiagnostico: null,
     temDocumentos: null,
@@ -152,6 +187,61 @@ function lerCroquiStatus(valor: unknown): Sinais["croquiStatus"] {
   return null;
 }
 
+const FASES_CROQUI: readonly CroquiFase[] = ["sem_croqui", "rascunho", "calculado", "fixado", "pronto", "apresentado"];
+
+function lerCroquiFase(valor: unknown): CroquiFase | null {
+  return typeof valor === "string" && (FASES_CROQUI as readonly string[]).includes(valor) ? (valor as CroquiFase) : null;
+}
+
+/**
+ * A ÚNICA função que responde "em que fase está o croqui?" (Fase 8, D12).
+ *
+ * Antes da Fase 8 essa pergunta era respondida em quatro lugares diferentes,
+ * cada um com o seu `if`: aqui (filtro de timeline), em `derivar.ts`, em
+ * `trilho.ts` e no cartão da Ficha. Foi assim que fixar uma versão de cálculo
+ * chegou a anunciar "croqui pronto — apresentar" (o incidente que a migration
+ * 0070 consertou). Agora existe uma fonte (`vw_croqui_estado`) e uma tradução
+ * (esta função); quem precisar de fase chama daqui.
+ *
+ * Ordem de preferência, e o porquê de cada degrau:
+ *  1. `croquiFase` — veio da view: é a verdade completa (inclui `calculado` e
+ *     `fixado`, que o enum não conta).
+ *  2. `croquiStatus` — payload antigo ou view indisponível: dá para dizer a
+ *     fase EDITORIAL sem mentir (`rascunho`/`pronto`/`apresentado`), e
+ *     `"nenhum"` vira `sem_croqui`.
+ *  3. `null` — sem informação. Quem mostra selo mostra "Sem informação";
+ *     ninguém inventa "não iniciado", que é um fato diferente.
+ */
+export function faseDoCroqui(sinais: Pick<Sinais, "croquiFase" | "croquiStatus">): CroquiFase | null {
+  if (sinais.croquiFase !== null) return sinais.croquiFase;
+  if (sinais.croquiStatus === "nenhum") return "sem_croqui";
+  if (sinais.croquiStatus === null) return null;
+  return sinais.croquiStatus;
+}
+
+/**
+ * "O que falta para a próxima fase" — a affordance que o João pediu: o sistema
+ * guia, não o tutorial. Uma frase curta, sempre com o verbo do que fazer.
+ * `null` quando não há próximo passo a sugerir (apresentado) ou quando não se
+ * sabe a fase (sem informação nunca vira instrução).
+ */
+export function proximaFaseDoCroqui(fase: CroquiFase | null): { falta: string; acao: string } | null {
+  switch (fase) {
+    case "sem_croqui":
+      return { falta: "Nenhum croqui começou para este processo.", acao: "Começar o croqui" };
+    case "rascunho":
+      return { falta: "Falta calcular: sem cálculo não há números para apresentar.", acao: "Calcular o croqui" };
+    case "calculado":
+      return { falta: "Há cálculo, mas nenhuma versão fixada como a vigente.", acao: "Fixar a versão" };
+    case "fixado":
+      return { falta: "Versão fixada. Falta fechar o croqui para apresentar.", acao: "Marcar como pronto" };
+    case "pronto":
+      return { falta: "Pronto para a reunião com a família.", acao: "Apresentar o croqui" };
+    default:
+      return null;
+  }
+}
+
 function lerMaterialEstado(valor: unknown): MaterialEstadoSinal | null {
   if (valor === "nenhum" || valor === "rascunho" || valor === "aprovado") return valor;
   return null;
@@ -217,6 +307,12 @@ export function sinaisDoKanban(linha: JornadaKanban): Sinais {
     sessaoRealizadaEm: textoOuNulo(bruto, "sessao_realizada_em"),
     temRelatorio: booleanoOuNulo(bruto, "tem_relatorio"),
     croquiStatus: temChave(bruto, "croqui_status") ? (lerCroquiStatus(bruto.croqui_status) ?? "nenhum") : null,
+    // `croqui_fase` (0086) vem no MESMO select da lista — nenhuma query nova,
+    // nenhum N+1. Ausente ou nulo = sem informação: para quem não vê
+    // patrimônio a view devolve NULL de propósito, e a lista não pode afirmar
+    // "sem croqui" sobre algo que aquele papel não tem direito de saber.
+    croquiFase: temChave(bruto, "croqui_fase") ? lerCroquiFase(bruto.croqui_fase) : null,
+    croquiFatos: null,
     materialEstado: temChave(bruto, "material_estado") ? lerMaterialEstado(bruto.material_estado) : null,
     temDiagnostico: booleanoOuNulo(bruto, "tem_diagnostico"),
     temDocumentos: booleanoOuNulo(bruto, "tem_documentos"),
@@ -309,11 +405,37 @@ export function sinaisDaFicha(ficha: Ficha360): Sinais {
   // sem croqui nenhum. A 0070 devolve tipo próprio àqueles dois eventos; esta
   // leitura é o outro lado da trava: escritor novo que esqueça o `status` é
   // ignorado, e a busca continua no evento anterior em vez de inventar estado.
+  //
+  // FASE 8 (D12): a leitura acima deixou de ser a FONTE e virou a REDE. Quem
+  // manda agora é `ficha.croquiEstado`, uma linha de `vw_croqui_estado`
+  // (`server/jornadas.ts`) — derivada no banco, igual para a Ficha e para a
+  // lista. A timeline só responde quando a view não veio no payload (view
+  // ainda não aplicada, ou papel sem permissão de ver croqui), e mesmo aí só
+  // sabe dizer o estado editorial.
+  const estadoDoCroqui = temChave(bruto, "croquiEstado") ? (bruto.croquiEstado as Bruto | null) : null;
+
   const croquiStatus =
+    lerCroquiStatus(estadoDoCroqui?.status_editorial) ??
     ficha.timeline
       .filter((e) => e.tipo === "croqui")
       .map((e) => lerCroquiStatus(e.dados?.status))
-      .find((status) => status !== null) ?? "nenhum";
+      .find((status) => status !== null) ??
+    "nenhum";
+
+  // `croquiEstado === null` com a chave PRESENTE significa "consultei a view e
+  // não há croqui" — é `sem_croqui`, um fato. Chave ausente é sem informação.
+  const croquiFase: CroquiFase | null = !temChave(bruto, "croquiEstado")
+    ? null
+    : estadoDoCroqui === null
+      ? "sem_croqui"
+      : lerCroquiFase(estadoDoCroqui.fase);
+
+  const croquiFatos: CroquiFatos | null = estadoDoCroqui
+    ? {
+        exportadoEm: typeof estadoDoCroqui.exportado_em === "string" ? estadoDoCroqui.exportado_em : null,
+        narradoEm: typeof estadoDoCroqui.narrado_em === "string" ? estadoDoCroqui.narrado_em : null,
+      }
+    : null;
 
   const material = ficha.materialAtual ?? null;
   const materialEstado: MaterialEstadoSinal = !material ? "nenhum" : material.aprovado_em ? "aprovado" : "rascunho";
@@ -335,6 +457,8 @@ export function sinaisDaFicha(ficha: Ficha360): Sinais {
     sessaoRealizadaEm: ficha.sessao?.realizada_em ?? null,
     temRelatorio: Boolean(ficha.relatorio),
     croquiStatus,
+    croquiFase,
+    croquiFatos,
     materialEstado,
     temDiagnostico: diagnostico === undefined ? null : Boolean(diagnostico),
     temDocumentos: documentosVisiveis ? documentosVisiveis.length > 0 : null,

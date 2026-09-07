@@ -23,9 +23,21 @@ const ESTILO_DONO: Record<DonoPasso, { chip: string; icone: string }> = {
   ninguem: { chip: "border-dashed border-linha-forte bg-transparent text-tinta-suave", icone: "text-tinta-fraca" },
 };
 
+/**
+ * Fase 8 — os tokens de urgência passaram a ser os `--estado-*`.
+ *
+ * A urgência é pintada DENTRO de um chip cujo fundo é a cor do dono
+ * (`bg-azul-fraco`, `bg-latao-fraco`, `bg-verde-fraco`). `--ambar` sobre
+ * `--azul-fraco` mede **4,44:1** — reprovado no AA de 4,5 e a única violação
+ * `serious` das cinco telas auditadas pelo UX1 (tema claro, nas três escalas).
+ * `--estado-ambar` mede 7,04 sobre azul-fraco, 6,83 sobre latão-fraco e 7,11
+ * sobre verde-fraco; `--estado-vermelho`, 7,03 sobre o fundo do próprio tom.
+ * Os tokens `--ambar`/`--vermelho` não mudaram: quem precisa de contraste de
+ * status pede `--estado-*` (DS §12.3).
+ */
 const ESTILO_URGENCIA: Record<UrgenciaPasso, string> = {
-  hoje: "text-[color:var(--vermelho)]",
-  esta_semana: "text-[color:var(--ambar)]",
+  hoje: "text-[color:var(--estado-vermelho)]",
+  esta_semana: "text-[color:var(--estado-ambar)]",
   quando_der: "text-tinta-fraca",
 };
 

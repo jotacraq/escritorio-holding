@@ -181,14 +181,30 @@ export async function POST(request: NextRequest) {
       case "sem_compra":
         return NextResponse.json({ recebido: true, reentrega }, { status: 200 });
       case "produto_nao_mapeado":
-        // Passo 6 — produto desconhecido: 200, marcado para a tela de pendências.
+        // Passo 6 — produto desconhecido: 200 (reentregar não conserta), e o
+        // evento fica com `processado_em` NULL → pendência `produto_nao_mapeado`
+        // em Admin, com a ação certa: mapear o ID (D8).
         return NextResponse.json({ recebido: true, reentrega, produto_nao_mapeado: true }, { status: 200 });
+      case "produto_divergente":
+        // D10/B54 — a transação já existe com outro produto. 200 pelo mesmo
+        // motivo (a Hotmart reentregar não muda nada) e pendência para o humano.
+        return NextResponse.json({ recebido: true, reentrega, produto_divergente: true }, { status: 200 });
       case "pagamento_nao_registrado":
         // Dinheiro sem registro: 500 para a Hotmart reentregar; fica bem visível
         // (`processado_em` continua nulo → pendência `webhook_falho`).
         return NextResponse.json({ erro: "falha_ao_registrar_pagamento" }, { status: 500 });
       case "processado":
-        return NextResponse.json({ recebido: true, reentrega, pagamento_id: resultado.pagamento_id }, { status: 200 });
+        return NextResponse.json(
+          {
+            recebido: true,
+            reentrega,
+            pagamento_id: resultado.pagamento_id,
+            estado: resultado.status,
+            evento: resultado.evento,
+            ...(resultado.evento_conhecido ? {} : { evento_desconhecido: true }),
+          },
+          { status: 200 },
+        );
       case "ja_processado":
         return NextResponse.json({ recebido: true, reentrega: true }, { status: 200 });
       case "assinatura_invalida":

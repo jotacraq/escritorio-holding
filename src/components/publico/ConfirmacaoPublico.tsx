@@ -34,7 +34,7 @@ function DiaEHora({ inicioEm, fimEm }: { inicioEm: string; fimEm: string }) {
       <p className="text-subtitulo text-tinta">
         das <span className="font-bold">{formatarHoraSimples(inicioEm)}</span> às <span className="font-bold">{formatarHoraSimples(fimEm)}</span>
       </p>
-      <p className="text-sm text-tinta-suave">Horário de São Paulo · online, pelo link que chega no seu e-mail no dia.</p>
+      <p className="text-publico text-tinta-suave">Horário de São Paulo · online, pelo link que chega no seu e-mail no dia.</p>
     </div>
   );
 }
@@ -49,10 +49,10 @@ function OQueAconteceAgora() {
           "A sala abre 10 minutos antes do horário — entre com calma.",
           "Se puder, esteja com quem decide junto com você: a conversa rende mais.",
         ].map((texto, i) => (
-          <li key={i} className="flex items-start gap-3 text-corpo text-tinta">
+          <li key={i} className="flex items-start gap-3 text-publico text-tinta">
             <span
               aria-hidden="true"
-              className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[color:var(--latao-cta)] text-sm font-bold text-[color:var(--latao-cta-texto)]"
+              className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[color:var(--latao-cta)] text-publico font-bold text-[color:var(--latao-cta-texto)]"
             >
               {i + 1}
             </span>
@@ -154,7 +154,7 @@ function TelaConvite({
         </BotaoPublico>
 
         {erro && (
-          <p id="erro-confirmacao" role="alert" className="text-sm font-medium text-[color:var(--vermelho)]">
+          <p id="erro-confirmacao" role="alert" className="text-publico font-medium text-[color:var(--vermelho)]">
             {erro}
           </p>
         )}

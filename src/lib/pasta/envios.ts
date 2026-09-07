@@ -30,6 +30,7 @@
  * Função pura, sem I/O. `agora` é injetável. Teste de mesa em
  * `src/lib/pasta/envios.test.ts` (`npm test`).
  */
+import { rotulo } from "@/lib/vocabulario";
 import type { Ficha360 } from "@/lib/api";
 import type { LinkPublicoResumo } from "@/types/publico";
 
@@ -66,8 +67,17 @@ export const ROTULO_ENVIO: Record<TipoEnvio, string> = {
  * Cada uma cita a fonte do fato — nenhuma é opinião.
  */
 export const MOTIVO_ENVIO = {
-  /** `emitir_link_publico` recusa jornada fechada (0028:816-818). */
-  jornada_encerrada: "Esta jornada está encerrada.",
+  /**
+   * `emitir_link_publico` recusa jornada fechada (0028:816-818).
+   *
+   * Fase 8: "processo", não "jornada" — o rótulo de tela vem do Glossário
+   * (`rotulo("processo")`), enquanto a chave, a tabela e o resto do código
+   * continuam `jornada`. E o **arquivado** ganha frase própria: encerrado é
+   * decisão comercial e não tem volta óbvia; arquivado é reversível, e dizer
+   * COMO voltar é a diferença entre um aviso e um beco sem saída.
+   */
+  jornada_encerrada: `Este ${rotulo("processo")} está encerrado.`,
+  jornada_arquivada: `Este ${rotulo("processo")} está arquivado. Reabra o ${rotulo("processo")} para enviar links.`,
   /** A rota não inventa advogada quando a sessão não tem uma (`links/route.ts:115-119`). */
   agendamento_sem_advogada:
     "Emite, mas sai sem horários: a sessão ainda não tem advogada.",
@@ -160,6 +170,7 @@ export function derivarEnvios(
 ): ItemEnvio[] {
   const porTipo = ultimoPorTipo(links);
   const jornadaEncerrada = ficha.jornada.desfecho !== "aberta";
+  const arquivado = ficha.jornada.desfecho === "congelada";
   const temAgendamentoAtivo = ficha.agendamentos.some((a) => STATUS_AGENDAMENTO_ATIVO.has(a.status));
   const sessaoSemAdvogada = !ficha.sessao?.advogada_id;
   const material = ficha.materialAtual;
@@ -176,9 +187,10 @@ export function derivarEnvios(
       substituiAtivo: estadoLink === "ativo",
     };
 
-    // 1. Jornada fechada trava TODOS os tipos — é a RPC que recusa (0028:816-818).
+    // 1. Processo fechado trava TODOS os tipos — é a RPC que recusa (0028:816-818).
     if (jornadaEncerrada) {
-      return { ...base, estado: "indisponivel", motivo: MOTIVO_ENVIO.jornada_encerrada, podeEmitir: false, substituiAtivo: false };
+      const motivo = arquivado ? MOTIVO_ENVIO.jornada_arquivada : MOTIVO_ENVIO.jornada_encerrada;
+      return { ...base, estado: "indisponivel", motivo, podeEmitir: false, substituiAtivo: false };
     }
 
     // 2. O servidor já disse por que não deu (503 de service_role, por exemplo).

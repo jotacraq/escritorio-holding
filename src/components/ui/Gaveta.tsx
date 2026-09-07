@@ -103,16 +103,28 @@ export function Gaveta({ aberta, aoFechar, titulo, rotulo, descricao, rodape, la
               </p>
             )}
           </div>
+          {/* Fase 8, regra M6 — no celular a gaveta ocupa a tela inteira, e
+              tela cheia não é diálogo: é uma PÁGINA. Quem chegou ali espera
+              **voltar**, com seta, como em todo aplicativo; o "✕ Fechar" é a
+              linguagem da janela flutuante, que só existe de `sm` para cima
+              (onde a gaveta é um painel com o conteúdo por trás, à vista).
+              A troca é por CSS (`display:none`), então em cada largura só UM
+              par ícone+rótulo existe na árvore de acessibilidade — nada de
+              leitor de tela anunciar "Voltar Fechar". */}
           <button
             ref={fecharRef}
             type="button"
             onClick={aoFechar}
             className="flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-full border border-linha-forte px-3 text-sm font-medium text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-[color:var(--latao)]"
           >
-            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 fill-current">
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 fill-current sm:hidden">
+              <path d="M9.7 3.3a1 1 0 0 1 0 1.4L5.41 9H16.5a1 1 0 1 1 0 2H5.41l4.3 4.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0Z" />
+            </svg>
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="hidden h-5 w-5 fill-current sm:block">
               <path d="M5.29 5.29a1 1 0 0 1 1.42 0L10 8.59l3.29-3.3a1 1 0 1 1 1.42 1.42L11.41 10l3.3 3.29a1 1 0 0 1-1.42 1.42L10 11.41l-3.29 3.3a1 1 0 0 1-1.42-1.42L8.59 10l-3.3-3.29a1 1 0 0 1 0-1.42Z" />
             </svg>
-            Fechar
+            <span className="sm:hidden">Voltar</span>
+            <span className="hidden sm:inline">Fechar</span>
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>

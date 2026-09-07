@@ -436,16 +436,22 @@ function EditorCelula({
         <Opcao tipo="radio" name="modo" checked={modo === "ausente"} onChange={() => setModo("ausente")} rotulo="Deixar ausente" descricao="Sem número — o total do cenário fica incompleto até preencher." />
       </fieldset>
 
+      {/* Sem `autoFocus` (Fase 8): este formulário vive DENTRO de uma
+          `ui/Gaveta`, que já leva o foco para dentro do painel ao abrir — os
+          dois competiam, e a gaveta ganhava. Depois disso, o campo só aparece
+          quando a pessoa TROCA o modo no grupo de rádios: mover o foco ali
+          tiraria o cursor do próprio grupo e quebraria a navegação por setas.
+          Quem escolheu o modo continua a um Tab do campo. */}
       {modo === "digitado" && (
         <Campo rotulo="Valor (R$)" obrigatorio>
-          <Entrada inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" autoFocus />
+          <Entrada inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
         </Campo>
       )}
 
       {modo === "calculado" && (
         <div className="flex flex-col gap-4">
           <Campo rotulo="Base de cálculo (R$)" obrigatorio ajuda="Valor sobre o qual a alíquota incide (ex.: valor de mercado dos bens transmitidos).">
-            <Entrada inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0,00" autoFocus />
+            <Entrada inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0,00" />
           </Campo>
           {parametroVigente === undefined ? (
             <p role="status" className="text-sm text-tinta-suave">

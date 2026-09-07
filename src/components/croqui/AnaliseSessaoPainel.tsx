@@ -241,7 +241,7 @@ export function AnaliseSessaoPainel({
 
       {resultado?.croqui_criado_agora && (
         <p role="status" className="rounded-controle border border-azul-fraco bg-azul-fraco px-3 py-2 text-sm text-[color:var(--azul)]">
-          Um croqui em rascunho foi criado automaticamente para esta jornada — veja no Editor do Croqui, abaixo.
+          Um croqui em rascunho foi criado automaticamente para este processo — veja no Editor do Croqui, abaixo.
         </p>
       )}
 

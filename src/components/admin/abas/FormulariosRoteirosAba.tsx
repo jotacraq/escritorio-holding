@@ -169,9 +169,14 @@ function EditorPergunta({
             {opcoes.map((opcao, indice) => {
               const travado = valoresTravados.has(opcao.valor);
               return (
-                <li key={`${opcao.valor}-${indice}`} className="flex flex-wrap items-end gap-2">
-                  <label className="flex min-w-0 flex-1 basis-32 flex-col gap-1">
-                    <span className="text-legenda text-tinta-fraca">Valor</span>
+                // Fase 8: os dois `<label>` eram escritos à mão em volta de um
+                // componente — o lint não enxerga o controle através do
+                // `Entrada` e, pior, o par rótulo/campo dependia de o
+                // aninhamento nunca mudar. `Campo` liga `htmlFor`/`id` e o
+                // `aria-describedby` sozinho, que é o mesmo contrato do resto
+                // dos formulários do Admin.
+                <li key={`${opcao.valor}-${indice}`} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                  <Campo rotulo="Valor" className="min-w-0 flex-1 sm:basis-32">
                     <Entrada
                       value={opcao.valor}
                       readOnly={travado}
@@ -179,11 +184,10 @@ function EditorPergunta({
                       onChange={(e) => trocarOpcoes(opcoes.map((o, i) => (i === indice ? { ...o, valor: e.target.value } : o)))}
                       className="font-mono"
                     />
-                  </label>
-                  <label className="flex min-w-0 flex-[2] basis-40 flex-col gap-1">
-                    <span className="text-legenda text-tinta-fraca">Texto para o cliente</span>
+                  </Campo>
+                  <Campo rotulo="Texto para o cliente" className="min-w-0 flex-[2] sm:basis-40">
                     <Entrada value={opcao.rotulo} onChange={(e) => trocarOpcoes(opcoes.map((o, i) => (i === indice ? { ...o, rotulo: e.target.value } : o)))} />
-                  </label>
+                  </Campo>
                   <Botao
                     variante="fantasma"
                     tamanho="compacto"

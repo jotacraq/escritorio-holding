@@ -1,61 +1,61 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
+import { estadoDaCompraHotmart, type StatusPagamento } from "./eventos";
+import {
+  eventoExternoIdDoPayload,
+  instanteDoEvento,
+  produtoIdDoPayload,
+  transacaoDoPayload,
+  type PayloadHotmart,
+} from "./roteador";
 
 /**
  * Miolo do webhook Hotmart, extraído de `POST /api/webhooks/hotmart` (§1.5)
  * para ser o MESMO código em três portas:
  *   1) primeira entrega do evento (rota do webhook);
  *   2) reentrega da Hotmart de evento com `processado_em is null` (rota);
- *   3) botão Admin → Pendências → "Reprocessar" (`POST /api/admin/webhooks/[id]/reprocessar`).
+ *   3) botão Admin → Pendências → "Reprocessar" / "Mapear para…".
  * Lê o bruto já persistido em `webhooks_eventos` — nunca reprocessa a partir
  * do corpo da requisição, para que o clique do admin e a reentrega vejam
  * exatamente o mesmo payload que foi assinado.
+ *
+ * FASE 8 — o que mudou aqui:
+ *   · o estado vem do EVENTO (`./eventos.ts`), não de `purchase.status` (D1);
+ *   · `produto_nao_mapeado` deixa `processado_em` NULL (D8): dinheiro sem
+ *     destino FICA na fila de pendências em vez de sumir carimbado;
+ *   · evento desconhecido também deixa `processado_em` NULL (D3);
+ *   · a mesma transação com outro produto é recusada e registrada (D10/B54).
  */
 
-export type StatusPagamento = "pendente" | "em_analise" | "aprovado" | "cancelado" | "estornado" | "reembolsado";
-
-/**
- * Mapeamento best-effort do status de compra da Hotmart. Os valores exatos
- * dependem da versão/contrato do webhook contratado — BLOQUEIO B7 do plano.
- * Nunca assume "aprovado" por default: status desconhecido cai em 'em_analise'.
- */
-export function mapearStatusHotmart(statusBruto: string | undefined): StatusPagamento {
-  const status = (statusBruto ?? "").toUpperCase();
-  if (status === "APPROVED" || status === "COMPLETE" || status === "COMPLETED") return "aprovado";
-  if (status === "CANCELLED" || status === "CANCELED" || status === "EXPIRED") return "cancelado";
-  if (status === "REFUNDED") return "reembolsado";
-  if (status === "CHARGEBACK" || status === "DISPUTE") return "estornado";
-  if (status === "BILLET_PRINTED" || status === "STARTED" || status === "PRE_ORDER" || status === "PROCESSING_TRANSACTION") {
-    return "pendente";
-  }
-  return "em_analise";
-}
-
-export interface PayloadHotmart {
-  id?: string;
-  event?: string;
-  data?: {
-    purchase?: {
-      transaction?: string;
-      status?: string;
-      price?: { value?: number; currency_value?: string };
-      payment?: { installments_number?: number };
-      approved_date?: number;
-      order_date?: number;
-    };
-    product?: { id?: number | string };
-    buyer?: { email?: string; name?: string; checkout_phone?: string };
-  };
-}
+export type { PayloadHotmart } from "./roteador";
+export type { StatusPagamento } from "./eventos";
+export {
+  MAPA_EVENTO_HOTMART,
+  estadoDaCompraHotmart,
+  mapearStatusHotmart,
+  normalizarEventoHotmart,
+  statusDoEventoHotmart,
+} from "./eventos";
 
 export type ResultadoProcessamentoHotmart =
   | { tipo: "assinatura_invalida" }
   | { tipo: "ja_processado"; processado_em: string }
   | { tipo: "sem_compra" }
-  | { tipo: "produto_nao_mapeado" }
+  | { tipo: "produto_nao_mapeado"; hotmart_produto_id: string | null }
+  /** D10/B54 — a transação já existe com OUTRO produto. Nunca sobrescreve. */
+  | { tipo: "produto_divergente"; observacao: string }
   /** Dinheiro sem registro — crítico: quem chama responde 500 para a Hotmart reentregar. */
   | { tipo: "pagamento_nao_registrado"; observacao: string }
-  | { tipo: "processado"; pagamento_id: string; jornada_id: string | null; observacao: string | null };
+  | {
+      tipo: "processado";
+      pagamento_id: string;
+      jornada_id: string | null;
+      status: StatusPagamento;
+      evento: string | null;
+      /** `false` quando o `event` do payload não está no mapa (D3): não aprova e fica na fila. */
+      evento_conhecido: boolean;
+      observacao: string | null;
+    };
 
 interface LinhaWebhookEvento {
   id: string;
@@ -66,14 +66,22 @@ interface LinhaWebhookEvento {
   processado_em: string | null;
 }
 
+interface RetornoRpc {
+  pagamento_id: string | null;
+  jornada_id: string | null;
+  produto_mapeado: boolean;
+  etapa_avancada: boolean;
+  observacao: string | null;
+}
+
 /**
- * Processa (ou reprocessa) um evento já persistido. Idempotente no banco:
- * `processar_pagamento_hotmart` faz `on conflict (origem, transacao_externa_id)
- * do update` (0011:456). Regras:
+ * Processa (ou reprocessa) um evento já persistido. Idempotente no banco em
+ * DOIS níveis desde a 0084: por `(origem, transacao_externa_id)` em
+ * `pagamentos` e por id de EVENTO em `pagamentos_transicoes`. Regras:
  *   - `assinatura_valida=false` NUNCA processa (pentest Onda 4);
  *   - `processado_em` preenchido → devolve `ja_processado` sem tocar em nada
- *     (a menos que `forcar=true`, o caminho do botão de admin, que já zerou via
- *     `reprocessar_webhook`);
+ *     (a menos que `forcar=true`, o caminho dos botões de admin, que já zeraram
+ *     via `reprocessar_webhook`);
  *   - erro real → lança (o chamador registra e responde 500) depois de gravar
  *     `erro` na linha.
  */
@@ -97,29 +105,34 @@ export async function processarEventoHotmart(
 
   const payload = evento.bruto ?? {};
   const purchase = payload.data?.purchase;
-  const produto = payload.data?.product;
   const buyer = payload.data?.buyer;
   const agora = new Date().toISOString();
 
   if (!purchase) {
-    // Evento sem dados de compra (ex.: outro tipo de notificação): registrado, nada a processar.
+    // Evento sem dados de compra (assinatura, Club, carrinho abandonado):
+    // registrado, nada a processar. NÃO é erro.
     await supabaseAdmin.from("webhooks_eventos").update({ processado_em: agora, erro: null }).eq("id", evento.id);
     return { tipo: "sem_compra" };
   }
 
-  const statusPagamento = mapearStatusHotmart(purchase.status);
-  const pagoEm = purchase.approved_date
-    ? new Date(purchase.approved_date).toISOString()
-    : purchase.order_date
-      ? new Date(purchase.order_date).toISOString()
+  // D1 — o estado vem do EVENTO. `purchase.status` só é lido quando o payload
+  // não traz `event` (linha antiga reprocessada, seed, registro manual).
+  const estado = estadoDaCompraHotmart(payload.event, purchase.status);
+  const hotmartProdutoId = produtoIdDoPayload(payload);
+
+  // `pago_em` só existe quando o dinheiro entrou. Boleto emitido não tem data
+  // de pagamento — inventá-la é o padrão P1 do vault virando dado na tela.
+  const pagoEm =
+    estado.status === "aprovado"
+      ? (purchase.approved_date ? new Date(purchase.approved_date).toISOString() : instanteDoEvento(payload))
       : null;
 
   try {
     const { data: resultado, error: erroProcessamento } = await supabaseAdmin
       .rpc("processar_pagamento_hotmart", {
-        p_hotmart_produto_id: produto?.id != null ? String(produto.id) : null,
-        p_transacao_externa_id: purchase.transaction ?? evento.evento_externo_id,
-        p_status: statusPagamento,
+        p_hotmart_produto_id: hotmartProdutoId,
+        p_transacao_externa_id: transacaoDoPayload(payload) ?? eventoExternoIdDoPayload(payload) ?? evento.evento_externo_id,
+        p_status: estado.status,
         p_valor: purchase.price?.value ?? null,
         p_moeda: purchase.price?.currency_value ?? "BRL",
         p_parcelas: purchase.payment?.installments_number ?? null,
@@ -129,40 +142,63 @@ export async function processarEventoHotmart(
         p_pago_em: pagoEm,
         p_bruto: payload,
       })
-      .single<{
-        pagamento_id: string | null;
-        jornada_id: string | null;
-        produto_mapeado: boolean;
-        etapa_avancada: boolean;
-        observacao: string | null;
-      }>();
+      .single<RetornoRpc>();
 
     if (erroProcessamento) throw new Error(erroProcessamento.message);
 
+    const observacao = resultado?.observacao ?? null;
+
+    // D10/B54 — order bump / assinatura mandando a MESMA transação com outro
+    // produto. 200 para a Hotmart (reentregar não conserta), `processado_em`
+    // NULL para ficar na fila de pendências com o erro por extenso.
+    if (observacao?.includes("transacao_com_produto_divergente")) {
+      await supabaseAdmin.from("webhooks_eventos").update({ erro: observacao, processado_em: null }).eq("id", evento.id);
+      registrarErro("server/pagamentos/hotmart#produto_divergente", new Error(observacao), { webhook_evento_id: evento.id });
+      return { tipo: "produto_divergente", observacao };
+    }
+
+    // D8 — `processado_em` fica NULL. Antes da Fase 8 esta linha carimbava
+    // `processado_em = agora` e a pendência sumia do índice: dinheiro sem
+    // destino virava silêncio.
     if (!resultado?.produto_mapeado) {
       await supabaseAdmin
         .from("webhooks_eventos")
-        .update({ erro: "produto_nao_mapeado", processado_em: agora })
+        .update({ erro: "produto_nao_mapeado", processado_em: null })
         .eq("id", evento.id);
-      return { tipo: "produto_nao_mapeado" };
+      return { tipo: "produto_nao_mapeado", hotmart_produto_id: hotmartProdutoId };
     }
 
     if (!resultado.pagamento_id) {
-      const observacao = resultado.observacao ?? "pagamento_nao_registrado";
+      const detalhe = observacao ?? "pagamento_nao_registrado";
       await supabaseAdmin
         .from("webhooks_eventos")
-        .update({ erro: observacao, processado_em: null })
+        .update({ erro: detalhe, processado_em: null })
         .eq("id", evento.id);
-      registrarErro("server/pagamentos/hotmart#pagamento_nao_registrado", new Error(observacao), { webhook_evento_id: evento.id });
-      return { tipo: "pagamento_nao_registrado", observacao };
+      registrarErro("server/pagamentos/hotmart#pagamento_nao_registrado", new Error(detalhe), { webhook_evento_id: evento.id });
+      return { tipo: "pagamento_nao_registrado", observacao: detalhe };
     }
 
+    // D3 — evento fora do mapa: a compra foi registrada em `em_analise` (nunca
+    // aprovada) e o evento CONTINUA na fila, com o nome por extenso, para um
+    // humano decidir se o mapa cresce.
+    const eventoDesconhecido = estado.evento !== null && !estado.conhecido;
     await supabaseAdmin
       .from("webhooks_eventos")
-      .update({ erro: resultado.observacao, processado_em: agora })
+      .update({
+        erro: eventoDesconhecido ? `evento_desconhecido: ${estado.evento}` : observacao,
+        processado_em: eventoDesconhecido ? null : agora,
+      })
       .eq("id", evento.id);
 
-    return { tipo: "processado", pagamento_id: resultado.pagamento_id, jornada_id: resultado.jornada_id, observacao: resultado.observacao };
+    return {
+      tipo: "processado",
+      pagamento_id: resultado.pagamento_id,
+      jornada_id: resultado.jornada_id,
+      status: estado.status,
+      evento: estado.evento,
+      evento_conhecido: !eventoDesconhecido,
+      observacao,
+    };
   } catch (erro) {
     const mensagem = erro instanceof Error ? erro.message : String(erro);
     await supabaseAdmin.from("webhooks_eventos").update({ erro: mensagem, processado_em: null }).eq("id", evento.id);

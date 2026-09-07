@@ -118,6 +118,13 @@ const NIVEL_PAGO: Record<Etapa, number> = {
   holding_contratada: 3,
 };
 
+/**
+ * As três etapas que a migration 0084 tranca por dinheiro (TETO, D5): só entra
+ * quem tem pagamento APROVADO daquele produto registrado. Para elas a ordem do
+ * seed inverte — primeiro o bloco (que grava o pagamento), depois a etapa.
+ */
+const ETAPAS_PAGAS = new Set<Etapa>(["sessao_contratada", "croqui_contratado", "holding_contratada"]);
+
 // ---------------------------------------------------------------------------
 // Conteúdo das quatro famílias
 // ---------------------------------------------------------------------------
@@ -1710,10 +1717,18 @@ async function montarFamilia(
   ];
   for (const [etapa, bloco] of blocos) {
     if (ordemDa(etapa) > ordemDa(familia.alvo)) break;
-    // A etapa sobe ANTES do bloco: o piso de nível pago da 0004 recusa etapa
-    // abaixo do que o pagamento já pagou.
-    await moverAte(ctx, etapa);
-    await bloco(ctx);
+    // Etapa NÃO paga: sobe ANTES do bloco — o piso de nível pago da 0004 recusa
+    // etapa abaixo do que o pagamento já pagou.
+    // Etapa PAGA (0084/D5): o bloco vem primeiro, porque é ele que grava o
+    // pagamento, e o TETO só deixa entrar em `sessao_contratada`/
+    // `croqui_contratado`/`holding_contratada` com o dinheiro já registrado.
+    if (ETAPAS_PAGAS.has(etapa)) {
+      await bloco(ctx);
+      await moverAte(ctx, etapa);
+    } else {
+      await moverAte(ctx, etapa);
+      await bloco(ctx);
+    }
   }
 
   // `processar_pagamento_hotmart` abre uma jornada NOVA quando não acha uma

@@ -9,10 +9,10 @@ import { Cartao } from "@/components/ui/Cartao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { formatarData } from "@/lib/formatar";
 import { atualizarEdicao, criarEdicao, listarEdicoes } from "../adminApi";
 import { mensagemDeErro } from "../http";
-import { IntroAba, SeloAtivo, Tabela, Tbody, Td, Th, Thead, Tr } from "../comum";
+import { Tabela, type ColunaTabela } from "@/components/ui/Tabela";
+import { IntroAba, SeloAtivo, formatarDataPura } from "../comum";
 import type { EdicaoSeminario } from "@/types/admin";
 
 interface Rascunho {
@@ -31,6 +31,19 @@ function validar(r: Rascunho, exigirCodigo: boolean): Partial<Rascunho> {
   if (r.inicio_em && r.fim_em && r.fim_em < r.inicio_em) e.fim_em = "O fim precisa ser depois do início.";
   return e;
 }
+
+
+/* `inicio_em`/`fim_em` são `date` puro: `formatarData` os empurra um dia para
+   trás (meia-noite UTC = 21h do dia anterior em São Paulo) — a edição que
+   começa em 07/09 aparecia como 06/09. `formatarDataPura` formata a string
+   como data de calendário, sem fuso no caminho. */
+const COLUNAS: readonly ColunaTabela<EdicaoSeminario>[] = [
+  { chave: "nome", cabecalho: "Nome", celula: (e) => e.nome },
+  { chave: "codigo", cabecalho: "Código", celula: (e) => e.codigo },
+  { chave: "inicio", cabecalho: "Início", celula: (e) => formatarDataPura(e.inicio_em) },
+  { chave: "fim", cabecalho: "Fim", celula: (e) => formatarDataPura(e.fim_em) },
+  { chave: "estado", cabecalho: "Estado", celula: (e) => <SeloAtivo ativo={e.ativa} /> },
+];
 
 /** Cada edição do seminário é a coorte que os indicadores agrupam — nunca por janela de tempo. */
 export function EdicoesAba() {
@@ -106,6 +119,8 @@ export function EdicoesAba() {
     }
   }
 
+  const edicaoEmEdicao = dados?.itens.find((e) => e.id === edicaoId) ?? null;
+
   const camposForm = (r: Rascunho, setR: (r: Rascunho) => void, comCodigo: boolean) => (
     <div className={`grid gap-4 ${comCodigo ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
       {comCodigo && (
@@ -128,7 +143,7 @@ export function EdicoesAba() {
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <IntroAba>Cada edição do seminário é a coorte que os indicadores agrupam — quem entrou por ela é medido junto, do seminário à holding.</IntroAba>
+        <IntroAba>Quem entrou por uma edição é medido junto com ela, do seminário à holding.</IntroAba>
         {!novo && (
           <Botao variante="primario" onClick={() => setNovo({ codigo: "", nome: "", inicio_em: "", fim_em: "" })}>
             Nova edição
@@ -152,78 +167,55 @@ export function EdicoesAba() {
         </Cartao>
       )}
 
-      {dados.itens.length === 0 && !novo ? (
-        <EstadoVazio ilustracao="agenda" titulo="Nenhuma edição cadastrada" descricao="Sem edição, o lead do seminário não tem origem rastreável." />
-      ) : (
-        <Cartao preenchimento="sem">
-          <Tabela resumo="Edições do seminário">
-            <Thead>
-              <tr>
-                <Th>Código</Th>
-                <Th>Nome</Th>
-                <Th>Início</Th>
-                <Th>Fim</Th>
-                <Th>Estado</Th>
-                <Th srOnly>Ações</Th>
-              </tr>
-            </Thead>
-            <Tbody>
-              {dados.itens.map((edicao) =>
-                edicaoId === edicao.id ? (
-                  <Tr key={edicao.id} className="bg-papel">
-                    <td colSpan={6} className="block px-0 py-2 sm:table-cell sm:px-5 sm:py-4">
-                      <form noValidate onSubmit={(e) => salvarEdicao(e, edicao)} className="flex flex-col gap-4">
-                        <p className="text-sm text-tinta-suave">
-                          Editando <span className="font-bold text-tinta">{edicao.codigo}</span>
-                        </p>
-                        {camposForm(rascunho, setRascunho, false)}
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Botao variante="fantasma" tamanho="compacto" onClick={() => setEdicaoId(null)}>
-                            Cancelar
-                          </Botao>
-                          <Botao type="submit" variante="secundario" tamanho="compacto" carregando={salvando}>
-                            Salvar
-                          </Botao>
-                        </div>
-                      </form>
-                    </td>
-                  </Tr>
-                ) : (
-                  <Tr key={edicao.id}>
-                    <Td rotulo="Código" className="text-tinta-suave">
-                      {edicao.codigo}
-                    </Td>
-                    <Td rotulo="Nome" className="font-medium">
-                      {edicao.nome}
-                    </Td>
-                    <Td rotulo="Início">{formatarData(edicao.inicio_em)}</Td>
-                    <Td rotulo="Fim">{formatarData(edicao.fim_em)}</Td>
-                    <Td rotulo="Estado">
-                      <SeloAtivo ativo={edicao.ativa} />
-                    </Td>
-                    <Td acoes>
-                      <div className="flex flex-wrap gap-2 sm:justify-end">
-                        <Botao variante="fantasma" tamanho="compacto" onClick={() => abrirEdicao(edicao)}>
-                          Editar
-                        </Botao>
-                        {edicao.ativa ? (
-                          <Botao variante="perigo" tamanho="compacto" onClick={() => setConfirmarDesativar(edicao)}>
-                            Desativar
-                          </Botao>
-                        ) : (
-                          <Botao variante="secundario" tamanho="compacto" carregando={salvando} onClick={() => mudarAtiva(edicao, true)}>
-                            Reativar
-                          </Botao>
-                        )}
-                      </div>
-                    </Td>
-                  </Tr>
-                ),
-              )}
-            </Tbody>
-          </Tabela>
+      {edicaoEmEdicao && (
+        /* Fase 8 §C3 M2/M4: a edição acontecia DENTRO da linha, num
+           `<td colSpan={6}>` — no celular virava um formulário de 4 colunas
+           espremido dentro do cartão da tabela. Agora é um cartão próprio
+           acima da lista, igual ao de "Nova edição": mesma forma e mesmo
+           lugar no desktop e no celular. */
+        <Cartao rotulo="Editando" titulo={edicaoEmEdicao.codigo} descricao="O código não muda: ele é a chave da coorte nos indicadores.">
+          <form noValidate onSubmit={(e) => salvarEdicao(e, edicaoEmEdicao)} className="flex flex-col gap-5">
+            {camposForm(rascunho, setRascunho, false)}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Botao variante="fantasma" onClick={() => setEdicaoId(null)}>
+                Cancelar
+              </Botao>
+              <Botao type="submit" variante="primario" carregando={salvando}>
+                Salvar
+              </Botao>
+            </div>
+          </form>
         </Cartao>
       )}
+
+      <Cartao preenchimento="sem">
+        <div className="px-cartao py-item">
+          <Tabela
+            legenda="Edições do seminário"
+            colunas={COLUNAS}
+            linhas={dados.itens}
+            chaveDaLinha={(e) => e.id}
+            tituloDoCartao={(e) => e.nome}
+            vazio={<EstadoVazio ilustracao="agenda" titulo="Nenhuma edição cadastrada" descricao="Sem edição, o lead do seminário não tem origem rastreável." />}
+            acoes={(edicao) => (
+              <>
+                <Botao variante="fantasma" tamanho="compacto" onClick={() => abrirEdicao(edicao)}>
+                  Editar
+                </Botao>
+                {edicao.ativa ? (
+                  <Botao variante="perigo" tamanho="compacto" onClick={() => setConfirmarDesativar(edicao)}>
+                    Desativar
+                  </Botao>
+                ) : (
+                  <Botao variante="secundario" tamanho="compacto" carregando={salvando} onClick={() => mudarAtiva(edicao, true)}>
+                    Reativar
+                  </Botao>
+                )}
+              </>
+            )}
+          />
+        </div>
+      </Cartao>
 
       <ConfirmarAcao
         aberto={confirmarDesativar !== null}

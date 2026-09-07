@@ -107,7 +107,7 @@ function AcoesMaterial({ token, pdfDisponivel, aoLinkInvalido }: { token: string
         </BotaoPublico>
       </div>
       {estado && estado !== "link_invalido" && mensagem[estado] && (
-        <p role={estado === "disponivel" ? "status" : "alert"} className={`text-sm ${estado === "disponivel" ? "text-tinta-suave" : "font-medium text-tinta"}`}>
+        <p role={estado === "disponivel" ? "status" : "alert"} className={`text-publico ${estado === "disponivel" ? "text-tinta-suave" : "font-medium text-tinta"}`}>
           {mensagem[estado]}
         </p>
       )}

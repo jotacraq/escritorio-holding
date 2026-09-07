@@ -26,6 +26,12 @@ const TIPOS: ProdutoTipo[] = ["sessao_viabilidade", "croqui_estrutural", "holdin
 /** Texto exato de §1.9 (Admin → Produtos). */
 const TEXTO_SEM_ID = "Produto sem ID da Hotmart: todo pagamento dele vai cair em 'produto não mapeado' até o ID ser preenchido.";
 const TEXTO_SECRET = "Sem HOTMART_WEBHOOK_SECRET no servidor o webhook recusa tudo (503) — é o comportamento certo, não um erro.";
+/**
+ * C3/D2 da Fase 8: são três produtos na Hotmart e UMA URL de webhook. Quem
+ * separa é o ID do produto, conferido aqui. Este texto existe porque a pergunta
+ * "preciso de três webhooks?" já custou uma rodada de projeto.
+ */
+const TEXTO_UMA_URL = "Na Hotmart, os três produtos apontam para a MESMA URL de webhook (/api/webhooks/hotmart). Quem separa um do outro é o ID abaixo.";
 
 interface Rascunho {
   nome: string;
@@ -143,6 +149,7 @@ export function ProdutosAba() {
       </div>
 
       {semId.length > 0 && <SeloStub texto={`${TEXTO_SEM_ID} Sem ID: ${semId.map((p) => p.nome).join(", ")}.`} />}
+      <p className="text-legenda text-tinta-fraca">{TEXTO_UMA_URL}</p>
       <p className="text-legenda text-tinta-fraca">{TEXTO_SECRET}</p>
 
       {novo && (

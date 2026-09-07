@@ -87,7 +87,7 @@ export function IntegracoesAba() {
     return (
       <div className="flex flex-col gap-bloco">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <IntroAba>O que está ligado, o que falta configurar (só o nome da variável — nunca o valor) e um botão para testar cada ponta.</IntroAba>
+          <IntroAba>Cada ponta tem um botão de teste. Do que falta, aparece só o nome da variável — nunca o valor.</IntroAba>
           <Botao variante="secundario" tamanho="compacto" carregando={carregando} onClick={recarregar}>
             Tentar de novo
           </Botao>
@@ -123,7 +123,7 @@ export function IntegracoesAba() {
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <IntroAba>O que está ligado, o que falta configurar (só o nome da variável — nunca o valor) e um botão para testar cada ponta.</IntroAba>
+        <IntroAba>Cada ponta tem um botão de teste. Do que falta, aparece só o nome da variável — nunca o valor.</IntroAba>
         <Selo tom={configuradas === ordenadas.length ? "verde" : "ambar"}>
           {configuradas} de {ordenadas.length} ligadas
         </Selo>

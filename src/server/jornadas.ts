@@ -179,6 +179,14 @@ export interface Ficha360 {
    * "Pasta do Cliente", Diário 2026-09-04.
    */
   materialAtual: Omit<MaterialGeradoResumo, "chave_modelo"> | null;
+  /**
+   * Fase 8 (D12) — a linha de `vw_croqui_estado` do croqui mais recente desta
+   * jornada, ou `null` quando não há croqui (ou quando o papel não vê
+   * patrimônio, e a RLS da view esconde tudo). É a MESMA fonte que alimenta
+   * `vw_jornada_kanban.croqui_fase` na lista de Clientes: uma derivação, dois
+   * leitores, nunca duas respostas para "em que fase está o croqui?".
+   */
+  croquiEstado: CroquiEstado | null;
   // --- Fase 4 (Onda 1). Tabelas de outros agentes podem não existir ainda no
   // banco: cada campo abaixo é carregado de forma TOLERANTE — tabela ausente
   // vira `null`/`[]`, nunca derruba a ficha. ---
@@ -197,6 +205,26 @@ export interface Ficha360 {
    * (0027:174) já libera leitura para qualquer papel interno — nada de novo.
    */
   configuracoesUi: { ligacaoIaAtiva: boolean };
+}
+
+/** Uma linha de `vw_croqui_estado` (0086). Espelha as colunas, sem tradução. */
+export interface CroquiEstado {
+  jornada_id: string;
+  croqui_id: string;
+  croqui_versao: number;
+  titulo: string;
+  /** O enum `status_croqui`: o estado EDITORIAL, três valores. */
+  status_editorial: string;
+  /** A FASE, seis valores (D12). É esta que vira selo. */
+  fase: string;
+  tem_calculo: boolean;
+  calculos_total: number;
+  versao_fixada: number | null;
+  calculado_em: string | null;
+  exportado_em: string | null;
+  narrado_em: string | null;
+  apresentado_em: string | null;
+  mais_recente: boolean;
 }
 
 export interface CenariosDaFicha {
@@ -409,7 +437,7 @@ export async function montarFicha360(
     cenarios = cenariosData;
   }
 
-  const [ligacaoIaAtual, tarefasAbertas] = await Promise.all([
+  const [ligacaoIaAtual, tarefasAbertas, croquiEstado] = await Promise.all([
     consultaTolerante<LigacaoIaResumo | null>(
       "ligacoes_ia",
       jornadaId,
@@ -434,6 +462,21 @@ export async function montarFicha360(
         .returns<Tarefa[]>(),
       [],
     ),
+    // `vw_croqui_estado` (0086). `.eq("mais_recente", true)` casa com o que a
+    // Ficha já abria (o croqui de maior versão) e com o que a lista mostra.
+    // TOLERANTE: banco sem a migration → `null`, e o front cai no estado
+    // editorial derivado da timeline em vez de quebrar (D13).
+    consultaTolerante<CroquiEstado | null>(
+      "vw_croqui_estado",
+      jornadaId,
+      supabase
+        .from("vw_croqui_estado")
+        .select("*")
+        .eq("jornada_id", jornadaId)
+        .eq("mais_recente", true)
+        .maybeSingle<CroquiEstado>(),
+      null,
+    ),
   ]);
 
   return {
@@ -450,6 +493,7 @@ export async function montarFicha360(
     patrimonio,
     familiares,
     materialAtual: (materialAtual as Omit<MaterialGeradoResumo, "chave_modelo"> | null) ?? null,
+    croquiEstado,
     diagnosticoAtual,
     cenarios,
     ligacaoIaAtual,
@@ -534,4 +578,88 @@ export async function garantirSemJornadaAberta(
       { jornada_id: (data as { id: string }).id },
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Arquivar / desarquivar processo (Fase 8, D15–D17)
+// ---------------------------------------------------------------------------
+
+export interface ResultadoArquivar {
+  jornada_id: string;
+  desfecho: string;
+  motivo?: string;
+  mensagens_canceladas?: number;
+  ligacoes_canceladas?: number;
+  links_revogados?: number;
+  mensagens_reagendadas?: number;
+  ligacoes_nao_refeitas?: number;
+}
+
+/**
+ * Erros que as RPCs `arquivar_jornada`/`desarquivar_jornada` levantam com
+ * prefixo estável, e o par (código, mensagem) que a rota devolve.
+ *
+ * A mensagem do Postgres NÃO vai crua para o cliente: ela carrega nome de
+ * função, id de linha e às vezes o nome da constraint. Aqui vira frase de
+ * gente, com o que fazer — e o código estável fica para o front decidir a UI.
+ */
+const ERROS_ARQUIVAMENTO: { prefixo: string; codigo: string; http: 403 | 404 | 409; mensagem: string }[] = [
+  { prefixo: "sem_permissao", codigo: "sem_permissao", http: 403, mensagem: "Seu perfil não pode arquivar ou reabrir processos." },
+  { prefixo: "jornada_nao_encontrada", codigo: "nao_encontrado", http: 404, mensagem: "Processo não encontrado." },
+  { prefixo: "motivo_obrigatorio", codigo: "motivo_obrigatorio", http: 409, mensagem: "Escreva o motivo — ele é obrigatório para arquivar." },
+  { prefixo: "motivo_longo", codigo: "motivo_longo", http: 409, mensagem: "O motivo passou de 1000 caracteres." },
+  { prefixo: "ja_arquivada", codigo: "ja_arquivada", http: 409, mensagem: "Este processo já está arquivado." },
+  { prefixo: "nao_arquivada", codigo: "nao_arquivada", http: 409, mensagem: "Este processo não está arquivado." },
+  {
+    prefixo: "jornada_anonimizada",
+    codigo: "jornada_anonimizada",
+    http: 409,
+    mensagem: "Processo de titular anonimizado não se arquiva — o registro do direito exercido não se altera.",
+  },
+  {
+    prefixo: "jornada_aberta_existente",
+    codigo: "jornada_aberta_existente",
+    http: 409,
+    mensagem: "Esta pessoa já tem outro processo em andamento. Feche o outro antes de reabrir este.",
+  },
+];
+
+/** Traduz o erro do Postgres. Desconhecido → `null` (a rota trata como 500). */
+export function traduzErroArquivamento(mensagem: string): { codigo: string; http: 403 | 404 | 409; mensagem: string } | null {
+  const achado = ERROS_ARQUIVAMENTO.find((e) => mensagem.startsWith(e.prefixo));
+  return achado ? { codigo: achado.codigo, http: achado.http, mensagem: achado.mensagem } : null;
+}
+
+/**
+ * Arquiva o processo pela RPC — uma transação só (`public.arquivar_jornada`,
+ * 0086). NÃO faz os três UPDATEs aqui: dois `await` seguidos do Next não são
+ * atômicos entre si, e o meio-termo (processo arquivado com a régua viva) é
+ * exatamente o bug que a Fase 8 veio consertar.
+ *
+ * O cliente tem de ser o da SESSÃO (não `service_role`): a RPC confere o papel
+ * por `auth.uid()`, e com service_role `auth.uid()` é nulo — a função recusa.
+ */
+export async function arquivarJornada(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  params: { jornadaId: string; motivo: string; revogarLinks: boolean },
+): Promise<ResultadoArquivar> {
+  const { data, error } = await supabase.rpc("arquivar_jornada", {
+    p_jornada_id: params.jornadaId,
+    p_motivo: params.motivo,
+    p_revogar_links: params.revogarLinks,
+  });
+  if (error) throw error;
+  return data as ResultadoArquivar;
+}
+
+/** O Desfazer. Ver `public.desarquivar_jornada` (0086) para o que volta e o que não. */
+export async function desarquivarJornada(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  jornadaId: string,
+): Promise<ResultadoArquivar> {
+  const { data, error } = await supabase.rpc("desarquivar_jornada", { p_jornada_id: jornadaId });
+  if (error) throw error;
+  return data as ResultadoArquivar;
 }

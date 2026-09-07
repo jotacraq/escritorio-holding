@@ -45,7 +45,8 @@ export function PagosSemContato({ estado, aoTentarDeNovo }: { estado: EstadoBloc
                   {formatarData(item.pago_em)}
                 </span>
 
-                <span className="whitespace-nowrap text-sm font-bold text-[color:var(--vermelho)]">{rotuloDias(item.dias_desde_pagamento)}</span>
+                {/* DS §12.3: o número de dias É o status desta linha — `--estado-vermelho` (≥7:1), não `--vermelho` (AA). */}
+                <span className="whitespace-nowrap text-sm font-bold text-[color:var(--estado-vermelho)]">{rotuloDias(item.dias_desde_pagamento)}</span>
 
                 <ChipProximoPasso proximo={proximo} jornadaId={item.jornada_id} tamanho="compacto" />
 

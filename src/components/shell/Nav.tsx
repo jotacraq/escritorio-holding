@@ -4,7 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-const ICONES: Record<string, ReactNode> = {
+/**
+ * Os glifos das cinco áreas. Exportado (Fase 8) porque a `NavInferior` do
+ * celular desenha exatamente as mesmas cinco entradas — dois mapas de ícone
+ * para o mesmo menu é como desktop e celular divergem sem ninguém notar.
+ */
+export const ICONES_NAVEGACAO: Record<string, ReactNode> = {
   hoje: (
     <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4A1.5 1.5 0 0 1 10 3.5v4A1.5 1.5 0 0 1 8.5 9h-4A1.5 1.5 0 0 1 3 7.5v-4Zm9 0A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v4A1.5 1.5 0 0 1 15.5 9h-2A1.5 1.5 0 0 1 12 7.5v-4ZM3 12.5A1.5 1.5 0 0 1 4.5 11h2A1.5 1.5 0 0 1 8 12.5v4A1.5 1.5 0 0 1 6.5 18h-2A1.5 1.5 0 0 1 3 16.5v-4Zm9-1A1.5 1.5 0 0 1 13.5 10h4a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a1.5 1.5 0 0 1-1.5-1.5v-4Z" />
   ),
@@ -87,7 +92,7 @@ export function Nav({ aoNavegar }: { aoNavegar?: () => void }) {
               viewBox="0 0 20 20"
               className={`mt-[3px] h-5 w-5 shrink-0 fill-current transition-colors duration-[var(--transicao-rapida)] ${ativo ? "text-[color:var(--latao)]" : "opacity-70 group-hover:opacity-100"}`}
             >
-              {ICONES[item.icone]}
+              {ICONES_NAVEGACAO[item.icone]}
             </svg>
             <span className="flex min-w-0 flex-col">
               <span className={`text-sm leading-5 ${ativo ? "font-bold" : "font-medium"}`}>{item.rotulo}</span>

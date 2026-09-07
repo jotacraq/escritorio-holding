@@ -8,16 +8,11 @@ export function formatarHoraSql(hora: string): string {
 
 /**
  * `vale_de`/`vale_ate` são `date` puro ("YYYY-MM-DD"), sem hora e sem fuso.
- * NÃO usar `formatarData` de `src/lib/formatar.ts` aqui: aquela função faz
- * `new Date(iso)` (interpreta a string como meia-noite UTC) e depois formata
- * em `America/Sao_Paulo`, o que empurra a data um dia para trás (meia-noite
- * UTC é 21h do dia anterior em UTC-3) — correto para timestamps, errado para
- * uma data de calendário pura. Reformatar a string direto evita o bug sem
- * mexer num arquivo compartilhado por outras telas.
+ *
+ * A correção mora em `lib/formatar.ts` desde a rodada FIX da Fase 8 (era esta
+ * função, mais uma igual em `admin/comum.tsx`, mais o tratamento interno de
+ * `ui/Prazo` — três cópias). O nome local fica: a Agenda chama de "data de
+ * calendário", e trocar as chamadas seria mexer em tela por causa de um
+ * import.
  */
-export function formatarDataCalendario(data: string | null): string {
-  if (!data) return "—";
-  const [ano, mes, dia] = data.split("-");
-  if (!ano || !mes || !dia) return "—";
-  return `${dia}/${mes}/${ano}`;
-}
+export { formatarDataPura as formatarDataCalendario } from "@/lib/formatar";

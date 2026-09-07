@@ -6,7 +6,13 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirPapel } from "@/server/auth";
 import { erroConflito, erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
-import { traduzErroTransicaoPostgres, validarMotivoDesfecho, validarTransicaoEtapa } from "@/server/jornadas";
+import {
+  arquivarJornada,
+  traduzErroArquivamento,
+  traduzErroTransicaoPostgres,
+  validarMotivoDesfecho,
+  validarTransicaoEtapa,
+} from "@/server/jornadas";
 import type { Jornada } from "@/types/banco";
 
 const CorpoSchema = z
@@ -83,6 +89,38 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!resultado.valida) {
         throw erroConflito("motivo_obrigatorio", resultado.motivo);
       }
+    }
+
+    // Fase 8 (D15): `congelada` É "arquivar". Enquanto este PATCH gravava a
+    // coluna direto e a rota nova chamava a RPC, o MESMO ato tinha dois
+    // comportamentos — pelo botão a régua parava, pelo combo continuava
+    // mandando e-mail. Um caminho só: quem pede `congelada` por aqui cai em
+    // `public.arquivar_jornada` e leva os efeitos junto.
+    // Pentest da Fase 8 (HIGH): `{etapa, desfecho:"congelada"}` no MESMO corpo
+    // escapava da RPC e gravava `congelada` direto — régua e fila ficavam
+    // vivas e disparavam desatualizadas ao reabrir. Nenhuma tela manda os dois
+    // juntos; a API recusa a combinação em vez de fingir que a resolveu.
+    if (corpo.desfecho === "congelada" && corpo.etapa && corpo.etapa !== jornadaAtual.etapa) {
+      throw erroConflito(
+        "arquivar_com_etapa",
+        "Arquivar e mudar a fase são dois atos: mude a fase primeiro e arquive depois.",
+      );
+    }
+    if (corpo.desfecho === "congelada" && jornadaAtual.desfecho !== "congelada") {
+      try {
+        await arquivarJornada(supabase, {
+          jornadaId: id,
+          motivo: corpo.motivo ?? "",
+          revogarLinks: false,
+        });
+      } catch (erroRpc) {
+        const traduzido = traduzErroArquivamento(erroRpc instanceof Error ? erroRpc.message : String(erroRpc));
+        if (traduzido) throw erroConflito(traduzido.codigo, traduzido.mensagem);
+        throw erroRpc;
+      }
+      const { data: depois } = await supabase.from("jornadas").select("*").eq("id", id).maybeSingle();
+      if (!depois) throw erroNaoEncontrado("Jornada não encontrada.");
+      return NextResponse.json({ jornada: depois as Jornada });
     }
 
     const atualizacao: Record<string, unknown> = {};

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { atualizarAgendamento, ApiError, type StatusAgendamento } from "@/lib/api";
+import { atualizarAgendamento, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/useToast";
 import { formatarData, formatarDataHora, formatarHora } from "@/lib/formatar";
 import { derivarProximoPasso } from "@/lib/pasta/proximo-passo";
@@ -13,7 +13,7 @@ import { Botao } from "@/components/ui/Botao";
 import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { Gaveta } from "@/components/ui/Gaveta";
-import { Selo, type TomSelo } from "@/components/ui/Selo";
+import { SeloEstado } from "@/components/ui/SeloEstado";
 import { Trilho } from "@/components/ui/Trilho";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { confirmarPresencaPelaEquipe } from "./api-agendamentos";
@@ -21,18 +21,18 @@ import { FormularioAgendamento } from "./FormularioAgendamento";
 import { SeloPresenca } from "./SeloPresenca";
 
 /**
- * C23: `status='confirmado'` = o cliente ESCOLHEU o horário pelo link — não
- * "confirmou presença". Por isso os dois estados ativos viram "Horário
- * marcado" (com a origem), e a presença é o selo ao lado (`SeloPresenca`).
+ * Fase 8 (D19): o `status_agendamento` sai do catálogo único
+ * (`SeloEstado dominio="presenca"`) — nenhuma tela escolhe tom na mão.
+ *
+ * C23 continua valendo e por isso a sessão ATIVA não repete o status como
+ * selo: `status='confirmado'` quer dizer que o cliente ESCOLHEU o horário
+ * pelo link, e não que ele confirmou presença. Mostrar "Confirmado" ao lado
+ * de "Aguardando confirmação" (o `SeloPresenca`, que é o fato) diria duas
+ * coisas contrárias na mesma linha. Então, enquanto a sessão está de pé, o
+ * selo é o da PRESENÇA e a origem do horário vira uma linha de texto; o selo
+ * do catálogo entra quando a sessão termina (realizada, não compareceu,
+ * cancelada, remarcada) — que é quando ele é a única informação que resta.
  */
-const ROTULOS_STATUS: Record<StatusAgendamento, { rotulo: string; tom: TomSelo }> = {
-  agendado: { rotulo: "Horário marcado", tom: "neutro" },
-  confirmado: { rotulo: "Horário marcado pelo cliente", tom: "azul" },
-  realizado: { rotulo: "Realizada", tom: "verde" },
-  nao_compareceu: { rotulo: "Não compareceu", tom: "vermelho" },
-  cancelado: { rotulo: "Cancelado", tom: "neutro" },
-  remarcado: { rotulo: "Remarcado", tom: "neutro" },
-};
 
 const ICONE_CHECK = (
   <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -118,7 +118,6 @@ export function LinhaAgendamento({
     }
   }
 
-  const status = ROTULOS_STATUS[agendamento.status];
   const podeConfirmarPresenca = ativo && temCampoPresenca(agendamento) && !agendamento.presenca_confirmada_em;
 
   return (
@@ -152,8 +151,14 @@ export function LinhaAgendamento({
             </p>
           )}
           <div className="flex flex-wrap items-center gap-1.5">
-            {ativo && <SeloPresenca presencaConfirmadaEm={agendamento.presenca_confirmada_em} inicioEm={agendamento.inicio_em} via={agendamento.presenca_confirmada_via} />}
-            <Selo tom={status.tom}>{status.rotulo}</Selo>
+            {ativo ? (
+              <>
+                <SeloPresenca presencaConfirmadaEm={agendamento.presenca_confirmada_em} inicioEm={agendamento.inicio_em} via={agendamento.presenca_confirmada_via} />
+                {agendamento.status === "confirmado" && <span className="text-legenda text-tinta-suave">Horário escolhido pelo cliente</span>}
+              </>
+            ) : (
+              <SeloEstado dominio="presenca" estado={agendamento.status} />
+            )}
           </div>
           {ativo && <Trilho passos={passos} variante="compacto" rotulo={`Trilho de ${agendamento.pessoa_nome ?? "cliente"}`} className="max-w-sm" />}
           {ativo && <ChipProximoPasso proximo={proximo} jornadaId={agendamento.jornada_id} tamanho="compacto" />}

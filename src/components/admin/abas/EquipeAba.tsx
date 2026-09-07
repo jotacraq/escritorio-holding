@@ -13,7 +13,8 @@ import { Selo } from "@/components/ui/Selo";
 import { formatarDataHora } from "@/lib/formatar";
 import { atualizarPerfilEquipe, criarConviteEquipe, listarEquipe, reenviarConviteEquipe } from "../adminApi";
 import { mensagemDeErro } from "../http";
-import { IntroAba, SeloAtivo, Tabela, Tbody, Td, Th, Thead, Tr } from "../comum";
+import { Tabela, type ColunaTabela } from "@/components/ui/Tabela";
+import { IntroAba, SeloAtivo } from "../comum";
 import type { PapelEquipe, PerfilEquipeAdmin } from "@/types/admin";
 
 const ROTULO_PAPEL: Record<PapelEquipe, string> = {
@@ -129,13 +130,42 @@ export function EquipeAba() {
     }
   }
 
+  /* Fase 8 §C3 M2: uma descrição de colunas serve a grade do desktop e o
+     cartão do celular. O `<select>` de papel continua na linha — é a mesma
+     ação, no mesmo lugar, nas duas formas (M7). */
+  const colunas: readonly ColunaTabela<PerfilEquipeAdmin>[] = [
+    { chave: "nome", cabecalho: "Nome", celula: (p) => p.nome },
+    { chave: "email", cabecalho: "E-mail", celula: (p) => <span className="break-all">{p.email}</span> },
+    {
+      chave: "papel",
+      cabecalho: "Papel",
+      celula: (p) => (
+        <Selecao
+          aria-label={`Papel de ${p.nome}`}
+          value={p.papel}
+          className="sm:w-44"
+          onChange={(e) => setConfirmarPapel({ perfil: p, novoPapel: e.target.value as PapelEquipe })}
+        >
+          {PAPEIS.map((papel) => (
+            <option key={papel} value={papel}>
+              {ROTULO_PAPEL[papel]}
+            </option>
+          ))}
+        </Selecao>
+      ),
+    },
+    { chave: "estado", cabecalho: "Estado", celula: (p) => <SeloAtivo ativo={p.ativo} rotuloAtivo="Ativo" rotuloInativo="Desativado" /> },
+    {
+      chave: "convite",
+      cabecalho: "Convite",
+      celula: (p) => (p.convite_enviado_em ? `enviado em ${formatarDataHora(p.convite_enviado_em)}` : <Selo tom="ambar">não enviado</Selo>),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <IntroAba>
-          Quem entra no sistema e com que papel. O papel decide o que a pessoa vê: só admin e advogada veem patrimônio; relacionamento vê a lista de clientes
-          e a comunicação.
-        </IntroAba>
+        <IntroAba>Só admin e advogada veem patrimônio; relacionamento vê a lista de clientes e a comunicação.</IntroAba>
         {!novo && (
           <Botao variante="primario" onClick={() => setNovo({ nome: "", email: "", papel: "relacionamento" })}>
             Convidar
@@ -175,72 +205,34 @@ export function EquipeAba() {
         </Cartao>
       )}
 
-      {dados.itens.length === 0 && !novo ? (
-        <EstadoVazio ilustracao="lista" titulo="Ninguém na equipe ainda" descricao="Convide a Dra. Elaine e a equipe de relacionamento." />
-      ) : (
-        <Cartao preenchimento="sem">
-          <Tabela resumo="Equipe com papel, estado e convite">
-            <Thead>
-              <tr>
-                <Th>Nome</Th>
-                <Th>E-mail</Th>
-                <Th>Papel</Th>
-                <Th>Estado</Th>
-                <Th>Convite</Th>
-                <Th srOnly>Ações</Th>
-              </tr>
-            </Thead>
-            <Tbody>
-              {dados.itens.map((perfil) => (
-                <Tr key={perfil.id}>
-                  <Td rotulo="Nome" className="font-medium">
-                    {perfil.nome}
-                  </Td>
-                  <Td rotulo="E-mail" className="text-tinta-suave">
-                    {perfil.email}
-                  </Td>
-                  <Td rotulo="Papel">
-                    <Selecao
-                      aria-label={`Papel de ${perfil.nome}`}
-                      value={perfil.papel}
-                      className="sm:w-44"
-                      onChange={(e) => setConfirmarPapel({ perfil, novoPapel: e.target.value as PapelEquipe })}
-                    >
-                      {PAPEIS.map((p) => (
-                        <option key={p} value={p}>
-                          {ROTULO_PAPEL[p]}
-                        </option>
-                      ))}
-                    </Selecao>
-                  </Td>
-                  <Td rotulo="Estado">
-                    <SeloAtivo ativo={perfil.ativo} rotuloAtivo="Ativo" rotuloInativo="Desativado" />
-                  </Td>
-                  <Td rotulo="Convite" className="text-legenda text-tinta-suave">
-                    {perfil.convite_enviado_em ? `enviado em ${formatarDataHora(perfil.convite_enviado_em)}` : <Selo tom="ambar">não enviado</Selo>}
-                  </Td>
-                  <Td acoes>
-                    <div className="flex flex-wrap gap-2 sm:justify-end">
-                      <Botao variante="fantasma" tamanho="compacto" carregando={reenviandoId === perfil.id} onClick={() => reenviar(perfil)}>
-                        Reenviar convite
-                      </Botao>
-                      {perfil.ativo ? (
-                        <Botao variante="perigo" tamanho="compacto" onClick={() => setConfirmarDesativar({ perfil })}>
-                          Desativar
-                        </Botao>
-                      ) : (
-                        <Botao variante="secundario" tamanho="compacto" carregando={processando} onClick={() => mudarAtivo(perfil, true)}>
-                          Reativar
-                        </Botao>
-                      )}
-                    </div>
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Tabela>
-        </Cartao>
-      )}
+      <Cartao preenchimento="sem">
+        <div className="px-cartao py-item">
+          <Tabela
+            legenda="Equipe com papel, estado e convite"
+            colunas={colunas}
+            linhas={dados.itens}
+            chaveDaLinha={(p) => p.id}
+            tituloDoCartao={(p) => p.nome}
+            vazio={<EstadoVazio ilustracao="lista" titulo="Ninguém na equipe ainda" descricao="Convide a Dra. Elaine e a equipe de relacionamento." />}
+            acoes={(perfil) => (
+              <>
+                <Botao variante="fantasma" tamanho="compacto" carregando={reenviandoId === perfil.id} onClick={() => reenviar(perfil)}>
+                  Reenviar convite
+                </Botao>
+                {perfil.ativo ? (
+                  <Botao variante="perigo" tamanho="compacto" onClick={() => setConfirmarDesativar({ perfil })}>
+                    Desativar
+                  </Botao>
+                ) : (
+                  <Botao variante="secundario" tamanho="compacto" carregando={processando} onClick={() => mudarAtivo(perfil, true)}>
+                    Reativar
+                  </Botao>
+                )}
+              </>
+            )}
+          />
+        </div>
+      </Cartao>
 
       <ConfirmarAcao
         aberto={confirmarDesativar !== null}

@@ -3,8 +3,8 @@ export function BarraProgresso({ atual, total, rotulo }: { atual: number; total:
   const percentual = Math.round((atual / total) * 100);
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-3 text-sm text-tinta-suave">
-        <span className="text-rotulo font-medium uppercase text-tinta-fraca">
+      <div className="flex items-baseline justify-between gap-3 text-publico text-tinta-suave">
+        <span className="text-publico tracking-[0.08em] font-medium uppercase text-tinta-fraca">
           Passo {atual} de {total}
         </span>
         <span className="font-bold text-tinta">{rotulo}</span>

@@ -110,7 +110,19 @@ export async function enfileirarLigacaoIa(
   params: { jornadaId: string; solicitadaPor: string | null },
 ): Promise<{ ligacao: LigacaoIa; aviso: string | null; reaproveitada: boolean }> {
   const jornada = await carregarJornada(admin, params.jornadaId);
-  if (jornada.desfecho !== "aberta") throw erroConflito("jornada_fechada", "A jornada não está aberta.");
+  // Fase 8: a mensagem nomeia o estado em vez de dizer só "não está aberta" —
+  // "arquivado" tem uma saída óbvia (reabrir), "perdido" não tem, e quem
+  // aperta o botão precisa saber em qual dos dois está. A trava do CRON é
+  // outra e vive no banco (`reivindicar_ligacoes_ia`, 0086): esta aqui só
+  // protege o disparo NOVO, que era o furo apontado no reconhecimento.
+  if (jornada.desfecho !== "aberta") {
+    throw erroConflito(
+      "jornada_fechada",
+      jornada.desfecho === "congelada"
+        ? "Este processo está arquivado. Reabra o processo para a IA poder ligar."
+        : "Este processo não está em andamento — a IA não liga para processo encerrado.",
+    );
+  }
   if (jornada.nivel_pago < 1) {
     throw erroConflito("sem_pagamento", "A ligação por IA marca a Sessão de Viabilidade contratada — esta jornada ainda não tem pagamento aprovado.");
   }

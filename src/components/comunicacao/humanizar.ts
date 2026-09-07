@@ -1,5 +1,4 @@
-import type { CanalMensagem, MensagemDaFila, StatusMensagem } from "./api-comunicacao";
-import type { TomSelo } from "@/components/ui/Selo";
+import type { CanalMensagem, MensagemDaFila } from "./api-comunicacao";
 
 /**
  * Vocabulário da tela Comunicação: chave de template → motivo humano,
@@ -26,21 +25,10 @@ export function rotuloCanal(canal: CanalMensagem): string {
   return canal === "email" ? "E-mail" : "WhatsApp";
 }
 
-export const TOM_STATUS: Record<StatusMensagem, TomSelo> = {
-  pendente: "neutro",
-  enviando: "azul",
-  enviada: "verde",
-  falhou: "vermelho",
-  cancelada: "neutro",
-};
-
-export const ROTULO_STATUS: Record<StatusMensagem, string> = {
-  pendente: "Pendente",
-  enviando: "Enviando",
-  enviada: "Enviada",
-  falhou: "Falhou",
-  cancelada: "Cancelada",
-};
+/* `TOM_STATUS`/`ROTULO_STATUS` saíram na Fase 8 (D19): rótulo, glifo e tom do
+   `status_mensagem` são do catálogo único (`lib/estados/catalogo.ts`, domínio
+   `mensagem`), consumido por `ui/SeloEstado`. Duas listas para a mesma coisa
+   era exatamente como "Falhou" ficava vermelho numa tela e cinza na outra. */
 
 export type GrupoQuando = "atrasada" | "hoje" | "amanha" | "esta_semana" | "depois" | "sem_data";
 

@@ -171,11 +171,11 @@ export function IndicadoresApp() {
           </section>
 
           {/* -------------------------------------------------------- funil */}
-          <Cartao rotulo="Funil da coorte" titulo="De quem entrou a quem contratou a holding" descricao="Cada barra é um subconjunto da anterior. A taxa ao lado é a passagem entre etapas vizinhas; a segunda, quando aparece, é sobre a coorte inteira.">
+          <Cartao rotulo="Fases do processo, por coorte" titulo="De quem entrou a quem contratou a holding" descricao="Cada barra é um subconjunto da anterior. A taxa ao lado é a passagem entre etapas vizinhas; a segunda, quando aparece, é sobre a coorte inteira.">
             {coorteVazia ? (
-              <EstadoVazio compacto titulo="Sem coorte para desenhar" descricao="Esta edição ainda não tem jornada ligada a ela." />
+              <EstadoVazio compacto titulo="Sem coorte para desenhar" descricao="Esta edição ainda não tem processo ligado a ela." />
             ) : (
-              <FunilEtapas etapas={etapasFunil} tema={tema} rotulo={`Funil da coorte — ${tituloSelecao}`} />
+              <FunilEtapas etapas={etapasFunil} tema={tema} rotulo={`Fases do processo, por coorte — ${tituloSelecao}`} />
             )}
           </Cartao>
 

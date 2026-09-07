@@ -10,9 +10,9 @@ import type { EstadoBloco } from "@/types/painel-ui";
  * cinza de "nenhum resultado encontrado" do resto do sistema (CLAUDE.md /
  * ARQUITETURA-FASE-2 §8 UX).
  */
-function IconeTudoCerto() {
+export function IconeTudoCerto() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-current text-[color:var(--verde)]">
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-current text-[color:var(--estado-verde)]">
       <path d="M10 1.5A8.5 8.5 0 1 0 18.5 10 8.51 8.51 0 0 0 10 1.5Zm4.28 6.2-4.9 5.6a1 1 0 0 1-1.43.07l-2.6-2.4a1 1 0 1 1 1.36-1.47l1.85 1.71 4.2-4.8a1 1 0 0 1 1.52 1.3Z" />
     </svg>
   );
@@ -103,7 +103,7 @@ export function Bloco<T>({ id, rotulo, titulo, tituloTitle, dica, mensagemNadaPe
         <h3 id={`${id}-titulo`} title={tituloTitle} className="text-sm font-bold text-tinta">
           {titulo}
         </h3>
-        <p className="text-sm text-[color:var(--verde)]">{mensagemNadaPendente}</p>
+        <p className="text-sm text-[color:var(--estado-verde)]">{mensagemNadaPendente}</p>
         {dica && <span className="ml-auto">{<BotaoDica texto={dica} rotulo={titulo} />}</span>}
       </section>
     );
@@ -127,7 +127,7 @@ export function Bloco<T>({ id, rotulo, titulo, tituloTitle, dica, mensagemNadaPe
             <span
               aria-label={`${contagem} ${contagem === 1 ? "item" : "itens"}`}
               className={`inline-flex min-h-8 min-w-8 items-center justify-center rounded-full px-3 text-sm font-bold tabular-nums ${
-                urgenteAtivo ? "bg-vermelho-fraco text-[color:var(--vermelho)]" : "bg-latao-fraco text-tinta"
+                urgenteAtivo ? "bg-vermelho-fraco text-[color:var(--estado-vermelho)]" : "bg-latao-fraco text-tinta"
               }`}
             >
               {contagem}

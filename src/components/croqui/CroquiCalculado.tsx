@@ -12,6 +12,8 @@ import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estad
 import { LinkBotao } from "@/components/ui/LinkBotao";
 import { formatarDataHora } from "@/lib/formatar";
 import { rotulo } from "@/lib/vocabulario";
+import { SeloEstado } from "@/components/ui/SeloEstado";
+import { proximaFaseDoCroqui, type CroquiFase } from "@/lib/pasta/sinais";
 import { buscarCroquiCalculo, fixarVersaoCroqui } from "./apiCroquiCalculo";
 import { useToast } from "@/hooks/useToast";
 import { BaixarRelatorio } from "./BaixarRelatorio";
@@ -38,6 +40,19 @@ export interface CroquiCalculadoProps {
   /** Rotas irmãs. Ausente = o botão não aparece (nunca link quebrado). */
   hrefSimular?: string;
   hrefApresentar?: string;
+  /**
+   * Fase 8 (D12) — a FASE do croqui (as seis), vinda de `vw_croqui_estado` via
+   * `faseDoCroqui(sinais)`. Prop e não derivação local **de propósito**: se
+   * esta tela recalculasse a fase a partir do que tem em mãos (`atual`,
+   * `historico`), seria a quinta derivação do mesmo fato — e é justamente a
+   * multiplicação de derivações que fez "fixar uma versão" anunciar "croqui
+   * pronto" (incidente da 0070).
+   *
+   * `null` (o default) esconde o selo em vez de mostrar "Sem informação": o
+   * estado da VERSÃO, ao lado, já está dito, e um segundo selo mudo só
+   * ocuparia espaço.
+   */
+  fase?: CroquiFase | null;
 }
 
 /**
@@ -74,6 +89,7 @@ export function CroquiCalculado({
   voltar,
   hrefSimular,
   hrefApresentar,
+  fase = null,
 }: CroquiCalculadoProps) {
   const buscar = useCallback(() => buscarCroquiCalculo(jornadaId), [jornadaId]);
   const { dados, carregando, erro, recarregar } = useRecurso(buscar, [jornadaId]);
@@ -146,6 +162,10 @@ export function CroquiCalculado({
               ← {voltar.rotulo}
             </Link>
           )}
+          {/* A FASE (documento) e o estado da VERSÃO (cálculo) são coisas
+              diferentes e ficam lado a lado: "Apresentado" + "Ficha mudou" é
+              uma situação real, e um selo só não conseguiria dizê-la. */}
+          <SeloEstado dominio="croqui" estado={fase} mostrarDesconhecido={false} />
           <EstadoDaVersao atual={atual} desatualizado={desatualizado} />
         </div>
 
@@ -170,6 +190,13 @@ export function CroquiCalculado({
           </Botao>
         </div>
       </div>
+
+      {/* O que falta para a próxima fase — o sistema guia, não o tutorial.
+          Só aparece com a fase conhecida: instrução sobre estado que não se
+          sabe é chute. */}
+      {proximaFaseDoCroqui(fase) && (
+        <p className="text-sm text-tinta-suave">{proximaFaseDoCroqui(fase)?.falta}</p>
+      )}
 
       {erroAoFixar != null && <ErroAoFixar erro={erroAoFixar} />}
 

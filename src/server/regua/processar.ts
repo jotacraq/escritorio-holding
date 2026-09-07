@@ -28,6 +28,12 @@ export interface ResultadoProcessamento {
   falhas: number;
   /** Reivindicadas mas devolvidas à fila por dado ausente (sala sem link etc.) — não é falha. */
   em_hold: number;
+  /**
+   * Canceladas porque o processo fechou entre a claim e o envio (Fase 8).
+   * Não é falha nem hold: é a automação obedecendo ao arquivamento. Opcional
+   * para não quebrar quem já lê este objeto.
+   */
+  canceladas?: number;
 }
 
 /**
@@ -79,12 +85,53 @@ export async function processarFilaRegua(
   }
 
   const mensagens = (lote ?? []) as MensagemAgendada[];
-  const resultado: ResultadoProcessamento = { canais, processadas: mensagens.length, enviadas: 0, falhas: 0, em_hold: 0 };
+  const resultado: ResultadoProcessamento = { canais, processadas: mensagens.length, enviadas: 0, falhas: 0, em_hold: 0, canceladas: 0 };
   if (mensagens.length === 0) return resultado;
+
+  // ---------------------------------------------------------------------
+  // Fase 8 — PROCESSO FECHADO NÃO RECEBE MENSAGEM.
+  //
+  // Até a 0086 este arquivo não conhecia a palavra `desfecho` (grep = 0): a
+  // mensagem agendada antes de a jornada fechar saía depois, para uma família
+  // cujo processo o escritório considerava encerrado. A trava principal está
+  // no banco (`reivindicar_mensagens_pendentes` só reivindica jornada
+  // `aberta`); esta é a segunda, e existe porque este é o último ponto antes
+  // de o e-mail sair: se alguém trocar a RPC, ou se a jornada fechar entre a
+  // claim e o envio, o e-mail não sai mesmo assim.
+  //
+  // UMA consulta por lote (`in`), não uma por mensagem — a régua roda a cada
+  // minuto e não pode virar N+1.
+  // ---------------------------------------------------------------------
+  const jornadasDoLote = [...new Set(mensagens.map((m) => m.jornada_id))];
+  const { data: abertasLidas, error: erroJornadas } = await supabaseAdmin
+    .from("jornadas")
+    .select("id, desfecho")
+    .in("id", jornadasDoLote);
+  if (erroJornadas) {
+    throw new Error(`falha_ao_conferir_desfecho: ${erroJornadas.message}`);
+  }
+  // Fail-closed: jornada que não voltou da consulta NÃO entra no conjunto de
+  // abertas. Some da lista = não recebe.
+  const jornadasAbertas = new Set(
+    ((abertasLidas ?? []) as { id: string; desfecho: string }[]).filter((j) => j.desfecho === "aberta").map((j) => j.id),
+  );
 
   const emailConfigurado = resendConfigurado();
 
   for (const mensagem of mensagens) {
+    // O processo fechou entre a claim e agora (ou a RPC foi trocada): cancela
+    // com MOTIVO, não com erro. `erro` é "o envio falhou"; aqui o envio foi
+    // interrompido de propósito, e o marcador é o que a tela de mensagens lê
+    // para explicar por quê.
+    if (!jornadasAbertas.has(mensagem.jornada_id)) {
+      resultado.canceladas = (resultado.canceladas ?? 0) + 1;
+      await supabaseAdmin
+        .from("mensagens_agendadas")
+        .update({ status: "cancelada", motivo_cancelamento: "jornada_fechada" })
+        .eq("id", mensagem.id);
+      continue;
+    }
+
     // Sem credencial de e-mail: a mensagem NUNCA vira "enviada". Marca falhou e
     // deixa visível na tela de pendências — nunca some em silêncio.
     if (mensagem.canal === "email" && !emailConfigurado) {

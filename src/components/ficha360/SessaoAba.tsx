@@ -19,6 +19,7 @@ import { SessaoPresenca } from "./SessaoPresenca";
 import { SessaoSala } from "./SessaoSala";
 import { SessaoLigacaoIa, TarefaLigarParaAgendar } from "./SessaoLigacaoIa";
 import { SessaoTarefaCroqui } from "./SessaoTarefaCroqui";
+import { useFocoAoAbrir } from "./useFocoAoAbrir";
 
 const ROTULOS_RESULTADO: Record<NonNullable<SessaoViabilidade["resultado"]>, { rotulo: string; tom: TomSelo }> = {
   fechou: { rotulo: "Fechou", tom: "verde" },
@@ -275,6 +276,10 @@ function ComposicaoFamiliar({ jornadaId }: { jornadaId: string }) {
   const [novo, setNovo] = useState<{ parentesco: string; nome: string } | null>(null);
   const [erroParentesco, setErroParentesco] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Foco no primeiro campo quando o formulário APARECE, não na montagem da
+  // Ficha: quem clicou em "Adicionar familiar" continua no teclado. Ver
+  // `useFocoAoAbrir` (substitui o `autoFocus`, aviso jsx-a11y da Fase 8).
+  const refParentesco = useFocoAoAbrir<HTMLInputElement>(novo !== null);
 
   function carregar() {
     listarFamiliares(jornadaId)
@@ -360,7 +365,7 @@ function ComposicaoFamiliar({ jornadaId }: { jornadaId: string }) {
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <Campo rotulo="Parentesco" erro={erroParentesco} obrigatorio>
-                <Entrada value={novo.parentesco} onChange={(e) => setNovo({ ...novo, parentesco: e.target.value })} placeholder="cônjuge, filho…" autoFocus />
+                <Entrada value={novo.parentesco} onChange={(e) => setNovo({ ...novo, parentesco: e.target.value })} ref={refParentesco} placeholder="cônjuge, filho…" />
               </Campo>
               <Campo rotulo="Nome" extra="opcional">
                 <Entrada value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} />

@@ -44,9 +44,23 @@ export default function PaginaAgenda() {
         titulo="Agenda"
         descricao="Sessões marcadas e os dias em que a equipe atende."
         acoes={
-          <LinkBotao href="/agenda#disponibilidade" variante="secundario">
-            Disponibilidade da equipe
-          </LinkBotao>
+          // Fase 8 §C5: a ação primária da tela fica visível sem rolar, e é a
+          // que se faz todo dia. Marcar uma sessão sempre começa por escolher
+          // o cliente (o agendamento pertence a um processo), então o botão
+          // leva para a lista — é o mesmo caminho que o estado vazio já dizia
+          // em palavras, agora como botão.
+          <>
+            {/* No celular esta ação vive na `BarraAcaoMobile` da aba Sessões
+                (zona do polegar). Repetir aqui poria DOIS "Marcar sessão"
+                laranja na mesma dobra — para quem lê devagar, dois botões
+                iguais são duas perguntas, não uma resposta. */}
+            <LinkBotao href="/clientes" variante="cta" className="max-md:hidden">
+              Marcar sessão
+            </LinkBotao>
+            <LinkBotao href="/agenda#disponibilidade" variante="secundario">
+              Disponibilidade da equipe
+            </LinkBotao>
+          </>
         }
       />
 

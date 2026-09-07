@@ -71,6 +71,40 @@ export const VOCABULARIO = {
   },
   holding: { humano: "Holding" },
 
+  // --- A língua do advogado (Fase 8, D18) ---------------------------------
+  // O advogado brasileiro não pensa em "jornada", "timeline" nem "etapa" — ele
+  // pensa em processo, andamento, fase e prazo, que é o que PJe, e-SAJ, Astrea,
+  // Projuris e ADVBOX mostram há anos. Aqui só o RÓTULO muda: no banco e no
+  // código os nomes continuam `jornadas`, `eventos_timeline`, `etapa` e
+  // `vence_em`. Renomear conceito exigiria migration e quebraria o Glossário —
+  // e o Glossário manda, então o que fizemos foi fazê-lo crescer (as quatro
+  // entradas novas em `brain/03 - Dominio/Glossario.md`).
+  processo: {
+    humano: "Processo",
+    sigla: "jornada",
+    explique: "O caminho de um cliente do seminário até a holding contratada. Nunca 'pipeline', 'funil' nem 'deal'.",
+  },
+  andamentos: {
+    humano: "Andamentos",
+    sigla: "timeline",
+    explique: "O histórico datado do que aconteceu no processo, do mais recente para o mais antigo.",
+  },
+  fase: {
+    humano: "Fase",
+    sigla: "etapa",
+    explique: "Em qual das três sessões o processo está: Viabilidade, Croqui Estrutural ou Holding.",
+  },
+  prazo: {
+    humano: "Prazo",
+    sigla: "vence em",
+    explique: "A data-limite de uma tarefa. Tem destaque próprio, separado do status do andamento.",
+  },
+  arquivado: {
+    humano: "Arquivado",
+    sigla: "congelada",
+    explique: "Processo que não andou e saiu da lista ativa, sem afirmar ganho nem perda. É reversível.",
+  },
+
   // --- Jargão que sai da tela --------------------------------------------
   briefing_etapa: {
     humano: "Preparo da sessão",

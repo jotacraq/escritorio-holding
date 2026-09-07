@@ -56,7 +56,16 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     if (error) throw error;
     if (!croqui) throw erroNaoEncontrado("Croqui não encontrado.");
 
-    return NextResponse.json({ croqui });
+    // Fase 8 (D12): a FASE vem de `vw_croqui_estado` (0086), a mesma fonte da
+    // Ficha e da lista. Tolerante: view indisponível → `fase: null` e a tela
+    // mostra "Sem informação", nunca inventa.
+    const { data: estado } = await supabase
+      .from("vw_croqui_estado")
+      .select("fase")
+      .eq("croqui_id", id)
+      .maybeSingle();
+
+    return NextResponse.json({ croqui: { ...croqui, fase: estado?.fase ?? null } });
   } catch (erro) {
     return respostaErro("GET /api/croquis/[id]", erro);
   }

@@ -110,10 +110,7 @@ export function TemplatesAba() {
   return (
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <IntroAba>
-          O texto de cada mensagem da régua, por canal. Versão nova nunca substitui a anterior: ela é criada e, se marcada, passa a valer. O que já
-          saiu guarda o texto que foi enviado.
-        </IntroAba>
+        <IntroAba>Versão nova não substitui a anterior: ela é criada e, se marcada, passa a valer. O que já saiu guarda o texto enviado.</IntroAba>
         {!novo && (
           <Botao variante="primario" onClick={() => setNovo(formularioVazio())}>
             Novo template
@@ -180,8 +177,14 @@ export function TemplatesAba() {
             <ul className="divide-y divide-linha">
               {versoes.map((versao) => (
                 <li key={versao.id} className="flex flex-col gap-2 px-5 py-4 sm:px-6">
+                  {/* Fase 8: a 360 px este `flex-1 min-w-0` colapsava para 53 px
+                      — os dois botões ao lado não desciam, e o assunto do
+                      template ficava ilegível dentro da própria caixa
+                      (`scrollWidth` 81 contra `clientWidth` 53). `basis-full`
+                      abaixo de `sm` põe o texto numa linha só dele; a partir de
+                      `sm` volta a dividir a linha com as ações. */}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
                       <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-tinta">
                         v{versao.versao}
                         <SeloAtivo ativo={versao.ativo} rotuloAtivo="Em uso" rotuloInativo="Histórico" />

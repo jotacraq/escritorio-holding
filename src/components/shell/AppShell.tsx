@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Nav } from "./Nav";
+import { NavInferior } from "./NavInferior";
+import { EscalaTexto, SCRIPT_ESCALA_INICIAL } from "./EscalaTexto";
 import { TemaToggle } from "./TemaToggle";
 import { PaletaComandos } from "@/components/comandos/PaletaComandos";
 import { ROTULO_PAPEL, useUsuarioAtual } from "@/hooks/useUsuarioAtual";
@@ -125,6 +127,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Nav aoNavegar={() => setGavetaAberta(false)} />
       <div className="mt-auto flex flex-col gap-2 border-t border-linha pt-3">
         <CartaoUsuario />
+        {/* Fase 8 — as duas preferências de leitura moram juntas, no rodapé da
+            lateral: tamanho do texto (D22) e tema. */}
+        <EscalaTexto className="px-2" />
         {/* Alinhado à direita, de propósito: o canto inferior esquerdo é onde o
             indicador de dev do Next se ancora, e os dois não podem se sobrepor. */}
         <div className="flex justify-end px-2">
@@ -136,6 +141,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* Escala de texto aplicada antes do primeiro paint — mesmo motivo do
+          script de tema no `layout.tsx`: quem escolheu 18px não pode ver a
+          página nascer em 14px e pular. Fica aqui, e não no layout raiz, porque
+          a escala é preferência da ÁREA DA EQUIPE; a área pública do cliente
+          não tem seletor (`.area-publica` zera o fator). */}
+      <script dangerouslySetInnerHTML={{ __html: SCRIPT_ESCALA_INICIAL }} />
+
       <a
         href="#conteudo-principal"
         className="sr-only z-[70] rounded-controle bg-papel-elevado px-4 py-3 text-sm font-bold text-tinta shadow-flutuante focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:flex focus:min-h-11 focus:items-center"
@@ -186,8 +198,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         id="navegacao-lateral"
         ref={gavetaRef}
         aria-label="Menu"
-        className={`nao-imprimir z-40 flex w-[17rem] max-w-[88vw] shrink-0 flex-col gap-3 overflow-y-auto border-r border-linha bg-papel px-3 py-4 transition-transform duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:translate-x-0 ${
-          gavetaAberta ? "fixed inset-y-0 left-0 translate-x-0 shadow-flutuante" : "fixed inset-y-0 left-0 -translate-x-full lg:relative lg:shadow-none"
+        /* `invisible` quando fechada, abaixo de `lg` (Fase 8). Só o
+           `-translate-x-full` tirava a gaveta da tela mas NÃO do Tab: no
+           celular, tabular a partir do cabeçalho entrava nos cinco links do
+           menu invisível — foco em elemento que ninguém vê, e agora com a
+           `NavInferior` seriam duas navegações duplicadas na ordem de leitura.
+           `visibility` entra na lista de transição de propósito: propriedade
+           discreta só vira `hidden` no FIM da transição, então a gaveta ainda
+           desliza inteira antes de sumir. */
+        className={`nao-imprimir z-40 flex w-[17rem] max-w-[88vw] shrink-0 flex-col gap-3 overflow-y-auto border-r border-linha bg-papel px-3 py-4 transition-[transform,visibility] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:visible lg:translate-x-0 ${
+          gavetaAberta ? "fixed inset-y-0 left-0 translate-x-0 shadow-flutuante" : "invisible fixed inset-y-0 left-0 -translate-x-full lg:relative lg:shadow-none"
         }`}
       >
         {conteudoLateral}
@@ -196,6 +216,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main id="conteudo-principal" tabIndex={-1} className="min-w-0 flex-1 px-3 py-4 outline-none sm:px-5 sm:py-5 lg:px-6 lg:py-6">
         <div className="mx-auto w-full max-w-7xl">{children}</div>
       </main>
+
+      {/* Barra inferior do celular — as cinco áreas a um toque, com rótulo.
+          Depois do `<main>` no DOM: o Tab passa pelo conteúdo antes de chegar
+          nela, que é a ordem que se espera de uma barra de rodapé. */}
+      <NavInferior />
 
       <PaletaComandos aberta={paletaAberta} aoFechar={() => setPaletaAberta(false)} />
     </div>
