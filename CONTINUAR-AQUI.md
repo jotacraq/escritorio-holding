@@ -1,5 +1,32 @@
 # Continuar daqui — SIC-HF
 
+> ### 🧪 DÍVIDA NOMEADA — 2 testes de a11y falham sob contenção de CPU (11/09/2026)
+>
+> **Arquivos:** `src/components/shell/EscalaTexto.test.tsx` · `src/components/painel/Travado.test.tsx`
+> (ambos da Fase 9, `b3db44d`; **nenhuma linha da Fase 10 os toca**).
+>
+> **Diagnóstico** (feito pelo `fable-orchestrator`, não suposto): os dois renderizam
+> **síncrono** — `EscalaTexto` sem fetch, `Travado` recebendo estado por prop. Não têm o
+> padrão de espera por ticks. Quando falham sob carga, o DOM auditado está completo: a
+> falha só pode ser **timeout do próprio `axe.run`** (CPU-pesado; o teste do `EscalaTexto`
+> custa 844 ms numa rodada boa e estoura o teto do vitest sob contenção).
+>
+> **Não é verde falso** — falham **alto**, e barulhento é o oposto de mentiroso. O vetor de
+> verde falso era outro (`padrão-de-ticks` + `axe`), estava em `RecebidasFicha.test.tsx` e
+> `AgenteWhatsappAba.test.tsx`, e **foi corrigido** nesta fase.
+>
+> **Correção candidata:** `testTimeout` explícito nos testes de axe, ou `maxForks` limitado
+> na rodada local.
+>
+> 🔴 **GATILHO (condição do Fable, não sugestão):** se **qualquer um dos dois** falhar de
+> novo em rodada nomeada, a correção **sai deste registro e entra na iteração seguinte**.
+> Sem dono e sem gatilho, a dívida seria recusada.
+>
+> **Modelo pronto:** o conserto de causa já feito em `PainelCopiloto.test.tsx` —
+> `waitFor` na condição observável em vez de contar ticks; 51 usos corrigidos por 2
+> helpers, sem tocar em nenhuma asserção.
+
+
 Escrito em **03/09/2026**; o bloco mais recente fica sempre no TOPO (último: Fase 9, 07/09/2026).
 Para retomar o projeto em outra máquina sem perder contexto.
 Se você é uma IA abrindo este repositório pela primeira vez: **leia este arquivo inteiro antes de tocar em qualquer coisa**, depois `CLAUDE.md`, depois `brain/00 - Home.md`.

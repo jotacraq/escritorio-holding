@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { AgenteResumo } from "@/types/agente";
 
@@ -49,10 +50,18 @@ const BASE: AgenteResumo = {
 async function abrir(resumo: Partial<AgenteResumo>) {
   estado.resumo = { ...BASE, ...resumo };
   const montado = montar(<AgenteWhatsappAba />);
-  // `useRecurso` resolve numa continuação de microtask; dois turnos bastam.
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  // Achado do Fable (verde falso de axe, mesmo vetor de PainelCopiloto e
+  // RecebidasFicha): esperar um número FIXO de ticks é suposição — sob
+  // contenção de CPU o `useRecurso` pode ainda não ter resolvido, e
+  // `AgenteWhatsappAba` renderiza `EsqueletoCartao` (rótulo em `sr-only`,
+  // ainda presente no `textContent`) nesse meio-tempo. `semViolacoes`
+  // auditaria o ESQUELETO, não a tela real, e passaria verde sem nunca ter
+  // visto o conteúdo de verdade. `waitFor` espera a CONDIÇÃO observável —
+  // o rótulo do esqueleto sumir — não uma contagem de voltas do loop de
+  // microtasks.
+  await waitFor(() => {
+    expect(montado.queryByText("Abrindo o agente de WhatsApp…")).toBeNull();
+  });
   return montado;
 }
 

@@ -180,13 +180,27 @@ async function buscarRecorteBriefing(
 }
 
 /**
- * `participantes` (0091, jsonb) — lista de rótulos do provedor (Fatia 4,
- * ainda vazia nesta fatia). Função pura de normalização: entrada não confiável
- * (jsonb solto) → array de string, nunca lança.
+ * `participantes` (0091, jsonb) — Fatia 4: lista de `{nome, entrou_em,
+ * saiu_em}` que `server/copiloto/participantes.ts` grava a partir dos
+ * eventos `participant_events.join`/`.leave` do webhook. Aqui só a CONTAGEM
+ * de quem está PRESENTE AGORA (`saiu_em === null`) sai desta função — o NOME
+ * nunca vai para o contexto de IA (§7 do plano: fronteira de PII, "um lugar
+ * só"). Entrada não confiável (jsonb solto, ou formato antigo de array de
+ * string de uma versão anterior desta fatia) → nunca lança, cai em vazio.
  */
 function normalizarParticipantes(bruto: unknown): string[] {
   if (!Array.isArray(bruto)) return [];
-  return bruto.filter((item): item is string => typeof item === "string");
+  const presentes: string[] = [];
+  for (const item of bruto) {
+    if (typeof item === "string") {
+      // Formato legado (pré-4c): rótulo solto, sempre contado como presente.
+      presentes.push(item);
+    } else if (item && typeof item === "object" && typeof (item as { nome?: unknown }).nome === "string") {
+      const saiuEm = (item as { saiu_em?: unknown }).saiu_em;
+      if (saiuEm === null || saiuEm === undefined) presentes.push((item as { nome: string }).nome);
+    }
+  }
+  return presentes;
 }
 
 /**

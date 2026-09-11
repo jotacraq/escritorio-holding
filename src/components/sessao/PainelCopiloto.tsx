@@ -7,12 +7,15 @@ import {
   buscarPollingCopiloto,
   encerrarCopiloto,
   listarSegmentosCopiloto,
+  pedirBotCopiloto,
   pedirSugestaoCopiloto,
   registrarDesfechoSugestaoCopiloto,
   registrarSegmentoManual,
 } from "@/components/sessao/api";
 import type {
+  ComparacaoDecisoresPresentes,
   DesfechoCopiloto,
+  DetalhesSalaInvalidaBot,
   InfoCicloCopiloto,
   RespostaSugestaoCopiloto,
   SegmentoCopiloto,
@@ -363,6 +366,8 @@ export function PainelCopiloto({
       )}
 
       <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+
+      {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
 
       {!estado.bloco_atual_id ? (
         <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para mostrar o que falta." />
@@ -926,6 +931,273 @@ function DesvioSugerido({
         </Botao>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fatia 4 (docs/ARQUITETURA-FASE-10.md §4.2, §4.2.1, §4.2.2, §5, §6.2.2, §8,
+// §12) — o bot na sala (Recall.ai). `PainelBot` pede o bot via
+// `POST .../copiloto/bot`; `ApresentacaoComparacaoDecisores` mostra o fato
+// participantes x decisores (camada 1 do §5, ZERO IA) quando o chamador
+// tiver o dado — hoje NENHUMA rota de leitura devolve
+// `ComparacaoDecisoresPresentes` (só `POST .../bot` foi entregue nesta
+// rodada; `compararComDecisores` em `server/copiloto/participantes.ts`
+// ainda não tem chamador HTTP). O componente é escrito pronto para reuso
+// assim que essa rota existir — sem inventar uma chamada de rede que não
+// existe (regra da casa: campo novo nasce vazio, a tela mostra vazio,
+// nunca dado plausível).
+// ---------------------------------------------------------------------------
+
+/** Rótulo humano de cada código de recusa do bot (route.ts, comentário de
+ * topo — mesma ordem das travas). Três categorias distintas de propósito:
+ *  - ESTADO NORMAL, sem alarme (`bot_ja_pedido`, `audio_ao_vivo_desligado`,
+ *    `provedor_audio_nao_configurado`) — tratados fora desta tabela, como
+ *    `EstadoVazio`/`role=status`, nunca como `role=alert` vermelho;
+ *  - erro transiente, pode tentar de novo (`falha_provedor_bot`,
+ *    `servico_indisponivel`);
+ *  - erro do LINK da sala (`sala_invalida`) — mensagem própria com o
+ *    `sub_codigo`, montada em `mensagemSalaInvalida()`, não nesta tabela. */
+const MENSAGENS_RECUSA_BOT: Record<string, { titulo: string; descricao: string; podeTentarDeNovo: boolean }> = {
+  sessao_nao_encontrada: {
+    titulo: "Sessão não encontrada",
+    descricao: "Não foi possível localizar esta Sessão de Viabilidade.",
+    podeTentarDeNovo: false,
+  },
+  sem_link_sala: {
+    titulo: "Sem link de sala cadastrado",
+    descricao: "Cole o link da reunião na Ficha antes de pedir o bot.",
+    podeTentarDeNovo: false,
+  },
+  copiloto_ao_vivo_bloqueado: {
+    titulo: "Copiloto ao vivo bloqueado",
+    descricao:
+      "Falta decisão jurídica ativa ou consentimento do titular para esta sessão. O bot não pode entrar na sala enquanto isto não for resolvido.",
+    podeTentarDeNovo: false,
+  },
+  servico_indisponivel: {
+    titulo: "O bot não está configurado no servidor",
+    descricao: "Falta configuração técnica (chave do provedor ou segredo do webhook). A equipe técnica resolve isso em Admin → Integrações.",
+    podeTentarDeNovo: false,
+  },
+  falha_provedor_bot: {
+    titulo: "O provedor do bot não respondeu como esperado",
+    descricao: "Pode tentar de novo — às vezes é um caso isolado.",
+    podeTentarDeNovo: true,
+  },
+  retencao_infinita_detectada: {
+    titulo: "O bot foi encerrado por segurança",
+    descricao:
+      "O fornecedor devolveu retenção indefinida do áudio, apesar do pedido explícito de prazo limitado — nenhum segmento foi gravado. Avise a equipe técnica antes de tentar de novo.",
+    podeTentarDeNovo: false,
+  },
+};
+
+/** O `sub_codigo` é o detalhe que mais importa (§4.2.2): `meeting_not_found`
+ * é link de sala errado, o defeito mais provável em produção (falha em
+ * ~200ms na sonda do Recall, zero consumo). A advogada resolve em 10
+ * segundos conferindo o link — "erro ao iniciar o bot" genérico faria ela
+ * chamar suporte à toa. `sub_codigo` desconhecido é mostrado CRU (nunca
+ * engolido): o backend não mapeia todos os códigos do fornecedor. */
+function mensagemSalaInvalida(detalhes: unknown): { titulo: string; descricao: string } {
+  const d = (detalhes ?? {}) as Partial<DetalhesSalaInvalidaBot>;
+  if (d.sub_codigo === "meeting_not_found") {
+    return {
+      titulo: "Não encontrei uma reunião nesse link",
+      descricao: "Confira o link da sala na Ficha da jornada — é o motivo mais comum deste aviso. Depois de corrigir, peça o bot de novo.",
+    };
+  }
+  if (d.sub_codigo) {
+    return {
+      titulo: "Não foi possível entrar na sala",
+      descricao: `O provedor recusou com o código "${d.sub_codigo}". Confira o link da sala na Ficha; se persistir, informe a equipe técnica com este código.`,
+    };
+  }
+  return {
+    titulo: "Não foi possível entrar na sala",
+    descricao: "O link pode estar errado ou a reunião não existe. Confira o link da sala na Ficha da jornada.",
+  };
+}
+
+/**
+ * Pedir o bot na sala (Fatia 4, B70/B71 aplicados ao áudio: a advogada pede,
+ * nunca é automático). Três estados de recusa tratados como ESTADO, não
+ * erro de alarme — `role=status`, nunca vermelho:
+ *
+ *  - `bot_ja_pedido`: idempotência, caso normal de clique duplo/reabrir a
+ *    tela — mostra que o bot já foi pedido, sem convidar a "tentar de novo".
+ *  - `audio_ao_vivo_desligado` / `provedor_audio_nao_configurado`: o ESTADO
+ *    NORMAL hoje (defaults `audio_ao_vivo=false`, `provedor_audio='nenhum'`
+ *    — B75, aguardando decisão da Dra. Elaine). Mesmo padrão do
+ *    `CopilotoDesligado`: sóbrio, sem alarme, dizendo o que falta e quem
+ *    decide — nunca um botão convidando a insistir numa ação que não vai
+ *    funcionar até a configuração mudar.
+ *
+ * Todo o resto (`copiloto_ao_vivo_bloqueado`, `sala_invalida` com
+ * `sub_codigo`, `servico_indisponivel`, `falha_provedor_bot`,
+ * `retencao_infinita_detectada`) usa `role=alert` — são recusas de
+ * verdade, cada uma com sua própria mensagem (nunca "erro ao iniciar"
+ * genérico).
+ */
+function PainelBot({ sessaoId }: { sessaoId: string }) {
+  const [pedindo, setPedindo] = useState(false);
+  const [resposta, setResposta] = useState<{ botId: string } | null>(null);
+  const [erro, setErro] = useState<unknown>(null);
+
+  async function pedir() {
+    if (pedindo) return;
+    setPedindo(true);
+    setErro(null);
+    try {
+      const r = await pedirBotCopiloto(sessaoId);
+      setResposta({ botId: r.bot_id });
+    } catch (e) {
+      setResposta(null);
+      setErro(e);
+    } finally {
+      setPedindo(false);
+    }
+  }
+
+  const codigoErro = erro instanceof ErroSessao ? erro.codigo : undefined;
+
+  // Estado NORMAL: bot não configurado hoje (default) — não é erro.
+  if (codigoErro === "audio_ao_vivo_desligado" || codigoErro === "provedor_audio_nao_configurado") {
+    return (
+      <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
+        <EstadoVazio
+          compacto
+          ilustracao="pasta"
+          titulo="Bot na sala ainda não configurado"
+          descricao="Esta funcionalidade está desligada por configuração — é o estado normal hoje, aguardando decisão da Dra. Elaine sobre o subprocessador (B75). O copiloto continua funcionando no modo digitado, sem o bot."
+        />
+      </Cartao>
+    );
+  }
+
+  // Estado NORMAL: idempotência — já existe bot pedido para esta sessão.
+  if (codigoErro === "bot_ja_pedido") {
+    return (
+      <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
+        <p role="status" className="text-sm text-tinta-suave">
+          Já existe um bot pedido para esta sessão — não é possível pedir um segundo.
+        </p>
+      </Cartao>
+    );
+  }
+
+  return (
+    <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-tinta-suave">
+          Um bot entra na sala como participante visível, grava e transcreve ao vivo para o copiloto — nunca sozinho,
+          só quando você pedir.
+        </p>
+
+        <Botao type="button" variante="primario" tamanho="compacto" carregando={pedindo} onClick={() => void pedir()} className="self-start">
+          Pedir bot na sala
+        </Botao>
+
+        {!pedindo && erro !== null && <MensagemRecusaBot erro={erro} codigo={codigoErro} aoTentarDeNovo={() => void pedir()} />}
+
+        {!pedindo && !erro && resposta && (
+          <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+            Bot pedido. Ele deve entrar na sala em instantes, visível para o cliente como participante.
+          </p>
+        )}
+      </div>
+    </Cartao>
+  );
+}
+
+function MensagemRecusaBot({
+  erro,
+  codigo,
+  aoTentarDeNovo,
+}: {
+  erro: unknown;
+  codigo: string | undefined;
+  aoTentarDeNovo: () => void;
+}) {
+  if (codigo === "sala_invalida") {
+    const { titulo, descricao } = mensagemSalaInvalida(erro instanceof ErroSessao ? erro.detalhes : undefined);
+    return (
+      <div role="alert" className="flex flex-col items-start gap-2 rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm">
+        <p className="font-bold text-[color:var(--vermelho)]">{titulo}</p>
+        <p className="text-tinta">{descricao}</p>
+        <Botao variante="perigo" tamanho="compacto" onClick={aoTentarDeNovo}>
+          Tentar de novo
+        </Botao>
+      </div>
+    );
+  }
+
+  const conhecida = codigo ? MENSAGENS_RECUSA_BOT[codigo] : undefined;
+  const { titulo, descricao, podeTentarDeNovo } = conhecida ?? {
+    titulo: "Não foi possível pedir o bot",
+    descricao: erro instanceof ErroSessao ? erro.message : "Erro inesperado. Tente de novo em instantes.",
+    podeTentarDeNovo: true,
+  };
+  return (
+    <div role="alert" className="flex flex-col items-start gap-2 rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm">
+      <p className="font-bold text-[color:var(--vermelho)]">{titulo}</p>
+      <p className="text-tinta">{descricao}</p>
+      {podeTentarDeNovo && (
+        <Botao variante="perigo" tamanho="compacto" onClick={aoTentarDeNovo}>
+          Tentar de novo
+        </Botao>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A CAMADA 1 do §5 — fato, SEM IA. Participantes da sala x decisores que o
+ * briefing esperava (`server/copiloto/participantes.ts::compararComDecisores`).
+ * Apresentado como FATO com as duas fontes visíveis (exemplo do plano):
+ * "O briefing esperava 2 decisores: Terezinha e Cleison. Na sala: Terezinha."
+ *
+ * `ausentes` != `ambiguos` — tratamento DISTINTO e deliberado:
+ *  - `ausentes`: o nome não casou com NENHUM participante — é FATO, a tela
+ *    afirma.
+ *  - `ambiguos`: o nome casou com MAIS DE UM participante (ou de forma
+ *    incerta) — a tela diz "não consegui conferir", NUNCA "ausente".
+ *    Casamento por nome normalizado erra (apelido, nome composto,
+ *    "Cleison" x "Cleison Roberto") — um falso "decisor ausente" faz a
+ *    advogada agir errado com a família na frente dela. `ambiguos` recebe
+ *    o mesmo cuidado que uma acusação: nunca afirmado sem certeza.
+ *
+ * Nome de pessoa real é texto puro (`{variável}` do JSX já escapa — React
+ * nunca interpreta HTML de string; nenhum `dangerouslySetInnerHTML` aqui,
+ * de propósito — nome de participante vem de fora e é entrada não confiável).
+ */
+export function ApresentacaoComparacaoDecisores({ comparacao }: { comparacao: ComparacaoDecisoresPresentes }) {
+  const { decisores_esperados, participantes_presentes, ausentes, ambiguos } = comparacao;
+  if (decisores_esperados.length === 0) return null;
+
+  return (
+    <Cartao rotulo="Decisores" titulo="Quem o briefing esperava x quem está na sala" preenchimento="compacto">
+      <div className="flex flex-col gap-2 text-sm text-tinta">
+        <p>
+          O briefing esperava {decisores_esperados.length === 1 ? "1 decisor" : `${decisores_esperados.length} decisores`}:{" "}
+          {decisores_esperados.join(", ")}. Na sala:{" "}
+          {participantes_presentes.length > 0 ? participantes_presentes.join(", ") : "ninguém identificado ainda"}.
+        </p>
+
+        {ausentes.length > 0 && (
+          <div className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3 py-2">
+            <p className="font-bold text-[color:var(--ambar)]">{ausentes.length === 1 ? "Não entrou na sala:" : "Não entraram na sala:"}</p>
+            <p className="text-tinta">{ausentes.join(", ")}</p>
+          </div>
+        )}
+
+        {ambiguos.length > 0 && (
+          <div className="rounded-controle border border-dashed border-linha-forte px-3 py-2">
+            <p className="font-bold text-tinta-fraca">Não foi possível confirmar:</p>
+            <p className="text-tinta-suave">{ambiguos.join(", ")} — o nome na sala não casou com confiança suficiente. Não trate como ausência.</p>
+          </div>
+        )}
+      </div>
+    </Cartao>
   );
 }
 

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { AgenteJornada } from "@/types/agente";
 import type { PapelEquipe } from "@/lib/api";
@@ -17,11 +18,31 @@ import type { PapelEquipe } from "@/lib/api";
  */
 
 const { estado } = vi.hoisted(() => ({
-  estado: { agente: null as AgenteJornada | null, papel: "admin" as PapelEquipe | null, acoes: [] as string[] },
+  estado: {
+    agente: null as AgenteJornada | null,
+    papel: "admin" as PapelEquipe | null,
+    acoes: [] as string[],
+    /** Sobe para `true` só DEPOIS que `lerAgenteDaJornada` resolveu — é o
+     * dado assíncrono REAL que faz `useRecurso` sair de `carregando`.
+     * `abrir()` espera esta flag (achado do Fable, RecebidasFicha:146-149:
+     * o helper antigo esperava um número fixo de ticks e podia devolver com
+     * o componente ainda em `carregando && !dados` — que aqui renderiza
+     * `null`, e `semViolacoes` audita um container VAZIO sem violação
+     * nenhuma: verde sem nunca ter visto a tela real). Marcada numa
+     * continuação de microtask, nunca de forma síncrona — para refletir de
+     * verdade "a promise já resolveu", não "a promise foi criada". */
+    buscaResolvida: false,
+  },
 }));
 
 vi.mock("@/lib/api/agente", () => ({
-  lerAgenteDaJornada: () => Promise.resolve(estado.agente),
+  lerAgenteDaJornada: () => {
+    estado.buscaResolvida = false;
+    return Promise.resolve(estado.agente).then((r) => {
+      estado.buscaResolvida = true;
+      return r;
+    });
+  },
   definirAgenteDaJornada: (_id: string, acao: string) => {
     estado.acoes.push(acao);
     return Promise.resolve({ pausado: acao === "assumir", pausado_ate: null });
@@ -68,10 +89,18 @@ const RESPOSTA = {
 async function abrir(agente: Partial<AgenteJornada>, papel: PapelEquipe | null = "admin") {
   estado.agente = { ...BASE, ...agente };
   estado.papel = papel;
+  estado.buscaResolvida = false;
   const montado = montar(<RecebidasFicha jornadaId="j1" />);
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  // Espera a CONDIÇÃO real (achado do Fable, mesmo padrão de
+  // `PainelCopiloto.test.tsx`): a promise de `lerAgenteDaJornada` TEM de
+  // ter RESOLVIDO — não um número fixo de ticks. `RecebidasFicha` não
+  // renderiza nenhum texto de "carregando" (retorna `null` enquanto
+  // `carregando && !dados`), então não há string de DOM para aguardar
+  // sumir; a flag do mock é a condição observável que não depende de
+  // quantas voltas do loop de microtasks a máquina precisou dar. `waitFor`
+  // faz `act()` por dentro — o commit do `setDados`/`setCarregando` já
+  // está aplicado quando ele resolve.
+  await waitFor(() => expect(estado.buscaResolvida).toBe(true));
   return montado;
 }
 
@@ -145,6 +174,15 @@ describe("Ficha → conversa no WhatsApp", () => {
 
   it("não tem violação de acessibilidade", async () => {
     const { container } = await abrir({ pausado: true, pausado_ate: "2026-09-07T15:30:00.000Z", impedimentos: ["A conversa foi assumida pela equipe."], ultimas_respostas: [RESPOSTA] });
+    // Cinto permanente (achado do Fable): `abrir()` aqui espera uma FLAG do
+    // mock, não o DOM — diferente de `AgenteWhatsappAba`, onde `waitFor`
+    // espera o rótulo do esqueleto SUMIR (e por isso já garante DOM não
+    // vazio por construção). Um refactor futuro que adicione um 2º fetch a
+    // `RecebidasFicha` pode fazer `abrir()` devolver antes do conteúdo
+    // chegar sem que esta prova pare de compilar — axe passa TRIVIALMENTE
+    // em container vazio, então sem esta linha o verde falso voltaria em
+    // silêncio. Falha alta, não aprovação silenciosa.
+    expect(container.textContent).not.toBe("");
     await semViolacoes(container);
   });
 });

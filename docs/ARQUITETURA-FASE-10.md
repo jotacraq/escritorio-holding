@@ -1078,11 +1078,234 @@ explícito · teste provando `bot_detection.matches` explícito · teste provand
 `bot_command_error` **não** vira linha em `erros_servidor` · roteiro de sala inexistente
 (`meeting_not_found`) chegando à tela com o `sub_code`, não com erro genérico.
 
+> **Nota da entrega do BACK (correção do coordenador, mesma sessão).** A primeira
+> entrega desta fatia implementou `recall.ts` (4a), o webhook (4b) e a comparação de
+> participantes (4c) como MÓDULOS, mas **sem ninguém chamando `pedirBot()`** — código
+> morto, achado pelo coordenador (`grep -c encerrarBot src/server/copiloto/encerrar.ts`
+> devolvia 0, e não existia `POST /api/sessoes/[id]/copiloto/bot`). Corrigido:
+>
+> - **`POST /api/sessoes/[id]/copiloto/bot`** (novo) — pede o bot, nesta ordem:
+>   `copilotoEstaAtivo()` → **`conferirGateCopiloto()` ANTES do fetch ao Recall**
+>   (a errata §6.2.2 aplicada ao PEDIDO do bot, não ao 1º segmento) →
+>   `audio_ao_vivo`/`provedor_audio` (os defaults `false`/`'nenhum'` recusam, é assim
+>   que a fatia sobe) → `pedirBot()` com `retention` explícito. `meeting_not_found` sai
+>   com `sub_code` no CORPO da resposta 409 (`{erro, detalhes: {codigo, sub_codigo}}`).
+> - **`executarEncerramentoCopiloto`** (server/copiloto/encerrar.ts, já existente da
+>   Fatia 3) passou a chamar `encerrarBot()` quando a sessão tem `gravacao_externa_id`
+>   — nos DOIS caminhos (clique manual e `duracao_maxima_minutos` automático, que já
+>   convergiam nesse módulo). Falha ao encerrar o bot **nunca** impede a consolidação
+>   da transcrição — é problema de custo/operação, não motivo para perder o produto
+>   da Fatia 3. 400 `bot_command_error` continua sucesso, sem `registrarErro`.
+> - **Segredo do webhook — avaliado, não defendido às cegas** (pedido explícito do
+>   coordenador). Conferido contra `docs.recall.ai`: o schema de `realtime_endpoints[]`
+>   do `POST /bot/` só aceita `type`/`url`/`events`/`metadata` — **sem campo de headers
+>   customizados**. O Svix do Recall existe, mas é de OUTRO webhook (nível de conta,
+>   só `status_changes` de lifecycle), não cobre `transcript.data`/`participant_events`.
+>   Não é escolha entre HMAC e query param — é entre query param e nada. O que o query
+>   param expõe (log de proxy/CDN/observabilidade) está documentado por extenso no
+>   topo de `src/app/api/webhooks/copiloto/transcricao/route.ts`, junto com as
+>   mitigações (segredo de uso único para este webhook, vínculo por id opaco como 2ª
+>   camada, rotação manual em Admin → Integrações).
+> - **Dois `A MEDIR` novos, registrados em `scripts/verificacao-fatia4-copiloto-bot.sql`**
+>   para não sumirem: (1) o formato REAL de `transcript.data`/`participant_events.*` —
+>   a sonda de 11/09 cobriu só a CRIAÇÃO do bot, o schema Zod do webhook segue o
+>   formato público estável do Recall de forma DEFENSIVA, não confirmada contra
+>   tráfego real; (2) `ordem` do segmento vindo do bot é aproximada pelo
+>   `start_timestamp` da primeira palavra (ou `Date.now()`), não um índice de posição
+>   nativo confirmado do fornecedor — a idempotência real não depende disso (vem do
+>   livro-razão), mas a ORDEM de exibição na tela pode ficar fora de sequência se isso
+>   não bater na bancada.
+>
+> **Segunda correção do coordenador, mesma sessão: `compararComDecisores` não tinha
+> chamador.** A função existia em `server/copiloto/participantes.ts`, testada, e o
+> front tinha `ApresentacaoComparacaoDecisores` pronto — mas nenhuma rota devolvia
+> `ComparacaoDecisoresPresentes`. Era código morto disfarçado de entrega, e desta vez
+> a promessa colapsada era o pedido original do Marcio ("se ele identificar que os
+> decisores não estão todos presentes, ele adapta o roteiro"). Corrigido:
+>
+> - `GET /api/sessoes/[id]/copiloto` (a MESMA rota de polling, nenhuma rota nova —
+>   §4.1 já carrega 1.800 chamadas/sessão) agora devolve `bot: EstadoBotCopiloto |
+>   null` e `comparacao_decisores: ComparacaoDecisoresPresentes | null` no payload.
+> - **Zero leitura extra por ciclo**: `server/copiloto/estado.ts::montarEstadoCopiloto`
+>   (a MESMA query coalescida que já buscava sessão+jornada+roteiro+estado do
+>   copiloto) ganhou `jornadas(pessoa_id, briefings(conteudo, atual))` e
+>   `sessoes_copiloto(estado, gravacao_externa_id, participantes)` no MESMO select —
+>   provado em `server/copiloto/estado.test.ts` ("select() é chamado 1 VEZ só" /
+>   "nenhuma chamada a `supabase.from('briefings')`"). `explain` real da query
+>   estendida fica `A MEDIR` em `scripts/verificacao-fatia4-copiloto-bot.sql` §3
+>   (sem `.env` nesta máquina).
+> - `briefings` embutido SEM filtro `atual=true` no embed (o PostgREST não tem
+>   sintaxe confirmada nesta base para filtrar embed de 2º nível de profundidade) —
+>   o item `atual===true` é escolhido EM MEMÓRIA depois da resposta
+>   (`escolherBriefingAtual`), aceitável porque `uniq_briefing_atual` (0009) garante
+>   no máximo 1 linha ativa por jornada e o volume de briefings por jornada é
+>   pequeno (regeneração é ação manual rara). Medição da premissa (contagem real de
+>   briefings por jornada) também em `scripts/verificacao-fatia4-copiloto-bot.sql` §3.2.
+> - **`ausentes` e `ambiguos` continuam campos distintos até o payload HTTP** — testado
+>   em `src/app/api/sessoes/[id]/copiloto/route.test.ts` com o caso de nome ambíguo
+>   (2 participantes casando com o mesmo decisor) nunca aparecendo em `ausentes`, e o
+>   decisor de verdade ausente nunca aparecendo em `ambiguos`. Postura do porteiro da
+>   Fase 9: ambíguo não casa.
+> - **Sem participantes presentes OU sem `processo_decisorio.decisores` no briefing:
+>   `comparacao_decisores` é `null`**, nunca um objeto com arrays vazios (regra da
+>   casa: vazio é vazio, nunca zero) — um "0 decisores" fingiria fato observado onde
+>   não houve observação nenhuma.
+> - **`bot`**: `null` quando a sessão nunca teve `sessoes_copiloto` criada. Quando
+>   existe, reflete `estado` persistido — mas `erro_provedor`/`retencao_infinita_detectada`
+>   vêm SEMPRE vazios nesta entrega, por honestidade: `sessoes_copiloto` ainda não
+>   tem coluna para persistir o `sub_code`/motivo do erro do provedor (hoje
+>   `POST .../bot` só devolve isso na resposta SÍNCRONA do próprio POST — se a
+>   advogada recarregar a página depois de um `meeting_not_found`, a tela perde essa
+>   informação). Registrado como pendência, não escondido; migration futura fecha isso.
+>
+> **Terceira correção do coordenador, mesma sessão: o Fable reprovou a Fatia 4 em
+> Solidificação — 4 achados, todos no caminho do bot.** O desenho de segurança
+> passou (pentest sem crítico/alto), mas isto é robustez, não segurança — 4
+> defeitos que faziam a fatia falhar sozinha, sem ataque nenhum:
+>
+> - **🔴 Achado 1 (`ordem` estourava `int4`) — MEDIDO pelo coordenador antes de
+>   repassar.** `ordem: inicioMs ?? Date.now()` (o fallback) usava `Date.now()`
+>   (~1,79 bilhão × 1000 ms) contra o teto de `ordem int` (2.147.483.647) — 833×
+>   maior. TODA inserção pelo fallback falhava com `22003` (fora de faixa), não
+>   `23505` — o código só tratava `23505`, então `22003` LANÇAVA, virava 500, e o
+>   Recall reentregava em laço. O fallback disparava numa classe LEGÍTIMA do schema
+>   (`transcript` preenchido sem `words`, que `extrairTextoTranscript` até
+>   PREFERE), não uma borda. O caminho "primário" (`start_timestamp × 1000`)
+>   também não tinha garantia de caber — o formato do timestamp nunca foi sondado.
+>   **Corrigido:** `ordem` passou a ser `max(ordem)+1` POR SESSÃO, calculada no
+>   INSERT (`entrada-bot.ts::registrarSegmentoDoBot`), mesmo padrão do caminho
+>   manual (`segmentos/route.ts`) — nunca estoura `int4` numa sessão de 90 min.
+> - **🔴 Achado 2 (colisão de `ordem` engolia fala em silêncio).** A premissa
+>   "colisão = mesma entrega" não tinha lastro num contrato não medido — dois
+>   falantes com o mesmo instante, ou parcial/final do provedor, colidiam e o
+>   SEGUNDO evento (conteúdo DIFERENTE) era descartado sem pendência. **Corrigido:**
+>   colisão agora é tratada como CORRIDA (não reentrega) e resolvida por
+>   RETENTATIVA (recalcula `max+1`, até 5 tentativas); esgotado, PROPAGA erro real.
+>   A dedupe REAL de reentrega continua sendo o livro-razão (hash do corpo).
+> - **🔴 Achado 3 (upsert cego na rota do bot — bot invisível cobrando).**
+>   `bot/route.ts` não checava `error` do `upsert` de `gravacao_externa_id`: uma
+>   falha aqui devolvia 201 com o bot DENTRO DA SALA e o vínculo NÃO persistido —
+>   o webhook nunca resolveria a sessão, e o encerramento nunca acharia o bot
+>   (gravando e cobrando, invisível). **Corrigido:** o `upsert` agora CHECA
+>   `error`; em falha, `encerrarBotComRetentativa()` IMEDIATO + erro real ao
+>   cliente (`falha_ao_persistir_vinculo_bot`, nunca 201) + pendência gravada se
+>   o encerramento também falhar.
+> - **🔴 Achado 4 (retention: forever + encerrarBot falhando = a catástrofe do
+>   B76 tratada como log).** Detectar retenção infinita e FALHAR ao encerrar,
+>   registrado só em `erros_servidor`, deixava o bot na sala real gravando com
+>   retenção indefinida enquanto o 409 afirmava "o bot foi encerrado" — falso.
+>   **Corrigido:** `encerrarBotComRetentativa()` (recall.ts) com 1 retentativa,
+>   resultado SEMPRE explícito (`sucesso: boolean`); a MENSAGEM da rota é
+>   CONDICIONAL ao resultado real (nunca "foi encerrado" quando não foi); migration
+>   **0097** cria `sessoes_copiloto.pendencia_encerramento_bot` e estende
+>   `vw_pendencias_sistema` com a cláusula `bot_nao_encerrado` — pendência
+>   OPERACIONAL VISÍVEL, não só stdout.
+> - **Menores, mesma passada:** `participantes.ts::buscarDecisoresEsperados`
+>   (exportada, documentada, zero chamadores — 3ª lacuna da família) foi REMOVIDA
+>   (o caminho real é `estado.ts::extrairDecisoresEsperados`, via embed). O
+>   comentário em `types/copiloto.ts` que afirmava "o BACK não implementou uma
+>   rota `POST .../copiloto/bot`" foi corrigido (8ª ocorrência da família "texto
+>   que nega o que o código faz" — a rota existe e tem botão na tela).
+>   `bot/route.ts` passou a conferir `sessoes_copiloto.estado`: sessão
+>   `'encerrado'`/`'erro'` recusa com 409 `sessao_ja_encerrada`.
+> - **Nota não bloqueante do Fable, registrada para decisão futura:** o embed de
+>   `briefings` (achado da correção anterior) carrega o `conteudo` inteiro de
+>   TODOS os briefings da jornada, 1.800×/sessão. Se a medição §3.2 de
+>   `scripts/verificacao-fatia4-copiloto-bot.sql` mostrar jornadas com muitos
+>   briefings, a alternativa é a 2ª query minúscula com `atual=true` (precedente
+>   em `contexto.ts::buscarRecorteBriefing`) — decisão fica para quando a medição
+>   existir, não otimizada às cegas agora.
+>
+> **Quarta correção do coordenador, mesma sessão: o Fable reprovou de novo — desta
+> vez DENTRO da migration 0097, escrita para corrigir a reprovação anterior.**
+> Três afirmações da 0097 não tinham linha de código que as tornasse verdade:
+>
+> - **🔴 Achado A ("corrigiu o ramo raro e deixou o comum").** A 0097 afirmava
+>   que a pendência era gravada "por qualquer caminho: retenção infinita, clique
+>   manual, duração máxima" — mas `encerrar.ts::tirarBotDaSalaSeHouver` (o
+>   caminho COMUM: encerramento manual e por duração máxima; "retenção
+>   infinita" é o ramo RARO) continuava chamando `encerrarBot()` cru, sem
+>   retentativa, só com `registrarErro` (stdout) em falha. **Corrigido:**
+>   `tirarBotDaSalaSeHouver` agora usa `encerrarBotComRetentativa` (a mesma
+>   função do achado 4) nos TRÊS caminhos, e grava a mesma pendência visível em
+>   falha definitiva — sem quebrar a garantia existente de nunca lançar/nunca
+>   impedir a consolidação.
+> - **🔴 Achado B ("ninguém limpa a pendência").** O comentário afirmava "Limpo
+>   (volta a NULL) quando um encerramento subsequente tem sucesso" — mas
+>   NENHUMA linha de código escrevia NULL, e a rota de encerrar recusava
+>   sessão já `'encerrado'` sem chance de retentar. **Corrigido:**
+>   `tirarBotDaSalaSeHouver` limpa a pendência em sucesso; `POST
+>   /api/sessoes/[id]/copiloto/encerrar` ganhou `tentarNovamenteEncerrarBotPendente`
+>   — sessão já `'encerrado'` COM pendência tenta encerrar o bot de novo antes
+>   de devolver o 409 de sempre (mesmo código `sessao_ja_encerrada`, mensagem
+>   reflete se resolveu ou não).
+> - **🔴 Achado C ("a migration aponta para um §4 que não existe").** A 0097
+>   apontava para `scripts/verificacao-fatia4-copiloto-bot.sql §4`, que não
+>   existia — "ponteiro para o vazio, na migration mais delicada da fatia": ela
+>   recria `vw_pendencias_sistema` via `create or replace` a partir do TEXTO DO
+>   REPO, não do `pg_get_viewdef` do banco (armadilha catalogada na Fase 9,
+>   §6.2). **Corrigido:** §4 escrito, com (1) diff obrigatório do
+>   `pg_get_viewdef` real contra o texto de 0089 ANTES de aplicar — divergência
+>   encontrada é PARAR, não seguir; (2) prova de que as 11 cláusulas (as 10
+>   antigas + `bot_nao_encerrado`) estão presentes DEPOIS de aplicar, com
+>   rollback proposital.
+> - **Menor:** `bot/route.ts` afirmava incondicionalmente "o bot foi encerrado
+>   por segurança" no erro 500 do ramo de upsert falho — falso no sub-ramo
+>   `!encerramento.sucesso`. Corrigido para condicional, mesmo padrão do ramo
+>   `forever`. E `ocorrido_em` da cláusula nova usava `sc.criado_em` (criação
+>   da SESSÃO, não da pendência) — nova coluna
+>   `sessoes_copiloto.pendencia_encerramento_bot_em` (timestamptz) corrige isso
+>   de verdade, em vez de aproximar com outro campo errado.
+>
+> **Quinta correção do coordenador, mesma sessão: "o ciclo da pendência fechou
+> para 1 dos 3 nascedouros".** A pendência nasce em TRÊS lugares —
+> `tirarBotDaSalaSeHouver` (caminho comum, corrigido na correção anterior) E os
+> DOIS upserts de erro em `bot/route.ts` (retenção infinita, falha ao
+> persistir vínculo). Os dois upserts de `bot/route.ts` gravavam a pendência
+> **sem** `gravacao_externa_id` (só o bot_id no texto da mensagem) e com
+> `estado='erro'` — três travas em cascata deixavam essas sessões BRICADAS:
+> (1) `tentarNovamenteEncerrarBotPendente` exige `gravacao_externa_id` para
+> tentar de novo; (2) o gate do retry em `encerrar/route.ts` só cobria
+> `estado==='encerrado'`; (3) `marcarEncerrada` só aceitava
+> `'aguardando'/'ativo'` como origem. Mesmo o humano removendo o bot da sala à
+> mão, não havia caminho de volta — o mesmo defeito do achado B, nos dois
+> nascedouros que a correção anterior não alcançou.
+>
+> **As três edições:**
+> - **(a)** Os dois upserts de erro em `bot/route.ts` agora gravam
+>   `gravacao_externa_id: resultado.botId` junto com a pendência — fato
+>   verdadeiro (o bot existe e é desta sessão; o gate jurídico já foi
+>   conferido no PEDIDO do bot, §6.2.2, antes dessas linhas rodarem).
+> - **(b)** O gate do retry em `encerrar/route.ts` passou a cobrir
+>   `'encerrado' || 'erro'`, não só `'encerrado'`.
+> - **(c)** `marcarEncerrada` (encerrar.ts) passou a aceitar `'erro'` como
+>   estado de origem. Como uma sessão em `'erro'` nunca foi consolidada
+>   (diferente de `'encerrado'`), `tentarNovamenteEncerrarBotPendente` foi
+>   estendida para, nesse ramo, delegar ao fluxo COMPLETO
+>   (`executarEncerramentoCopiloto`: marca encerrada a partir de `'erro'`,
+>   tira o bot, consolida a transcrição, expira sugestões) — nunca chamado
+>   duas vezes na mesma requisição (o resultado é devolvido pronto, evitando
+>   corrida contra si mesma). Quando a sessão sai de `'erro'` nesta chamada,
+>   `POST /api/sessoes/[id]/copiloto/encerrar` devolve 200 com o payload de
+>   sucesso normal — não mais um 409, porque a sessão realmente foi
+>   encerrada de verdade.
+>
+> Testados os dois ramos (`estado='encerrado'` e `estado='erro'`) em
+> `encerrar.test.ts` e `encerrar/route.test.ts`, e os dois upserts de
+> `bot/route.ts` em `bot/route.test.ts` (provando `gravacao_externa_id`
+> presente no payload gravado, via spy no `.upsert()`).
+
 ### Fatia 5 — Expurgo e retenção
 
 - Job de expurgo de `sessoes_copiloto_segmentos` por idade
   (`retencao_dias_segmentos`), **depois** de consolidada a `transcricoes`. Depende de B69.
 - Fecha o **B19**, aberto desde a Fase 7.
+- **Achado do pentester da Fatia 4 (11/09/2026), carregado para cá:** cada tentativa de
+  webhook com `k=` válido e `bot.id` inexistente grava uma linha em `webhooks_eventos`
+  (`erro='bot_sem_sessao_vinculada'`), visível em `vw_pendencias_sistema`. Com o `id` do
+  Recall sendo UUID v4 (medido, ver `route.ts` do webhook) isso não é vetor de ataque —
+  mas é um caminho de ACÚMULO igual ao dos segmentos. **O expurgo da Fatia 5 precisa
+  considerar `webhooks_eventos`, não só `sessoes_copiloto_segmentos`.**
 
 **Ordem:** 1 → 2 → 3 podem ir seguidas; **4 só depois de B65, B66, B67 e B76 respondidos**.
 

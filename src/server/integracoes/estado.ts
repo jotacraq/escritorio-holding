@@ -39,9 +39,12 @@ export const PENDENCIAS: Record<string, string> = {
   HOTMART_PRODUTO: "Produto sem ID da Hotmart: todo pagamento dele vai cair em 'produto não mapeado' até o ID ser preenchido.",
   CRON: "A régua ainda não roda sozinha: falta o cron da Hostinger chamar /api/cron/regua a cada 5 minutos com o CRON_SECRET de produção.",
   IA: "IA não configurada: OPENROUTER_API_KEY ausente. Briefing, croqui e material ficam em modo demonstração rotulado.",
+  COPILOTO_AUDIO:
+    "Sem isto, o copiloto ao vivo (Fase 10, Fatia 4) não pode pedir bot para a sala: RECALL_API_KEY (chave da API do Recall.ai) e/ou COPILOTO_WEBHOOK_SECRET (segredo do webhook de transcrição) ausentes. Nenhum bot é pedido enquanto faltar qualquer um dos dois — nasce desligado também por copiloto_sessao.audio_ao_vivo=false.",
 };
 
 const VARIAVEIS_SALA = ["N8N_WEBHOOK_SALA_URL", "INTEGRACOES_WEBHOOK_SECRET"] as const;
+const VARIAVEIS_COPILOTO_AUDIO = ["RECALL_API_KEY", "COPILOTO_WEBHOOK_SECRET"] as const;
 const CRON_ATRASADO_MIN = 15;
 
 function faltam(nomes: readonly string[]): string[] {
@@ -98,11 +101,12 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
     return c ? [{ chave, valor: c.valor, descricao: c.descricao }] : [];
   };
 
-  const [evHotmart, evLigacao, evSala, evChatwoot, ligacao, emailEnviado, whatsappChatwoot, semId] = await Promise.all([
+  const [evHotmart, evLigacao, evSala, evChatwoot, evCopiloto, ligacao, emailEnviado, whatsappChatwoot, semId] = await Promise.all([
     ultimoEvento(admin, "hotmart"),
     ultimoEvento(admin, "n8n_ligacao"),
     ultimoEvento(admin, "n8n_sala"),
     ultimoEvento(admin, "chatwoot"),
+    ultimoEvento(admin, "recall"),
     ultimaLigacao(admin),
     ultimaMensagemEnviada(admin, "email"),
     ultimaMensagemEnviada(admin, "whatsapp", "chatwoot"),
@@ -114,6 +118,7 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
   const faltamLigacao = faltamN8nLigacao();
   const faltamSala = faltam(VARIAVEIS_SALA);
   const faltamChat = faltamChatwoot();
+  const faltamCopilotoAudio = faltam(VARIAVEIS_COPILOTO_AUDIO);
   const iaReal = resolverModoIa() === "real";
 
   // Fase 7: a janela e a retenção vêm do MESMO `lerConfiguracoes` de sempre —
@@ -225,6 +230,22 @@ export async function estadoIntegracoes(admin: SupabaseClient): Promise<Integrac
       extras: { modo: resolverModoIa() },
       testavel: false,
     },
+    {
+      // Fase 10, Fatia 4a (docs/ARQUITETURA-FASE-10.md §4.2/§8/§12). Só nomes
+      // de variável aparecem aqui — nunca valor (regra da casa). O bot da
+      // sala continua desligado por `copiloto_sessao.audio_ao_vivo=false`
+      // mesmo com as duas variáveis presentes; este cartão mostra só se o
+      // PRÉ-REQUISITO técnico está satisfeito, não se o interruptor está ligado.
+      chave: "copiloto_audio",
+      rotulo: "Copiloto ao vivo — bot na sala (Recall.ai)",
+      configurado: faltamCopilotoAudio.length === 0,
+      faltam: faltamCopilotoAudio,
+      pendencia: faltamCopilotoAudio.length > 0 ? PENDENCIAS.COPILOTO_AUDIO : null,
+      ultimo_evento_em: evCopiloto,
+      toggles: [],
+      extras: {},
+      testavel: false,
+    },
   ];
   return itens;
 }
@@ -284,6 +305,11 @@ export async function testarIntegracao(chave: ChaveIntegracao): Promise<Resultad
       break;
     case "ia":
       r = { ok: resolverModoIa() === "real", detalhe: "Sem chamada de teste (custa dinheiro). Use Admin → Sonda de schema." };
+      break;
+    case "copiloto_audio":
+      // Sem chamada de teste: pedir um bot de verdade custa dinheiro (§4.5 do
+      // plano, ~US$ 0,98/sessão) e entra numa sala — não há sala de teste.
+      r = { ok: faltam(VARIAVEIS_COPILOTO_AUDIO).length === 0, detalhe: "Sem chamada de teste (pedir bot custa dinheiro e exige sala real)." };
       break;
     default:
       r = { ok: false, detalhe: "integração desconhecida" };

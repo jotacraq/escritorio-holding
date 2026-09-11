@@ -190,7 +190,7 @@ export interface MensagemRecebida {
 // Admin → Integrações (§2.6)
 // ---------------------------------------------------------------------------
 
-export type ChaveIntegracao = "resend" | "hotmart" | "cron" | "ligacao_ia" | "sala" | "chatwoot" | "ia";
+export type ChaveIntegracao = "resend" | "hotmart" | "cron" | "ligacao_ia" | "sala" | "chatwoot" | "ia" | "copiloto_audio";
 
 export interface IntegracaoEstado {
   chave: ChaveIntegracao;

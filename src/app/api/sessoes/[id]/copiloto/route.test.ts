@@ -221,3 +221,99 @@ describe("GET /api/sessoes/[id]/copiloto — polling coalescido (Fatia 3)", () =
     expect(corpo.proximo_cursor_sugestao).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fatia 4, §5 — achado do coordenador: "compararComDecisores não tem
+// chamador... a 4c está escrita e inerte". Este bloco prova que o payload
+// HTTP REAL do polling (não só a função interna, testada em
+// `server/copiloto/estado.test.ts`) carrega `bot`/`comparacao_decisores`.
+// ---------------------------------------------------------------------------
+describe("GET /api/sessoes/[id]/copiloto — bot e comparação de decisores no payload (Fatia 4, §5)", () => {
+  function montarCenarioComDecisores(opts: {
+    sessoesCopiloto: unknown;
+    briefings: unknown[];
+  }) {
+    supabaseServidorMock.from.mockImplementation((tabela: string) => {
+      if (tabela === "configuracoes") {
+        return configuracoesPorChave({
+          "copiloto_sessao.ativo": true,
+          "copiloto_sessao.confianca_minima": 0.6,
+          "copiloto_sessao.polling_ms": undefined,
+        });
+      }
+      if (tabela === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: {
+            id: "sessao-1",
+            roteiro_versao_id: null,
+            sims: {},
+            jornadas: { pessoa_id: "pessoa-1", briefings: opts.briefings },
+            roteiros_versoes: null,
+            sessoes_copiloto: opts.sessoesCopiloto,
+          },
+          error: null,
+        });
+      }
+      if (tabela === "sessoes_copiloto_segmentos") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "copiloto_sugestoes") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "consentimentos") return consultaEncadeavel({ data: null, error: null });
+      throw new Error(`tabela não mockada em supabaseServidorMock: ${tabela}`);
+    });
+  }
+
+  it("🔴 sem participantes: payload.comparacao_decisores é null, NÃO um objeto com arrays vazios", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenarioComDecisores({
+      sessoesCopiloto: { estado: "ativo", gravacao_externa_id: "bot_1", participantes: [] },
+      briefings: [{ atual: true, conteudo: { processo_decisorio: { decisores: ["Terezinha", "Cleison"] } } }],
+    });
+    executarCicloCopilotoMock.mockResolvedValue({ situacao: "nenhum_gatilho" });
+
+    const resposta = await GET(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(corpo.comparacao_decisores).toBeNull();
+    expect(corpo.bot).toEqual({ estado: "ativo", erro_provedor: null, retencao_infinita_detectada: false });
+  });
+
+  it("com participantes e decisores: payload.comparacao_decisores aparece com ausentes/ambiguos DISTINTOS", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenarioComDecisores({
+      sessoesCopiloto: {
+        estado: "ativo",
+        gravacao_externa_id: "bot_1",
+        participantes: [
+          { nome: "Terezinha", entrou_em: "10:00", saiu_em: null },
+          { nome: "João Silva", entrou_em: "10:01", saiu_em: null },
+          { nome: "joão silva", entrou_em: "10:02", saiu_em: null },
+        ],
+      },
+      briefings: [{ atual: true, conteudo: { processo_decisorio: { decisores: ["Terezinha", "Cleison", "João Silva"] } } }],
+    });
+    executarCicloCopilotoMock.mockResolvedValue({ situacao: "nenhum_gatilho" });
+
+    const resposta = await GET(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(corpo.comparacao_decisores).not.toBeNull();
+    expect(corpo.comparacao_decisores.presentes).toEqual([{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }]);
+    expect(corpo.comparacao_decisores.ausentes).toEqual(["Cleison"]);
+    // 🔴 ambiguos != ausentes — Cleison (ausente de verdade) nunca aparece
+    // aqui, e João Silva (ambíguo, 2 participantes casando) nunca aparece em ausentes.
+    expect(corpo.comparacao_decisores.ambiguos).toEqual(["João Silva"]);
+    expect(corpo.comparacao_decisores.ausentes).not.toContain("João Silva");
+    expect(corpo.comparacao_decisores.ambiguos).not.toContain("Cleison");
+  });
+
+  it("sem sessoes_copiloto (nunca digitou/pediu bot): payload.bot é null", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenarioComDecisores({ sessoesCopiloto: null, briefings: [] });
+    executarCicloCopilotoMock.mockResolvedValue({ situacao: "sessao_nao_ativa_para_ciclo" });
+
+    const resposta = await GET(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(corpo.bot).toBeNull();
+    expect(corpo.comparacao_decisores).toBeNull();
+  });
+});

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
+import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { ConfigPollingCopiloto } from "@/types/copiloto";
 
 /**
@@ -64,5 +64,42 @@ export async function lerConfigPollingCopiloto(supabase: SupabaseClient): Promis
     return { em_foco_ms: emFocoFinal, sem_foco_ms: derivarSemFocoMs(emFocoFinal) };
   } catch {
     return { em_foco_ms: PADRAO_POLLING_MS_EM_FOCO, sem_foco_ms: derivarSemFocoMs(PADRAO_POLLING_MS_EM_FOCO) };
+  }
+}
+
+/**
+ * `copiloto_sessao.audio_ao_vivo` — interruptor 4 de 5 do plano de reversão
+ * (§2.5): "desliga só o bot; o copiloto continua funcionando no modo
+ * digitado". Fatia 4: quando `false` (o default gravado pela 0091),
+ * `POST /api/sessoes/[id]/copiloto/bot` RECUSA — nenhum bot é pedido, nunca
+ * um fetch ao Recall acontece. MESMA regra dura de `copilotoEstaAtivo`:
+ * chave ausente, falha de leitura ou valor de outro tipo caem em `false`.
+ */
+export const CHAVE_AUDIO_AO_VIVO = "copiloto_sessao.audio_ao_vivo";
+
+export async function audioAoVivoEstaAtivo(supabase: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(supabase, CHAVE_AUDIO_AO_VIVO, false);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `copiloto_sessao.provedor_audio` — nasce `"nenhum"` (0091, B75: "nenhum
+ * fornecedor entra no código antes do DPA"). `POST .../copiloto/bot` só pede
+ * bot quando o valor é `"recall"` — qualquer outra coisa (incluindo
+ * `"nenhum"`, falha de leitura, ou um provedor futuro ainda não
+ * implementado) é RECUSA, nunca suposição de qual adaptador chamar.
+ */
+export const CHAVE_PROVEDOR_AUDIO = "copiloto_sessao.provedor_audio";
+export const PROVEDOR_AUDIO_RECALL = "recall";
+
+export async function provedorAudioConfigurado(supabase: SupabaseClient): Promise<string | null> {
+  try {
+    const valor = await lerConfiguracaoJson<string>(supabase, CHAVE_PROVEDOR_AUDIO, "nenhum");
+    return typeof valor === "string" ? valor : null;
+  } catch {
+    return null;
   }
 }

@@ -349,6 +349,27 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
   proximo_cursor_sugestao: number;
   ciclo: InfoCicloCopiloto;
   polling: ConfigPollingCopiloto;
+  /** Fatia 4 — `sessoes_copiloto.estado`/`gravacao_externa_id` já cobertos
+   * por `estado_copiloto`/participantes; este campo é o DETALHE do erro do
+   * PROVEDOR (§4.2.2). `null` quando a sessão nunca teve bot pedido — nunca
+   * um objeto com campos vazios fingindo que houve tentativa.
+   *
+   * `erro_provedor`/`retencao_infinita_detectada` SEMPRE vêm vazios nesta
+   * entrega (achado da revisão: `sessoes_copiloto` ainda não tem coluna
+   * para persistir o `sub_code`/o motivo do erro — `POST .../bot` hoje só
+   * devolve isso na RESPOSTA SÍNCRONA do próprio POST; se a advogada
+   * recarregar a página depois de um `meeting_not_found`, a tela perde essa
+   * informação). Migration futura fecha isso; até lá, `bot.estado` reflete
+   * `sessoes_copiloto.estado`, que É persistido. */
+  bot: EstadoBotCopiloto | null;
+  /** Fatia 4/§5 — a CAMADA 1 do caso dos decisores, fato sem IA
+   * (`server/copiloto/participantes.ts::compararComDecisores`). `null`
+   * quando não há dado suficiente para comparar (sem participantes
+   * presentes, OU sem `processo_decisorio.decisores` no briefing) — nunca
+   * um objeto com `decisores_esperados: []` fingindo "0 decisores
+   * esperados": vazio é vazio, nunca zero (regra da casa). A tela decide o
+   * que mostrar (ou nada) quando este campo é `null`. */
+  comparacao_decisores: ComparacaoDecisoresPresentes | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,3 +394,131 @@ export interface RespostaEncerrarCopiloto {
 /** `sessao_ja_encerrada` é o caso normal de clicar duas vezes — 409, nunca
  * 500: encerrar de novo não reconsolida nem duplica transcrição. */
 export type CodigoRecusaEncerrarCopiloto = "copiloto_desligado" | "sessao_nao_encontrada" | "sessao_ja_encerrada";
+
+// ---------------------------------------------------------------------------
+// FATIA 4 (docs/ARQUITETURA-FASE-10.md §4.2, §4.2.1, §4.2.2, §5, §7, §8,
+// §12) — o bot na sala (Recall.ai). Contrato entre BACK e FRONT: o
+// `frontend-engineer` importa daqui. `src/server/copiloto/recall.ts`
+// (pedirBot/encerrarBot), o webhook (`POST /api/webhooks/copiloto/transcricao`),
+// a comparação de participantes (`server/copiloto/participantes.ts`) E a
+// rota `POST /api/sessoes/[id]/copiloto/bot` (com botão na tela,
+// `src/components/sessao/PainelCopiloto.tsx`) estão todos implementados —
+// ver `RespostaPedirBotCopiloto`/`CodigoRecusaBotCopiloto` mais abaixo para
+// o contrato exato da rota.
+// ---------------------------------------------------------------------------
+
+/** `sessoes_copiloto.estado` já cobre 'erro' desde a Fatia 1 — aqui é o
+ * DETALHE do erro quando a causa é o bot (§4.2.2/B74): a tela nunca deve
+ * mostrar "erro ao iniciar" genérico quando o motivo real é a sala. */
+export interface EstadoBotCopiloto {
+  /** Espelha `sessoes_copiloto.estado`. 'erro' cobre TANTO falha de sala
+   * quanto `retencao_infinita_detectada` (§4.2.1) — ver `motivo` abaixo
+   * para distinguir. */
+  estado: "aguardando" | "ativo" | "encerrado" | "erro";
+  /** Preenchido só quando `estado==='erro'` E a causa foi o PROVEDOR (nunca
+   * inventado quando a causa foi outra, ex.: gate jurídico fechado). */
+  erro_provedor: {
+    /** `code` do `status_changes[]` mais recente do Recall (ex.: 'fatal'). */
+    codigo: string | null;
+    /** 🔴 `sub_code` (ex.: 'meeting_not_found') — TEM de chegar à tela
+     * (§4.2.2): "erro ao iniciar" genérico não ajuda ninguém a saber que o
+     * link da sala está errado, que é o defeito mais provável em produção. */
+    sub_codigo: string | null;
+  } | null;
+  /** `true` quando o motivo do erro foi a resposta trazer `retention.type
+   * ==='forever'` apesar do pedido explícito (§4.2.1) — a tela deve mostrar
+   * um aviso DIFERENTE de "sala inválida": é falha de configuração nossa/do
+   * fornecedor, não do link colado pela advogada. */
+  retencao_infinita_detectada: boolean;
+}
+
+/** `sessoes_copiloto.participantes` (Fatia 4) x `processo_decisorio
+ * .decisores` do briefing — a CAMADA 1 do §5, fato sem IA
+ * (`server/copiloto/participantes.ts::compararComDecisores`). É o dado que
+ * sustenta o 3º SIM deixar de ser um booleano sem lastro. NOME de pessoa
+ * real aparece aqui (é para a TELA, sob `app.ve_patrimonio()` — nunca isto
+ * é enviado para a IA; o contexto de IA só recebe a CONTAGEM, ver
+ * `ContextoCopiloto.estado_factual`). */
+export interface ComparacaoDecisoresPresentes {
+  decisores_esperados: string[];
+  participantes_presentes: string[];
+  /** Decisor do briefing que casou, sem ambiguidade, com 1 participante
+   * presente agora. */
+  presentes: Array<{ nome_briefing: string; nome_participante: string }>;
+  /** Decisor sem nenhum participante presente casando — é o fato "Cleison
+   * não entrou" do exemplo do plano (§5). */
+  ausentes: string[];
+  /** AMBÍGUO NÃO CASA (postura do porteiro, Fase 9): mais de um
+   * participante presente casa com o mesmo nome do decisor. A tela mostra
+   * como "não foi possível confirmar" — nunca escolhe um dos dois. */
+  ambiguos: string[];
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sessoes/[id]/copiloto/bot — Fase 10, Fatia 4a/4b. Implementada em
+// `src/app/api/sessoes/[id]/copiloto/bot/route.ts`. Tipos do FRONT, derivados
+// por leitura da rota (não redeclarados pelo BACK nesta entrega):
+// `frontend-engineer` consome, próxima rodada de BACK pode formalizar aqui.
+// ---------------------------------------------------------------------------
+
+/** Sucesso (201) de `POST /api/sessoes/[id]/copiloto/bot`. */
+export interface RespostaPedirBotCopiloto {
+  sessao_id: string;
+  bot_id: string;
+}
+
+/** `detalhes` de `sala_invalida` (409) — o `sub_codigo` é o campo que mais
+ * importa (§4.2.2): `"meeting_not_found"` é link de sala errado, o defeito
+ * mais provável em produção. Códigos fora deste conjunto são mostrados
+ * CRUS pela tela (o backend não mapeia todos) em vez de engolidos. */
+export interface DetalhesSalaInvalidaBot {
+  codigo: string | null;
+  sub_codigo: string | null;
+}
+
+/**
+ * Códigos estáveis de recusa de `POST /api/sessoes/[id]/copiloto/bot`
+ * (`route.ts`, comentário de topo — a ordem das travas é a ORDEM desta
+ * union, de cima para baixo). Todos vêm como `{erro: <código>, mensagem,
+ * detalhes?}` via `erroConflito`/`ErroApi`, nunca 500 no caso esperado.
+ */
+export type CodigoRecusaBotCopiloto =
+  /** `copiloto_sessao.ativo=false` (mesmo kill-switch de sempre). */
+  | "copiloto_desligado"
+  | "sessao_nao_encontrada"
+  /** Sessão sem `link_sala` cadastrado — cole o link na Ficha antes. */
+  | "sem_link_sala"
+  /** 🔴 CORREÇÃO (item menor do Fable): sessão com `sessoes_copiloto.estado`
+   * em `'encerrado'`/`'erro'` — não é possível pedir bot para sessão já
+   * finalizada (transcrição já consolidada pela Fatia 3). */
+  | "sessao_ja_encerrada"
+  /** Gate jurídico (B65/B67), ANTES de qualquer fetch ao Recall (§6.2.2). */
+  | "copiloto_ao_vivo_bloqueado"
+  /** `copiloto_sessao.audio_ao_vivo=false` — ESTADO NORMAL hoje (default). */
+  | "audio_ao_vivo_desligado"
+  /** `copiloto_sessao.provedor_audio !== 'recall'` — ESTADO NORMAL hoje
+   * (default `'nenhum'`, B75: aguarda decisão da Dra. Elaine). */
+  | "provedor_audio_nao_configurado"
+  /** `RECALL_API_KEY`/`COPILOTO_WEBHOOK_SECRET` ausentes no servidor. */
+  | "servico_indisponivel"
+  /** Idempotência — sessão já tem bot pedido. CASO NORMAL, não erro:
+   * clicar duas vezes (ou reabrir a tela) não pede um 2º bot. */
+  | "bot_ja_pedido"
+  /** O provedor não respondeu como esperado (502) — pode tentar de novo. */
+  | "falha_provedor_bot"
+  /** 🔴 Link de sala errado ou reunião inexistente — `detalhes.sub_codigo`
+   * TEM de aparecer na mensagem (§4.2.2). Nunca "erro ao iniciar" genérico. */
+  | "sala_invalida"
+  /** O fornecedor devolveu retenção indefinida apesar do pedido explícito
+   * (§4.2.1). A MENSAGEM é CONDICIONAL ao resultado real do encerramento
+   * (achado 4 do Fable, B76) — pode significar "o bot foi encerrado, zero
+   * segmento gravado" OU "o servidor NÃO CONSEGUIU encerrar o bot, ele pode
+   * seguir gravando" (2ª tentativa também falhou). A tela NÃO PODE assumir
+   * sucesso a partir só deste código — precisa ler a `mensagem` devolvida. */
+  | "retencao_infinita_detectada"
+  /** 🔴 CORREÇÃO (achado 3 do Fable): o bot foi criado no fornecedor mas o
+   * `upsert` de `gravacao_externa_id` falhou — o servidor já tentou encerrar
+   * o bot (com retentativa) antes de devolver este 500. Caso raro (falha de
+   * banco entre criar o bot e persistir o vínculo); "tente de novo" é a
+   * ação certa — um novo `POST` pede outro bot do zero. */
+  | "falha_ao_persistir_vinculo_bot";

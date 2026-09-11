@@ -3,6 +3,7 @@ import { fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type {
+  ComparacaoDecisoresPresentes,
   DesfechoCopiloto,
   EstadoCopiloto,
   EstadoCopilotoComPolling,
@@ -62,6 +63,10 @@ const { estado } = vi.hoisted(() => ({
     encerrarChamadas: [] as string[],
     encerrarResposta: null as RespostaEncerrarCopiloto | null,
     erroEncerrar: null as Error | null,
+    // Fatia 4 — POST .../copiloto/bot.
+    pedirBotChamadas: 0,
+    pedirBotResposta: null as { sessao_id: string; bot_id: string } | null,
+    erroPedirBot: null as Error | null,
   },
 }));
 
@@ -133,6 +138,11 @@ vi.mock("@/components/sessao/api", async () => {
         },
       );
     },
+    pedirBotCopiloto: (sessaoId: string) => {
+      estado.pedirBotChamadas += 1;
+      if (estado.erroPedirBot) return Promise.reject(estado.erroPedirBot);
+      return Promise.resolve(estado.pedirBotResposta ?? { sessao_id: sessaoId, bot_id: "bot-1" });
+    },
   };
 });
 
@@ -155,6 +165,10 @@ function RESPOSTA_POLLING_VAZIA(parametros: { desdeSegmento: number; desdeSugest
     proximo_cursor_sugestao: parametros.desdeSugestao,
     ciclo: { avaliado: true, resultado: null, motivo_bloqueio: null },
     polling: POLLING_PADRAO,
+    // Fatia 4 (§5): sem bot pedido nem decisores suficientes para comparar
+    // neste cenário-base — `null`, nunca objeto vazio (regra da casa).
+    bot: null,
+    comparacao_decisores: null,
   };
 }
 
@@ -172,11 +186,13 @@ function respostaPolling(overrides: Partial<EstadoCopilotoComPolling> = {}): Est
     proximo_cursor_sugestao: 0,
     ciclo: { avaliado: true, resultado: null, motivo_bloqueio: null },
     polling: POLLING_PADRAO,
+    bot: null,
+    comparacao_decisores: null,
     ...overrides,
   };
 }
 
-const { PainelCopiloto } = await import("./PainelCopiloto");
+const { PainelCopiloto, ApresentacaoComparacaoDecisores } = await import("./PainelCopiloto");
 
 const ESTADO_BASE: EstadoCopiloto = {
   sessao_id: "s1",
@@ -198,11 +214,18 @@ const ESTADO_BASE: EstadoCopiloto = {
 
 async function abrir() {
   const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} />);
-  // `useRecurso` resolve numa continuação de microtask; dois turnos bastam
-  // (mesmo padrão de AgenteWhatsappAba.test.tsx).
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  // Achado do Fable (teste instável, 5 rodadas): esperar um número FIXO de
+  // microtasks/`setTimeout(0)` é uma SUPOSIÇÃO sobre quando o `useRecurso`
+  // termina — sob contenção de CPU essa suposição quebra (o efeito ainda
+  // não rodou), e as asserções síncronas logo depois de `abrir()` leem o
+  // DOM do estado "carregando". `waitFor` espera a CONDIÇÃO real (o
+  // `role=status` de carregamento sumir), não um número de ticks — correto
+  // tanto numa máquina rápida quanto sob carga. `{ timeout: false }` não é
+  // usado: o timeout padrão do `waitFor` (1000ms) já é folga suficiente e
+  // continua falhando alto se o carregamento nunca terminar de verdade.
+  await waitFor(() => {
+    expect(montado.queryByText("Carregando o copiloto…")).toBeNull();
+  });
   return montado;
 }
 
@@ -226,6 +249,9 @@ beforeEach(() => {
   estado.encerrarChamadas = [];
   estado.encerrarResposta = null;
   estado.erroEncerrar = null;
+  estado.pedirBotChamadas = 0;
+  estado.pedirBotResposta = null;
+  estado.erroPedirBot = null;
 });
 
 describe("PainelCopiloto", () => {
@@ -401,9 +427,11 @@ const BLOCOS_ROTEIRO = [{ id: "b1" }, { id: "b2" }, { id: "b3" }];
 
 async function abrirComRoteiro(irPara?: (i: number) => void) {
   const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} blocosRoteiro={BLOCOS_ROTEIRO} irPara={irPara} />);
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  // Mesma correção de `abrir()` (achado do Fable, teste instável): espera
+  // a CONDIÇÃO real (carregamento terminado), não um número fixo de ticks.
+  await waitFor(() => {
+    expect(montado.queryByText("Carregando o copiloto…")).toBeNull();
+  });
   return montado;
 }
 
@@ -1275,5 +1303,288 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       vi.useRealTimers();
       await semViolacoes(container);
     });
+  });
+});
+
+/**
+ * Fatia 4 do copiloto (docs/ARQUITETURA-FASE-10.md §4.2, §4.2.1, §4.2.2,
+ * §5, §8): o bot na sala (Recall.ai) e a comparação de participantes x
+ * decisores. Este bloco trava exatamente o aceite pedido:
+ *
+ *  1. `sala_invalida` com `sub_codigo === "meeting_not_found"` mostra
+ *     mensagem ESPECÍFICA citando o link — nunca "erro ao iniciar".
+ *  2. `sub_codigo` DESCONHECIDO é mostrado CRU, não engolido.
+ *  3. `bot_ja_pedido` é ESTADO (idempotência), não erro — sem alarme.
+ *  4. Bot não configurado (`audio_ao_vivo_desligado`/
+ *     `provedor_audio_nao_configurado`) é ESTADO EXPLÍCITO, mesmo padrão
+ *     de `CopilotoDesligado`.
+ *  5. `ambiguos` ≠ `ausentes`: fato afirmado só para `ausentes`;
+ *     `ambiguos` sempre "não foi possível confirmar", nunca "ausente".
+ *  6. axe limpo nos estados novos.
+ */
+describe("PainelCopiloto — Fatia 4, bot na sala", () => {
+  it("botão 'Pedir bot na sala' existe e pede o bot ao ser clicado", async () => {
+    const { getByRole } = await abrir();
+    const botao = getByRole("button", { name: /pedir bot na sala/i });
+    fireEvent.click(botao);
+    await waitFor(() => expect(estado.pedirBotChamadas).toBe(1));
+  });
+
+  it("sucesso: mostra que o bot foi pedido, visível para o cliente", async () => {
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+    await waitFor(() => expect(container.textContent).toContain("Bot pedido"));
+    expect(container.textContent).toContain("visível para o cliente");
+  });
+
+  it("sala_invalida com sub_codigo=meeting_not_found: mensagem ESPECÍFICA citando o link, nunca 'erro ao iniciar'", async () => {
+    estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
+      codigo: "fatal",
+      sub_codigo: "meeting_not_found",
+    });
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    expect(container.textContent).toContain("Não encontrei uma reunião nesse link");
+    expect(container.textContent).toContain("Confira o link da sala na Ficha");
+    expect(container.textContent).not.toContain("erro ao iniciar");
+    expect(container.textContent).not.toContain("Não foi possível pedir o bot");
+  });
+
+  it("sala_invalida com sub_codigo DESCONHECIDO: mostrado CRU, não engolido", async () => {
+    estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
+      codigo: "fatal",
+      sub_codigo: "bot_removed_by_admin",
+    });
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    // O código cru aparece na tela — nunca escondido atrás de um genérico.
+    expect(container.textContent).toContain("bot_removed_by_admin");
+  });
+
+  it("sala_invalida SEM detalhes (defesa): mensagem genérica de sala, ainda assim específica sobre o link", async () => {
+    estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    expect(container.textContent).toContain("Confira o link da sala");
+  });
+
+  it("bot_ja_pedido: ESTADO (idempotência), não erro — sem role=alert, sem botão de tentar de novo", async () => {
+    estado.erroPedirBot = new ErroSessao("Já existe um bot pedido para esta sessão.", 409, "bot_ja_pedido");
+    const { getByRole, container, queryByRole } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.textContent).toContain("Já existe um bot pedido"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(queryByRole("button", { name: /tentar de novo/i })).toBeNull();
+  });
+
+  it("audio_ao_vivo_desligado: bot não configurado é ESTADO EXPLÍCITO, mesmo padrão do CopilotoDesligado (sóbrio, sem alarme)", async () => {
+    estado.erroPedirBot = new ErroSessao("Desligado.", 409, "audio_ao_vivo_desligado");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("estado normal hoje");
+  });
+
+  it("provedor_audio_nao_configurado: mesmo estado explícito de 'não configurado'", async () => {
+    estado.erroPedirBot = new ErroSessao("Sem provedor.", 409, "provedor_audio_nao_configurado");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("copiloto_ao_vivo_bloqueado: erro de verdade, role=alert, mensagem própria", async () => {
+    estado.erroPedirBot = new ErroSessao("Bloqueado.", 409, "copiloto_ao_vivo_bloqueado");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    expect(container.textContent).toContain("Copiloto ao vivo bloqueado");
+  });
+
+  it("retencao_infinita_detectada: mensagem própria, nunca confundida com sala inválida", async () => {
+    estado.erroPedirBot = new ErroSessao("Retenção infinita.", 409, "retencao_infinita_detectada");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    expect(container.textContent).toContain("encerrado por segurança");
+  });
+
+  it("botão não pode ser clicado duas vezes enquanto o bot é pedido", async () => {
+    let resolver!: (v: { sessao_id: string; bot_id: string }) => void;
+    const pendente = new Promise<{ sessao_id: string; bot_id: string }>((r) => {
+      resolver = r;
+    });
+    const apiModulo = await import("@/components/sessao/api");
+    const spy = vi.spyOn(apiModulo, "pedirBotCopiloto").mockImplementation(() => pendente);
+
+    const { getByRole } = await abrir();
+    const botao = getByRole("button", { name: /pedir bot na sala/i }) as HTMLButtonElement;
+    fireEvent.click(botao);
+    await waitFor(() => expect(botao.disabled).toBe(true));
+    fireEvent.click(botao);
+
+    resolver({ sessao_id: "s1", bot_id: "bot-1" });
+    await waitFor(() => expect(botao.disabled).toBe(false));
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("axe limpo: sucesso ao pedir o bot", async () => {
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+    await waitFor(() => expect(container.textContent).toContain("Bot pedido"));
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: sala_invalida com sub_codigo conhecido", async () => {
+    estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
+      codigo: "fatal",
+      sub_codigo: "meeting_not_found",
+    });
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeTruthy());
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: bot_ja_pedido", async () => {
+    estado.erroPedirBot = new ErroSessao("Já existe um bot pedido para esta sessão.", 409, "bot_ja_pedido");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+    await waitFor(() => expect(container.textContent).toContain("Já existe um bot pedido"));
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: bot não configurado (estado explícito)", async () => {
+    estado.erroPedirBot = new ErroSessao("Desligado.", 409, "audio_ao_vivo_desligado");
+    const { getByRole, container } = await abrir();
+    fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    await semViolacoes(container);
+  });
+});
+
+/**
+ * `ApresentacaoComparacaoDecisores` — componente PURO (Fatia 4, camada 1 do
+ * §5, ZERO IA). Exportado e testado isoladamente porque, nesta entrega,
+ * nenhuma rota de leitura ainda devolve `ComparacaoDecisoresPresentes` (só
+ * `POST .../copiloto/bot` existe) — o componente fica pronto para o
+ * chamador real assim que essa rota existir.
+ */
+describe("ApresentacaoComparacaoDecisores — fato participantes x decisores, sem IA", () => {
+  it("apresenta como FATO, com as duas fontes visíveis (briefing x sala)", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha", "Cleison"],
+      participantes_presentes: ["Terezinha"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: ["Cleison"],
+      ambiguos: [],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+
+    expect(container.textContent).toContain("O briefing esperava 2 decisores: Terezinha, Cleison");
+    expect(container.textContent).toContain("Na sala: Terezinha");
+  });
+
+  it("ausentes: FATO afirmado diretamente — 'não entrou na sala'", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha", "Cleison"],
+      participantes_presentes: ["Terezinha"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: ["Cleison"],
+      ambiguos: [],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+    expect(container.textContent).toContain("Não entrou na sala");
+    expect(container.textContent).toContain("Cleison");
+  });
+
+  it("ambiguos: NUNCA 'ausente' — sempre 'não foi possível confirmar'", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Cleison"],
+      participantes_presentes: ["Cleison Roberto"],
+      presentes: [],
+      ausentes: [],
+      ambiguos: ["Cleison"],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+
+    expect(container.textContent).toContain("Não foi possível confirmar");
+    expect(container.textContent).toContain("Cleison");
+    // A palavra "ausente"/"Não entrou" NUNCA aparece para um nome ambíguo —
+    // é a garantia central do achado: falso "decisor ausente" faz a
+    // advogada agir errado com a família na frente dela.
+    expect(container.textContent).not.toContain("Não entrou na sala");
+    expect(container.textContent).not.toMatch(/ausente/i);
+  });
+
+  it("ausentes e ambiguos ao mesmo tempo: cada um com seu próprio tratamento, nunca misturados", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha", "Cleison", "Maria"],
+      participantes_presentes: ["Terezinha", "Cleison Roberto"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: ["Maria"],
+      ambiguos: ["Cleison"],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+
+    expect(container.textContent).toContain("Não entrou na sala");
+    expect(container.textContent).toContain("Maria");
+    expect(container.textContent).toContain("Não foi possível confirmar");
+    expect(container.textContent).toContain("Cleison");
+    // "Maria" nunca aparece na frase de ambíguo, "Cleison" nunca na de ausente.
+    const blocoAusente = Array.from(container.querySelectorAll("p")).find((p) => p.textContent?.includes("Não entrou na sala"))?.parentElement;
+    expect(blocoAusente?.textContent).not.toContain("Cleison");
+  });
+
+  it("sem decisores esperados: não renderiza nada (nunca um card vazio confuso)", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: [],
+      participantes_presentes: [],
+      presentes: [],
+      ausentes: [],
+      ambiguos: [],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("nome de participante é texto puro — nunca interpretado como HTML (defesa contra XSS via nome)", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ['<img src=x onerror="window.__pwned=true">'],
+      participantes_presentes: [],
+      presentes: [],
+      ausentes: ['<img src=x onerror="window.__pwned=true">'],
+      ambiguos: [],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+
+    // O nome aparece como TEXTO — nenhum elemento <img> foi criado a partir dele.
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("<img src=x");
+  });
+
+  it("axe limpo: fato com ausentes e ambiguos", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha", "Cleison", "Maria"],
+      participantes_presentes: ["Terezinha", "Cleison Roberto"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: ["Maria"],
+      ambiguos: ["Cleison"],
+    };
+    const { container } = montar(<ApresentacaoComparacaoDecisores comparacao={comparacao} />);
+    await semViolacoes(container);
   });
 });

@@ -23,8 +23,10 @@ vi.mock("@/lib/supabase/server", () => ({ criarClienteServidor: async () => supa
 vi.mock("@/lib/supabase/admin", () => ({ criarClienteAdmin: () => supabaseAdminMock }));
 
 const executarEncerramentoMock = vi.fn();
+const tentarNovamenteEncerrarBotPendenteMock = vi.fn();
 vi.mock("@/server/copiloto/encerrar", () => ({
   executarEncerramentoCopiloto: (...a: unknown[]) => executarEncerramentoMock(...a),
+  tentarNovamenteEncerrarBotPendente: (...a: unknown[]) => tentarNovamenteEncerrarBotPendenteMock(...a),
 }));
 
 const { POST } = await import("./route");
@@ -55,6 +57,7 @@ afterEach(() => {
   supabaseServidorMock.from.mockReset();
   supabaseAdminMock.from.mockReset();
   executarEncerramentoMock.mockReset();
+  tentarNovamenteEncerrarBotPendenteMock.mockReset();
 });
 
 describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
@@ -71,7 +74,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
     expect(executarEncerramentoMock).not.toHaveBeenCalled();
   });
 
-  it("sessão já 'encerrada' → 409 sessao_ja_encerrada, ZERO chamada de executarEncerramentoCopiloto", async () => {
+  it("sessão já 'encerrada' SEM pendência de bot → 409 sessao_ja_encerrada, ZERO chamada de executarEncerramentoCopiloto", async () => {
     exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
@@ -83,10 +86,142 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
       }
       throw new Error(`tabela não mockada: ${t}`);
     });
+    tentarNovamenteEncerrarBotPendenteMock.mockResolvedValue({ tentou: false });
 
     const resposta = await POST(requisicao(), PARAMS);
     expect(resposta.status).toBe(409);
     expect((await resposta.json()).erro).toBe("sessao_ja_encerrada");
+    expect(executarEncerramentoMock).not.toHaveBeenCalled();
+    expect(tentarNovamenteEncerrarBotPendenteMock).toHaveBeenCalledWith(
+      supabaseServidorMock,
+      supabaseAdminMock,
+      "11111111-1111-4111-8111-111111111111",
+      { jornadaId: "j1", realizadaEm: null },
+    );
+  });
+
+  // 🔴 Achado B do Fable: sessão já encerrada COM pendência de bot ganha
+  // uma retentativa — não recusa cegamente.
+  it("sessão já 'encerrada' COM pendência: tenta encerrarBotComRetentativa de novo, 409 mas mensagem reflete SUCESSO", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    supabaseServidorMock.from.mockImplementation((t: string) => {
+      if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
+      if (t === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: { id: "sessao-1", jornada_id: "j1", realizada_em: null, sessoes_copiloto: { estado: "encerrado" } },
+          error: null,
+        });
+      }
+      throw new Error(`tabela não mockada: ${t}`);
+    });
+    tentarNovamenteEncerrarBotPendenteMock.mockResolvedValue({ tentou: true, resolvida: true, resultadoEncerramento: null });
+
+    const resposta = await POST(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(409);
+    expect(corpo.erro).toBe("sessao_ja_encerrada");
+    expect(corpo.mensagem).toMatch(/encerrado agora com sucesso/i);
+    expect(executarEncerramentoMock).not.toHaveBeenCalled();
+  });
+
+  it("sessão já 'encerrada' COM pendência: retentativa AINDA FALHA, mensagem NÃO afirma sucesso", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    supabaseServidorMock.from.mockImplementation((t: string) => {
+      if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
+      if (t === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: { id: "sessao-1", jornada_id: "j1", realizada_em: null, sessoes_copiloto: { estado: "encerrado" } },
+          error: null,
+        });
+      }
+      throw new Error(`tabela não mockada: ${t}`);
+    });
+    tentarNovamenteEncerrarBotPendenteMock.mockResolvedValue({ tentou: true, resolvida: false, resultadoEncerramento: null });
+
+    const resposta = await POST(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(409);
+    expect(corpo.erro).toBe("sessao_ja_encerrada");
+    expect(corpo.mensagem).not.toMatch(/com sucesso/i);
+  });
+
+  // 🔴 O ACHADO CENTRAL DESTA RODADA: "o ciclo da pendência fechou para 1
+  // dos 3 nascedouros". Sessão em `estado==='erro'` (os 2 nascedouros da
+  // rota do bot) TEM de entrar no mesmo gate de retry — antes desta
+  // correção, o `if` só cobria `'encerrado'`, e `'erro'` caía direto em
+  // `executarEncerramentoCopiloto`, que recusava `'erro'` como origem: 409
+  // puro, SEM retry, sessão BRICADA.
+  it("sessão em estado='erro' (nascedouro da rota do bot) ENTRA no gate de retry — não é mais ignorada", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    supabaseServidorMock.from.mockImplementation((t: string) => {
+      if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
+      if (t === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: { id: "sessao-1", jornada_id: "j1", realizada_em: null, sessoes_copiloto: { estado: "erro" } },
+          error: null,
+        });
+      }
+      throw new Error(`tabela não mockada: ${t}`);
+    });
+    tentarNovamenteEncerrarBotPendenteMock.mockResolvedValue({ tentou: true, resolvida: false, resultadoEncerramento: null });
+
+    const resposta = await POST(requisicao(), PARAMS);
+
+    // O ponto central: `tentarNovamenteEncerrarBotPendente` FOI CHAMADO para
+    // uma sessão em 'erro' — antes desta correção, isso nunca acontecia.
+    expect(tentarNovamenteEncerrarBotPendenteMock).toHaveBeenCalledWith(
+      supabaseServidorMock,
+      supabaseAdminMock,
+      "11111111-1111-4111-8111-111111111111",
+      { jornadaId: "j1", realizadaEm: null },
+    );
+    expect(resposta.status).toBe(409);
+    expect(executarEncerramentoMock).not.toHaveBeenCalled();
+  });
+
+  // Sessão em 'erro' cujo retry TEVE sucesso: a sessão foi encerrada de
+  // verdade (fluxo completo, dentro de tentarNovamenteEncerrarBotPendente)
+  // — a resposta é SUCESSO NORMAL (200), não mais um 409.
+  it("sessão em estado='erro', retry com sucesso: devolve 200 com o payload de encerramento REAL (não 409)", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    supabaseServidorMock.from.mockImplementation((t: string) => {
+      if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
+      if (t === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: { id: "sessao-1", jornada_id: "j1", realizada_em: "2026-09-11T10:00:00Z", sessoes_copiloto: { estado: "erro" } },
+          error: null,
+        });
+      }
+      throw new Error(`tabela não mockada: ${t}`);
+    });
+    tentarNovamenteEncerrarBotPendenteMock.mockResolvedValue({
+      tentou: true,
+      resolvida: true,
+      resultadoEncerramento: {
+        encerrado: true,
+        encerradoEm: "2026-09-11T15:00:00.000Z",
+        transcricaoId: "transcricao-do-erro",
+        jaExistiaTranscricao: false,
+        sugestoesExpiradas: 1,
+      },
+    });
+
+    const resposta = await POST(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(200);
+    expect(corpo).toEqual({
+      sessao_id: "11111111-1111-4111-8111-111111111111",
+      estado: "encerrado",
+      encerrado_em: "2026-09-11T15:00:00.000Z",
+      transcricao_id: "transcricao-do-erro",
+      ja_existia_transcricao: false,
+      sugestoes_expiradas: 1,
+    });
+    // NUNCA chama executarEncerramentoCopiloto por fora — o resultado já
+    // veio pronto do retry (evita corrida contra a chamada interna dele).
     expect(executarEncerramentoMock).not.toHaveBeenCalled();
   });
 

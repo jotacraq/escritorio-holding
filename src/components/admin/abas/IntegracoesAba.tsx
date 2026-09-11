@@ -17,12 +17,14 @@ import { mensagemDeErro } from "../http";
 import { IntroAba, TRACO } from "../comum";
 
 /** Ordem de leitura: a esteira de cima para baixo (compra → ligação → sala → mensagens → IA). */
-const ORDEM: ChaveIntegracao[] = ["hotmart", "ligacao_ia", "sala", "chatwoot", "resend", "cron", "ia"];
+const ORDEM: ChaveIntegracao[] = ["hotmart", "ligacao_ia", "sala", "copiloto_audio", "chatwoot", "resend", "cron", "ia"];
 
 const DESCRICAO: Record<ChaveIntegracao, string> = {
   hotmart: "Recebe a compra e abre a jornada. Sem o segredo, o webhook recusa tudo — e isso é o comportamento certo.",
   ligacao_ia: "Liga para o cliente e marca a Sessão de Viabilidade. Sem a integração, vira tarefa para a equipe ligar.",
   sala: "Cria o link da reunião sozinho. Sem a integração, o link é colado à mão na Ficha → Sessão.",
+  copiloto_audio:
+    "Bot que entra na Sessão de Viabilidade para transcrever ao vivo e alimentar o copiloto (Fase 10, Fatia 4). Sem a integração, o copiloto ao vivo não pode ser pedido — a sessão segue normal pelo roteiro.",
   chatwoot: "Manda e recebe WhatsApp pela API. Sem isto, a fila é manual: copiar, abrir no WhatsApp, marcar enviada.",
   resend: "Envia os e-mails da régua (boas-vindas, confirmação, dia da sessão, material).",
   cron: "O relógio que faz a régua rodar: chama /api/cron/regua a cada 5 minutos. É configuração do hPanel, não deste sistema.",
@@ -34,15 +36,20 @@ const ROTULO_ESTATICO: Record<ChaveIntegracao, string> = {
   hotmart: "Pagamentos (Hotmart)",
   ligacao_ia: "Ligação por IA (Vapi via n8n)",
   sala: "Sala de reunião (n8n)",
+  copiloto_audio: "Bot na sala (Copiloto ao vivo)",
   chatwoot: "WhatsApp (Chatwoot)",
   resend: "E-mail (Resend)",
   cron: "Régua (cron da Hostinger)",
   ia: "IA (OpenRouter)",
 };
+/** Só NOME de variável, nunca valor — regra da tela de Integrações (§12 do
+ * plano da Fase 10: "Admin → Integrações mostra o que falta, só nome de
+ * variável, nunca valor"). */
 const VARIAVEIS_ESTATICAS: Record<ChaveIntegracao, string[]> = {
   hotmart: ["HOTMART_WEBHOOK_SECRET", "IDs em Admin → Produtos"],
   ligacao_ia: ["N8N_WEBHOOK_LIGACAO_URL", "LIGACAO_IA_WEBHOOK_SECRET", "VAPI_ASSISTENTE_ID"],
   sala: ["N8N_WEBHOOK_SALA_URL", "INTEGRACOES_WEBHOOK_SECRET"],
+  copiloto_audio: ["RECALL_API_KEY", "COPILOTO_WEBHOOK_SECRET"],
   chatwoot: ["CHATWOOT_URL", "CHATWOOT_ACCOUNT_ID", "CHATWOOT_API_TOKEN", "CHATWOOT_INBOX_ID", "CHATWOOT_WEBHOOK_SECRET"],
   resend: ["RESEND_API_KEY", "EMAIL_FROM"],
   cron: ["cron no hPanel", "CRON_SECRET"],

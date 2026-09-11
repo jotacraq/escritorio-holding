@@ -24,6 +24,7 @@ import type {
   EstadoCopilotoComPolling,
   RespostaDesfechoCopiloto,
   RespostaEncerrarCopiloto,
+  RespostaPedirBotCopiloto,
   RespostaSegmentos,
   RespostaSugestaoCopiloto,
   SegmentoCopiloto,
@@ -34,6 +35,12 @@ export class ErroSessao extends Error {
     mensagem: string,
     readonly status: number,
     readonly codigo?: string,
+    /** `detalhes` do corpo de erro do servidor (`ErroApi.detalhes` —
+     * `server/erros.ts::respostaErro`). Fase 10, Fatia 4: é aqui que
+     * `sala_invalida` carrega `{codigo, sub_codigo}` do Recall — sem isto
+     * propagado, a tela não tem como distinguir `meeting_not_found` (link
+     * errado) de qualquer outro motivo, e cairia sempre no genérico. */
+    readonly detalhes?: unknown,
   ) {
     super(mensagem);
     this.name = "ErroSessao";
@@ -67,8 +74,13 @@ async function chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
   }
 
   if (!resposta.ok) {
-    const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string };
-    throw new ErroSessao(objeto.mensagem || objeto.erro || `Falha na requisição (${resposta.status})`, resposta.status, objeto.erro);
+    const objeto = (corpo ?? {}) as { erro?: string; mensagem?: string; detalhes?: unknown };
+    throw new ErroSessao(
+      objeto.mensagem || objeto.erro || `Falha na requisição (${resposta.status})`,
+      resposta.status,
+      objeto.erro,
+      objeto.detalhes,
+    );
   }
 
   return corpo as T;
@@ -240,4 +252,17 @@ export function buscarPollingCopiloto(
  */
 export function encerrarCopiloto(sessaoId: string): Promise<RespostaEncerrarCopiloto> {
   return chamar<RespostaEncerrarCopiloto>(`/api/sessoes/${sessaoId}/copiloto/encerrar`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sessoes/[id]/copiloto/bot — Fase 10, Fatia 4a/4b. Pede o bot do
+// Recall.ai para a sala da sessão. Sucesso 201; toda recusa vem como
+// `ErroSessao` com `codigo` de `CodigoRecusaBotCopiloto` — a tela testa
+// sempre por `codigo`, nunca por `status` isolado (409 serve várias coisas
+// na casa) nem pela mensagem (muda). `sala_invalida` carrega
+// `erro.detalhes` (`DetalhesSalaInvalidaBot`) com o `sub_codigo` do Recall.
+// ---------------------------------------------------------------------------
+
+export function pedirBotCopiloto(sessaoId: string): Promise<RespostaPedirBotCopiloto> {
+  return chamar<RespostaPedirBotCopiloto>(`/api/sessoes/${sessaoId}/copiloto/bot`, { method: "POST" });
 }
