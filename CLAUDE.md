@@ -27,7 +27,7 @@ A Sessão de Viabilidade **não é reunião de vendas** — é diagnóstico. O C
 
 Next.js (App Router, TS) · Supabase (`fcfsnqqaphtamhrpuyoh`, sa-east-1) · Tailwind · Claude API · deploy **Hostinger Node.js App**.
 
-Restrições que vêm do deploy na Hostinger: sem Edge runtime, sem cron da Vercel, `output: 'standalone'`, e cuidado com `npm install` no Windows podando o lockfile.
+Restrições que vêm do deploy na Hostinger: sem Edge runtime, sem cron da Vercel, **nunca `output: 'standalone'`** (o `server.js` do standalone não carrega `.env.production` e todo request vira `config_ausente` — medido em 03/09/2026; ver o comentário de topo de `next.config.ts`), e cuidado com `npm install` no Windows podando o lockfile.
 
 ## Regras não negociáveis
 
