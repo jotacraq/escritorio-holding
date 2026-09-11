@@ -42,6 +42,13 @@ basta para calar tudo: `configuracoes['copiloto_sessao.ativo']=false`, prompt v1
 `ativo=false`, decisão jurídica de escopo novo ausente, consentimento novo por titular
 ausente. Ligar é configuração; nenhuma das quatro se liga por deploy.
 
+> ⚠️ **Errata (Fatia 2, trava do Fable).** "Cada uma sozinha basta" só é verdade se as
+> quatro forem conferidas **antes da chamada ao provedor de IA**. Na primeira versão deste
+> plano, decisão jurídica e consentimento eram conferidos **no INSERT**, depois do envio —
+> ou seja, 2 de 4 barravam a tempo. Corrigido em **§6.2.1** e **§7**: a rota confere as
+> quatro antes de montar contexto. O princípio geral, que vale para todas as fatias:
+> **trava de dado que vale depois do envio não é trava, é registro.**
+
 **D. O que a Fase 10 limpa.** A transcrição da SV hoje só existe se **alguém colar texto
 à mão** em `POST /api/sessoes/[id]/transcricao` — na prática, nunca aconteceu *(vault
 08/09: 0 uso real)*. O copiloto passa a produzi-la como subproduto, o que faz o Agente do
@@ -405,6 +412,24 @@ teste que prove que o corpo enviado traz `bot_detection.matches` explícito.
 
 Nunca por turno de fala. Nunca por cron fixo. Silêncio = zero chamada.
 
+**Passo 0 — o gate jurídico, ANTES de montar contexto.** A rota confere, nesta ordem e
+antes de tocar em qualquer fala do cliente:
+
+1. `copiloto_sessao.ativo` · 2. prompt `copiloto_sessao` ativo e dentro do orçamento ·
+3. **decisão jurídica ativa** (`sessao.copiloto_ao_vivo`) · 4. **consentimento do titular**
+(`copiloto_sessao_ao_vivo`).
+
+Faltando qualquer uma → **409 `copiloto_ao_vivo_bloqueado`, sem montar contexto, sem gastar
+token, sem que uma sílaba do cliente saia daqui**. As duas consultas (3 e 4) são baratas e
+indexadas: `uniq_decisao_juridica_ativa` (parcial, 0048:96) e o índice de `consentimentos`
+por `(pessoa_id, tipo)`.
+
+**Por que isto é o passo 0 e não o último:** consentimento é **por titular**, enquanto
+configuração e prompt são **globais**. Sem o passo 0, todo cliente **novo** — que ainda não
+consentiu — teria a fala enviada ao subprocessador no primeiro clique, pagaria a execução,
+e só então receberia o 409. A trava que existe para proteger aquela pessoa dispararia
+**depois** do vazamento. Ver §6.2.1 e §7.
+
 **Contexto que entra** (montado no servidor, nunca no cliente):
 
 | | Conteúdo | Tamanho | Por quê |
@@ -442,7 +467,11 @@ como se fosse dela (o método é dela, as falas estão no roteiro).
 
 - `bloco_id` que não existe no roteiro ativo: sugestão **descartada**, não corrigida;
 - `evidencia` que não casa por substring com a janela D nem com C: o campo vira nulo e a
-  execução fica marcada `evidencia_nao_conferida`;
+  execução fica marcada `evidencia_nao_conferida`. **Piso de 12 caracteres** na citação:
+  substring curta ("de", "sim", "não") casa com qualquer fonte e transformaria em "citação
+  literal" o que é invenção do modelo. Evidência abaixo do piso **não é conferível** e cai
+  na mesma regra do não-casamento — vira nulo, nunca vai à tela (achado adversarial do
+  Fable na Fatia 2; sem o piso, a conferência de evidência é decorativa);
 - confiança abaixo de `copiloto_sessao.confianca_minima` (0,6): **não aparece na tela**,
   vira linha no histórico com o motivo;
 - guarda de termo proibido na **saída** (preço, alíquota, valor em reais) — igual à do
@@ -546,6 +575,13 @@ como sugestão com botão, nunca como ação executada:
 Se a Dra. Elaine clica, é **ela** navegando — a mesma função `irPara()` que as setas do
 teclado já chamam (`ConduzirSessaoApp.tsx:135`). Nada muda no banco além do registro de
 que a sugestão foi aceita — que é o dado que, daqui a 20 sessões, dirá se o copiloto acerta.
+
+**Esse registro é entrega da Fatia 2, não intenção.** `copiloto_sugestoes.desfecho` e
+`desfecho_em` existem desde a 0091 e os dois botões existem na tela; sem uma rota que grave
+`aceita`/`ignorada`, as colunas ficariam permanentemente nulas e a frase acima seria uma
+promessa que o sistema não cumpre — exatamente o tipo de "dado plausível que não existe"
+que o `CLAUDE.md` proíbe. A rota de desfecho entra na Fatia 2 (§8), com `desfecho` imutável
+depois de gravado (registrar duas vezes não sobrescreve o primeiro juízo).
 
 **Por que assim e não "o copiloto reordena":** um roteiro reordenado pela IA seria um
 roteiro que a Dra. Elaine não carimbou. O B15 (*qual das 4 versões é a oficial*) está
@@ -809,12 +845,67 @@ recairia sobre a ferramenta menor. Isso não é rigor; é incoerência com cara 
 
 **Por que isto não é a opção 1 ("a trigger distingue `origem`") com outro nome.** A
 objeção à opção 1 é boa e foi ela que definiu o desenho: *o texto manual vira entrada de IA
-na Fatia 2 pelo mesmo caminho*. Verdade — e é exatamente por isso que a trava está em
-`copiloto_sugestoes`. **Não existe caminho pelo qual um segmento manual chegue ao modelo
-sem produzir uma linha em `copiloto_sugestoes`**, e essa linha é travada
-incondicionalmente. Ou seja: digitar é livre; **analisar o que foi digitado continua exigindo
-as duas travas**, exatamente como hoje. A opção 1 sozinha deixaria o furo; a 1 combinada com
-a 2 fecha — e é isso que está escrito acima.
+na Fatia 2 pelo mesmo caminho*. Verdade — e é por isso que o gate de análise existe. Mas
+**onde** ele fica é a correção abaixo: não basta travar a linha de `copiloto_sugestoes`.
+Digitar é livre; **analisar o que foi digitado continua exigindo as duas travas** — só que
+conferidas **antes do envio**, não no INSERT. A opção 1 sozinha deixaria o furo; a 1
+combinada com a 2, **aplicada no ponto certo do caminho**, fecha.
+
+#### 6.2.2 🔴 Errata — o caminho de saída de dado é a CHAMADA, não o INSERT
+
+**O que este plano escreveu errado.** O §6.2.1, na primeira versão, afirmava que a linha em
+`copiloto_sugestoes` "é travada incondicionalmente" e concluía dali que analisar estava
+protegido. A trigger existe e é incondicional — mas ela trava a **persistência**, e a
+persistência acontece **depois** do envio. O backend seguiu o plano à risca, e o resultado
+medido foi:
+
+```
+montarContextoCopiloto()   <- janela D: fala literal do cliente
+executarIaCopiloto()       <- ENVIO HTTP AO PROVEDOR: o dado sai AQUI
+insert copiloto_sugestoes  <- so aqui a trigger confere decisao + consentimento
+```
+
+Quando a trigger dispara, a fala do cliente já está na Anthropic há duas etapas. O 409 que
+o cliente recebe é a confirmação de que o dado saiu, não a prevenção de que saísse.
+
+**A ironia, registrada de propósito para quem ler isto depois:** o erro foi cometido
+**dentro do plano que estabelece, no §7, que "trava de LGPD é por caminho de saída de dado,
+não por feature"**, e que cita o pentest da Fase 3 exatamente sobre isso. O §6.2.1 confundiu
+**persistir** com **enviar**. É o mesmo erro conceitual da Fase 3, em roupa nova — o que
+prova que enunciar o princípio não protege ninguém; aplicá-lo no ponto certo, sim.
+
+**A correção, em uma frase:** o caminho de saída de dado é a **chamada ao provedor**. Logo:
+
+| Onde | O que confere | Papel |
+|---|---|---|
+| **Rota, antes de `montarContextoCopiloto()`** | config · prompt/orçamento · **decisão jurídica** · **consentimento do titular** | **O gate.** 409 `copiloto_ao_vivo_bloqueado` sem gastar token e sem que a fala saia |
+| Trigger em `copiloto_sugestoes` (0093) | as mesmas duas travas jurídicas | **Backstop.** Continua certa como última linha; errado era ser a **única** |
+
+A trigger **não sai** — um gate só em aplicação é o que a Fase 3 já provou frágil. O que
+muda é que ela deixa de ser o primeiro anteparo e passa a ser o último.
+
+**Por que o defeito é grave no caminho principal, e não um caso de borda.** Consentimento é
+**por titular**; configuração e prompt são **globais**. Com tudo ligado, todo cliente
+**novo** cai no furo: no primeiro clique, a fala vai ao subprocessador, a execução é paga,
+e o 409 chega depois. A trava que existe para proteger aquela pessoa dispara depois de já
+não haver o que proteger. E revogar a decisão jurídica ou o consentimento **não cala o
+envio** — só a gravação.
+
+**O princípio geral, que vale para as próximas fatias:**
+
+> **Trava de dado que só vale depois do envio não é trava, é registro.**
+
+- **Fatia 3 (ciclo automático):** o gate do §4.3 passo 0 roda a cada ciclo, não só no
+  primeiro. Sessão que perde o consentimento no meio (revogação) para de chamar a IA no
+  ciclo seguinte, não ao tentar gravar.
+- **Fatia 4 (bot):** é onde isto mais importa, porque o áudio **sai da sala antes de
+  qualquer INSERT nosso**. Por isso o gate da 0093 inclui `sessoes_copiloto.gravacao_externa_id`
+  (§6.2): o ato de **pedir** o bot é o caminho de saída, e é ele que tem de ser conferido —
+  não o primeiro segmento que voltar do webhook.
+
+**Aceite (BACK):** um teste que, com decisão e consentimento ausentes, prove **409 e zero
+linha em `execucoes_ia`**. Contar execução é o que distingue "barrou antes" de "barrou
+depois" — asserção sobre o código de status, sozinha, passaria nas duas versões.
 
 **Por que não a opção 3 (aceitar que o manual morre).** Seria honesto, e por isso estava na
 mesa. Mas custa uma capacidade real, em uso, por um ganho de segurança **igual a zero**: o
@@ -844,14 +935,26 @@ de forma consistente, em outro lugar.
 
 ## 7. Fronteira de PII — o que sai, o que nunca sai, e onde o gate mora
 
-**Onde o gate é aplicado:** nos **dois INSERTs** (`sessoes_copiloto_segmentos` e
-`copiloto_sugestoes`), por trigger de banco — não numa checagem de rota, não numa flag de
-env. É o caminho de saída de dado, não a feature. Um agente futuro que escreva uma rota
-nova apontando para essas tabelas **bate na mesma trava sem saber que ela existe**.
+**Onde o gate é aplicado — corrigido pela errata do §6.2.2.** Em **dois lugares, nesta
+ordem**, e a ordem é o ponto inteiro:
+
+1. **Na rota, antes de montar contexto e antes de chamar o provedor** — é aqui que o dado
+   sairia. Confere config, prompt/orçamento, **decisão jurídica** e **consentimento do
+   titular**; faltando qualquer uma, 409 sem gastar token e sem que uma sílaba saia.
+2. **Na trigger de banco** (0093), como **backstop** — para que um agente futuro que
+   escreva uma rota nova apontando para essas tabelas **bata na trava sem saber que ela
+   existe**. Continua sendo a última linha; deixou de ser a única.
+
+> **O erro que estava escrito aqui, mantido à vista de propósito.** A primeira versão dizia
+> que o gate morava "nos **dois INSERTs**, por trigger de banco — não numa checagem de
+> rota". Isso confunde **persistir** com **enviar**: a trigger dispara depois da chamada ao
+> provedor. Enunciar "trava é por caminho de saída de dado" e então travar o INSERT é
+> repetir o erro da Fase 3 com outro nome. **Trava de dado que só vale depois do envio não
+> é trava, é registro.**
 
 | Dado | Sai para a IA? | Onde é barrado |
 |---|---|---|
-| Janela de ~90 s de transcrição literal | **Sim** — é o insumo | Trigger (decisão mais consentimento). Sem as duas, o segmento nem é gravado, quanto mais enviado |
+| Janela de ~90 s de transcrição literal | **Sim** — é o insumo | **Gate da rota, antes de montar contexto** (§4.3 passo 0): sem decisão jurídica e sem consentimento, o contexto nem é montado e nada é enviado. A trigger é backstop, não o anteparo |
 | Rótulo do falante | **Rótulo sim; nome próprio não** — o servidor troca nome por papel (`advogada`, `cliente`, `acompanhante_1`) antes de montar o contexto | `montarContextoCopiloto()`, um lugar só |
 | Bloco do roteiro, objetivo, proibições | Sim | — (é conteúdo do método, não do cliente) |
 | Recorte do briefing (DISC, objeção, linguagem) | Sim | Já é saída de IA sobre esta mesma família, sob `tratamento_ia` |
@@ -898,11 +1001,27 @@ sem IA.**
 
 ### Fatia 2 — A sugestão por IA, sob demanda, com a sessão digitada
 
-- Migrations 0092 e 0093. O botão **Me ajuda agora** aparece.
+- Migrations da Fatia 2 (ver numeração real abaixo). O botão **Me ajuda agora** aparece.
+- **Numeração real, divergente do rascunho do §6.2** (registrado para o §6.2 não mentir):
+  a Fatia 2 foi entregue como **0092** (só o valor novo do enum de consentimento),
+  **0093** (as travas jurídicas — é a "0092" do rascunho) e **0094** (o prompt — é a
+  "0093" do rascunho). Separar o enum foi decisão do BACK, correta: `alter type ... add
+  value` não roda na mesma transação que o usa. Onde o §6.2 diz 0092/0093, leia 0093/0094.
 - Prompt `ativo=false` → o botão diz "copiloto de IA não ativado". É assim que sobe.
+- **Gate jurídico ANTES da chamada de IA** (§4.3 passo 0 / §6.2.2): decisão jurídica e
+  consentimento do titular conferidos na rota, antes de montar contexto. Teste de aceite:
+  com as duas ausentes, **409 e zero linha em `execucoes_ia`**. A trigger permanece como
+  backstop. **Foi aqui que a primeira versão do plano errou** — a errata explica por quê.
+- **Rota de desfecho da sugestão** (`aceita`/`ignorada`), gravando `desfecho`/`desfecho_em`
+  de `copiloto_sugestoes`: as colunas existem desde a 0091 e os botões existem na tela, mas
+  nada grava. É **entrega desta fatia**, não backlog — sem ela, a promessa do §5 ("o dado
+  que dirá se o copiloto acerta") é uma coluna nula. `desfecho` é imutável depois de
+  gravado.
+- **Piso de 12 caracteres** na conferência de evidência (§4.3): substring curta casa com
+  qualquer fonte e vira citação falsa na tela.
 - Bancada: custo, latência p50/p95, e **prova de que `ativo=false` gera 0 execução**.
 - Sonda de schema (`POST /api/admin/sonda-schema`) antes de ativar.
-- **A Fatia 1 não pode regredir quando a 0092 entrar.** A trigger da 0092 trava
+- **A Fatia 1 não pode regredir quando as travas entrarem.** A trigger da 0093 trava
   `copiloto_sugestoes` (incondicional) e o segmento **só quando `origem='bot'`** — o campo
   de digitar e colar continua funcionando sem B65/B67. A razão inteira está em **§6.2.1**,
   e o teste (a) daquela seção é o que impede que alguém "endureça" a trigger depois e mate
