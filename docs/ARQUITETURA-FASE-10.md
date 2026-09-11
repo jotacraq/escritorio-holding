@@ -726,22 +726,44 @@ begin
   return new;
 end $$;
 
--- A trigger vai nas DUAS tabelas que recebem dado da sala — porque o gate é por
--- caminho de saída de dado, e o segmento de transcrição é dado de cliente tanto
--- quanto a sugestão da IA:
-create trigger trg_copiloto_exige_decisao_segmentos
-  before insert on sessoes_copiloto_segmentos
-  for each row execute function app.exige_decisao_copiloto_ao_vivo();
+-- Onde a trigger vai, e por que NAO vai em toda tabela (achado do Fable na
+-- trava da Fatia 1 — ver §6.2.1 logo abaixo, que é a decisão por extenso):
+--
+--   `copiloto_sugestoes`  → SIM. É o caminho de saída de dado: nenhuma linha
+--                           aqui existe sem que a fala do cliente tenha ido a
+--                           um subprocessador. É a trava que importa.
+--   `sessoes_copiloto`    → SIM, mas só para `gravacao_externa_id` (é o ato de
+--                           pedir o bot; ver o `when` abaixo). Criar a linha da
+--                           sessão no modo manual não toca subprocessador nenhum.
+--   `..._segmentos`       → **NAO, incondicionalmente.** Trava só o que vem de
+--                           fora (`origem='bot'`), pelo `when` — senão a trigger
+--                           mataria o campo de digitar da Fatia 1.
 create trigger trg_copiloto_exige_decisao_sugestoes
   before insert on copiloto_sugestoes
   for each row execute function app.exige_decisao_copiloto_ao_vivo();
+
+-- Segmento vindo do BOT é entrada de dado de um subprocessador: exige as duas
+-- travas. Segmento DIGITADO pela advogada é a advogada escrevendo no sistema
+-- dela, sob RLS e `ve_patrimonio()` — mesma posição, textual, de
+-- `POST /api/sessoes/[id]/transcricao`: "PERSISTIR não exige consentimento (é
+-- dado do escritório, em banco do escritório, sob RLS); só ANALISAR exige".
+create trigger trg_copiloto_exige_decisao_segmentos_bot
+  before insert on sessoes_copiloto_segmentos
+  for each row when (new.origem = 'bot')
+  execute function app.exige_decisao_copiloto_ao_vivo();
+
+-- Pedir o bot é o instante em que a sala passa a ser gravada por terceiro.
+create trigger trg_copiloto_exige_decisao_bot_pedido
+  before insert or update of gravacao_externa_id on sessoes_copiloto
+  for each row when (new.gravacao_externa_id is not null)
+  execute function app.exige_decisao_copiloto_ao_vivo();
 
 -- (c) O tipo de consentimento novo entra em configuracoes['consentimento.textos'],
 --     mas o TEXTO é B67 (decisão da Dra. Elaine). Esta migration cria a chave com
 --     texto vazio; app.tem_consentimento devolve false enquanto ninguém conceder.
 --     Fail-closed por AUSENCIA de dado, não por flag que alguém possa virar.
 
--- ROLLBACK: drop das 2 triggers, drop function, restaurar o CHECK original.
+-- ROLLBACK: drop das 3 triggers, drop function, restaurar o CHECK original.
 ```
 
 ```sql
@@ -753,6 +775,70 @@ values ('copiloto_sessao', 1, '...', '...', 'anthropic/claude-sonnet-5', 'low', 
 -- LATENCIA (p50/p95).
 -- ROLLBACK: delete from prompts_versoes where chave = 'copiloto_sessao';
 ```
+
+#### 6.2.1 Por que a trigger dos segmentos tem `when (new.origem = 'bot')`
+
+**O achado (Fable, trava da Fatia 1).** A 0092, como estava rascunhada, punha a trigger
+`before insert` em `sessoes_copiloto_segmentos` **sem condição**. Mas essa é a mesma tabela
+onde a Fatia 1 grava o segmento `origem='manual'` — o campo de digitar e colar que existe
+justamente para testar o pipeline sem bot. No dia em que a 0092 entrasse, **o campo manual
+pararia de funcionar** e só voltaria quando a Dra. Elaine respondesse B65 e B67. A Fatia 2
+entraria derrubando uma capacidade que a Fatia 1 entregou e que já estaria em uso.
+
+**A decisão: a trava fica no caminho de saída de dado, e o `when` diz qual é.** Não é uma
+exceção aberta no gate — é o gate apontando para o lugar certo.
+
+O princípio do §7 é literal: *trava de LGPD é por caminho de saída de dado, não por
+feature*. Aplicado com honestidade, ele obriga a perguntar, para cada INSERT, **que dado
+sai para quem**:
+
+| INSERT | O dado sai do escritório? | Trava |
+|---|---|---|
+| `copiloto_sugestoes` | **Sim, sempre.** Nenhuma linha existe aqui sem que a fala tenha ido ao modelo | **Trava incondicional** |
+| `..._segmentos` com `origem='bot'` | **Sim.** O texto veio de um subprocessador que gravou a sala | **Trava pelo `when`** |
+| `sessoes_copiloto.gravacao_externa_id` | **Sim.** É o ato de colocar um terceiro para gravar | **Trava pelo `when`** |
+| `..._segmentos` com `origem='manual'` | **Não.** É a advogada digitando no sistema dela | **Sem trava** |
+
+A quarta linha é a mesma posição que o sistema **já tomou por escrito**, em produção, em
+`POST /api/sessoes/[id]/transcricao`: *"Diferente da Análise (que exige
+`tem_consentimento(pessoa,'tratamento_ia')`), PERSISTIR não exige consentimento: é dado do
+escritório, em banco do escritório, sob RLS. Só ANALISAR exige."* Se digitar um trecho no
+copiloto exigisse consentimento, mas colar a transcrição inteira da sessão na rota ao lado
+não exigisse, o sistema teria **duas éticas para o mesmo ato** — e a mais rígida delas
+recairia sobre a ferramenta menor. Isso não é rigor; é incoerência com cara de rigor.
+
+**Por que isto não é a opção 1 ("a trigger distingue `origem`") com outro nome.** A
+objeção à opção 1 é boa e foi ela que definiu o desenho: *o texto manual vira entrada de IA
+na Fatia 2 pelo mesmo caminho*. Verdade — e é exatamente por isso que a trava está em
+`copiloto_sugestoes`. **Não existe caminho pelo qual um segmento manual chegue ao modelo
+sem produzir uma linha em `copiloto_sugestoes`**, e essa linha é travada
+incondicionalmente. Ou seja: digitar é livre; **analisar o que foi digitado continua exigindo
+as duas travas**, exatamente como hoje. A opção 1 sozinha deixaria o furo; a 1 combinada com
+a 2 fecha — e é isso que está escrito acima.
+
+**Por que não a opção 3 (aceitar que o manual morre).** Seria honesto, e por isso estava na
+mesa. Mas custa uma capacidade real, em uso, por um ganho de segurança **igual a zero**: o
+texto manual não sai para lugar nenhum. Desligar uma função que funciona, para não proteger
+nada, é o oposto do critério de otimização.
+
+**A garantia estrutural que torna o `when` confiável.** `origem` não é campo que a tela
+escolhe: a policy de RLS da 0091 já força `with check (... and origem = 'manual')` para
+`authenticated`. Escrever `origem='bot'` é privilégio de `service_role`, isto é, do webhook.
+Então o `when (new.origem = 'bot')` **não é uma promessa de aplicação** — é uma condição
+sobre uma coluna que a própria RLS impede o navegador de forjar. Um atacante com sessão de
+advogada não consegue marcar o próprio texto como `manual` para escapar do gate, porque
+`manual` é o único valor que ele já podia escrever, e `manual` nunca sai do escritório.
+
+**Consequência para o BACK, no aceite:** três testes. (a) com decisão e consentimento
+ausentes, INSERT `origem='manual'` **passa**; (b) nas mesmas condições, INSERT
+`origem='bot'` **é recusado pelo banco**; (c) nas mesmas condições, INSERT em
+`copiloto_sugestoes` **é recusado pelo banco**. O (a) é o teste de regressão que impede
+alguém de "endurecer" a trigger no futuro e matar a Fatia 1 de novo, sem entender por quê.
+
+**Nenhum bloqueio novo para a Dra. Elaine.** Esta decisão não pergunta nada a ela: mantém o
+que já vale para a transcrição, e não afrouxa nada que já estivesse travado. **B77 não
+existe** — criar um bloqueio aqui seria empurrar para ela uma escolha que o sistema já fez,
+de forma consistente, em outro lugar.
 
 ---
 
@@ -816,7 +902,14 @@ sem IA.**
 - Prompt `ativo=false` → o botão diz "copiloto de IA não ativado". É assim que sobe.
 - Bancada: custo, latência p50/p95, e **prova de que `ativo=false` gera 0 execução**.
 - Sonda de schema (`POST /api/admin/sonda-schema`) antes de ativar.
-- Depende de: decisão jurídica registrada (B65) e 1 consentimento concedido (B67).
+- **A Fatia 1 não pode regredir quando a 0092 entrar.** A trigger da 0092 trava
+  `copiloto_sugestoes` (incondicional) e o segmento **só quando `origem='bot'`** — o campo
+  de digitar e colar continua funcionando sem B65/B67. A razão inteira está em **§6.2.1**,
+  e o teste (a) daquela seção é o que impede que alguém "endureça" a trigger depois e mate
+  a Fatia 1 sem entender por quê. **Digitar continua livre; analisar o que foi digitado
+  exige as duas travas** — que é a fronteira que a Fatia 2 está justamente criando.
+- Depende de: decisão jurídica registrada (B65) e 1 consentimento concedido (B67) —
+  **para gerar sugestão**, não para a sessão manual continuar de pé.
 - **Bloqueada por C11 enquanto `OPENROUTER_API_KEY` não voltar à Hostinger.**
 
 ### Fatia 3 — O ciclo automático mais o polling
@@ -891,7 +984,7 @@ explícito · teste provando `bot_detection.matches` explícito · teste provand
 | **C9** | **A tela do Conduzir já faz 5 requisições para montar.** Somar polling ingênuo agravaria | `ConduzirSessaoApp.tsx:79-109` mais `PainelBriefingSessao` | Uma rota de polling só, payload combinado, briefing fora do ciclo (§2.4) |
 | **C10** | **A coluna direita é de 320 px fixos e já é do briefing.** Copiloto e briefing brigam pelo mesmo espaço | `ConduzirSessaoApp.tsx:241` | Abas na coluna (Briefing / Copiloto), **briefing como aba default**. O copiloto não pode empurrar o roteiro para baixo da dobra — é o U1 da Fase 3, que continua valendo |
 | **C11** | **Produção não tem `OPENROUTER_API_KEY`** *(vault 08/09)*: toda IA responde 503 | vault | Não bloqueia as fatias 1 e 3 (sem IA, ou com IA desligada). Bloqueia a bancada da fatia 2 |
-| **C12** | **O roteiro v4 está ativo por escolha técnica, não por carimbo da Dra. Elaine (B15, aberto há 5 fases)** | `ConduzirSessaoApp.tsx:289-294` | O copiloto **amplifica** o B15: a IA vai sugerir com base num roteiro que ninguém oficializou. Não se resolve aqui, mas **a aba do copiloto tem de repetir o aviso** que o cabeçalho já dá |
+| **C12** | **O roteiro v4 está ativo por escolha técnica, não por carimbo da Dra. Elaine (B15, aberto há 5 fases)** | `ConduzirSessaoApp.tsx:289-294` | O copiloto **amplifica** o B15: a IA vai sugerir com base num roteiro que ninguém oficializou. Não se resolve aqui, mas **a aba do copiloto tem de repetir o aviso** que o cabeçalho já dá. ⚠️ **Dívida nomeada na Fatia 1:** o aviso passou a existir **hard-coded em dois lugares** (cabeçalho da tela e painel do copiloto) — **quando o B15 for fechado, os dois mentem juntos**. Quem fechar o B15 tem de apagar os dois, ou (melhor) derivar o aviso de `roteiros_versoes.ativado_por is null`, que é o dado que já responde a pergunta desde a 0078. Enquanto forem dois literais, é uma dívida de manutenção, não um recurso |
 | **C13** | **O campo `exige_decisores` não existe em `RoteiroBloco`** e a v4 não o tem | `types/roteiro.ts:42-51` | Campo **opcional**; ausente é ausente, nunca `false` inventado. Quem marca é a Dra. Elaine, publicando versão nova |
 
 ---
@@ -939,9 +1032,19 @@ Feature que só empilha reprova. O que sai ou melhora:
    Conduzir já deveria ter (C9) e cria o precedente para as outras telas.
 6. **`CLAUDE.md` corrigido** (C7): uma linha errada que, seguida à risca, derruba produção.
 
-**O que a fase acrescenta de estrutura:** 4 tabelas, 1 função, 2 triggers, 1 prompt, 10
-chaves de configuração. **Nenhuma tabela existente alterada** — só o CHECK de escopo (que
-é ampliação) e a view de pendências, refeita a partir do banco.
+**O que a fase acrescenta de estrutura, ao final das 5 fatias:** 4 tabelas, 1 função,
+**3 triggers**, 1 prompt, 10 chaves de configuração. **Nenhuma tabela existente alterada** —
+só o CHECK de escopo (que é ampliação) e a view de pendências, refeita a partir do banco.
+
+**Faseamento do DDL, para a contagem bater a cada fatia** (registrado porque a Fatia 1
+entregou 3 tabelas, não 4, e a omissão não estava escrita em lugar nenhum):
+
+| Tabela | Criada em | Por quê aí |
+|---|---|---|
+| `sessoes_copiloto` | 0091 (Fatia 1) | a sessão existe desde o modo manual |
+| `sessoes_copiloto_segmentos` | 0091 (Fatia 1) | é onde o campo de digitar grava |
+| `copiloto_sugestoes` | 0091 (Fatia 1), **DDL sem chamador** | o modelo de dados nasce inteiro numa migration só; a RLS já nega escrita a `authenticated` |
+| `copiloto_ciclos` | **Fatia 3**, não 0091 | é a claim do ciclo automático. Na Fatia 1 e 2 **não existe ciclo**: a Fatia 1 não chama IA, e a Fatia 2 só dispara por botão, onde a corrida que a claim resolve não acontece. Criar a tabela antes seria DDL sem função, que é o tipo de peso morto que o critério de otimização reprova |
 
 ---
 
