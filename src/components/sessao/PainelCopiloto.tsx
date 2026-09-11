@@ -1,22 +1,33 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ErroSessao,
   buscarEstadoCopiloto,
+  buscarPollingCopiloto,
+  encerrarCopiloto,
   listarSegmentosCopiloto,
   pedirSugestaoCopiloto,
   registrarDesfechoSugestaoCopiloto,
   registrarSegmentoManual,
 } from "@/components/sessao/api";
-import type { DesfechoCopiloto, RespostaSugestaoCopiloto, SegmentoCopiloto, SugestaoCopiloto, TipoObservacaoCopiloto } from "@/types/copiloto";
+import type {
+  DesfechoCopiloto,
+  InfoCicloCopiloto,
+  RespostaSugestaoCopiloto,
+  SegmentoCopiloto,
+  SugestaoCopiloto,
+  SugestaoCopilotoPolling,
+  TipoObservacaoCopiloto,
+} from "@/types/copiloto";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Cartao } from "@/components/ui/Cartao";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
+import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { Campo, AreaTexto } from "@/components/ui/Campo";
-import { formatarDataHora } from "@/lib/formatar";
+import { formatarDataHora, formatarHora } from "@/lib/formatar";
 
 /** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
  * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
@@ -31,6 +42,199 @@ const CODIGO_COPILOTO_DESLIGADO = "copiloto_desligado";
 
 function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
   return erro instanceof ErroSessao && erro.codigo === CODIGO_COPILOTO_DESLIGADO;
+}
+
+// ---------------------------------------------------------------------------
+// Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.1, §4.3, §6.1, §8, B71) — o ciclo
+// automático deixa de esperar o botão e passa a rodar sozinho; a tela busca
+// novidade por polling. `usePollingCopiloto` é o ÚNICO lugar que sabe de
+// timer, cursor e foco da aba — o resto do componente só lê o resultado.
+// ---------------------------------------------------------------------------
+
+/** Ponto de partida do PRIMEIRO tick, antes de qualquer resposta do
+ * servidor existir (§4.1) — mesmo default que `copiloto_sessao.polling_ms`
+ * grava na 0091. A partir da primeira resposta, `resposta.polling` manda:
+ * mudar a chave no banco agora muda esta tela, sem deploy (era a divergência
+ * registrada na entrega anterior — corrigida pelo contrato novo do backend,
+ * `ConfigPollingCopiloto`). */
+const POLLING_MS_EM_FOCO_INICIAL = 3000;
+const POLLING_MS_SEM_FOCO_INICIAL = 10000;
+
+/** A partir de quantas falhas CONSECUTIVAS o polling vira aviso visível
+ * (achado do Fable: falha silenciosa faz a tela parecer "sala calma" quando
+ * na verdade o copiloto está surdo). 1-2 falhas seguidas continuam mudas —
+ * B71 vale aqui: um soluço de rede não pode virar alarme no meio de uma
+ * conversa sobre herança. 3 é o piso a partir do qual "transiente" deixa de
+ * ser a explicação mais provável. */
+const LIMIAR_FALHAS_PARA_AVISO = 3;
+
+interface EstadoPollingCopiloto {
+  /** Todas as sugestões novas já vistas pelo polling desde que a tela abriu,
+   * na ordem de chegada — é a lista que `SugestoesDoCiclo` renderiza. Nunca
+   * é limpa por reabrir a lista: só cresce (ou é substituída ao trocar de
+   * sessão), porque "sugestão que a advogada ainda não abriu" precisa
+   * continuar visível até ela mesma dispensar. */
+  sugestoes: SugestaoCopilotoPolling[];
+  ciclo: InfoCicloCopiloto | null;
+  encerrado: boolean;
+  erro: unknown;
+  /** Falhas seguidas desde o último sucesso — zera a cada resposta boa. É a
+   * base do aviso persistente (iii do achado do Fable): só vira visível a
+   * partir de `LIMIAR_FALHAS_PARA_AVISO`, nunca na 1ª nem na 2ª. */
+  falhasConsecutivas: number;
+  /** Quando a SEQUÊNCIA atual de falhas começou (a 1ª falha, não a mais
+   * recente) — é o "desde HH:MM" do aviso; recalculado do zero a cada
+   * sucesso, para não mostrar um horário de uma falha antiga já superada. */
+  falhandoDesde: Date | null;
+  /** `true` quando a última falha foi `copiloto_desligado` (409) — kill-switch
+   * virado em Admin NO MEIO da sessão. Distinto de falha transiente: aqui o
+   * polling PARA (nunca reagenda), a tela cai no `CopilotoDesligado` já
+   * existente, e não faz sentido metralhar o servidor de 409 em loop até o
+   * fim da sessão (achado ii do Fable). */
+  desligadoPeloKillSwitch: boolean;
+}
+
+/**
+ * Faz o `GET /api/sessoes/[id]/copiloto` de 3 em 3 segundos (10 em 10 sem
+ * foco), com cursor incremental — nunca refaz a lista inteira (§2.2/§4.1).
+ * Para de todo quando `sessaoEncerrada=true` (a sessão foi encerrada por
+ * este painel ou já chegou encerrada de outro lugar) — polling que continua
+ * depois do fim é bug de custo e de bateria, não recurso.
+ *
+ * Uma requisição de cada vez: se uma chamada demorar mais que o intervalo,
+ * a próxima só é agendada depois que a anterior terminar (nunca empilha).
+ * Timer sempre limpo no unmount e ao trocar de sessão/encerrar.
+ */
+function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerrada: boolean) {
+  const ESTADO_INICIAL: EstadoPollingCopiloto = {
+    sugestoes: [],
+    ciclo: null,
+    encerrado: false,
+    erro: null,
+    falhasConsecutivas: 0,
+    falhandoDesde: null,
+    desligadoPeloKillSwitch: false,
+  };
+  const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
+  const cursorSegmentoRef = useRef(0);
+  const cursorSugestaoRef = useRef(0);
+  const indiceAtualRef = useRef(indiceAtual);
+  indiceAtualRef.current = indiceAtual;
+  // O intervalo que o SERVIDOR mandou na última resposta (`resposta.polling`)
+  // — começa no valor default antes da 1ª resposta existir, e é sobrescrito
+  // a cada ciclo. Fica numa ref (não em `useState`) de propósito: mudar só
+  // o número que o PRÓXIMO `setTimeout` vai usar não deve disparar
+  // re-render nem recriar o efeito do zero — é o "reajusta no tick
+  // seguinte, sem recriar o ciclo nem perder cursor" pedido no aceite.
+  const intervaloRef = useRef({ emFocoMs: POLLING_MS_EM_FOCO_INICIAL, semFocoMs: POLLING_MS_SEM_FOCO_INICIAL });
+
+  useEffect(() => {
+    // Sessão nova: cursores voltam ao início, histórico de sugestões limpa,
+    // e o intervalo volta ao ponto de partida — a config da sessão anterior
+    // não deve vazar para a próxima até a 1ª resposta desta chegar.
+    cursorSegmentoRef.current = 0;
+    cursorSugestaoRef.current = 0;
+    intervaloRef.current = { emFocoMs: POLLING_MS_EM_FOCO_INICIAL, semFocoMs: POLLING_MS_SEM_FOCO_INICIAL };
+    setEstado(ESTADO_INICIAL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessaoId]);
+
+  useEffect(() => {
+    if (sessaoEncerrada) return; // encerrado por fora (manual, 409 sessao_ja_encerrada, ou por duração máxima) — não inicia polling novo
+    let vivo = true;
+    // `number`, explícito: é sempre `window.setTimeout`/`window.clearTimeout`
+    // (nunca o `setTimeout` global do Node, que devolveria `Timeout`).
+    let timerId: number | null = null;
+
+    async function ciclo() {
+      let encerradoNestaResposta = false;
+      let paraDeVezPorKillSwitch = false;
+      try {
+        const resposta = await buscarPollingCopiloto(sessaoId, {
+          bloco: indiceAtualRef.current,
+          desdeSegmento: cursorSegmentoRef.current,
+          desdeSugestao: cursorSugestaoRef.current,
+        });
+        if (!vivo) return;
+        cursorSegmentoRef.current = resposta.proximo_cursor_segmento;
+        cursorSugestaoRef.current = resposta.proximo_cursor_sugestao;
+        // Reajusta o intervalo para o PRÓXIMO tick — nunca o tick que acabou
+        // de rodar. Fail-safe já é do servidor (contrato: sempre preenchido
+        // e válido), mas um `> 0` aqui é defesa em profundidade contra um
+        // valor absurdo travar o polling num loop apertado.
+        if (resposta.polling && resposta.polling.em_foco_ms > 0 && resposta.polling.sem_foco_ms > 0) {
+          intervaloRef.current = { emFocoMs: resposta.polling.em_foco_ms, semFocoMs: resposta.polling.sem_foco_ms };
+        }
+        // O SERVIDOR encerrou a sessão sozinha por ter passado da duração
+        // máxima (§4.4) — mesmo efeito do encerramento manual: para daqui
+        // pra frente, sem reagendar. Decidido AQUI, dentro do próprio ciclo
+        // — não delegado a um re-render do componente pai passar
+        // `sessaoEncerrada=true` de volta, o que teria um atraso de um
+        // ciclo de render e deixaria pelo menos mais um tick escapar.
+        encerradoNestaResposta = resposta.ciclo.resultado === "sessao_encerrada_por_duracao_maxima";
+        setEstado((atual) => ({
+          // A maioria das respostas vem vazia (§4.1: "não faça o estado
+          // piscar a cada resposta vazia") — só acrescenta se houver algo
+          // novo; `ciclo` sempre é atualizado (é como a tela sabe que "um
+          // ciclo rodou", mesmo em silêncio normal).
+          sugestoes: resposta.sugestoes_novas.length > 0 ? [...atual.sugestoes, ...resposta.sugestoes_novas] : atual.sugestoes,
+          ciclo: resposta.ciclo,
+          encerrado: encerradoNestaResposta,
+          erro: null,
+          // Sucesso zera a sequência de falhas — é o "some sozinho quando o
+          // polling volta" do achado do Fable (i): a próxima falha, se
+          // houver, começa a contar do zero, com um novo "desde HH:MM".
+          falhasConsecutivas: 0,
+          falhandoDesde: null,
+          desligadoPeloKillSwitch: false,
+        }));
+      } catch (e) {
+        if (!vivo) return;
+        // (ii) `copiloto_desligado`: alguém virou o kill-switch em Admin NO
+        // MEIO da sessão. Isto é FIM DE POLLING, não uma falha entre outras
+        // — sem o corte aqui, cada tick seguinte bateria 409 de novo, para
+        // sempre, até a sessão acabar (achado do Fable: "loop infinito de
+        // 409 a cada 3 segundos"). A tela cai no `CopilotoDesligado` já
+        // existente da Fatia 1 — não inventa um segundo texto para o mesmo
+        // estado.
+        paraDeVezPorKillSwitch = ehCopilotoDesligado(e);
+        setEstado((atual) => ({
+          ...atual,
+          erro: e,
+          desligadoPeloKillSwitch: paraDeVezPorKillSwitch,
+          // (iii) 1-2 falhas seguidas continuam mudas — só a CONTAGEM sobe;
+          // é o componente quem decide, comparando com o limiar, se vira
+          // aviso visível. `falhandoDesde` marca a 1ª falha da sequência
+          // atual, não é sobrescrito a cada nova falha da mesma sequência.
+          falhasConsecutivas: paraDeVezPorKillSwitch ? atual.falhasConsecutivas : atual.falhasConsecutivas + 1,
+          falhandoDesde: paraDeVezPorKillSwitch ? atual.falhandoDesde : (atual.falhandoDesde ?? new Date()),
+        }));
+      } finally {
+        if (vivo && !encerradoNestaResposta && !paraDeVezPorKillSwitch) timerId = window.setTimeout(agendar, intervaloAtual());
+      }
+    }
+
+    function intervaloAtual() {
+      const { emFocoMs, semFocoMs } = intervaloRef.current;
+      return document.visibilityState === "hidden" ? semFocoMs : emFocoMs;
+    }
+
+    function agendar() {
+      void ciclo();
+    }
+
+    timerId = window.setTimeout(agendar, intervaloAtual());
+
+    return () => {
+      vivo = false;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+    // `indiceAtual` de propósito fora das deps: o polling não deve reiniciar
+    // o timer a cada troca de bloco (perderia o ritmo dos 3s); o valor mais
+    // recente já chega pela ref a cada ciclo (lido dentro do closure acima).
+  }, [sessaoId, sessaoEncerrada]);
+
+  return estado;
 }
 
 /**
@@ -99,6 +303,21 @@ export function PainelCopiloto({
   const buscarEstado = useCallback(() => buscarEstadoCopiloto(sessaoId, indiceAtual), [sessaoId, indiceAtual]);
   const { dados: estado, carregando, erro, recarregar } = useRecurso(buscarEstado, [sessaoId, indiceAtual]);
 
+  // Fatia 3: o ciclo passa a rodar sozinho e a tela busca novidade a cada
+  // 3s — mas SÓ depois que a Fatia 1 já provou que o copiloto está ligado
+  // (senão o polling ficaria martelando 409 em ambiente onde a migration/
+  // config nem rodou). `sessaoEncerrada` para o timer de vez (§4.1: "para de
+  // todo quando a sessão é encerrada") — inclui o encerramento MANUAL
+  // (`EncerrarCopiloto`) e o AUTOMÁTICO por duração máxima
+  // (`ciclo.resultado === "sessao_encerrada_por_duracao_maxima"`, calculado
+  // logo abaixo): os dois param o timer da mesma forma, mas a MENSAGEM na
+  // tela é diferente — a advogada precisa saber QUAL dos dois aconteceu.
+  const [encerradaManualmente, setEncerradaManualmente] = useState(false);
+  const podePollar = Boolean(estado) && !ehCopilotoDesligado(erro);
+  const polling = usePollingCopiloto(sessaoId, indiceAtual, encerradaManualmente || !podePollar);
+  const encerradaPorDuracaoMaxima = polling.ciclo?.resultado === "sessao_encerrada_por_duracao_maxima";
+  const sessaoEncerrada = encerradaManualmente || encerradaPorDuracaoMaxima;
+
   if (carregando && !estado) return <EstadoCarregando rotulo="Carregando o copiloto…" />;
 
   if (erro) {
@@ -108,12 +327,40 @@ export function PainelCopiloto({
 
   if (!estado) return null;
 
+  // (ii) do achado do Fable: o KILL-SWITCH foi virado em Admin NO MEIO da
+  // sessão (o polling recebeu 409 `copiloto_desligado`, não a leitura
+  // inicial). Cai no MESMO `CopilotoDesligado` da Fatia 1 — não existe um
+  // segundo texto para o mesmo estado, e o polling já parou sozinho dentro
+  // do hook (nunca reagenda depois de detectar isto).
+  if (polling.desligadoPeloKillSwitch) return <CopilotoDesligado />;
+
   return (
     <div className="flex flex-col gap-3">
       <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-legenda text-tinta-fraca">
         Nenhuma das 4 versões do roteiro foi carimbada como oficial pela Dra. Elaine (ver aviso no topo da sessão) — o
         copiloto aponta com base na versão ativa hoje, não numa versão definitiva.
       </p>
+
+      {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
+
+      {encerradaPorDuracaoMaxima && (
+        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+          O copiloto encerrou esta sessão automaticamente por ter passado do tempo máximo configurado — não é falha:
+          a transcrição foi consolidada e nenhuma sugestão nova chega mais.
+        </p>
+      )}
+
+      {encerradaManualmente && !encerradaPorDuracaoMaxima && (
+        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+          O copiloto foi encerrado para esta sessão. A transcrição foi consolidada; nenhuma sugestão nova chega mais.
+        </p>
+      )}
+
+      {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
+
+      {!sessaoEncerrada && (
+        <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+      )}
 
       <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
 
@@ -127,6 +374,8 @@ export function PainelCopiloto({
       <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
 
       <RegistroManual sessaoId={sessaoId} />
+
+      {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
     </div>
   );
 }
@@ -182,6 +431,209 @@ function mensagemRecusa(erro: unknown): { titulo: string; descricao: string; pod
     descricao: erro instanceof ErroSessao ? erro.message : "Erro inesperado. Tente de novo em instantes.",
     podeTentarDeNovo: true,
   };
+}
+
+/**
+ * (i)+(iii) do achado do Fable: falha PERSISTENTE do polling vira aviso
+ * visível — nunca as duas primeiras (B71: um soluço de rede não é alarme no
+ * meio de uma conversa sobre herança), sempre a partir da 3ª seguida (o
+ * limiar em que "transiente" deixa de ser a explicação mais provável).
+ *
+ * A frase tem DOIS avisos, de propósito: "sem conexão" (o quê) e "a sessão
+ * segue normalmente pelo roteiro" (o que NÃO aconteceu) — sem o segundo
+ * período a advogada pode entender que perdeu a sessão inteira, quando só
+ * perdeu o assistente. Mesmo princípio do B74 ("a tela mostra o estado
+ * real"), aplicado ao canal que alimenta `GateBloqueado`/`SugestoesDoCiclo`:
+ * elas ficariam mudas por falta de dado novo, não por silêncio da sala, e
+ * sem este aviso a tela inteira mentiria por omissão.
+ *
+ * `role="status"` (não `alert`): é informação sobre a INFRAESTRUTURA, não
+ * um bloqueio jurídico — `GateBloqueado` usa `alert` porque aquilo é uma
+ * decisão que precisa de ação; isto aqui é "seguimos tentando", sem pedir
+ * nada da advogada. Some sozinho no próximo sucesso (o hook zera a contagem).
+ */
+function AvisoPollingFalhando({ falhasConsecutivas, falhandoDesde }: { falhasConsecutivas: number; falhandoDesde: Date | null }) {
+  if (falhasConsecutivas < LIMIAR_FALHAS_PARA_AVISO || !falhandoDesde) return null;
+  return (
+    <p role="status" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
+      <span className="mb-0.5 block font-bold text-[color:var(--ambar)]">Copiloto sem conexão desde {formatarHora(falhandoDesde.toISOString())}</span>
+      A sessão segue normalmente pelo roteiro. Assim que a conexão voltar, o copiloto retoma sozinho.
+    </p>
+  );
+}
+
+/**
+ * `ciclo.resultado === "bloqueado_pelo_gate"` (Fatia 3, §6.2.2/B71) — o gate
+ * jurídico fechou NO MEIO da sessão (decisão jurídica ou consentimento
+ * revogados). É DISTINTO de silêncio normal (`ciclo.resultado === null`,
+ * que é o caso comum e não gera nenhum aviso): a advogada nunca pode
+ * confundir "a sala está calma, nada para sugerir" com "o copiloto foi
+ * calado por revogação". Aviso sóbrio, sempre visível enquanto durar —
+ * não é um toast que some sozinho, porque a condição continua verdadeira a
+ * cada novo polling até alguém religar a trava.
+ */
+function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
+  if (!ciclo || ciclo.resultado !== "bloqueado_pelo_gate") return null;
+  const motivo =
+    ciclo.motivo_bloqueio === "sem_decisao_juridica"
+      ? "Não há decisão jurídica ativa autorizando o copiloto ao vivo para esta sessão."
+      : ciclo.motivo_bloqueio === "sem_consentimento_titular"
+        ? "O consentimento do titular para o copiloto ao vivo não está mais ativo (foi revogado ou nunca foi dado)."
+        : "A trava jurídica do copiloto está fechada para esta sessão.";
+  return (
+    <p role="alert" className="rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm text-tinta">
+      <span className="mb-0.5 block font-bold text-[color:var(--vermelho)]">Copiloto de IA parado nesta sessão</span>
+      {motivo} A transcrição por texto continua sendo registrada normalmente; nenhuma sugestão nova por IA vai aparecer
+      enquanto isto não mudar.
+    </p>
+  );
+}
+
+/**
+ * O AVISO DISCRETO da Fatia 3 (§8/B71): "nada pisca, nada toca, nada abre
+ * sozinho". Cada sugestão que chega pelo polling (gatilho automático OU
+ * "Me ajuda agora" registrado por outra aba) entra aqui FECHADA — só o
+ * card-resumo aparece, sem animação, sem foco roubado, sem som. A Dra.
+ * Elaine abre quando quiser, no seu tempo. Se ela está com uma sugestão
+ * aberta e chega outra, a nova ESPERA fechada na lista — abrir uma nunca
+ * fecha nem substitui outra.
+ */
+function SugestoesDoCiclo({
+  sessaoId,
+  sugestoes,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  sugestoes: SugestaoCopilotoPolling[];
+  blocosRoteiro?: { id: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  // Cada sugestão nasce fechada e nasce "não dispensada" — os dois estados
+  // moram aqui, por id, e nunca são resetados por uma sugestão nova chegar
+  // (chegar sugestão B não fecha nem reabre a sugestão A).
+  const [abertas, setAbertas] = useState<Record<string, boolean>>({});
+  const [dispensadas, setDispensadas] = useState<Record<string, boolean>>({});
+
+  const pendentes = sugestoes.filter((s) => !dispensadas[s.sugestao_id]);
+  if (pendentes.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p role="status" aria-live="polite" className="text-legenda font-medium uppercase text-tinta-fraca">
+        {pendentes.length === 1 ? "1 sugestão nova" : `${pendentes.length} sugestões novas`}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {pendentes.map((s) => (
+          <li key={s.sugestao_id}>
+            {abertas[s.sugestao_id] ? (
+              <Cartao rotulo={ROTULO_GATILHO[s.gatilho]} titulo="Sugestão do copiloto" preenchimento="compacto">
+                {!s.visivel || !s.sugestao ? (
+                  <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                    A IA analisou este momento, mas a confiança ficou abaixo do mínimo configurado — nada é mostrado
+                    para não guiar com um palpite fraco.
+                  </p>
+                ) : (
+                  <ApresentacaoSugestao
+                    sessaoId={sessaoId}
+                    sugestaoId={s.sugestao_id}
+                    sugestao={s.sugestao}
+                    blocosRoteiro={blocosRoteiro}
+                    irPara={irPara}
+                  />
+                )}
+                <div className="mt-2 flex justify-end">
+                  <Botao
+                    variante="fantasma"
+                    tamanho="compacto"
+                    onClick={() => setDispensadas((atual) => ({ ...atual, [s.sugestao_id]: true }))}
+                  >
+                    Dispensar
+                  </Botao>
+                </div>
+              </Cartao>
+            ) : (
+              // O card fechado é o "aviso discreto": um botão sóbrio, sem
+              // cor de alarme, sem badge pulsante — a Dra. Elaine decide
+              // quando (e se) quer abrir.
+              <Botao
+                type="button"
+                variante="secundario"
+                tamanho="compacto"
+                largo
+                className="justify-between"
+                onClick={() => setAbertas((atual) => ({ ...atual, [s.sugestao_id]: true }))}
+              >
+                <span>{ROTULO_GATILHO[s.gatilho]}</span>
+                <span className="text-tinta-fraca">Ver sugestão</span>
+              </Botao>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const ROTULO_GATILHO: Record<SugestaoCopilotoPolling["gatilho"], string> = {
+  intervalo: "Sugestão automática",
+  virada_bloco: "Sugestão ao mudar de parte",
+  sob_demanda: "Sugestão pedida",
+};
+
+/**
+ * Encerrar a sessão do copiloto (Fatia 3, §6.1, B71 "camada 1 de
+ * confirmação"): é irreversível no sentido do plano — consolida a
+ * transcrição em `transcricoes` e para o copiloto para sempre nesta sessão.
+ * `ConfirmarAcao` deixa o efeito explícito por extenso, nunca "tem certeza?".
+ * `sessao_ja_encerrada` (409, clique duplo) é tratado como sucesso silencioso
+ * — a sessão já está no estado que o clique pedia.
+ */
+function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerrar: () => void }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [processando, setProcessando] = useState(false);
+  const [erro, setErro] = useState<unknown>(null);
+
+  async function confirmar() {
+    setProcessando(true);
+    setErro(null);
+    try {
+      await encerrarCopiloto(sessaoId);
+      aoEncerrar();
+    } catch (e) {
+      if (e instanceof ErroSessao && e.codigo === "sessao_ja_encerrada") {
+        aoEncerrar();
+      } else {
+        setErro(e);
+      }
+    } finally {
+      setProcessando(false);
+      setConfirmando(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-linha pt-3">
+      <Botao variante="secundario" tamanho="compacto" onClick={() => setConfirmando(true)} className="self-start">
+        Encerrar copiloto desta sessão
+      </Botao>
+      {Boolean(erro) && (
+        <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
+          {erro instanceof ErroSessao ? erro.message : "Não foi possível encerrar o copiloto. Tente de novo."}
+        </p>
+      )}
+      <ConfirmarAcao
+        aberto={confirmando}
+        titulo="Encerrar o copiloto desta sessão?"
+        efeito="A transcrição registrada até agora é consolidada em um documento único desta sessão, e o copiloto para de buscar novidade e de sugerir — não é possível reativá-lo nesta mesma sessão depois."
+        rotuloConfirmar="Encerrar"
+        confirmando={processando}
+        perigo
+        aoConfirmar={() => void confirmar()}
+        aoCancelar={() => setConfirmando(false)}
+      />
+    </div>
+  );
 }
 
 /**

@@ -233,3 +233,143 @@ export interface RespostaDesfechoCopiloto {
  * caso normal de clicar duas vezes (dois botões, cliente que dá duplo-clique)
  * — 409, nunca 500: o dado já existe, só não pode ser trocado. */
 export type CodigoRecusaDesfechoCopiloto = "copiloto_desligado" | "sugestao_nao_encontrada" | "desfecho_ja_registrado";
+
+// ---------------------------------------------------------------------------
+// FATIA 3 (docs/ARQUITETURA-FASE-10.md §4.1, §4.3, §6.2, §8) — o ciclo
+// automático e o polling coalescido. Contrato entre BACK e FRONT — o
+// `frontend-engineer` importa daqui, não redefine.
+//
+// `GET /api/sessoes/[id]/copiloto` (mesma rota da Fatia 1) GANHA parâmetros
+// e campos novos — o formato NASCEU coalescido desde a Fatia 1 exatamente
+// para isto (§2.4/C9: "é o formato que a Fatia 3 vai reusar sem trocar de
+// contrato"). Nenhuma rota nova de polling: é a MESMA `GET` de sempre.
+// ---------------------------------------------------------------------------
+
+/** Query string de `GET /api/sessoes/[id]/copiloto` a partir da Fatia 3.
+ * `bloco` já existia (Fatia 1). `desde_segmento`/`desde_sugestao` são os
+ * cursores incrementais (§2.2/§4.1) — 0 = "desde o início", como os cursores
+ * de `GET .../segmentos` já fazem. Omitir os dois é válido (a tela pode só
+ * querer o estado + disparar avaliação de ciclo, sem novidade de conteúdo). */
+export interface ConsultaPollingCopiloto {
+  bloco?: number;
+  desde_segmento?: number;
+  desde_sugestao?: number;
+}
+
+/** Uma sugestão do copiloto como o POLLING a entrega — MESMO formato de
+ * `RespostaSugestaoCopiloto` (Fatia 2), mais o cursor de ordenação
+ * (`ordem_evento`, bigint identity — §2.2: "uuid não ordena"). É o que a
+ * tela usa tanto para desenhar o card quanto para calcular o próximo
+ * `desde_sugestao`. */
+export interface SugestaoCopilotoPolling {
+  sugestao_id: string;
+  ordem_evento: number;
+  gatilho: TipoGatilhoCopilotoPolling;
+  confianca_geral: number;
+  visivel: boolean;
+  sugestao: SugestaoCopiloto | null;
+  desfecho: DesfechoCopiloto | null;
+  criado_em: string;
+}
+
+export type TipoGatilhoCopilotoPolling = "intervalo" | "virada_bloco" | "sob_demanda";
+
+/** O intervalo de polling que o SERVIDOR manda a tela usar — corrige a
+ * divergência achada pelo frontend/coordenador na revisão desta fatia:
+ * `copiloto_sessao.polling_ms` existe em `configuracoes` desde a 0091, com
+ * descrição prometendo controlar o polling, mas nenhuma rota a expunha; o
+ * front hardcodou `POLLING_MS_EM_FOCO=3000` porque não tinha de onde ler.
+ * "Ajuste que não ajusta" — mudar a chave no banco não mudava nada na tela.
+ *
+ * SÓ `em_foco_ms` vem de uma chave própria (`copiloto_sessao.polling_ms`,
+ * 0091) — é a ÚNICA das duas que o banco declara como configurável. O valor
+ * "sem foco" (§4.1: "mitigação de conforto... sobe para 10s quando a aba
+ * perde o foco") NÃO tem chave própria em `configuracoes`: não é um ajuste
+ * operacional independente, é uma REGRA DE UX derivada — sempre
+ * `em_foco_ms * FATOR_SEM_FOCO` (server/copiloto/config.ts). Criar uma 11ª
+ * chave só para isto seria configuração sem decisão de negócio por trás
+ * (ninguém jamais pediu ajustar o multiplicador em si). Se um dia isso
+ * mudar, aí sim a chave nasce — não antes de haver motivo real.
+ *
+ * Fail-safe do lado da tela: campo ausente/valor inválido → usa 3000/10000
+ * (os mesmos defaults que a 0091 já grava) — nunca trava o polling por falta
+ * deste campo. */
+export interface ConfigPollingCopiloto {
+  em_foco_ms: number;
+  sem_foco_ms: number;
+}
+
+/** O que a rota de polling relata sobre o CICLO AUTOMÁTICO desta chamada —
+ * é como a tela sabe "um ciclo rodou" sem inferir pelo aparecimento de uma
+ * sugestão nova (silêncio na sala = ciclo avaliado, gatilho não bateu, ZERO
+ * chamada — isso também é "um ciclo rodou", só que sem sugestão; a tela não
+ * deve interpretar ausência de sugestão como "o copiloto está com defeito"). */
+export interface InfoCicloCopiloto {
+  avaliado: boolean;
+  /** Só preenchido quando `avaliado=true` E o gatilho disparou nesta chamada
+   * (`nenhum_gatilho`/`janela_ja_claimada_por_outra_requisicao` → `null`,
+   * porque não houve tentativa de execução, só avaliação). */
+  resultado:
+    | "sugestao_gravada"
+    | "bloqueado_pelo_gate"
+    | "orcamento_estourado"
+    | "timeout"
+    | "indisponivel"
+    | "conteudo_recusado"
+    | "sessao_encerrada_por_duracao_maxima"
+    | null;
+  /** SÓ preenchido quando `resultado='bloqueado_pelo_gate'` — é como a tela
+   * sabe que o GATE FECHOU NO MEIO DA SESSÃO (§6.2.2 da errata: revogação de
+   * decisão/consentimento cala o ciclo seguinte). A tela deve mostrar aviso
+   * explícito ("o copiloto de IA foi desativado nesta sessão"), nunca
+   * silêncio mudo — silêncio mudo pareceria bug, não decisão deliberada. */
+  motivo_bloqueio: string | null;
+}
+
+/** `resultado === "sessao_encerrada_por_duracao_maxima"` (§4.4 do plano):
+ * `copiloto_sessao.duracao_maxima_minutos` estourou e o SERVIDOR encerrou a
+ * sessão sozinho, sem a advogada clicar "Encerrar" — mesmo efeito de
+ * `POST .../encerrar` (consolidação em transcrições, sugestões expiradas).
+ * A tela deve mostrar isso como estado explícito ("sessão encerrada
+ * automaticamente por tempo"), nunca inferir por silêncio; o próximo GET de
+ * `EstadoCopiloto.estado_copiloto` já virá `'encerrado'`. */
+
+/** Payload de `GET /api/sessoes/[id]/copiloto` a partir da Fatia 3 — estende
+ * `EstadoCopiloto` (Fatia 1) por composição, nunca a redefine (mesmo padrão
+ * de `RoteiroVersaoResumo = Omit<RoteiroVersao, ...>` em `roteiro.ts`). */
+export interface EstadoCopilotoComPolling extends EstadoCopiloto {
+  segmentos_novos: SegmentoCopiloto[];
+  /** Cursor para a PRÓXIMA chamada (`desde_segmento`) — a maior `ordem`
+   * devolvida, ou o `desde_segmento` recebido se não houve novidade. */
+  proximo_cursor_segmento: number;
+  sugestoes_novas: SugestaoCopilotoPolling[];
+  /** Cursor para a PRÓXIMA chamada (`desde_sugestao`) — a maior
+   * `ordem_evento` devolvida, ou o `desde_sugestao` recebido se não houve
+   * novidade. */
+  proximo_cursor_sugestao: number;
+  ciclo: InfoCicloCopiloto;
+  polling: ConfigPollingCopiloto;
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sessoes/[id]/copiloto/encerrar — Fatia 3 (§6.1, §8). Marca
+// `sessoes_copiloto.estado='encerrado'`, expira sugestões pendentes
+// (`desfecho='expirada'`) e consolida os segmentos em `transcricoes`
+// reusando `POST /api/sessoes/[id]/transcricao` (0032) — idempotente por
+// sha256, como sempre.
+// ---------------------------------------------------------------------------
+
+export interface RespostaEncerrarCopiloto {
+  sessao_id: string;
+  estado: "encerrado";
+  encerrado_em: string;
+  /** `null` quando não havia nenhum segmento a consolidar (sessão nunca
+   * usou o copiloto para transcrever nada) — nunca insere transcrição vazia. */
+  transcricao_id: string | null;
+  ja_existia_transcricao: boolean;
+  sugestoes_expiradas: number;
+}
+
+/** `sessao_ja_encerrada` é o caso normal de clicar duas vezes — 409, nunca
+ * 500: encerrar de novo não reconsolida nem duplica transcrição. */
+export type CodigoRecusaEncerrarCopiloto = "copiloto_desligado" | "sessao_nao_encontrada" | "sessao_ja_encerrada";

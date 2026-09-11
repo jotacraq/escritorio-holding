@@ -21,7 +21,9 @@ import type {
 import type {
   DesfechoCopiloto,
   EstadoCopiloto,
+  EstadoCopilotoComPolling,
   RespostaDesfechoCopiloto,
+  RespostaEncerrarCopiloto,
   RespostaSegmentos,
   RespostaSugestaoCopiloto,
   SegmentoCopiloto,
@@ -208,4 +210,34 @@ export function registrarDesfechoSugestaoCopiloto(
     method: "POST",
     body: JSON.stringify({ desfecho }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Copiloto ao vivo — Fase 10, Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.1,
+// §4.3, §6.2, §8). MESMA rota `GET /api/sessoes/[id]/copiloto` da Fatia 1,
+// agora com cursores incrementais e o estado do ciclo automático — é o que
+// a tela chama a cada 3s/10s (§4.1). Cursor SEMPRE o último recebido; nunca
+// refaz a lista inteira (§2.2/§4.1: "cuidado com o óbvio que quebra").
+// ---------------------------------------------------------------------------
+
+export function buscarPollingCopiloto(
+  sessaoId: string,
+  parametros: { bloco: number; desdeSegmento: number; desdeSugestao: number },
+): Promise<EstadoCopilotoComPolling> {
+  const busca = new URLSearchParams({
+    bloco: String(parametros.bloco),
+    desde_segmento: String(parametros.desdeSegmento),
+    desde_sugestao: String(parametros.desdeSugestao),
+  });
+  return chamar<EstadoCopilotoComPolling>(`/api/sessoes/${sessaoId}/copiloto?${busca.toString()}`);
+}
+
+/**
+ * POST /api/sessoes/[id]/copiloto/encerrar — §6.1 do plano. `sessao_ja_encerrada`
+ * (409) é o caso normal de clicar duas vezes; a tela trata como sucesso
+ * silencioso (o polling já deveria ter parado antes disso, mas o clique
+ * duplo humano sempre é possível).
+ */
+export function encerrarCopiloto(sessaoId: string): Promise<RespostaEncerrarCopiloto> {
+  return chamar<RespostaEncerrarCopiloto>(`/api/sessoes/${sessaoId}/copiloto/encerrar`, { method: "POST" });
 }

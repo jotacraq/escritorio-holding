@@ -1,0 +1,271 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { registrarErro } from "@/server/erros";
+import { conferirGateCopiloto } from "./gate";
+import { conferirOrcamentoCopiloto } from "./orcamento";
+import { montarContextoCopiloto } from "./contexto";
+import { executarIaCopiloto } from "./executar-ia";
+import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
+import { avaliarGatilho, type TipoGatilhoCopiloto } from "./gatilho";
+import { encerrarSePassouDoTempo } from "./encerrar";
+import { lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
+import type { ContextoCopiloto, SugestaoCopiloto } from "@/types/copiloto";
+
+/**
+ * O CICLO AUTOMÁTICO — Fase 10, Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.3,
+ * §6.2, §6.2.2). Chamado a cada `GET /api/sessoes/[id]/copiloto` de polling
+ * (3 s): a rota de polling avalia se É HORA de rodar um ciclo, e se for,
+ * chama `executarCicloCopiloto` — que faz a claim, o gate, o orçamento e,
+ * só se tudo passar, chama a IA.
+ *
+ * 🔴 A ERRATA §6.2.2, APLICADA AQUI (é o ponto central desta fatia): o gate
+ * jurídico (`conferirGateCopiloto`) roda A CADA CICLO, não uma vez no início
+ * da sessão. Revogar decisão jurídica ou consentimento NO MEIO da sessão
+ * cala o CICLO SEGUINTE — nunca "só o próximo INSERT". Não existe cache de
+ * "já passou no gate uma vez" em lugar nenhum deste módulo: cada chamada de
+ * `executarCicloCopiloto` refaz a consulta em `decisoes_juridicas` e
+ * `consentimentos`, exatamente como `POST .../sugestao` (Fatia 2) já fazia
+ * para o botão sob demanda — este módulo generaliza o MESMO gate para o
+ * caminho automático, não inventa um segundo.
+ *
+ * ORDEM (mesma ordem de risco crescente de custo da Fatia 2, com a CLAIM
+ * entrando ANTES de tudo — é o que esta fatia acrescenta):
+ *   1. `copiloto_sessao.ativo` — kill-switch (checado pelo CHAMADOR, a rota
+ *      de polling, antes de sequer avaliar gatilho — este módulo assume que
+ *      já passou).
+ *   2. `sessoes_copiloto.estado` — sessão ENCERRADA ou em ERRO não dispara
+ *      ciclo novo (silêncio pós-encerramento é o comportamento certo: a
+ *      esta própria função já prevê `duracao_maxima_minutos` encerrando
+ *      sozinho, logo abaixo).
+ *   3. **Gatilho** (`avaliarGatilho`) — "o primeiro que ocorrer" entre tempo+
+ *      fala-nova e virada de bloco (§4.3). Sem gatilho, retorna
+ *      `nenhum_gatilho` sem tocar no banco de novo.
+ *   4. **Claim atômica** (`copiloto_ciclos`, 0096) — `insert ... on conflict
+ *      do nothing returning`. Só quem reivindica a janela segue adiante.
+ *   5. **Gate jurídico** (`conferirGateCopiloto`) — decisão ativa +
+ *      consentimento do titular. Falhando, a claim FICA GRAVADA (a janela
+ *      foi avaliada) mas NADA é enviado à IA.
+ *   6. **Orçamento** (`conferirOrcamentoCopiloto`) — teto por sessão/dia.
+ *   7. **IA** (`executarIaCopiloto`, timeout 8s) → validação pós-Zod → grava
+ *      `copiloto_sugestoes` (mesma trigger de 0093 como backstop).
+ *
+ * `duracao_maxima_minutos` (§4.4: "encerra sozinho") é conferida AQUI, logo
+ * depois de confirmar `estado==='ativo'` e ANTES de avaliar gatilho — uma
+ * sessão esquecida aberta além do teto encerra (mesmo efeito de
+ * `POST .../encerrar`, via `server/copiloto/encerrar.ts`, reusado) e o ciclo
+ * para por ali, sem chegar a avaliar gatilho/claim/IA. CORREÇÃO de achado da
+ * revisão desta fatia: a 0091 já gravava esta promessa na DESCRIÇÃO da
+ * chave ("encerra sozinha (fatia 3)") — nenhuma linha de código a lia.
+ * `intervalo_segundos` é conferido logo depois — é este módulo que decide
+ * "é hora de rodar IA", a rota de polling só decide "é hora de PERGUNTAR se
+ * é hora".
+ */
+
+export type ResultadoCiclo =
+  | { situacao: "nenhum_gatilho" }
+  | { situacao: "sessao_nao_ativa_para_ciclo" }
+  | { situacao: "sessao_encerrada_por_duracao_maxima" }
+  | { situacao: "janela_ja_claimada_por_outra_requisicao" }
+  | { situacao: "bloqueado_pelo_gate"; motivo: string }
+  | { situacao: "orcamento_estourado"; motivo: string }
+  | { situacao: "timeout" }
+  | { situacao: "indisponivel"; motivo: string }
+  | { situacao: "conteudo_recusado" }
+  | { situacao: "sugestao_gravada"; sugestaoId: string; gatilho: TipoGatilhoCopiloto; visivel: boolean; sugestao: SugestaoCopiloto | null };
+
+const CHAVE_INTERVALO_SEGUNDOS = "copiloto_sessao.intervalo_segundos";
+const PADRAO_INTERVALO_SEGUNDOS = 45;
+const CHAVE_CONFIANCA_MINIMA = "copiloto_sessao.confianca_minima";
+const PADRAO_CONFIANCA_MINIMA = 0.6;
+const CHAVE_DURACAO_MAXIMA_MINUTOS = "copiloto_sessao.duracao_maxima_minutos";
+const PADRAO_DURACAO_MAXIMA_MINUTOS = 150;
+
+interface SessaoParaCiclo {
+  jornada_id: string;
+  criado_em: string;
+  realizada_em: string | null;
+  sessoes_copiloto: { estado: string; iniciado_em: string | null; criado_em: string } | null;
+  jornadas: { pessoa_id: string } | null;
+}
+
+/**
+ * `janela = floor(segundos_desde_inicio / intervalo_segundos)` (§4.3/0096).
+ * `inicioSessaoIso` é `sessoes_copiloto.iniciado_em` (carimbado no 1º
+ * segmento, Fatia 1) — nunca `sessoes_viabilidade.criado_em`, que é quando a
+ * LINHA da sessão foi criada no sistema, não quando o copiloto começou a
+ * ouvir. Sem `sessoes_copiloto` (copiloto nunca ativado) não há como calcular
+ * janela — o chamador não deveria ter chegado aqui sem uma linha existente.
+ */
+function calcularJanela(inicioSessaoIso: string, agoraMs: number, intervaloSegundos: number): number {
+  const segundosDesdeInicio = Math.max(0, (agoraMs - Date.parse(inicioSessaoIso)) / 1000);
+  return Math.floor(segundosDesdeInicio / intervaloSegundos);
+}
+
+/**
+ * Reivindica a janela — `insert ... on conflict do nothing returning id`,
+ * MESMO padrão de `reivindicarMensagem` (agente-whatsapp/estado.ts, Fase 9).
+ * `23505` nunca deveria ocorrer aqui (o `on conflict do nothing` já absorve a
+ * colisão), mas é tratado por defesa em profundidade — duas migrations de
+ * bancos diferentes, versões de driver, etc.
+ */
+async function reivindicarJanela(
+  admin: SupabaseClient,
+  params: { sessaoId: string; janela: number; gatilho: TipoGatilhoCopiloto; blocoIndice: number },
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("copiloto_ciclos")
+    .insert({
+      sessao_id: params.sessaoId,
+      janela: params.janela,
+      gatilho: params.gatilho,
+      bloco_indice: params.blocoIndice,
+    })
+    .select("sessao_id")
+    .maybeSingle<{ sessao_id: string }>();
+
+  if (error) {
+    if (error.code === "23505") return false; // outra requisição já claimou — silêncio, não é falha
+    throw error;
+  }
+  return data !== null;
+}
+
+/**
+ * Ponto de entrada único do ciclo automático. Chamado pela rota de polling
+ * (`GET /api/sessoes/[id]/copiloto`) a cada 3s — a MAIORIA das chamadas sai
+ * em `nenhum_gatilho` sem escrever nada além da leitura do gatilho (§2.3: "o
+ * gatilho de IA não é temporal puro").
+ *
+ * `admin` é `service_role` — mesmo motivo de `POST .../sugestao` (Fatia 2):
+ * a claim e o INSERT de sugestão não têm gaveta de escrita para
+ * `authenticated` (RLS de 0091/0096). `supabase` (com sessão) é usado só
+ * para montar contexto (mesmas policies de leitura que a Fatia 2 já usa).
+ */
+export async function executarCicloCopiloto(
+  supabase: SupabaseClient,
+  admin: SupabaseClient,
+  params: { sessaoId: string; blocoAtualIndice: number; agoraMs?: number },
+): Promise<ResultadoCiclo> {
+  const agoraMs = params.agoraMs ?? Date.now();
+
+  const { data: sessao, error: erroSessao } = await supabase
+    .from("sessoes_viabilidade")
+    .select("jornada_id, criado_em, realizada_em, sessoes_copiloto(estado, iniciado_em, criado_em), jornadas(pessoa_id)")
+    .eq("id", params.sessaoId)
+    .maybeSingle<SessaoParaCiclo>();
+  if (erroSessao) throw erroSessao;
+  if (!sessao) return { situacao: "sessao_nao_ativa_para_ciclo" };
+
+  // Sessão sem copiloto iniciado (ninguém digitou nada ainda, Fatia 1) ou
+  // 'encerrado'/'erro' (inclusive por duracao_maxima_minutos, checado logo
+  // abaixo): silêncio. Só 'ativo' dispara ciclo — 'aguardando' é o estado
+  // antes do primeiro segmento, nada para o ciclo avaliar ainda.
+  if (!sessao.sessoes_copiloto || sessao.sessoes_copiloto.estado !== "ativo") {
+    return { situacao: "sessao_nao_ativa_para_ciclo" };
+  }
+
+  const pessoaId = sessao.jornadas?.pessoa_id;
+  if (!pessoaId) return { situacao: "sessao_nao_ativa_para_ciclo" };
+
+  const inicioSessaoIso = sessao.sessoes_copiloto.iniciado_em ?? sessao.sessoes_copiloto.criado_em;
+
+  // DURAÇÃO MÁXIMA (§4.4) — ANTES de avaliar gatilho: sessão esquecida
+  // aberta encerra aqui e o ciclo para, sem gastar mais nenhuma consulta.
+  const duracaoMaximaMinutos = await lerConfiguracaoInt(admin, CHAVE_DURACAO_MAXIMA_MINUTOS, PADRAO_DURACAO_MAXIMA_MINUTOS);
+  const encerradaAgora = await encerrarSePassouDoTempo(supabase, admin, {
+    sessaoId: params.sessaoId,
+    jornadaId: sessao.jornada_id,
+    realizadaEm: sessao.realizada_em,
+    inicioSessaoIso,
+    duracaoMaximaMinutos,
+    agoraMs,
+  });
+  if (encerradaAgora) {
+    return { situacao: "sessao_encerrada_por_duracao_maxima" };
+  }
+
+  const intervaloSegundos = await lerConfiguracaoInt(supabase, CHAVE_INTERVALO_SEGUNDOS, PADRAO_INTERVALO_SEGUNDOS);
+
+  const decisao = await avaliarGatilho(supabase, {
+    sessaoId: params.sessaoId,
+    blocoAtualIndice: params.blocoAtualIndice,
+    intervaloSegundos,
+    agoraMs,
+  });
+  if (!decisao.dispara || !decisao.gatilho) {
+    return { situacao: "nenhum_gatilho" };
+  }
+
+  const janela = calcularJanela(inicioSessaoIso, agoraMs, intervaloSegundos);
+
+  const claimada = await reivindicarJanela(admin, {
+    sessaoId: params.sessaoId,
+    janela,
+    gatilho: decisao.gatilho,
+    blocoIndice: params.blocoAtualIndice,
+  });
+  if (!claimada) {
+    // Outra aba/requisição já reivindicou esta janela — silêncio, não é erro.
+    return { situacao: "janela_ja_claimada_por_outra_requisicao" };
+  }
+
+  // A PARTIR DAQUI a janela já está gravada como avaliada. Toda recusa
+  // abaixo (gate/orçamento/timeout) NÃO desfaz a claim — a claim é sobre a
+  // TENTATIVA, não sobre o resultado (comentário de topo da 0096).
+
+  // GATE JURÍDICO — A CADA CICLO (é o ponto §6.2.2 desta fatia: revogação no
+  // meio da sessão cala o PRÓXIMO ciclo, não só o próximo INSERT).
+  const gate = await conferirGateCopiloto(admin, { sessaoId: params.sessaoId, pessoaId });
+  if (!gate.liberado) {
+    return { situacao: "bloqueado_pelo_gate", motivo: gate.motivo ?? "falha_ao_conferir_gate" };
+  }
+
+  const orcamento = await conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs });
+  if (!orcamento.dentro) {
+    return { situacao: "orcamento_estourado", motivo: orcamento.motivo ?? "falha_ao_contar_orcamento" };
+  }
+
+  const contexto: ContextoCopiloto = await montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice);
+
+  const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto });
+
+  if (execucao.situacao === "timeout") return { situacao: "timeout" };
+  if (execucao.situacao === "indisponivel") return { situacao: "indisponivel", motivo: execucao.motivo };
+
+  const validado = validarSugestaoCopiloto(execucao.saida, contexto);
+  if (!validado.sugestao) {
+    return { situacao: "conteudo_recusado" };
+  }
+
+  const confiancaMinima = await lerConfiguracaoJson<number>(supabase, CHAVE_CONFIANCA_MINIMA, PADRAO_CONFIANCA_MINIMA);
+  const visivel = sugestaoEVisivel(validado.sugestao.confianca_geral, confiancaMinima);
+
+  try {
+    const { data: gravado, error: erroInsercao } = await admin
+      .from("copiloto_sugestoes")
+      .insert({
+        sessao_id: params.sessaoId,
+        bloco_id: validado.sugestao.desvio_sugerido?.bloco_id ?? contexto.bloco_atual?.id ?? null,
+        gatilho: decisao.gatilho,
+        conteudo: validado.sugestao,
+        confianca: validado.sugestao.confianca_geral,
+        execucao_ia_id: execucao.execucaoId,
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (erroInsercao) throw erroInsercao;
+
+    return {
+      situacao: "sugestao_gravada",
+      sugestaoId: gravado.id,
+      gatilho: decisao.gatilho,
+      visivel,
+      sugestao: visivel ? validado.sugestao : null,
+    };
+  } catch (erro) {
+    // Backstop (trigger 0093) recusou apesar do gate ter liberado — não
+    // deveria acontecer em uso normal (mesma nota da rota de sugestão sob
+    // demanda). Registra e devolve como bloqueio, nunca 500 silencioso.
+    registrarErro("copiloto/ciclo.executarCicloCopiloto", erro, { sessao_id: params.sessaoId });
+    return { situacao: "bloqueado_pelo_gate", motivo: "recusado_pelo_banco" };
+  }
+}

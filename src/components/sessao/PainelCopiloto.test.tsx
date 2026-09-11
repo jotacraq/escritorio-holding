@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { fireEvent, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
-import type { DesfechoCopiloto, EstadoCopiloto, RespostaDesfechoCopiloto, RespostaSegmentos, RespostaSugestaoCopiloto, SugestaoCopiloto } from "@/types/copiloto";
+import type {
+  DesfechoCopiloto,
+  EstadoCopiloto,
+  EstadoCopilotoComPolling,
+  RespostaDesfechoCopiloto,
+  RespostaEncerrarCopiloto,
+  RespostaSegmentos,
+  RespostaSugestaoCopiloto,
+  SugestaoCopiloto,
+} from "@/types/copiloto";
 import { ErroSessao } from "@/components/sessao/api";
 
 /**
@@ -39,6 +48,20 @@ const { estado } = vi.hoisted(() => ({
     // Fatia 2 — desfecho (§5): "Ir para lá"/"Ignorar" gravam telemetria.
     desfechoChamadas: [] as Array<{ sessaoId: string; sugestaoId: string; desfecho: DesfechoCopiloto }>,
     erroDesfecho: null as Error | null,
+    // Fatia 3 — polling coalescido (`GET .../copiloto` com cursores) e encerrar.
+    pollingChamadas: [] as Array<{ bloco: number; desdeSegmento: number; desdeSugestao: number }>,
+    pollingRespostas: [] as Array<EstadoCopilotoComPolling | (() => EstadoCopilotoComPolling)>,
+    pollingRespostaPadrao: null as EstadoCopilotoComPolling | null,
+    erroPolling: null as Error | null,
+    /** Fila de comportamento POR CHAMADA (achado do Fable: falha persistente
+     * do polling) — `null` = sucesso normal (segue o fluxo de
+     * `pollingRespostas`/`pollingRespostaPadrao`), erro = rejeita com aquele
+     * erro. Consumida ANTES de `erroPolling` (que continua servindo os
+     * testes antigos, "toda chamada falha igual"). Vazia = ignorada. */
+    pollingSequencia: [] as Array<Error | null>,
+    encerrarChamadas: [] as string[],
+    encerrarResposta: null as RespostaEncerrarCopiloto | null,
+    erroEncerrar: null as Error | null,
   },
 }));
 
@@ -76,8 +99,82 @@ vi.mock("@/components/sessao/api", async () => {
       const resposta: RespostaDesfechoCopiloto = { sugestao_id: sugestaoId, desfecho, desfecho_em: new Date().toISOString() };
       return Promise.resolve(resposta);
     },
+    buscarPollingCopiloto: (
+      _sessaoId: string,
+      parametros: { bloco: number; desdeSegmento: number; desdeSugestao: number },
+    ) => {
+      estado.pollingChamadas.push(parametros);
+      if (estado.pollingSequencia.length > 0) {
+        const proximoComportamento = estado.pollingSequencia.shift()!;
+        if (proximoComportamento) return Promise.reject(proximoComportamento);
+        // `null` na sequência: sucesso — segue o fluxo normal abaixo.
+      } else if (estado.erroPolling) {
+        return Promise.reject(estado.erroPolling);
+      }
+      const proxima = estado.pollingRespostas.shift();
+      const base = proxima
+        ? typeof proxima === "function"
+          ? proxima()
+          : proxima
+        : (estado.pollingRespostaPadrao ?? RESPOSTA_POLLING_VAZIA(parametros));
+      return Promise.resolve(base);
+    },
+    encerrarCopiloto: (sessaoId: string) => {
+      estado.encerrarChamadas.push(sessaoId);
+      if (estado.erroEncerrar) return Promise.reject(estado.erroEncerrar);
+      return Promise.resolve(
+        estado.encerrarResposta ?? {
+          sessao_id: sessaoId,
+          estado: "encerrado" as const,
+          encerrado_em: new Date().toISOString(),
+          transcricao_id: null,
+          ja_existia_transcricao: false,
+          sugestoes_expiradas: 0,
+        },
+      );
+    },
   };
 });
+
+/** `resposta.polling` default do mock — mesmos valores default que o
+ * servidor grava na 0091 (`em_foco_ms: 3000`, `sem_foco_ms: 10000`). Os
+ * testes que provam o reajuste de intervalo (§ aceite: "o intervalo vem do
+ * servidor, não da constante") sobrescrevem isto explicitamente. */
+const POLLING_PADRAO = { em_foco_ms: 3000, sem_foco_ms: 10000 };
+
+/** Resposta de polling "silêncio normal": ciclo avaliado, nada novo — é o
+ * caso mais comum (§4.1: "a maioria vem vazia"). Cursor devolvido é o mesmo
+ * recebido, para o teste de cursor incremental poder provar que ele não
+ * regride nem reinicia sozinho. */
+function RESPOSTA_POLLING_VAZIA(parametros: { desdeSegmento: number; desdeSugestao: number }): EstadoCopilotoComPolling {
+  return {
+    ...ESTADO_BASE,
+    segmentos_novos: [],
+    proximo_cursor_segmento: parametros.desdeSegmento,
+    sugestoes_novas: [],
+    proximo_cursor_sugestao: parametros.desdeSugestao,
+    ciclo: { avaliado: true, resultado: null, motivo_bloqueio: null },
+    polling: POLLING_PADRAO,
+  };
+}
+
+/** Monta uma `EstadoCopilotoComPolling` completa a partir só do que o teste
+ * precisa variar — `polling` sempre entra com o default a menos que o
+ * `overrides` o troque. Único ponto que conhece a forma inteira do
+ * contrato: um campo novo no tipo (como aconteceu com `polling`) quebra
+ * aqui, no typecheck, e não em 10 literais espalhados pelo arquivo. */
+function respostaPolling(overrides: Partial<EstadoCopilotoComPolling> = {}): EstadoCopilotoComPolling {
+  return {
+    ...ESTADO_BASE,
+    segmentos_novos: [],
+    proximo_cursor_segmento: 0,
+    sugestoes_novas: [],
+    proximo_cursor_sugestao: 0,
+    ciclo: { avaliado: true, resultado: null, motivo_bloqueio: null },
+    polling: POLLING_PADRAO,
+    ...overrides,
+  };
+}
 
 const { PainelCopiloto } = await import("./PainelCopiloto");
 
@@ -121,6 +218,14 @@ beforeEach(() => {
   estado.pedirSugestaoChamadas = 0;
   estado.desfechoChamadas = [];
   estado.erroDesfecho = null;
+  estado.pollingChamadas = [];
+  estado.pollingRespostas = [];
+  estado.pollingRespostaPadrao = null;
+  estado.erroPolling = null;
+  estado.pollingSequencia = [];
+  estado.encerrarChamadas = [];
+  estado.encerrarResposta = null;
+  estado.erroEncerrar = null;
 });
 
 describe("PainelCopiloto", () => {
@@ -616,5 +721,559 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
 
     resolver({ sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.7, visivel: true, sugestao: null });
     spy.mockRestore();
+  });
+});
+
+/**
+ * Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.1, §4.3, §6.1, §8, B71): o ciclo
+ * automático roda sozinho e a tela busca novidade por polling. Este bloco
+ * trava exatamente o aceite pedido:
+ *
+ *  1. Cursor incremental: o próximo `GET` manda o último cursor recebido,
+ *     nunca refaz a lista desde o início.
+ *  2. Intervalo sobe para 10s quando `document.visibilityState` é "hidden".
+ *  3. O polling PARA de vez ao encerrar a sessão (nenhuma chamada depois).
+ *  4. `bloqueado_pelo_gate` rende aviso explícito — distinto de silêncio.
+ *  5. Sugestão nova NUNCA abre sozinha — só o aviso discreto; abrir é clique.
+ *  6. `sessao_ja_encerrada` (409) não vira erro visível.
+ *  7. Timer é limpo no unmount (nenhuma chamada depois de desmontar).
+ *  8. axe limpo nos estados novos (aviso de gate, aviso de sugestão nova,
+ *     card aberto, tela pós-encerramento).
+ */
+describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+/** Mesmo padrão de `abrir()`, mas avançando timers falsos em vez de esperar
+   * timers reais — a Fatia 1/2 resolvem por microtask (funcionam igual com
+   * fake timers). O polling só dispara o PRIMEIRO ciclo aos 3s (§4.1: o
+   * primeiro request não é imediato, é o mesmo intervalo dos seguintes) —
+   * por isso avança 3000ms aqui: depois de `abrirComPolling`, já houve
+   * exatamente 1 chamada de polling, ponto de partida estável para os
+   * testes que avançam mais tempo a partir daí. */
+  async function abrirComPolling(props: { blocosRoteiro?: { id: string }[]; irPara?: (i: number) => void } = {}) {
+    const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} {...props} />);
+    // Resolve a Fatia 1 (`useRecurso`, microtask) antes do polling: o
+    // polling só começa a valer depois que `estado` existir (`podePollar`).
+    // Duas voltas de microtask (mesmo padrão de `abrir()`: `.then/.finally`
+    // encadeados precisam de mais de uma volta do loop de microtasks).
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+    return montado;
+  }
+
+  it("manda o cursor da resposta anterior na próxima chamada — nunca refaz a lista desde o início", async () => {
+    const sugestaoPolling = {
+      sugestao_id: "sug-auto-1",
+      ordem_evento: 5,
+      gatilho: "intervalo" as const,
+      confianca_geral: 0.8,
+      visivel: true,
+      sugestao: SUGESTAO_COMPLETA,
+      desfecho: null,
+      criado_em: new Date().toISOString(),
+    };
+    estado.pollingRespostas = [
+      respostaPolling({
+        proximo_cursor_segmento: 12,
+        sugestoes_novas: [sugestaoPolling],
+        proximo_cursor_sugestao: 5,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    await abrirComPolling();
+
+    // Primeira chamada: cursores no zero (início).
+    expect(estado.pollingChamadas[0]).toEqual({ bloco: 1, desdeSegmento: 0, desdeSugestao: 0 });
+
+    // Avança um ciclo de polling (3s em foco).
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // Segunda chamada: cursores são os devolvidos na primeira resposta —
+    // nunca 0 de novo (que refaria a lista inteira).
+    expect(estado.pollingChamadas[1]).toEqual({ bloco: 1, desdeSegmento: 12, desdeSugestao: 5 });
+  });
+
+  it("intervalo sobe para 10s quando a aba perde o foco (document.visibilityState)", async () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    try {
+      await abrirComPolling();
+      const chamadasAntes = estado.pollingChamadas.length;
+
+      // Aos 3s (intervalo em foco) ainda NÃO deveria ter rodado de novo.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes);
+
+      // Aos 10s (intervalo sem foco) já rodou.
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes + 1);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    }
+  });
+
+  it("encerrar a sessão PARA o polling de vez — nenhuma chamada depois", async () => {
+    const { getByRole } = await abrirComPolling();
+    const chamadasAntesDeEncerrar = estado.pollingChamadas.length;
+
+    fireEvent.click(getByRole("button", { name: /encerrar copiloto desta sessão/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.waitFor(() => expect(estado.encerrarChamadas).toEqual(["s1"]));
+
+    const chamadasLogoApósEncerrar = estado.pollingChamadas.length;
+    // Avança bastante tempo — se o polling não tivesse parado, teria disparado várias vezes.
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(estado.pollingChamadas.length).toBe(chamadasLogoApósEncerrar);
+    expect(chamadasLogoApósEncerrar).toBeGreaterThanOrEqual(chamadasAntesDeEncerrar);
+  });
+
+  it("bloqueado_pelo_gate: aviso EXPLÍCITO, distinto de silêncio normal", async () => {
+    estado.pollingRespostas = [
+      respostaPolling({
+        ciclo: { avaliado: true, resultado: "bloqueado_pelo_gate", motivo_bloqueio: "sem_consentimento_titular" },
+      }),
+    ];
+    const { container } = await abrirComPolling();
+
+    expect(container.querySelector('[role="alert"]')).toBeTruthy();
+    expect(container.textContent).toContain("Copiloto de IA parado nesta sessão");
+    expect(container.textContent).toContain("consentimento do titular");
+  });
+
+  it("silêncio normal (resultado=null) NÃO mostra nenhum aviso de bloqueio", async () => {
+    estado.pollingRespostaPadrao = RESPOSTA_POLLING_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 });
+    const { container } = await abrirComPolling();
+    expect(container.textContent).not.toContain("Copiloto de IA parado");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("sugestão nova do ciclo automático NÃO abre sozinha — só o aviso discreto aparece", async () => {
+    estado.pollingRespostas = [
+      respostaPolling({
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-auto-2",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.8,
+            visivel: true,
+            sugestao: SUGESTAO_COMPLETA,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    const { container, getByRole, queryByRole } = await abrirComPolling();
+
+    expect(container.textContent).toContain("1 sugestão nova");
+    // O conteúdo da sugestão (texto da próxima pergunta) NÃO está na tela —
+    // só o aviso fechado, nunca o card aberto sozinho.
+    expect(container.textContent).not.toContain("Quem mais participa das decisões financeiras");
+    expect(queryByRole("blockquote" as never)).toBeNull();
+
+    // Só abre no clique explícito.
+    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
+  });
+
+  it("chegar uma 2ª sugestão não fecha nem mexe na 1ª já aberta", async () => {
+    const sugestao1 = {
+      sugestao_id: "sug-a",
+      ordem_evento: 1,
+      gatilho: "intervalo" as const,
+      confianca_geral: 0.8,
+      visivel: true,
+      sugestao: SUGESTAO_COMPLETA,
+      desfecho: null,
+      criado_em: new Date().toISOString(),
+    };
+    const sugestaoParcial: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: { tipo: "fato", texto: "Segunda observação distinta.", evidencia: null, confianca: 0.9 },
+      desvio_sugerido: null,
+      confianca_geral: 0.9,
+      campos_evidencia_nao_conferida: [],
+    };
+    const sugestao2 = { ...sugestao1, sugestao_id: "sug-b", ordem_evento: 2, sugestao: sugestaoParcial };
+
+    estado.pollingRespostas = [
+      respostaPolling({ sugestoes_novas: [sugestao1], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+    ];
+    const { container, getByRole } = await abrirComPolling();
+
+    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
+
+    // 2ª sugestão chega no próximo ciclo, fechada — a 1ª continua aberta como estava.
+    estado.pollingRespostaPadrao = respostaPolling({ sugestoes_novas: [sugestao2], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } });
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(container.textContent).toContain("Quem mais participa das decisões financeiras"); // 1ª segue aberta
+    expect(container.textContent).toContain("2 sugestões novas");
+    expect(container.textContent).not.toContain("Segunda observação distinta."); // 2ª chegou fechada
+  });
+
+  it("sessao_ja_encerrada (clique duplo em Encerrar) não vira erro visível — trata como sucesso", async () => {
+    estado.erroEncerrar = new ErroSessao("Esta sessão do copiloto já está encerrada.", 409, "sessao_ja_encerrada");
+    const { container, getByRole } = await abrirComPolling();
+
+    fireEvent.click(getByRole("button", { name: /encerrar copiloto desta sessão/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("timer é limpo no unmount — nenhuma chamada de polling depois de desmontar", async () => {
+    const { unmount } = await abrirComPolling();
+    const chamadasAntes = estado.pollingChamadas.length;
+    unmount();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(estado.pollingChamadas.length).toBe(chamadasAntes);
+  });
+
+  it("axe limpo: aviso de bloqueio pelo gate", async () => {
+    estado.pollingRespostas = [
+      respostaPolling({ ciclo: { avaliado: true, resultado: "bloqueado_pelo_gate", motivo_bloqueio: "sem_decisao_juridica" } }),
+    ];
+    const { container } = await abrirComPolling();
+    // `axe-core` roda sua própria fila de promises/timeouts internos — com
+    // fake timers ativos ele nunca resolve. A montagem e o avanço do
+    // polling já terminaram; volta para timers reais só para a auditoria.
+    vi.useRealTimers();
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: aviso discreto de sugestão nova (fechado)", async () => {
+    estado.pollingRespostas = [
+      respostaPolling({
+        sugestoes_novas: [
+          { sugestao_id: "sug-x", ordem_evento: 1, gatilho: "virada_bloco", confianca_geral: 0.7, visivel: true, sugestao: SUGESTAO_COMPLETA, desfecho: null, criado_em: new Date().toISOString() },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    const { container } = await abrirComPolling();
+    vi.useRealTimers();
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: card de sugestão do ciclo aberto", async () => {
+    estado.pollingRespostas = [
+      respostaPolling({
+        sugestoes_novas: [
+          { sugestao_id: "sug-y", ordem_evento: 1, gatilho: "intervalo", confianca_geral: 0.7, visivel: true, sugestao: SUGESTAO_COMPLETA, desfecho: null, criado_em: new Date().toISOString() },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    const { container, getByRole } = await abrirComPolling();
+    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    vi.useRealTimers();
+    await semViolacoes(container);
+  });
+
+  it("axe limpo: tela pós-encerramento", async () => {
+    const { container, getByRole } = await abrirComPolling();
+    fireEvent.click(getByRole("button", { name: /encerrar copiloto desta sessão/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+    vi.useRealTimers();
+    await semViolacoes(container);
+  });
+
+  /**
+   * Contrato novo (coordenador, correção da divergência apontada nesta
+   * entrega): `resposta.polling` (`ConfigPollingCopiloto`) manda o intervalo
+   * — não mais uma constante do front. Este bloco trava exatamente o
+   * aceite adicional pedido:
+   *
+   *  1. O intervalo usado pelo timer é o que veio na resposta, não a
+   *     constante local.
+   *  2. Mudar o valor entre duas respostas reajusta o PRÓXIMO tick, sem
+   *     recriar o ciclo (mesmos cursores, nenhuma chamada extra) nem perder
+   *     cursor.
+   *  3. `sessao_encerrada_por_duracao_maxima` é estado EXPLÍCITO — distinto
+   *     do encerramento manual — e PARA o polling, como o manual já parava.
+   *  4. axe limpo no estado novo.
+   */
+  describe("intervalo mandado pelo servidor + encerramento por duração máxima", () => {
+    it("usa o em_foco_ms da resposta do servidor, não a constante do front", async () => {
+      estado.pollingRespostaPadrao = respostaPolling({ polling: { em_foco_ms: 5000, sem_foco_ms: 20000 } });
+      await abrirComPolling();
+      const chamadasAntes = estado.pollingChamadas.length;
+
+      // Aos 3s (constante antiga) ainda NÃO deveria ter disparado — o
+      // servidor mandou 5000ms.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes);
+
+      // Completando os 5000ms mandados pelo servidor, dispara.
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes + 1);
+    });
+
+    it("mudança de em_foco_ms entre respostas reajusta o timer no tick seguinte, sem recriar o ciclo nem perder cursor", async () => {
+      // 1ª resposta: intervalo padrão (3000ms) e cursores avançam.
+      estado.pollingRespostas = [
+        respostaPolling({ proximo_cursor_segmento: 7, proximo_cursor_sugestao: 3, polling: { em_foco_ms: 3000, sem_foco_ms: 10000 } }),
+      ];
+      // A partir da 2ª: servidor passa a mandar um intervalo maior (alguém
+      // ajustou em Admin no meio da sessão).
+      estado.pollingRespostaPadrao = respostaPolling({ proximo_cursor_segmento: 7, proximo_cursor_sugestao: 3, polling: { em_foco_ms: 9000, sem_foco_ms: 30000 } });
+
+      await abrirComPolling(); // já consome a 1ª resposta (3000ms iniciais)
+      expect(estado.pollingChamadas).toHaveLength(1);
+      expect(estado.pollingChamadas[0]).toEqual({ bloco: 1, desdeSegmento: 0, desdeSugestao: 0 });
+
+      // Ainda usando o intervalo ANTIGO para agendar o 2º tick (decidido
+      // pela 1ª resposta, que mandou 3000): dispara aos 3s.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(estado.pollingChamadas).toHaveLength(2);
+      // Cursor da chamada nº2 é o que a 1ª resposta devolveu — nunca 0 de novo.
+      expect(estado.pollingChamadas[1]).toEqual({ bloco: 1, desdeSegmento: 7, desdeSugestao: 3 });
+
+      // Agora o timer passa a respeitar os 9000ms que a 2ª resposta mandou:
+      // aos +3000ms (total 6s desde o 2º tick) ainda NÃO dispara de novo.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(estado.pollingChamadas).toHaveLength(2);
+      // Só aos +9000ms desde o 2º tick.
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(estado.pollingChamadas).toHaveLength(3);
+      expect(estado.pollingChamadas[2]).toEqual({ bloco: 1, desdeSegmento: 7, desdeSugestao: 3 });
+    });
+
+    it("sessao_encerrada_por_duracao_maxima: estado EXPLÍCITO, distinto do encerramento manual", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "sessao_encerrada_por_duracao_maxima", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("automaticamente por ter passado do tempo máximo configurado");
+      expect(container.textContent).toContain("não é falha");
+      // A mensagem de encerramento MANUAL não aparece — são estados distintos.
+      expect(container.textContent).not.toContain("O copiloto foi encerrado para esta sessão.");
+      // Não é tratado como falha — sem role=alert de erro.
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it("sessao_encerrada_por_duracao_maxima PARA o polling — nenhuma chamada depois", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "sessao_encerrada_por_duracao_maxima", motivo_bloqueio: null } }),
+      ];
+      await abrirComPolling();
+      const chamadasLogoApósEncerrar = estado.pollingChamadas.length;
+
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(estado.pollingChamadas.length).toBe(chamadasLogoApósEncerrar);
+    });
+
+    it("sessao_encerrada_por_duracao_maxima: o botão 'Encerrar copiloto desta sessão' some (já está encerrado)", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "sessao_encerrada_por_duracao_maxima", motivo_bloqueio: null } }),
+      ];
+      const { queryByRole } = await abrirComPolling();
+      expect(queryByRole("button", { name: /encerrar copiloto desta sessão/i })).toBeNull();
+    });
+
+    it("axe limpo: estado de sessão encerrada por duração máxima", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "sessao_encerrada_por_duracao_maxima", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+  });
+
+  /**
+   * Achado do Fable na revisão desta fatia: `usePollingCopiloto` gravava
+   * `erro` no estado e NENHUM lugar do componente o consumia — rede caída,
+   * sessão de auth expirada ou kill-switch virado no meio da sessão faziam
+   * o hook re-tentar para sempre em SILÊNCIO, e a tela ficava idêntica a
+   * "sala calma". Este bloco trava as quatro partes da correção:
+   *
+   *  (i)   falha PERSISTENTE (3+ seguidas) vira aviso visível, com "desde
+   *        HH:MM" e a garantia explícita de que a sessão segue pelo roteiro;
+   *  (ii)  `copiloto_desligado` no polling PARA o polling e cai no mesmo
+   *        `CopilotoDesligado` da Fatia 1 — nunca um loop de 409 a cada 3s;
+   *  (iii) 1-2 falhas seguidas continuam MUDAS (B71: soluço de rede não é
+   *        alarme durante uma conversa sobre herança);
+   *  (iv)  axe limpo nos estados novos.
+   */
+  describe("achado do Fable: falha do polling não pode ser invisível", () => {
+    /** Avança exatamente UM tick de polling (3s em foco) e dá ao React a
+     * continuação necessária para aplicar o `setEstado` no DOM — mesmo
+     * padrão de `abrirComPolling`, que já faz isto para o 1º tick. */
+    async function avancarUmTick() {
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    it("(iii) 1 falha isolada continua MUDA — nenhum aviso aparece", async () => {
+      // abrirComPolling já consome a 1ª chamada com sucesso (silêncio normal).
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [new ErroSessao("falha de rede", 0, "rede")];
+      await avancarUmTick(); // 2ª chamada: falha (1ª falha consecutiva)
+
+      expect(container.textContent).not.toContain("sem conexão");
+      expect(container.querySelector('[role="status"]')?.textContent ?? "").not.toContain("sem conexão");
+    });
+
+    it("(iii) 2 falhas seguidas continuam MUDAS — o limiar é 3, não 1", async () => {
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [new ErroSessao("falha 1", 0, "rede"), new ErroSessao("falha 2", 0, "rede")];
+      await avancarUmTick(); // 2ª chamada: 1ª falha
+      await avancarUmTick(); // 3ª chamada: 2ª falha
+
+      expect(container.textContent).not.toContain("sem conexão");
+    });
+
+    it("(i) 3 falhas seguidas: aviso PERSISTENTE aparece, com 'desde HH:MM' e a garantia de que a sessão segue", async () => {
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [
+        new ErroSessao("falha 1", 0, "rede"),
+        new ErroSessao("falha 2", 0, "rede"),
+        new ErroSessao("falha 3", 0, "rede"),
+      ];
+      await avancarUmTick();
+      await avancarUmTick();
+      await avancarUmTick(); // 3ª falha consecutiva — cruza o limiar
+
+      expect(container.textContent).toContain("Copiloto sem conexão desde");
+      // O segundo período — "não perdeu a sessão, só o assistente".
+      expect(container.textContent).toContain("A sessão segue normalmente pelo roteiro");
+      // É aviso, não alarme jurídico: `role=status`, nunca `role=alert`.
+      const aviso = Array.from(container.querySelectorAll('[role="status"]')).find((el) => el.textContent?.includes("sem conexão"));
+      expect(aviso).toBeTruthy();
+    });
+
+    it("(i) o aviso SOME sozinho no próximo sucesso — sem exigir ação da advogada", async () => {
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [
+        new ErroSessao("falha 1", 0, "rede"),
+        new ErroSessao("falha 2", 0, "rede"),
+        new ErroSessao("falha 3", 0, "rede"),
+      ];
+      await avancarUmTick();
+      await avancarUmTick();
+      await avancarUmTick();
+      expect(container.textContent).toContain("Copiloto sem conexão desde");
+
+      // Próximo tick: sucesso (silêncio normal) — a fila de sequência está
+      // vazia, então cai no `pollingRespostaPadrao`/vazio de sempre.
+      await avancarUmTick();
+      expect(container.textContent).not.toContain("Copiloto sem conexão");
+    });
+
+    it("(i) uma NOVA sequência de falhas depois de um sucesso recomeça do zero (não soma com a anterior)", async () => {
+      const { container } = await abrirComPolling();
+      // 3 falhas → aviso aparece.
+      estado.pollingSequencia = [new ErroSessao("f1", 0, "rede"), new ErroSessao("f2", 0, "rede"), new ErroSessao("f3", 0, "rede")];
+      await avancarUmTick();
+      await avancarUmTick();
+      await avancarUmTick();
+      expect(container.textContent).toContain("Copiloto sem conexão desde");
+
+      // 1 sucesso → aviso some.
+      await avancarUmTick();
+      expect(container.textContent).not.toContain("Copiloto sem conexão");
+
+      // 1 nova falha isolada → NÃO deveria reaparecer (a contagem zerou).
+      estado.pollingSequencia = [new ErroSessao("f4", 0, "rede")];
+      await avancarUmTick();
+      expect(container.textContent).not.toContain("Copiloto sem conexão");
+    });
+
+    it("(ii) copiloto_desligado no polling PARA o polling — nenhuma chamada depois", async () => {
+      const { container } = await abrirComPolling();
+      const chamadasAntes = estado.pollingChamadas.length;
+      estado.pollingSequencia = [new ErroSessao("desligado em admin", 409, "copiloto_desligado")];
+      await avancarUmTick();
+
+      expect(container.textContent).toContain("Copiloto desligado");
+
+      // Nenhuma chamada nova, mesmo avançando bastante tempo — o hook não
+      // reagenda depois de detectar o kill-switch.
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes + 1);
+    });
+
+    it("(ii) copiloto_desligado no polling cai no MESMO CopilotoDesligado da Fatia 1 — não inventa um segundo texto", async () => {
+      const { container, queryByRole } = await abrirComPolling();
+      estado.pollingSequencia = [new ErroSessao("desligado em admin", 409, "copiloto_desligado")];
+      await avancarUmTick();
+
+      expect(container.textContent).toContain("Copiloto desligado");
+      expect(container.textContent).toContain("copiloto_sessao.ativo = false em Admin");
+      // Todo o resto da tela (SIMs, blocos, registro manual) some — é o
+      // MESMO comportamento de quando a leitura inicial já vem desligada.
+      expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
+      expect(queryByRole("button", { name: /encerrar copiloto desta sessão/i })).toBeNull();
+    });
+
+    it("(ii) copiloto_desligado no polling NÃO conta como falha transiente — não mistura com o aviso de 'sem conexão'", async () => {
+      const { container } = await abrirComPolling();
+      // 2 falhas transientes, depois o kill-switch — o kill-switch tem
+      // tratamento PRÓPRIO, não deveria virar "3ª falha" que soma ao aviso.
+      estado.pollingSequencia = [
+        new ErroSessao("f1", 0, "rede"),
+        new ErroSessao("f2", 0, "rede"),
+        new ErroSessao("desligado em admin", 409, "copiloto_desligado"),
+      ];
+      await avancarUmTick();
+      await avancarUmTick();
+      await avancarUmTick();
+
+      expect(container.textContent).toContain("Copiloto desligado");
+      expect(container.textContent).not.toContain("sem conexão");
+    });
+
+    it("axe limpo: aviso de falha persistente do polling (3+ falhas)", async () => {
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [
+        new ErroSessao("falha 1", 0, "rede"),
+        new ErroSessao("falha 2", 0, "rede"),
+        new ErroSessao("falha 3", 0, "rede"),
+      ];
+      await avancarUmTick();
+      await avancarUmTick();
+      await avancarUmTick();
+      expect(container.textContent).toContain("Copiloto sem conexão desde");
+
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+
+    it("axe limpo: copiloto_desligado detectado pelo polling", async () => {
+      const { container } = await abrirComPolling();
+      estado.pollingSequencia = [new ErroSessao("desligado em admin", 409, "copiloto_desligado")];
+      await avancarUmTick();
+      expect(container.textContent).toContain("Copiloto desligado");
+
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
   });
 });
