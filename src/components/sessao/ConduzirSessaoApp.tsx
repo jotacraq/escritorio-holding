@@ -18,6 +18,8 @@ import { PainelSims } from "@/components/sessao/PainelSims";
 import { PainelOferta } from "@/components/sessao/PainelOferta";
 import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
 import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
+import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
+import { Abas } from "@/components/ui/Abas";
 import { formatarData } from "@/lib/formatar";
 
 /** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
@@ -265,7 +267,30 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
           <AtalhosTeclado />
         </div>
 
-        <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
+        {/*
+         * C10 (ARQUITETURA-FASE-10.md §9): a coluna de 320px já era do
+         * briefing sozinho — copiloto e briefing brigam pelo mesmo espaço.
+         * Resolvido com abas, briefing como default. As abas em si não
+         * mudam a altura ocupada na coluna principal (U1 continua intacto):
+         * o `sticky`/scroll interno de cada painel é decisão de CADA aba,
+         * não deste wrapper.
+         */}
+        <Abas
+          semMoldura
+          abaInicial="briefing"
+          abas={[
+            {
+              id: "briefing",
+              rotulo: "Briefing",
+              conteudo: <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />,
+            },
+            {
+              id: "copiloto",
+              rotulo: "Copiloto",
+              conteudo: <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} />,
+            },
+          ]}
+        />
       </div>
 
       <nav

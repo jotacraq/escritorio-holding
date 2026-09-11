@@ -18,6 +18,7 @@ import type {
   SimIdentificador,
   SimsSessao,
 } from "@/types/roteiro";
+import type { EstadoCopiloto, RespostaSegmentos, SegmentoCopiloto } from "@/types/copiloto";
 
 export class ErroSessao extends Error {
   constructor(
@@ -136,4 +137,31 @@ export function marcarOfertaAceita(jornadaId: string, ofertaId: string, aceita: 
     method: "PATCH",
     body: JSON.stringify({ aceita }),
   }).then((d) => d.oferta);
+}
+
+// ---------------------------------------------------------------------------
+// Copiloto ao vivo — Fase 10, Fatia 1 (docs/ARQUITETURA-FASE-10.md §8)
+//
+// Contrato em `@/types/copiloto` (entrega do backend-engineer, §12 do plano):
+// GET /api/sessoes/[id]/copiloto (estado determinístico) e
+// GET/POST /api/sessoes/[id]/copiloto/segmentos (segmento manual).
+// ---------------------------------------------------------------------------
+
+export function buscarEstadoCopiloto(sessaoId: string, blocoAtualIndice: number): Promise<EstadoCopiloto> {
+  return chamar<EstadoCopiloto>(`/api/sessoes/${sessaoId}/copiloto?bloco=${blocoAtualIndice}`);
+}
+
+export function registrarSegmentoManual(sessaoId: string, texto: string): Promise<SegmentoCopiloto> {
+  return chamar<{ segmento: SegmentoCopiloto }>(`/api/sessoes/${sessaoId}/copiloto/segmentos`, {
+    method: "POST",
+    body: JSON.stringify({ texto }),
+  }).then((d) => d.segmento);
+}
+
+/** Lista os segmentos já registrados nesta sessão, em ordem — é a prova, na
+ * própria tela, de que o texto colado virou registro (§8: "é assim que o
+ * pipeline inteiro é testado sem bot nenhum"). Sem isto o campo de digitar
+ * seria uma caixa que engole texto sem confirmação nenhuma. */
+export function listarSegmentosCopiloto(sessaoId: string): Promise<RespostaSegmentos> {
+  return chamar<RespostaSegmentos>(`/api/sessoes/${sessaoId}/copiloto/segmentos`);
 }
