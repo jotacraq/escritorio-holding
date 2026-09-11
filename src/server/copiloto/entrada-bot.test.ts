@@ -102,7 +102,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
 
   it("bot com sessão vinculada grava o segmento na SESSÃO RESOLVIDA pelo botId, ordem = max+1", async () => {
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: { ordem: 41 }, error: null },
       filaInsertSegmento: [{ data: { id: "seg-99" }, error: null }],
     });
@@ -119,7 +119,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
   it("primeiro segmento da sessão (nenhum anterior): ordem = 1", async () => {
     const filaInsert: Resultado[] = [{ data: { id: "seg-1" }, error: null }];
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: null, error: null },
       filaInsertSegmento: filaInsert,
     });
@@ -134,7 +134,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
   });
 
   it("texto vazio (silêncio transcrito) não é erro — sem_efeito, sem tentar inserir, sem consumir ordem", async () => {
-    const admin = clienteFalso({ sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null } });
+    const admin = clienteFalso({ sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null } });
     const resultado = await registrarSegmentoDoBot(admin, {
       botId: "bot_valido",
       texto: "   ",
@@ -152,7 +152,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
   // extraído e `iniciadoMs` (pode vir `null`).
   it("payload sem start_timestamp (iniciadoMs null) grava normalmente, ordem vem de max(ordem)+1", async () => {
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: { ordem: 5 }, error: null },
       filaInsertSegmento: [{ data: { id: "seg-6" }, error: null }],
     });
@@ -171,7 +171,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
   // corrida), a 2ª (recalculando max+1) tem sucesso.
   it("colisão de ordem (23505, corrida) RETENTA com a próxima ordem — NUNCA engole a fala", async () => {
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: { ordem: 10 }, error: null },
       filaInsertSegmento: [
         { data: null, error: { code: "23505" } }, // 1ª tentativa: corrida
@@ -192,7 +192,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
   it("colisão persistente esgota as tentativas e LANÇA (nunca finge sucesso)", async () => {
     const filaSempreColide: Resultado[] = new Array(10).fill({ data: null, error: { code: "23505" } });
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: { ordem: 1 }, error: null },
       filaInsertSegmento: filaSempreColide,
     });
@@ -209,7 +209,7 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
 
   it("erro de INSERT que não é colisão (ex.: conexão perdida) PROPAGA, nunca é engolido", async () => {
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       ultimoOrdem: { data: { ordem: 1 }, error: null },
       filaInsertSegmento: [{ data: null, error: { code: "08006", message: "conexão perdida" } }],
     });
@@ -222,6 +222,40 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
         iniciadoMs: null,
       }),
     ).rejects.toBeDefined();
+  });
+
+  // 🔴 Achado do coordenador — "o webhook do bot continua entrando: a porta
+  // dos fundos". Cenário NORMAL, não anômalo: última fala em trânsito entre
+  // `marcarEncerrada` e o bot sair da sala de verdade — o webhook chega
+  // DEPOIS de `transcricao_id` já preenchido (a consolidação já rodou).
+  it("🔴 sessão JÁ CONSOLIDADA (transcricao_id preenchido): sessao_ja_consolidada, NUNCA insere segmento órfão", async () => {
+    const admin = clienteFalso({
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: "transcricao-1" }, error: null },
+    });
+    const resultado = await registrarSegmentoDoBot(admin, {
+      botId: "bot_valido",
+      texto: "fala que chegou tarde demais",
+      falante: null,
+      falanteConfianca: null,
+      iniciadoMs: null,
+    });
+    expect(resultado).toEqual({ situacao: "sessao_ja_consolidada" });
+  });
+
+  it("sessão SEM transcricao_id (não consolidada — caso comum): grava normalmente", async () => {
+    const admin = clienteFalso({
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+      ultimoOrdem: { data: { ordem: 3 }, error: null },
+      filaInsertSegmento: [{ data: { id: "seg-4" }, error: null }],
+    });
+    const resultado = await registrarSegmentoDoBot(admin, {
+      botId: "bot_valido",
+      texto: "fala normal, sessão ainda ativa",
+      falante: null,
+      falanteConfianca: null,
+      iniciadoMs: null,
+    });
+    expect(resultado).toEqual({ situacao: "gravado", segmentoId: "seg-4" });
   });
 });
 
@@ -239,7 +273,7 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
 
   it("join com sessão vinculada grava participantes", async () => {
     const admin = clienteFalso({
-      sessaoLookup: { data: { sessao_id: "sessao-real" }, error: null },
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       participantesLookup: { data: { participantes: [] }, error: null },
     });
     const resultado = await registrarEventoParticipante(admin, {

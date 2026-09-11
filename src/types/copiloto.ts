@@ -370,6 +370,27 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
    * esperados": vazio é vazio, nunca zero (regra da casa). A tela decide o
    * que mostrar (ou nada) quando este campo é `null`. */
   comparacao_decisores: ComparacaoDecisoresPresentes | null;
+  /** Fase 10, Fatia 5 (B69/B19, `docs/ARQUITETURA-FASE-10.md` §8 Fatia 5).
+   * `null` = segmentos brutos ainda não expurgados (inclui: expurgo
+   * desligado — `copiloto_sessao.expurgo_ativo=false`, o padrão de fábrica
+   * — sessão dentro do prazo, ou sem transcrição consolidada ainda).
+   * Preenchido = instante em que `server/copiloto/expurgo.ts` removeu a
+   * fala bruta (`sessoes_copiloto_segmentos`) desta sessão por retenção
+   * vencida. A transcrição CONSOLIDADA (`transcricoes`, o que o Agente do
+   * Croqui lê) continua intacta — a tela deve mostrar algo como
+   * "transcrição ao vivo expurgada em …", NUNCA esconder a sessão nem
+   * mostrar erro: expurgo é o comportamento esperado depois do prazo, não
+   * uma falha.
+   *
+   * Campo OPCIONAL de propósito (`?:`, não `string | null` obrigatório): é
+   * o contrato NOVO desta fatia, entregue por composição sobre
+   * `EstadoCopilotoCompleto` — tornar obrigatório quebraria todo literal já
+   * escrito em `src/components/sessao/PainelCopiloto.test.tsx` (fronteira
+   * do FRONT, fora do escopo desta entrega, §12 do plano) sem nenhum ganho
+   * de segurança: ausência de campo e `null` significam a MESMA coisa aqui
+   * ("não sei que foi expurgado"). Quando o `frontend-engineer` consumir
+   * este campo, `undefined` e `null` devem ser tratados de forma idêntica. */
+  expurgo_segmentos_em?: string | null;
 }
 
 // ---------------------------------------------------------------------------

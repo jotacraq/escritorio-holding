@@ -1297,15 +1297,36 @@ explícito · teste provando `bot_detection.matches` explícito · teste provand
 
 ### Fatia 5 — Expurgo e retenção
 
+**ENTREGUE** (0098, `server/copiloto/expurgo.ts`, etapa nova em `POST /api/cron/regua`):
+
 - Job de expurgo de `sessoes_copiloto_segmentos` por idade
-  (`retencao_dias_segmentos`), **depois** de consolidada a `transcricoes`. Depende de B69.
-- Fecha o **B19**, aberto desde a Fase 7.
-- **Achado do pentester da Fatia 4 (11/09/2026), carregado para cá:** cada tentativa de
-  webhook com `k=` válido e `bot.id` inexistente grava uma linha em `webhooks_eventos`
-  (`erro='bot_sem_sessao_vinculada'`), visível em `vw_pendencias_sistema`. Com o `id` do
-  Recall sendo UUID v4 (medido, ver `route.ts` do webhook) isso não é vetor de ataque —
-  mas é um caminho de ACÚMULO igual ao dos segmentos. **O expurgo da Fatia 5 precisa
-  considerar `webhooks_eventos`, não só `sessoes_copiloto_segmentos`.**
+  (`retencao_dias_segmentos`), **depois** de consolidada a `transcricoes` (só sessão com
+  `transcricao_id is not null`). Dois interruptores independentes: `expurgo_ativo`
+  (0098, nasce `false`) + `retencao_dias_segmentos` (0091, `7`) — mudar o prazo não liga
+  o apagamento sozinho. Fecha o **B19**, aberto desde a Fase 7, no que toca aos
+  segmentos ao vivo do copiloto.
+- 🔴 Achado da entrega, corrigindo a afirmação abaixo desta migration (achado do
+  pentester da Fatia 4, 11/09/2026, carregado para cá): **`bot_sem_sessao_vinculada`
+  em `webhooks_eventos` NUNCA aparece em `vw_pendencias_sistema`** — a rota carimba
+  `processado_em` SEMPRE (`webhooks/copiloto/transcricao/route.ts:251`), e a cláusula
+  `webhook_falho` da view (0089:227) só mostra `processado_em is null`. A frase original
+  deste plano ("visível em `vw_pendencias_sistema`") estava ERRADA e foi corrigida no
+  código-fonte (comentário de `processarEvento`, mesma rota) — é a 7ª ocorrência
+  catalogada nesta fase do padrão "algo afirma o que o código não entrega".
+
+**NÃO ENTREGUE — decisão do Marcio, registrada como pendência amarrada ao B42:**
+
+- `webhooks_eventos` continua sem política de expurgo, para as 5 origens que a
+  compartilham (`hotmart`, `chatwoot`, `n8n/sala`, `n8n/ligacao`, `recall`). O **B42**
+  (Fase 7, `docs/ARQUITETURA-FASE-7.md:1409`, *"retenção mínima legal... E
+  `webhooks_eventos` cru: anonimizar por titular ou expurgar tudo por idade?"*) já é
+  exatamente esta pergunta, em aberto com a Dra. Elaine desde a Fase 7 — decidir por
+  conta própria nesta fatia seria responder um bloqueio que não é do backend. **O que
+  fica registrado para quem fechar o B42:** as linhas COM erro de negócio (não só
+  `bot_sem_sessao_vinculada` do copiloto; o mesmo vale para `sessao_nao_encontrada` do
+  `n8n/sala`, conferido nesta revisão) acumulam em `webhooks_eventos` e nunca aparecem
+  em pendência nenhuma — o único jeito de vê-las hoje é consultar a tabela direto. Não
+  é vetor de ataque (ids são UUID v4 ou assinatura verificada antes), é acúmulo puro.
 
 **Ordem:** 1 → 2 → 3 podem ir seguidas; **4 só depois de B65, B66, B67 e B76 respondidos**.
 

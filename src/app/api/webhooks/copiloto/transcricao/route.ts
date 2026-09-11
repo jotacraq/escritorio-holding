@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
 
     await supabaseAdmin
       .from("webhooks_eventos")
-      .update({ erro: resultado.erroParaPendencia, processado_em: new Date().toISOString() })
+      .update({ erro: resultado.erroParaAuditoria, processado_em: new Date().toISOString() })
       .eq("id", webhookEventoId);
 
     return NextResponse.json({ recebido: true, reentrega, ...resultado.corpoExtra }, { status: 200 });
@@ -261,15 +261,57 @@ export async function POST(request: NextRequest) {
 }
 
 interface ResultadoProcessamento {
-  erroParaPendencia: string | null;
+  erroParaAuditoria: string | null;
   corpoExtra: Record<string, unknown>;
 }
 
 /**
  * Roteia por `type`. TUDO aqui devolve 200 (a rota já decidiu isso antes de
  * chamar): a função só decide o que fica registrado em `webhooks_eventos.erro`
- * para alimentar `vw_pendencias_sistema` (mesmo padrão de `sessao_nao_encontrada`
- * em n8n/sala) — nunca lança para virar 500 por um caso de negócio esperado.
+ * — nunca lança para virar 500 por um caso de negócio esperado.
+ *
+ * 🔴 CORREÇÃO (achado do coordenador, revisão da Fatia 5 — 7ª ocorrência
+ * catalogada nesta fase de "algo afirma o que o código não entrega"). Este
+ * comentário dizia que `erro` alimentava `vw_pendencias_sistema` — FALSO.
+ * A rota (linha ~251) carimba `processado_em` SEMPRE, sucesso ou erro de
+ * negócio; a cláusula `webhook_falho` da view (0089:227) só mostra linha
+ * com `processado_em IS NULL`. Ou seja: NENHUM valor gravado aqui em
+ * `erro` chega à tela — nem `bot_sem_sessao_vinculada`, nem
+ * `payload_invalido`, nem `tipo_evento_desconhecido`.
+ *
+ * ISSO É DELIBERADO, não uma lacuna a fechar: os três casos que esta função
+ * classifica como "erro" são RUÍDO DE FORNECEDOR, não tarefa para a Dra.
+ * Elaine —
+ *   - `bot_sem_sessao_vinculada`: reentrega tardia depois do bot encerrar,
+ *     corrida entre `POST /bot/` e o primeiro webhook, ou tentativa com
+ *     `bot.id` que nunca existiu (UUID v4, não é vetor de ataque — medido
+ *     no comentário de topo deste arquivo). Nenhuma ação da advogada
+ *     resolve isso; a linha é ruído esperado, não uma pendência dela.
+ *   - `payload_*_fora_do_formato_esperado`: o formato de evento do Recall
+ *     mudou ou veio incompleto — é debug de INTEGRAÇÃO (nosso ou do
+ *     fornecedor), não operação do escritório.
+ *   - `tipo_evento_desconhecido`: o fornecedor pode acrescentar evento novo
+ *     sem avisar (comentário de topo do arquivo) — não é uma falha.
+ *
+ * `erro` fica gravado em `webhooks_eventos.erro` para AUDITORIA E
+ * DIAGNÓSTICO (alguém investigando um caso específico consegue ler o
+ * motivo), nunca para virar pendência de tela.
+ *
+ * ⚠️ CONFERIDO CONTRA `n8n/sala` (não supor por analogia — foi checado
+ * linha a linha nesta correção): aquela rota TAMBÉM marca `processado_em`
+ * para `sessao_nao_encontrada` (`n8n/sala/route.ts:131`,
+ * `sessaoNaoEncontrada ? new Date().toISOString() : null`) — ou seja, é o
+ * MESMO padrão desta rota, não um contraste. `sessao_nao_encontrada` do
+ * n8n/sala TAMBÉM nunca aparece em `vw_pendencias_sistema`. Isto não é
+ * escopo desta fatia para corrigir (fora da fronteira de arquivo, §12 do
+ * plano), mas fica registrado aqui para não repetir a comparação errada
+ * que este comentário tinha antes desta correção: nenhuma suposição sobre
+ * OUTRO webhook entra num comentário sem ler o código dele primeiro.
+ *
+ * Ver `docs/ARQUITETURA-FASE-10.md` §8 Fatia 5 e a nota de pendência sobre
+ * `webhooks_eventos`/B42 no mesmo documento — se linhas como esta
+ * devessem virar pendência visível (aqui ou em `n8n/sala`), quem decide é
+ * a Dra. Elaine (B42), não este módulo por conta própria.
  */
 async function processarEvento(
   admin: ReturnType<typeof criarClienteAdmin>,
@@ -280,10 +322,10 @@ async function processarEvento(
   if (tipo === "transcript.data") {
     const parse = TranscriptDataSchema.safeParse(bruto);
     if (!parse.success) {
-      return { erroParaPendencia: "payload_transcript_data_fora_do_formato_esperado", corpoExtra: { payload_invalido: true } };
+      return { erroParaAuditoria: "payload_transcript_data_fora_do_formato_esperado", corpoExtra: { payload_invalido: true } };
     }
     const texto = extrairTextoTranscript(parse.data);
-    if (!texto.trim()) return { erroParaPendencia: null, corpoExtra: {} }; // silêncio transcrito vazio — sem efeito, sem pendência
+    if (!texto.trim()) return { erroParaAuditoria: null, corpoExtra: {} }; // silêncio transcrito vazio — sem efeito, sem pendência
 
     const inicioMs = (() => {
       const primeiro = parse.data.data.data.words?.[0]?.start_timestamp;
@@ -308,15 +350,23 @@ async function processarEvento(
     });
 
     if (resultado.situacao === "sessao_nao_encontrada") {
-      return { erroParaPendencia: "bot_sem_sessao_vinculada", corpoExtra: { sessao_nao_encontrada: true } };
+      return { erroParaAuditoria: "bot_sem_sessao_vinculada", corpoExtra: { sessao_nao_encontrada: true } };
     }
-    return { erroParaPendencia: null, corpoExtra: {} };
+    // 🔴 CORREÇÃO (achado do coordenador — "a porta dos fundos"). A sessão
+    // já foi consolidada (transcricao_id preenchido) — cenário ESPERADO
+    // (reentrega tardia, última fala em trânsito entre marcarEncerrada e o
+    // bot sair da sala de verdade). 200 + registro LEVE, NUNCA 500 (o
+    // Recall reentregaria em laço por um evento que nunca vai virar erro).
+    if (resultado.situacao === "sessao_ja_consolidada") {
+      return { erroParaAuditoria: "segmento_apos_consolidacao", corpoExtra: { sessao_ja_consolidada: true } };
+    }
+    return { erroParaAuditoria: null, corpoExtra: {} };
   }
 
   if (tipo === "participant_events.join" || tipo === "participant_events.leave") {
     const parse = ParticipantEventSchema.safeParse(bruto);
     if (!parse.success) {
-      return { erroParaPendencia: "payload_participant_event_fora_do_formato_esperado", corpoExtra: { payload_invalido: true } };
+      return { erroParaAuditoria: "payload_participant_event_fora_do_formato_esperado", corpoExtra: { payload_invalido: true } };
     }
     const quando = (() => {
       const ts = parse.data.data.data.timestamp;
@@ -333,12 +383,12 @@ async function processarEvento(
     });
 
     if (resultado.situacao === "sessao_nao_encontrada") {
-      return { erroParaPendencia: "bot_sem_sessao_vinculada", corpoExtra: { sessao_nao_encontrada: true } };
+      return { erroParaAuditoria: "bot_sem_sessao_vinculada", corpoExtra: { sessao_nao_encontrada: true } };
     }
-    return { erroParaPendencia: null, corpoExtra: {} };
+    return { erroParaAuditoria: null, corpoExtra: {} };
   }
 
   // 🔴 Tipo desconhecido — §4.2/§8: 200 sem efeito + log, NUNCA 500.
   logarTipoDesconhecido(tipo, botId);
-  return { erroParaPendencia: `tipo_evento_desconhecido:${tipo}`, corpoExtra: { evento_desconhecido: true } };
+  return { erroParaAuditoria: `tipo_evento_desconhecido:${tipo}`, corpoExtra: { evento_desconhecido: true } };
 }

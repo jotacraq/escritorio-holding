@@ -2,7 +2,13 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { processarFilaRegua, type ResultadoProcessamento } from "@/server/regua/processar";
-import { etapaExpurgoLigacoes, etapaLigacoesIa, etapaReaperLigacoesIa, type ResultadoEtapaExterna } from "@/server/regua/externas";
+import {
+  etapaExpurgoCopiloto,
+  etapaExpurgoLigacoes,
+  etapaLigacoesIa,
+  etapaReaperLigacoesIa,
+  type ResultadoEtapaExterna,
+} from "@/server/regua/externas";
 import { sincronizarSalas, type ResultadoSincronizarSalas } from "@/server/sala/sincronizar";
 import { registrarErro } from "@/server/erros";
 
@@ -24,6 +30,7 @@ export interface RespostaCron {
   ligacoes: Etapa<ResultadoEtapaExterna>;
   reaper: Etapa<ResultadoEtapaExterna>;
   expurgo: Etapa<ResultadoEtapaExterna>;
+  expurgo_copiloto: Etapa<ResultadoEtapaExterna>;
   salas: Etapa<ResultadoSincronizarSalas>;
   ultimo_cron_em: string;
 }
@@ -48,9 +55,16 @@ async function rodarEtapa<T>(nome: string, fn: () => Promise<T>): Promise<Etapa<
  *   3) reaper das ligações presas (idem);
  *   3b) retenção de voz das ligações encerradas (LGPD B19 — só quando
  *       `ligacao_ia.retencao_dias` está configurada; senão não apaga nada);
+ *   3c) expurgo de `sessoes_copiloto_segmentos` (LGPD B69/B19, Fase 10
+ *       Fatia 5) — só quando `copiloto_sessao.expurgo_ativo=true` (nasce
+ *       'false', 0098) E `copiloto_sessao.retencao_dias_segmentos` é um
+ *       inteiro positivo; senão não apaga nada. Só considera sessão com
+ *       transcrição já consolidada (transcricao_id preenchido) — nunca
+ *       expurga segmento antes da Fatia 3 ter gravado a transcrição em
+ *       `transcricoes`;
  *   4) salas via n8n (só se `sala.provedor='n8n'` e env vars presentes).
  * Cada etapa é isolada: falha em uma não derruba as outras; o retorno lista as
- * cinco. Prova de vida: grava `configuracoes['regua.ultimo_cron_em']`
+ * seis. Prova de vida: grava `configuracoes['regua.ultimo_cron_em']`
  * (UPDATE, nunca linha nova) — a tela de Comunicação e a pendência
  * `cron_parado` (0052) leem daí.
  */
@@ -78,6 +92,7 @@ export async function POST(request: NextRequest) {
   const ligacoes = await rodarEtapa("ligacoes", () => etapaLigacoesIa(supabaseAdmin));
   const reaper = await rodarEtapa("reaper", () => etapaReaperLigacoesIa(supabaseAdmin));
   const expurgo = await rodarEtapa("expurgo", () => etapaExpurgoLigacoes(supabaseAdmin));
+  const expurgoCopiloto = await rodarEtapa("expurgo_copiloto", () => etapaExpurgoCopiloto(supabaseAdmin));
   const salas = await rodarEtapa("salas", () => sincronizarSalas(supabaseAdmin));
 
   const ultimoCronEm = new Date().toISOString();
@@ -90,6 +105,14 @@ export async function POST(request: NextRequest) {
     registrarErro("POST /api/cron/regua#prova_de_vida", erroProvaDeVida);
   }
 
-  const resposta: RespostaCron = { regua, ligacoes, reaper, expurgo, salas, ultimo_cron_em: ultimoCronEm };
+  const resposta: RespostaCron = {
+    regua,
+    ligacoes,
+    reaper,
+    expurgo,
+    expurgo_copiloto: expurgoCopiloto,
+    salas,
+    ultimo_cron_em: ultimoCronEm,
+  };
   return NextResponse.json(resposta, { status: 200 });
 }

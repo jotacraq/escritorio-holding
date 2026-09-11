@@ -242,3 +242,54 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
     ]);
   });
 });
+
+describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () => {
+  it("sem sessoes_copiloto (nunca digitou nem pediu bot): expurgo_segmentos_em é null, não inventado", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.expurgo_segmentos_em).toBeNull();
+  });
+
+  it("sessoes_copiloto existe mas nunca foi expurgada: expurgo_segmentos_em é null (default de fábrica)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "encerrado", gravacao_externa_id: null, participantes: [], expurgo_segmentos_em: null },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.expurgo_segmentos_em).toBeNull();
+  });
+
+  it("sessão com segmentos expurgados: o campo REFLETE o carimbo persistido, sem transformação", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "encerrado",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: "2026-09-20T03:00:00.000Z",
+        },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.expurgo_segmentos_em).toBe("2026-09-20T03:00:00.000Z");
+  });
+
+  it("🔴 mesma query coalescida de sempre — nenhum select adicional só para ler o carimbo de expurgo", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "encerrado",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: "2026-09-20T03:00:00.000Z",
+        },
+      }),
+    );
+    await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
+      "sessoes_viabilidade",
+      "consentimentos",
+    ]);
+  });
+});

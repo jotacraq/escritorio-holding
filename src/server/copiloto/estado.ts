@@ -67,6 +67,7 @@ interface SessaoComRoteiroEBloco {
     estado: "aguardando" | "ativo" | "encerrado" | "erro";
     gravacao_externa_id: string | null;
     participantes: unknown;
+    expurgo_segmentos_em: string | null;
   } | null;
 }
 
@@ -147,12 +148,21 @@ const ROTULOS_SIM: Record<"sigilo_gravacao" | "licitude" | "decisores" | "proxim
 };
 
 /** `EstadoCopiloto` (Fatia 1, contrato estável) + os dois campos da Fatia 4
- * — composição, nunca redefinição (mesmo padrão de `RoteiroVersaoResumo` em
- * `roteiro.ts`). A rota de polling (`GET /api/sessoes/[id]/copiloto`) usa
- * este retorno inteiro; nenhum outro chamador desta função existe hoje. */
+ * + o campo da Fatia 5 — composição, nunca redefinição (mesmo padrão de
+ * `RoteiroVersaoResumo` em `roteiro.ts`). A rota de polling
+ * (`GET /api/sessoes/[id]/copiloto`) usa este retorno inteiro; nenhum outro
+ * chamador desta função existe hoje. */
 export interface EstadoCopilotoCompleto extends EstadoCopiloto {
   bot: EstadoBotCopiloto | null;
   comparacao_decisores: ComparacaoDecisoresPresentes | null;
+  /** Fase 10, Fatia 5 (B69/B19). `null` = segmentos ainda não expurgados
+   * (inclui: expurgo desligado — o padrão de fábrica — sessão fora do
+   * prazo, ou sem transcrição consolidada ainda). Preenchido = instante em
+   * que `server/copiloto/expurgo.ts` removeu a fala bruta desta sessão; a
+   * transcrição CONSOLIDADA em `transcricoes` continua intacta e legível
+   * (§6.1 do plano) — a tela deve dizer "transcrição bruta expurgada em …",
+   * nunca esconder a sessão nem mostrar erro. */
+  expurgo_segmentos_em: string | null;
 }
 
 /**
@@ -170,7 +180,7 @@ export async function montarEstadoCopiloto(
     .from("sessoes_viabilidade")
     .select(
       "id, roteiro_versao_id, sims, jornadas(pessoa_id, briefings(conteudo, atual)), roteiros_versoes(definicao), " +
-        "sessoes_copiloto(estado, gravacao_externa_id, participantes)",
+        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em)",
     )
     .eq("id", sessaoId)
     .maybeSingle<SessaoComRoteiroEBloco>();
@@ -207,6 +217,7 @@ export async function montarEstadoCopiloto(
     estado_copiloto: data.sessoes_copiloto?.estado ?? "aguardando",
     bot,
     comparacao_decisores: comparacaoDecisores,
+    expurgo_segmentos_em: data.sessoes_copiloto?.expurgo_segmentos_em ?? null,
   };
 }
 

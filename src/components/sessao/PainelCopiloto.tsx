@@ -378,7 +378,18 @@ export function PainelCopiloto({
       <SimsPendentes pendentes={estado.sims_pendentes} />
       <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
 
-      <RegistroManual sessaoId={sessaoId} />
+      {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
+       * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
+       * estado LOCAL desta aba (encerramento manual/por duração máxima
+       * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
+       * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
+       * Sem o segundo, recarregar a página depois de encerrar reabriria o
+       * campo — texto digitado ali não entra mais em `transcricoes`
+       * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
+       * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
+       * impede o erro; a trava de verdade é do backend (409 no POST, mais
+       * o backstop do DELETE por `criado_em <= encerrado_em`). */}
+      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
 
       {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
     </div>
@@ -1295,7 +1306,7 @@ function BlocosNaoPercorridos({ blocos }: { blocos: { id: string; titulo: string
   );
 }
 
-function RegistroManual({ sessaoId }: { sessaoId: string }) {
+function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessaoEncerrada: boolean }) {
   const buscarSegmentos = useCallback(() => listarSegmentosCopiloto(sessaoId), [sessaoId]);
   const { dados: resposta, carregando, erro, recarregar, setDados: setResposta } = useRecurso(buscarSegmentos, [sessaoId]);
   const segmentos = resposta?.itens ?? null;
@@ -1330,6 +1341,25 @@ function RegistroManual({ sessaoId }: { sessaoId: string }) {
     return (
       <Cartao rotulo="Transcrição desta sessão" titulo="Digitar ou colar um trecho" preenchimento="compacto">
         <p className="text-sm text-tinta-suave">O copiloto está desligado por configuração — nenhum trecho pode ser registrado agora.</p>
+      </Cartao>
+    );
+  }
+
+  // Achado do Fable (Fatia 5): campo escondido/desabilitado quando a
+  // sessao ja encerrou -- nao e sumico mudo, e ESTADO EXPLICITO (mesma
+  // regra de CopilotoDesligado/GateBloqueado). Sem isto, texto
+  // digitado aqui depois do encerramento nunca entra em transcricoes
+  // (re-encerrar e 409 sessao_ja_encerrada, nao reconsolida) e o
+  // expurgo da Fatia 5 o apaga aos 7 dias -- a advogada acharia que
+  // registrou algo que evapora em silencio. Esta tela e CONVENIENCIA
+  // (impede o ERRO); a trava de verdade e do backend (409 no POST,
+  // backstop no DELETE por criado_em <= encerrado_em).
+  if (sessaoEncerrada) {
+    return (
+      <Cartao rotulo="Transcrição desta sessão" titulo="Digitar ou colar um trecho" preenchimento="compacto">
+        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+          Sessão encerrada — a transcrição já foi consolidada. Não é possível registrar novos trechos aqui.
+        </p>
       </Cartao>
     );
   }

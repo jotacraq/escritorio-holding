@@ -1304,6 +1304,68 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await semViolacoes(container);
     });
   });
+
+  /**
+   * Achado do Fable (Fatia 5): `RegistroManual` era renderizado
+   * INCONDICIONALMENTE, mesmo depois de a sessão encerrar. Nesse instante
+   * a promessa do campo ("Fica registrado como transcrição desta sessão")
+   * já é falsa — re-encerrar é 409 `sessao_ja_encerrada` e NÃO reconsolida,
+   * então texto digitado ali some para sempre no expurgo da Fatia 5. Este
+   * bloco trava as duas condições de bloqueio e a mensagem honesta:
+   *
+   *  1. `sessaoEncerrada` (estado LOCAL, encerramento manual nesta aba)
+   *     esconde o formulário de "Registrar trecho".
+   *  2. `estado.estado_copiloto === 'encerrado'` (dado do SERVIDOR, payload
+   *     da Fatia 1) faz o MESMO — provando que sobrevive a F5: mesmo numa
+   *     abertura FRESCA da tela (sem passar pelo fluxo de encerrar nesta
+   *     sessão de navegador), o campo já nasce bloqueado.
+   *  3. Mensagem EXPLÍCITA ("Sessão encerrada — a transcrição já foi
+   *     consolidada"), nunca sumiço mudo.
+   *  4. axe limpo no estado novo.
+   */
+  describe("achado do Fable: RegistroManual não pode continuar aberto depois do encerramento", () => {
+    it("encerramento MANUAL (sessaoEncerrada local): esconde o formulário, mostra mensagem explícita", async () => {
+      const { container, getByRole, queryByRole } = await abrirComPolling();
+
+      fireEvent.click(getByRole("button", { name: /encerrar copiloto desta sessão/i }));
+      await vi.advanceTimersByTimeAsync(0);
+      fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+
+      expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
+      expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
+      expect(container.textContent).toContain("Sessão encerrada — a transcrição já foi consolidada");
+      expect(container.textContent).toContain("Não é possível registrar novos trechos aqui");
+    });
+
+    it("estado_copiloto='encerrado' DO SERVIDOR (sobrevive a F5): esconde o formulário mesmo numa abertura fresca da tela", async () => {
+      // Simula reabrir a tela (F5) depois de a sessão já ter sido
+      // encerrada em outra ocasião — nada de `sessaoEncerrada` local foi
+      // disparado nesta montagem; só o payload do servidor já vem assim.
+      estado.copiloto = { ...ESTADO_BASE, estado_copiloto: "encerrado" };
+      const { container, queryByRole } = await abrirComPolling();
+
+      expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
+      expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
+      expect(container.textContent).toContain("Sessão encerrada — a transcrição já foi consolidada");
+    });
+
+    it("sessão em andamento (estado_copiloto='ativo', sem sessaoEncerrada local): formulário continua disponível", async () => {
+      estado.copiloto = { ...ESTADO_BASE, estado_copiloto: "ativo" };
+      const { getByRole } = await abrirComPolling();
+
+      expect(getByRole("button", { name: /registrar trecho/i })).toBeTruthy();
+      expect(getByRole("textbox", { name: /trecho da fala/i })).toBeTruthy();
+    });
+
+    it("axe limpo: campo de registro manual bloqueado por sessão encerrada (estado do servidor)", async () => {
+      estado.copiloto = { ...ESTADO_BASE, estado_copiloto: "encerrado" };
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+  });
 });
 
 /**

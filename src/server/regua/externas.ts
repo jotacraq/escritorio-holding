@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { etapaExpurgoLigacoesIa, processarFilaLigacoesIa, reaperLigacoesIa } from "@/server/ligacao-ia";
 import { canalWhatsappViaChatwoot } from "@/server/chatwoot/canal";
 import { enviarWhatsapp } from "@/server/chatwoot/cliente";
+import { etapaExpurgoSegmentosCopiloto } from "@/server/copiloto/expurgo";
 
 /**
  * Módulos de OUTROS agentes da Onda 1 que o cron e a régua consomem (contratos
@@ -37,6 +38,20 @@ export async function etapaReaperLigacoesIa(admin: SupabaseClient): Promise<Resu
  */
 export async function etapaExpurgoLigacoes(admin: SupabaseClient): Promise<ResultadoEtapaExterna> {
   return (await etapaExpurgoLigacoesIa(admin)) as unknown as ResultadoEtapaExterna;
+}
+
+/**
+ * Expurgo de `sessoes_copiloto_segmentos` (LGPD B69/B19, Fase 10 Fatia 5).
+ * MESMA posição do expurgo de ligações no cron: última etapa de propósito —
+ * é limpeza, nada do que roda antes dela depende do que ela apaga (a
+ * transcrição consolidada, que o Agente do Croqui lê, já foi gravada em
+ * `transcricoes` pela Fatia 3, antes de qualquer segmento poder ser
+ * considerado). Sem `copiloto_sessao.expurgo_ativo=true`, devolve
+ * `pulada: 'expurgo_desligado'` e não toca em linha nenhuma — é o estado de
+ * fábrica e deve seguir assim até a Dra. Elaine decidir (B69).
+ */
+export async function etapaExpurgoCopiloto(admin: SupabaseClient): Promise<ResultadoEtapaExterna> {
+  return (await etapaExpurgoSegmentosCopiloto(admin)) as unknown as ResultadoEtapaExterna;
 }
 
 export interface ClienteChatwoot {

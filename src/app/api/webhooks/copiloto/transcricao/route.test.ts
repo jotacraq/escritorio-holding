@@ -171,6 +171,24 @@ describe("POST /api/webhooks/copiloto/transcricao — roteamento transcript.data
     const json = await resposta.json();
     expect(json.sessao_nao_encontrada).toBe(true);
   });
+
+  // 🔴 Achado do coordenador — "o webhook do bot continua entrando: a porta
+  // dos fundos". Cenário NORMAL (última fala em trânsito entre
+  // marcarEncerrada e o bot sair da sala): a rota devolve 200 + registro
+  // leve, NUNCA 500 (o Recall reentregaria em laço por algo que nunca vira
+  // sucesso nem erro de verdade).
+  it("🔴 sessao_ja_consolidada (webhook tardio, sessão já teve a transcrição consolidada) devolve 200, NUNCA 500", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-4", reentrega: false });
+    registrarSegmentoDoBotMock.mockResolvedValue({ situacao: "sessao_ja_consolidada" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const resposta = await POST(montarRequisicao(CORPO_TRANSCRIPT));
+
+    expect(resposta.status).toBe(200);
+    const json = await resposta.json();
+    expect(json.sessao_ja_consolidada).toBe(true);
+  });
 });
 
 describe("POST /api/webhooks/copiloto/transcricao — roteamento participant_events", () => {

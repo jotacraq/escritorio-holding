@@ -22,21 +22,48 @@ import { aplicarEventoParticipante } from "./participantes";
  * sobre `gravacao_externa_id`, §6.2.2 da errata: "o áudio sai da sala antes
  * de qualquer INSERT nosso" — o gate mora no PEDIDO do bot, não na chegada
  * de cada segmento).
+ *
+ * 🔴 CORREÇÃO (achado do coordenador, revisão da Fatia 5 — "o webhook do bot
+ * continua entrando — a porta dos fundos"). A trava (a) da Fatia 5
+ * (`POST .../copiloto/segmentos` recusando sessão `'encerrado'`/`'erro'`)
+ * cobre só o caminho MANUAL. O webhook do bot resolvia a sessão só por
+ * `gravacao_externa_id` — que a sessão encerrada MANTÉM — e inseria sem
+ * checar nada além disso. CENÁRIO NORMAL, não anômalo: a última fala fica
+ * em trânsito entre `marcarEncerrada` e o bot efetivamente sair da sala
+ * (`encerrarBotComRetentativa`, chamado DEPOIS de marcar encerrada,
+ * `encerrar.ts`) — um evento `transcript.data` chega pelo webhook nesse
+ * intervalo e gravava segmento numa sessão já encerrada, órfão da
+ * transcrição, alvo do expurgo da Fatia 5 mais cedo ou mais tarde.
+ *
+ * `resolverSessaoPorBotId` agora traz `transcricao_id` JUNTO (mesma query,
+ * sem 2ª ida ao banco) — é o instante EXATO da consolidação
+ * (`consolidar.ts`, chamado por `executarEncerramentoCopiloto` ANTES do
+ * `UPDATE transcricao_id`): tudo que chega ANTES dele ainda tem chance de
+ * entrar na transcrição (mesmo que não tenha entrado, porque a leitura dos
+ * segmentos já rodou — mas o corte tem de ser conservador e OBSERVÁVEL, e
+ * `transcricao_id` é o único sinal atômico que este módulo consegue ler);
+ * DEPOIS dele, o segmento NUNCA mais entra em `transcricoes` — não faz
+ * sentido gravá-lo. Usado só por `registrarSegmentoDoBot` (é fala perdida
+ * que está em jogo); `registrarEventoParticipante` continua sem essa
+ * checagem — presença na sala depois do encerramento não tem o mesmo risco
+ * de integridade (não alimenta `transcricoes`, não é expurgada por idade).
  */
 
 interface SessaoPorGravacaoExterna {
   sessao_id: string;
+  transcricao_id: string | null;
 }
 
-/** Resolve `sessao_id` a partir do id OPACO do bot — nunca o contrário. */
-async function resolverSessaoPorBotId(admin: SupabaseClient, botId: string): Promise<string | null> {
+/** Resolve `sessao_id` (+ `transcricao_id`, para o gate de consolidação) a
+ * partir do id OPACO do bot — nunca o contrário. */
+async function resolverSessaoPorBotId(admin: SupabaseClient, botId: string): Promise<SessaoPorGravacaoExterna | null> {
   const { data, error } = await admin
     .from("sessoes_copiloto")
-    .select("sessao_id")
+    .select("sessao_id, transcricao_id")
     .eq("gravacao_externa_id", botId)
     .maybeSingle<SessaoPorGravacaoExterna>();
   if (error) throw error;
-  return data?.sessao_id ?? null;
+  return data ?? null;
 }
 
 interface ErroPostgrest {
@@ -88,7 +115,15 @@ export type ResultadoSegmentoBot =
   | { situacao: "sessao_nao_encontrada" }
   /** Texto vazio (silêncio transcrito) — ausência de fala, não erro. Nunca
    * consome uma `ordem` (nenhum INSERT é tentado). */
-  | { situacao: "sem_efeito" };
+  | { situacao: "sem_efeito" }
+  /** 🔴 CORREÇÃO (achado do coordenador — "a porta dos fundos"). A sessão já
+   * tem `transcricao_id` preenchido: já foi consolidada. Este segmento NUNCA
+   * entraria em `transcricoes` — gravá-lo criaria fala órfã, alvo do
+   * expurgo da Fatia 5 mais cedo ou mais tarde, sem nunca ter sido lida por
+   * ninguém. Situação ESPERADA (reentrega tardia do Recall, corrida normal
+   * entre `marcarEncerrada` e o bot sair da sala de verdade) — a ROTA
+   * devolve 200 sem efeito, NUNCA 500 (o Recall reentregaria em laço). */
+  | { situacao: "sessao_ja_consolidada" };
 
 const MAX_TENTATIVAS_ORDEM = 5;
 
@@ -96,8 +131,12 @@ export async function registrarSegmentoDoBot(
   admin: SupabaseClient,
   params: { botId: string; texto: string; falante: string | null; falanteConfianca: number | null; iniciadoMs: number | null },
 ): Promise<ResultadoSegmentoBot> {
-  const sessaoId = await resolverSessaoPorBotId(admin, params.botId);
-  if (!sessaoId) return { situacao: "sessao_nao_encontrada" };
+  const sessao = await resolverSessaoPorBotId(admin, params.botId);
+  if (!sessao) return { situacao: "sessao_nao_encontrada" };
+  // 🔴 Gate de consolidação — ANTES de tocar em qualquer segmento. Ver o
+  // comentário de topo do módulo para o cenário completo (webhook tardio).
+  if (sessao.transcricao_id !== null) return { situacao: "sessao_ja_consolidada" };
+  const sessaoId = sessao.sessao_id;
 
   const textoLimpo = params.texto.trim();
   if (textoLimpo.length === 0) {
@@ -154,8 +193,9 @@ export async function registrarEventoParticipante(
   admin: SupabaseClient,
   params: { botId: string; tipo: "join" | "leave"; nomeParticipante: string; quando: string },
 ): Promise<ResultadoEventoParticipante> {
-  const sessaoId = await resolverSessaoPorBotId(admin, params.botId);
-  if (!sessaoId) return { situacao: "sessao_nao_encontrada" };
+  const sessao = await resolverSessaoPorBotId(admin, params.botId);
+  if (!sessao) return { situacao: "sessao_nao_encontrada" };
+  const sessaoId = sessao.sessao_id;
 
   const { data: existente, error: erroLeitura } = await admin
     .from("sessoes_copiloto")

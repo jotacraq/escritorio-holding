@@ -95,8 +95,26 @@ async function inserirSegmentoComRetentativa(
  * sem checar `error`, o que deixava segmento órfão (sem linha-mãe) em
  * silêncio se a escrita falhasse. Falhar a requisição inteira é o
  * comportamento certo: não existe segmento sem `sessoes_copiloto`.
+ *
+ * 🔴 CORREÇÃO (achado do coordenador, revisão da Fatia 5 — "fala digitada
+ * depois do encerramento é destruída em silêncio"). Esta função LIA
+ * `estado` mas só agia no ramo `'aguardando'` (linha ~116 da versão
+ * anterior) — para `'encerrado'`/`'erro'` ela simplesmente RETORNAVA sem
+ * erro, e o `POST` (abaixo) seguia para o INSERT do segmento sem gate
+ * nenhum. A cadeia completa do defeito: (1) segmento gravado numa sessão
+ * já encerrada NUNCA entra em `transcricoes` — reencerrar devolve 409
+ * `sessao_ja_encerrada` por desenho, nunca reconsolida; (2) a sessão já é
+ * elegível ao expurgo (`transcricao_id` preenchido); (3) com
+ * `copiloto_sessao.expurgo_ativo=true`, o segmento vence e é DELETADO pelo
+ * job da Fatia 5 — fala real do cliente, capturada, nunca consolidada,
+ * apagada em silêncio. É o MESMO invariante que `expurgo.ts` já respeita
+ * no grão da SESSÃO ("segmento apagado sem transcrição consolidada é fala
+ * perdida PARA SEMPRE") furando no grão do SEGMENTO.
+ *
+ * Agora devolve o `estado` lido — o CHAMADOR (`POST`) decide recusar antes
+ * de qualquer escrita, sem uma 2ª leitura só para isso.
  */
-async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string): Promise<void> {
+async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string): Promise<{ estado: string }> {
   const { data: existente, error: erroLeitura } = await supabase
     .from("sessoes_copiloto")
     .select("estado, iniciado_em")
@@ -110,7 +128,14 @@ async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string):
       .insert({ sessao_id: sessaoId, estado: "ativo", iniciado_em: new Date().toISOString() });
     // 23505: outra requisição concorrente já criou a linha — não é falha.
     if (erroInsercao && (erroInsercao as ErroPostgrest).code !== "23505") throw erroInsercao;
-    return;
+    return { estado: "ativo" };
+  }
+
+  // 🔴 Sessão já encerrada/em erro — NÃO ativa, NÃO atualiza. O CHAMADOR
+  // recusa o POST com base neste retorno, antes de tentar inserir o
+  // segmento (ver `POST` abaixo).
+  if (existente.estado === "encerrado" || existente.estado === "erro") {
+    return { estado: existente.estado };
   }
 
   if (existente.estado === "aguardando") {
@@ -120,7 +145,10 @@ async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string):
       .eq("sessao_id", sessaoId)
       .eq("estado", "aguardando"); // não pisa em 'encerrado'/'erro' que tenha mudado entre a leitura e aqui
     if (erroAtualizacao) throw erroAtualizacao;
+    return { estado: "ativo" };
   }
+
+  return { estado: existente.estado }; // já 'ativo'
 }
 
 /**
@@ -196,6 +224,14 @@ const CorpoSchema = z.object({
  * 'ativo', com `iniciado_em` carimbado de verdade) no primeiro segmento —
  * sem exigir uma rota separada só para isso.
  *
+ * 🔴 SESSÃO JÁ ENCERRADA/EM ERRO → 409 `sessao_ja_encerrada`, ANTES de
+ * qualquer INSERT (Fase 10, Fatia 5, achado do coordenador). Sem este gate,
+ * um segmento digitado depois do encerramento (cenário real: a advogada
+ * encerra, lembra de um detalhe, digita no campo que a tela ainda mostra)
+ * nunca entra em `transcricoes` — reencerrar não reconsolida por desenho —
+ * e é apagado em silêncio pelo job de expurgo da Fatia 5 assim que vence o
+ * prazo. Ver o comentário de `ativarSessaoCopiloto` para a cadeia completa.
+ *
  * KILL-SWITCH: `copiloto_sessao.ativo=false` devolve 409 `copiloto_desligado`
  * ANTES de qualquer escrita — nenhuma rota do copiloto grava nada desligada,
  * como a migration promete.
@@ -220,7 +256,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     await buscarSessaoOuFalhar(supabase, sessaoId);
-    await ativarSessaoCopiloto(supabase, sessaoId);
+    const { estado } = await ativarSessaoCopiloto(supabase, sessaoId);
+
+    // 🔴 CORREÇÃO (achado do coordenador — ver comentário de topo de
+    // `ativarSessaoCopiloto`): sessão já encerrada/em erro RECUSA o
+    // segmento, antes de qualquer INSERT. Sem isto, fala digitada depois
+    // do encerramento nunca entra em `transcricoes` e é apagada em
+    // silêncio pelo expurgo da Fatia 5 (`server/copiloto/expurgo.ts`).
+    if (estado === "encerrado" || estado === "erro") {
+      throw erroConflito(
+        "sessao_ja_encerrada",
+        "Esta sessão do copiloto já está encerrada — a transcrição já foi consolidada e não é possível adicionar novo segmento.",
+      );
+    }
 
     const inserido = await inserirSegmentoComRetentativa(supabase, sessaoId, corpo.texto, corpo.falante ?? null);
 
