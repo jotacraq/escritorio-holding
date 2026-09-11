@@ -5,6 +5,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * consentimento VIGENTE é o último registro não revogado daquele tipo. Consultamos
  * a tabela direto (não via RPC) porque a função vive no schema `app`, que não é
  * necessariamente exposto ao PostgREST — isto funciona sempre, com service_role.
+ *
+ * DUAS CÓPIAS DO MESMO PREDICADO (nota do fable-orchestrator, Fase 10): esta
+ * função e `app.tem_consentimento` (0005) precisam continuar idênticas — hoje
+ * são. Se um dia a 0005 mudar a regra de "vigente" (ex.: passar a considerar
+ * `expira_em`, ou desempatar por outro critério), ESTE arquivo tem que mudar
+ * junto, ou o TS e o SQL divergem em silêncio: uma rota que checa aqui e uma
+ * trigger que checa lá (ex.: `app.exige_decisao_copiloto_ao_vivo`, 0093)
+ * podiam decidir coisas diferentes para a MESMA pessoa. Ver o comentário
+ * espelhado em `supabase/migrations/0005_consentimentos.sql`.
  */
 export async function temConsentimento(
   supabaseAdmin: SupabaseClient,

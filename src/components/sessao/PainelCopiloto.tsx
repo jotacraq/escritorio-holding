@@ -5,9 +5,11 @@ import {
   ErroSessao,
   buscarEstadoCopiloto,
   listarSegmentosCopiloto,
+  pedirSugestaoCopiloto,
+  registrarDesfechoSugestaoCopiloto,
   registrarSegmentoManual,
 } from "@/components/sessao/api";
-import type { SegmentoCopiloto } from "@/types/copiloto";
+import type { DesfechoCopiloto, RespostaSugestaoCopiloto, SegmentoCopiloto, SugestaoCopiloto, TipoObservacaoCopiloto } from "@/types/copiloto";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Cartao } from "@/components/ui/Cartao";
 import { Selo } from "@/components/ui/Selo";
@@ -32,13 +34,32 @@ function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
 }
 
 /**
- * Copiloto ao vivo — Fatia 1 (docs/ARQUITETURA-FASE-10.md §8): modo
- * determinístico puro, ZERO IA. O estado (o que falta no bloco, SIMs
- * pendentes, blocos não percorridos) vem pronto de
- * `GET /api/sessoes/[id]/copiloto` — é o servidor quem deriva, não esta
- * tela, para a Fatia 3 (polling automático) reusar o mesmo payload sem
- * trocar de contrato (§2.4/C9). Nenhuma sugestão de IA aparece aqui — isso é
- * Fatia 2, e nem o botão "Me ajuda agora" existe ainda.
+ * Copiloto ao vivo — Fatia 1 + Fatia 2 (docs/ARQUITETURA-FASE-10.md §8). A
+ * Fatia 1 é o estado determinístico puro, ZERO IA: o que falta no bloco,
+ * SIMs pendentes, blocos não percorridos — vem pronto de
+ * `GET /api/sessoes/[id]/copiloto`, é o servidor quem deriva, não esta tela
+ * (para a Fatia 3, polling automático, reusar o mesmo payload sem trocar de
+ * contrato — §2.4/C9).
+ *
+ * A Fatia 2 acrescenta o botão **"Me ajuda agora"**: a IA só roda sob
+ * demanda, nunca sozinha (B71 — "nada pisca, nada toca, nada abre
+ * sozinho"). Contrato em `@/types/copiloto` (`RespostaSugestaoCopiloto`,
+ * `SugestaoCopiloto`). `visivel:false` é SUCESSO com confiança insuficiente
+ * — a tela mostra um aviso sóbrio, nunca a sugestão. Cada código de recusa
+ * (`copiloto_ia_nao_ativada`, `teto_ia_copiloto_atingido`,
+ * `timeout_copiloto`, `copiloto_ao_vivo_bloqueado`, `recusa_ia`,
+ * `saida_invalida`, `conteudo_proibido`) tem mensagem própria — nunca um
+ * "tente novamente" genérico. Implementado em `SugestaoIA`/
+ * `ApresentacaoSugestao` mais abaixo.
+ *
+ * **Desfecho (§5 do plano).** "Ir para lá" grava `desfecho='aceita'`,
+ * "Ignorar" grava `desfecho='ignorada'` via
+ * `POST .../sugestoes/[sugestaoId]/desfecho` — é o dado que, daqui a 20
+ * sessões, dirá se o copiloto acerta. A gravação é TELEMETRIA, não a ação:
+ * dispara em paralelo (`registrarDesfechoSemBloquear`), nunca bloqueia a
+ * navegação/dispensa, nunca mostra erro — inclusive `desfecho_ja_registrado`
+ * (409, duplo clique) é silencioso por design. Ciclo automático e polling
+ * continuam fora daqui — isso é Fatia 3.
  *
  * C10: este painel só existe dentro da aba "Copiloto" da coluna direita —
  * quem monta as abas é `ConduzirSessaoApp.tsx`, com Briefing como default.
@@ -56,7 +77,25 @@ function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
  * continuar `false`, e convidar a advogada a insistir numa ação que nunca
  * funciona é o oposto de guiar.
  */
-export function PainelCopiloto({ sessaoId, indiceAtual }: { sessaoId: string; indiceAtual: number }) {
+export function PainelCopiloto({
+  sessaoId,
+  indiceAtual,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  indiceAtual: number;
+  /** `estado.roteiro.definicao.blocos` de `ConduzirSessaoApp.tsx`, na ordem —
+   * é contra esta lista (não contra o payload do GET, que só traz os "não
+   * percorridos") que o desvio sugerido resolve `bloco_id` em índice real
+   * para navegar. Opcional: sem ela, a sugestão de desvio aparece só como
+   * informação, sem o botão "Ir para lá". */
+  blocosRoteiro?: { id: string }[];
+  /** `ConduzirSessaoApp.tsx` — a mesma função que as setas do teclado chamam
+   * (B70/§5 camada 3). Se ausente, o botão "Ir para" do desvio sugerido não
+   * aparece — nunca navega sozinho e nunca falha silenciosamente. */
+  irPara?: (indice: number) => void;
+}) {
   const buscarEstado = useCallback(() => buscarEstadoCopiloto(sessaoId, indiceAtual), [sessaoId, indiceAtual]);
   const { dados: estado, carregando, erro, recarregar } = useRecurso(buscarEstado, [sessaoId, indiceAtual]);
 
@@ -76,6 +115,8 @@ export function PainelCopiloto({ sessaoId, indiceAtual }: { sessaoId: string; in
         copiloto aponta com base na versão ativa hoje, não numa versão definitiva.
       </p>
 
+      <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+
       {!estado.bloco_atual_id ? (
         <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para mostrar o que falta." />
       ) : (
@@ -86,6 +127,352 @@ export function PainelCopiloto({ sessaoId, indiceAtual }: { sessaoId: string; in
       <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
 
       <RegistroManual sessaoId={sessaoId} />
+    </div>
+  );
+}
+
+/** Rótulo humano de cada código de recusa (§ contrato). Cada código tem causa
+ * distinta — nunca um "tente novamente" genérico: `timeout_copiloto` convida
+ * a tentar de novo, `teto_ia_copiloto_atingido` diz explicitamente que não
+ * adianta insistir hoje, `copiloto_ia_nao_ativada` aponta para Admin. */
+const MENSAGENS_RECUSA: Record<string, { titulo: string; descricao: string; podeTentarDeNovo: boolean }> = {
+  copiloto_ia_nao_ativada: {
+    titulo: "Copiloto de IA ainda não ativado",
+    descricao: "O prompt do copiloto está desligado por configuração. A equipe técnica liga isso em Admin — a sessão segue normalmente pelo roteiro.",
+    podeTentarDeNovo: false,
+  },
+  teto_ia_copiloto_atingido: {
+    titulo: "Limite de sugestões de hoje atingido",
+    descricao: "Esta sessão (ou o dia) já usou o orçamento de chamadas de IA do copiloto. Não adianta tentar de novo agora — o roteiro determinístico continua disponível.",
+    podeTentarDeNovo: false,
+  },
+  timeout_copiloto: {
+    titulo: "A sugestão não chegou a tempo",
+    descricao: "A IA não respondeu em 8 segundos. Pode tentar de novo.",
+    podeTentarDeNovo: true,
+  },
+  copiloto_ao_vivo_bloqueado: {
+    titulo: "Copiloto ao vivo bloqueado",
+    descricao: "Falta decisão jurídica ativa ou consentimento do titular para esta sessão. Não é algo que se resolve tentando de novo.",
+    podeTentarDeNovo: false,
+  },
+  recusa_ia: {
+    titulo: "A IA recusou responder desta vez",
+    descricao: "Pode tentar de novo — às vezes é um caso isolado.",
+    podeTentarDeNovo: true,
+  },
+  saida_invalida: {
+    titulo: "A resposta da IA não pôde ser validada",
+    descricao: "Pode tentar de novo.",
+    podeTentarDeNovo: true,
+  },
+  conteudo_proibido: {
+    titulo: "A sugestão foi descartada",
+    descricao: "O conteúdo continha algo que o copiloto nunca deve mostrar (ex.: valor em reais). Nada foi exibido.",
+    podeTentarDeNovo: false,
+  },
+};
+
+function mensagemRecusa(erro: unknown): { titulo: string; descricao: string; podeTentarDeNovo: boolean } {
+  if (erro instanceof ErroSessao && erro.codigo && MENSAGENS_RECUSA[erro.codigo]) {
+    return MENSAGENS_RECUSA[erro.codigo];
+  }
+  return {
+    titulo: "Não foi possível pedir a sugestão",
+    descricao: erro instanceof ErroSessao ? erro.message : "Erro inesperado. Tente de novo em instantes.",
+    podeTentarDeNovo: true,
+  };
+}
+
+/**
+ * O botão "Me ajuda agora" e a apresentação da sugestão (Fase 10, Fatia 2).
+ * B71: nada pisca, nada toca, nada abre sozinho — a sugestão só existe na
+ * tela depois do clique explícito da Dra. Elaine, e fica onde apareceu até
+ * ela pedir outra ou trocar de bloco/sessão (não há timer nem auto-refresh).
+ */
+function SugestaoIA({
+  sessaoId,
+  indiceAtual,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  indiceAtual: number;
+  blocosRoteiro?: { id: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const [pedindo, setPedindo] = useState(false);
+  const [resposta, setResposta] = useState<RespostaSugestaoCopiloto | null>(null);
+  const [erro, setErro] = useState<unknown>(null);
+
+  async function pedir() {
+    if (pedindo) return; // o botão não pode ser clicado duas vezes enquanto a IA responde
+    setPedindo(true);
+    setErro(null);
+    try {
+      const r = await pedirSugestaoCopiloto(sessaoId, indiceAtual);
+      setResposta(r);
+    } catch (e) {
+      setResposta(null);
+      setErro(e);
+    } finally {
+      setPedindo(false);
+    }
+  }
+
+  return (
+    <Cartao rotulo="Sugestão sob demanda" titulo="Me ajuda agora" preenchimento="compacto">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-tinta-suave">
+          A IA só roda quando você pede. Ela lê o bloco atual, o briefing e o que foi dito — nunca aparece sozinha.
+        </p>
+
+        <Botao
+          type="button"
+          variante="primario"
+          tamanho="compacto"
+          carregando={pedindo}
+          onClick={() => void pedir()}
+          className="self-start"
+          aria-describedby="copiloto-ia-nota"
+        >
+          Me ajuda agora
+        </Botao>
+        <span id="copiloto-ia-nota" className="sr-only">
+          Pede à IA uma sugestão para o momento atual da sessão. Pode levar até 8 segundos.
+        </span>
+
+        {pedindo && (
+          <p role="status" aria-live="polite" className="text-sm text-tinta-suave">
+            Pensando… (até 8 segundos)
+          </p>
+        )}
+
+        {!pedindo && erro !== null && (
+          <MensagemRecusa erro={erro} aoTentarDeNovo={() => void pedir()} />
+        )}
+
+        {!pedindo && !erro && resposta && !resposta.visivel && (
+          <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+            Sem sugestão confiável agora. A IA analisou, mas a confiança ficou abaixo do mínimo configurado — nada é
+            mostrado para não guiar com um palpite fraco.
+          </p>
+        )}
+
+        {!pedindo && !erro && resposta && resposta.visivel && resposta.sugestao && (
+          <ApresentacaoSugestao
+            sessaoId={sessaoId}
+            sugestaoId={resposta.sugestao_id}
+            sugestao={resposta.sugestao}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+          />
+        )}
+      </div>
+    </Cartao>
+  );
+}
+
+function MensagemRecusa({ erro, aoTentarDeNovo }: { erro: unknown; aoTentarDeNovo: () => void }) {
+  const { titulo, descricao, podeTentarDeNovo } = mensagemRecusa(erro);
+  return (
+    <div role="alert" className="flex flex-col items-start gap-2 rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm">
+      <p className="font-bold text-[color:var(--vermelho)]">{titulo}</p>
+      <p className="text-tinta">{descricao}</p>
+      {podeTentarDeNovo && (
+        <Botao variante="perigo" tamanho="compacto" onClick={aoTentarDeNovo}>
+          Tentar de novo
+        </Botao>
+      )}
+    </div>
+  );
+}
+
+const ROTULO_TIPO: Record<TipoObservacaoCopiloto, string> = {
+  fato: "Fato",
+  hipotese: "Hipótese",
+  inferencia: "Inferência",
+  recomendacao: "Recomendação",
+};
+
+const TOM_TIPO: Record<TipoObservacaoCopiloto, "verde" | "azul" | "ambar" | "latao"> = {
+  fato: "verde",
+  hipotese: "azul",
+  inferencia: "ambar",
+  recomendacao: "latao",
+};
+
+/** Confiança sempre visível junto do que ela qualifica — nunca só o texto,
+ * nunca só um número solto (regra da casa: tipo + confiança, sempre). */
+function SeloConfianca({ confianca }: { confianca: number }) {
+  return <Selo tom="neutro">confiança {Math.round(confianca * 100)}%</Selo>;
+}
+
+/** `evidencia` é citação literal do que o cliente disse — apresentada como
+ * citação, visivelmente distinta da conclusão da IA. */
+function Evidencia({ texto }: { texto: string }) {
+  return (
+    <blockquote className="border-l-2 border-linha-forte pl-2.5 text-sm italic text-tinta-suave">
+      &ldquo;{texto}&rdquo;
+    </blockquote>
+  );
+}
+
+/**
+ * Todo campo de `SugestaoCopiloto` pode vir nulo — nulo é nulo, some, nunca
+ * vira texto plausível. Cada bloco abaixo só renderiza se o dado existir.
+ */
+function ApresentacaoSugestao({
+  sessaoId,
+  sugestaoId,
+  sugestao,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  /** `resposta.sugestao_id` — nível de `RespostaSugestaoCopiloto`, não de
+   * `SugestaoCopiloto`. É o vínculo para `POST .../[sugestaoId]/desfecho`. */
+  sugestaoId: string;
+  sugestao: SugestaoCopiloto;
+  blocosRoteiro?: { id: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const nada =
+    !sugestao.proxima_pergunta &&
+    sugestao.falta_no_bloco.length === 0 &&
+    !sugestao.observacao &&
+    !sugestao.desvio_sugerido;
+
+  if (nada) {
+    return (
+      <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+        A IA respondeu, mas não teve nada específico a apontar agora.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-linha pt-3">
+      {sugestao.proxima_pergunta && (
+        <div className="flex flex-col gap-1">
+          <p className="text-rotulo font-medium uppercase text-tinta-fraca">Próxima pergunta</p>
+          <p className="text-sm font-medium text-tinta">{sugestao.proxima_pergunta.texto}</p>
+          <p className="text-legenda text-tinta-suave">{sugestao.proxima_pergunta.motivo}</p>
+          {sugestao.proxima_pergunta.evidencia && <Evidencia texto={sugestao.proxima_pergunta.evidencia} />}
+        </div>
+      )}
+
+      {sugestao.falta_no_bloco.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-rotulo font-medium uppercase text-tinta-fraca">A IA notou que falta</p>
+          <ul className="flex flex-col gap-1.5">
+            {sugestao.falta_no_bloco.map((item, i) => (
+              <li key={i} className="flex flex-col gap-0.5 text-sm text-tinta">
+                <span>{item.item}</span>
+                {item.evidencia && <Evidencia texto={item.evidencia} />}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sugestao.observacao && (
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Selo tom={TOM_TIPO[sugestao.observacao.tipo]}>{ROTULO_TIPO[sugestao.observacao.tipo]}</Selo>
+            <SeloConfianca confianca={sugestao.observacao.confianca} />
+          </div>
+          <p className="text-sm text-tinta">{sugestao.observacao.texto}</p>
+          {sugestao.observacao.evidencia && <Evidencia texto={sugestao.observacao.evidencia} />}
+        </div>
+      )}
+
+      {sugestao.desvio_sugerido && (
+        <DesvioSugerido
+          sessaoId={sessaoId}
+          sugestaoId={sugestaoId}
+          desvio={sugestao.desvio_sugerido}
+          blocosRoteiro={blocosRoteiro}
+          irPara={irPara}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Dispara o registro do desfecho como telemetria pura: nunca bloqueia a UI,
+ * nunca mostra erro. `desfecho_ja_registrado` (409) é caso normal (duplo
+ * clique) e cai no mesmo `catch` silencioso — a advogada não pode ser punida
+ * por uma métrica que não gravou, ela está em reunião com um cliente. */
+function registrarDesfechoSemBloquear(sessaoId: string, sugestaoId: string, desfecho: DesfechoCopiloto) {
+  void registrarDesfechoSugestaoCopiloto(sessaoId, sugestaoId, desfecho).catch(() => {
+    /* telemetria — falha aqui nunca aparece na tela nem impede a ação já tomada */
+  });
+}
+
+/**
+ * `desvio_sugerido` é sugestão com botão, nunca ação executada (B70/B71). Se
+ * a advogada clicar, quem navega é `irPara()` — a mesma função das setas do
+ * teclado em `ConduzirSessaoApp.tsx`. "Ignorar" sempre ao lado. Cada clique
+ * também grava o desfecho (§5 do plano) — telemetria disparada em paralelo,
+ * nunca atrasando nem condicionando a navegação/dispensa.
+ */
+function DesvioSugerido({
+  sessaoId,
+  sugestaoId,
+  desvio,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  sugestaoId: string;
+  desvio: NonNullable<SugestaoCopiloto["desvio_sugerido"]>;
+  blocosRoteiro?: { id: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const [ignorado, setIgnorado] = useState(false);
+  if (ignorado) return null;
+
+  // O servidor já confere `bloco_id` contra o roteiro ativo antes de devolver
+  // a sugestão — mas a navegação em si só acontece se a tela também conseguir
+  // resolver o índice, contra a lista real do roteiro carregado aqui. Sem
+  // isso, o botão "Ir para lá" nunca aparece — a sugestão continua visível
+  // como informação, nunca navega com um índice inventado.
+  const indiceAlvo = blocosRoteiro?.findIndex((b) => b.id === desvio.bloco_id) ?? -1;
+  const podeNavegar = irPara && indiceAlvo >= 0;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-controle border border-linha bg-papel px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Selo tom="latao">Sugestão de desvio</Selo>
+        <SeloConfianca confianca={desvio.confianca} />
+      </div>
+      <p className="text-sm text-tinta">{desvio.motivo}</p>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {podeNavegar && (
+          <Botao
+            variante="secundario"
+            tamanho="compacto"
+            onClick={() => {
+              irPara(indiceAlvo);
+              setIgnorado(true);
+              registrarDesfechoSemBloquear(sessaoId, sugestaoId, "aceita");
+            }}
+          >
+            Ir para lá
+          </Botao>
+        )}
+        <Botao
+          variante="fantasma"
+          tamanho="compacto"
+          onClick={() => {
+            setIgnorado(true);
+            registrarDesfechoSemBloquear(sessaoId, sugestaoId, "ignorada");
+          }}
+        >
+          Ignorar
+        </Botao>
+      </div>
     </div>
   );
 }

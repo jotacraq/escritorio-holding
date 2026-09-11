@@ -287,7 +287,14 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
             {
               id: "copiloto",
               rotulo: "Copiloto",
-              conteudo: <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} />,
+              conteudo: (
+                <PainelCopiloto
+                  sessaoId={sessaoId}
+                  indiceAtual={indice}
+                  blocosRoteiro={estado.roteiro.definicao.blocos}
+                  irPara={irPara}
+                />
+              ),
             },
           ]}
         />

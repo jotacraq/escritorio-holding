@@ -1,0 +1,24 @@
+-- 0092_copiloto_consentimento_enum.sql
+-- Fase 10 · Fatia 2 (docs/ARQUITETURA-FASE-10.md §6.2, §8, §12). SÓ o valor
+-- novo do enum — nada mais neste arquivo.
+--
+-- POR QUE UM ARQUIVO SÓ PARA ISTO (mesma armadilha de Postgres já catalogada
+-- em 0050_tipo_link_confirmacao.sql, 0079_desfecho_anonimizada.sql e
+-- 0083_estados_de_compra.sql): `alter type ... add value` não pode ser USADO
+-- na mesma transação em que foi criado ("unsafe use of new value"). Cada
+-- migration roda como uma transação — o valor 'copiloto_sessao_ao_vivo' entra
+-- sozinho aqui e só é referenciado a partir de 0093
+-- (`app.tem_consentimento(pessoa, 'copiloto_sessao_ao_vivo')`). Quem juntar os
+-- dois arquivos derruba a 0093 com `unsafe use of new value of enum type`.
+--
+-- É o tipo NOVO de consentimento do TITULAR que B67 (docs/ARQUITETURA-FASE-10.md
+-- §10) exige, distinto de `gravacao_sessao` (autoriza gravar, não transmitir a
+-- fala a terceiro ao vivo — NOTA de 0030) e de `tratamento_ia` (é consentimento
+-- de PREPARAÇÃO da SV, não de escuta ao vivo durante ela). Nasce sem nenhuma
+-- linha em `consentimentos`: `app.tem_consentimento` devolve `false` para
+-- todo mundo até alguém conceder — fail-closed por AUSÊNCIA de dado.
+--
+-- REVERSÃO: valor de enum não se remove no Postgres. Sem uso (se 0093 não for
+-- aplicada) o valor é inerte — nenhuma linha, função ou policy o referencia.
+
+alter type tipo_consentimento add value if not exists 'copiloto_sessao_ao_vivo';

@@ -18,7 +18,14 @@ import type {
   SimIdentificador,
   SimsSessao,
 } from "@/types/roteiro";
-import type { EstadoCopiloto, RespostaSegmentos, SegmentoCopiloto } from "@/types/copiloto";
+import type {
+  DesfechoCopiloto,
+  EstadoCopiloto,
+  RespostaDesfechoCopiloto,
+  RespostaSegmentos,
+  RespostaSugestaoCopiloto,
+  SegmentoCopiloto,
+} from "@/types/copiloto";
 
 export class ErroSessao extends Error {
   constructor(
@@ -164,4 +171,41 @@ export function registrarSegmentoManual(sessaoId: string, texto: string): Promis
  * seria uma caixa que engole texto sem confirmação nenhuma. */
 export function listarSegmentosCopiloto(sessaoId: string): Promise<RespostaSegmentos> {
   return chamar<RespostaSegmentos>(`/api/sessoes/${sessaoId}/copiloto/segmentos`);
+}
+
+// ---------------------------------------------------------------------------
+// Copiloto ao vivo — Fase 10, Fatia 2 (docs/ARQUITETURA-FASE-10.md §8)
+//
+// POST /api/sessoes/[id]/copiloto/sugestao — a sugestão por IA SOB DEMANDA
+// ("Me ajuda agora"). Sucesso 201 pode vir com `visivel:false` — não é erro,
+// é o servidor se recusando a mostrar palpite fraco (§ contrato). Recusa vem
+// como `ErroSessao` com `codigo` de `CodigoRecusaSugestaoCopiloto`; a tela
+// testa sempre por `codigo`, nunca por status nem pela mensagem.
+// ---------------------------------------------------------------------------
+
+export function pedirSugestaoCopiloto(sessaoId: string, bloco?: number): Promise<RespostaSugestaoCopiloto> {
+  return chamar<RespostaSugestaoCopiloto>(`/api/sessoes/${sessaoId}/copiloto/sugestao`, {
+    method: "POST",
+    body: JSON.stringify(bloco === undefined ? {} : { bloco }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sessoes/[id]/copiloto/sugestoes/[sugestaoId]/desfecho — §5 do
+// plano: "Ir para lá" grava `aceita`, "Ignorar" grava `ignorada`. `desfecho`
+// é IMUTAVEL (trigger 0095); `desfecho_ja_registrado` (409) é CASO NORMAL de
+// duplo-clique, não erro. Esta chamada é telemetria, não a ação — a tela
+// nunca deve bloquear "Ir para lá"/"Ignorar" esperando esta promise nem
+// mostrar erro visível quando ela falha (ver PainelCopiloto.tsx).
+// ---------------------------------------------------------------------------
+
+export function registrarDesfechoSugestaoCopiloto(
+  sessaoId: string,
+  sugestaoId: string,
+  desfecho: DesfechoCopiloto,
+): Promise<RespostaDesfechoCopiloto> {
+  return chamar<RespostaDesfechoCopiloto>(`/api/sessoes/${sessaoId}/copiloto/sugestoes/${sugestaoId}/desfecho`, {
+    method: "POST",
+    body: JSON.stringify({ desfecho }),
+  });
 }
