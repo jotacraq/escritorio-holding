@@ -56,3 +56,6 @@ next-env.d.ts
 !public/**/*.png
 !brain/**/*.png
 Users*AppData*scratchpad/
+
+# Arquivo de apoio para colar envs na Hostinger (14/09) — nunca commitar
+ENV-PARA-COLAR.txt
