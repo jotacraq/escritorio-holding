@@ -25,6 +25,7 @@ import type {
 } from "@/types/copiloto";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Cartao } from "@/components/ui/Cartao";
+import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
@@ -338,7 +339,11 @@ export function PainelCopiloto({
   if (polling.desligadoPeloKillSwitch) return <CopilotoDesligado />;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
+      {/* Avisos de topo — estado transitório, nunca um "quadro" de conteúdo
+       * permanente. Empilhados, full-width, acima da grade (B71: nada disto
+       * pisca nem desloca o que já está embaixo — cada um só aparece/some
+       * por mudança de estado real, nunca por timer). */}
       <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-legenda text-tinta-fraca">
         Nenhuma das 4 versões do roteiro foi carimbada como oficial pela Dra. Elaine (ver aviso no topo da sessão) — o
         copiloto aponta com base na versão ativa hoje, não numa versão definitiva.
@@ -361,35 +366,45 @@ export function PainelCopiloto({
 
       {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
 
-      {!sessaoEncerrada && (
-        <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-      )}
+      {/* Grade densa de quadros (pedido do Marcio, 11-14/09: "modelo do
+       * Juliano" — painel único, tudo visível, sem abas, sem card-herói).
+       * PERGUNTE AGORA é o primeiro quadro, topo-esquerda: a hierarquia é
+       * por POSIÇÃO, nunca por decoração. `items-start` (não `stretch`):
+       * cada quadro tem a altura do próprio conteúdo, sem esticar para
+       * casar com o vizinho mais alto — é isso que dá densidade real. */}
+      <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
+        <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
 
-      <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        {!estado.bloco_atual_id ? (
+          <Quadro rotulo="Neste bloco">
+            <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para mostrar o que falta." />
+          </Quadro>
+        ) : (
+          <FaltaNoBloco falta={estado.falta_no_bloco} />
+        )}
 
-      {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
+        {!sessaoEncerrada && (
+          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        )}
 
-      {!estado.bloco_atual_id ? (
-        <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para mostrar o que falta." />
-      ) : (
-        <FaltaNoBloco falta={estado.falta_no_bloco} />
-      )}
+        {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
 
-      <SimsPendentes pendentes={estado.sims_pendentes} />
-      <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
+        <SimsPendentes pendentes={estado.sims_pendentes} />
+        <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
 
-      {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
-       * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
-       * estado LOCAL desta aba (encerramento manual/por duração máxima
-       * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
-       * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
-       * Sem o segundo, recarregar a página depois de encerrar reabriria o
-       * campo — texto digitado ali não entra mais em `transcricoes`
-       * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
-       * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
-       * impede o erro; a trava de verdade é do backend (409 no POST, mais
-       * o backstop do DELETE por `criado_em <= encerrado_em`). */}
-      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
+        {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
+         * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
+         * estado LOCAL desta aba (encerramento manual/por duração máxima
+         * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
+         * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
+         * Sem o segundo, recarregar a página depois de encerrar reabriria o
+         * campo — texto digitado ali não entra mais em `transcricoes`
+         * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
+         * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
+         * impede o erro; a trava de verdade é do backend (409 no POST, mais
+         * o backstop do DELETE por `criado_em <= encerrado_em`). */}
+        <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
+      </div>
 
       {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
     </div>
@@ -535,7 +550,7 @@ function SugestoesDoCiclo({
   if (pendentes.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <Quadro rotulo="Sugestões" como="article" className="sm:col-span-2">
       <p role="status" aria-live="polite" className="text-legenda font-medium uppercase text-tinta-fraca">
         {pendentes.length === 1 ? "1 sugestão nova" : `${pendentes.length} sugestões novas`}
       </p>
@@ -543,7 +558,8 @@ function SugestoesDoCiclo({
         {pendentes.map((s) => (
           <li key={s.sugestao_id}>
             {abertas[s.sugestao_id] ? (
-              <Cartao rotulo={ROTULO_GATILHO[s.gatilho]} titulo="Sugestão do copiloto" preenchimento="compacto">
+              <div className="rounded-controle border border-linha p-2.5">
+                <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[s.gatilho]}</p>
                 {!s.visivel || !s.sugestao ? (
                   <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
                     A IA analisou este momento, mas a confiança ficou abaixo do mínimo configurado — nada é mostrado
@@ -567,7 +583,7 @@ function SugestoesDoCiclo({
                     Dispensar
                   </Botao>
                 </div>
-              </Cartao>
+              </div>
             ) : (
               // O card fechado é o "aviso discreto": um botão sóbrio, sem
               // cor de alarme, sem badge pulsante — a Dra. Elaine decide
@@ -689,26 +705,26 @@ function SugestaoIA({
   }
 
   return (
-    <Cartao rotulo="Sugestão sob demanda" titulo="Me ajuda agora" preenchimento="compacto">
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-tinta-suave">
-          A IA só roda quando você pede. Ela lê o bloco atual, o briefing e o que foi dito — nunca aparece sozinha.
-        </p>
-
-        <Botao
-          type="button"
-          variante="primario"
-          tamanho="compacto"
-          carregando={pedindo}
-          onClick={() => void pedir()}
-          className="self-start"
-          aria-describedby="copiloto-ia-nota"
-        >
-          Me ajuda agora
-        </Botao>
-        <span id="copiloto-ia-nota" className="sr-only">
-          Pede à IA uma sugestão para o momento atual da sessão. Pode levar até 8 segundos.
-        </span>
+    <Quadro rotulo="Pergunte agora" como="article" className="sm:col-span-2">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-tinta-suave">
+            A IA só roda quando você pede. Ela lê o bloco atual, o briefing e o que foi dito — nunca aparece sozinha.
+          </p>
+          <Botao
+            type="button"
+            variante="primario"
+            tamanho="compacto"
+            carregando={pedindo}
+            onClick={() => void pedir()}
+            aria-describedby="copiloto-ia-nota"
+          >
+            Me ajuda agora
+          </Botao>
+          <span id="copiloto-ia-nota" className="sr-only">
+            Pede à IA uma sugestão para o momento atual da sessão. Pode levar até 8 segundos.
+          </span>
+        </div>
 
         {pedindo && (
           <p role="status" aria-live="polite" className="text-sm text-tinta-suave">
@@ -737,7 +753,7 @@ function SugestaoIA({
           />
         )}
       </div>
-    </Cartao>
+    </Quadro>
   );
 }
 
@@ -841,22 +857,16 @@ function ApresentacaoSugestao({
   return (
     <div className="flex flex-col gap-3">
       {sugestao.proxima_pergunta && (
-        <div className="rounded-cartao border border-linha border-l-4 border-l-[color:var(--latao-cta)] bg-papel px-3.5 py-3">
-          <p className="mb-1 flex items-center gap-1.5 text-rotulo font-semibold uppercase tracking-wide text-[color:var(--latao)]">
-            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0 fill-current">
-              <path d="M10 1.5a5.5 5.5 0 0 0-3.2 9.98c.46.33.7.85.7 1.4v.62a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-.62c0-.55.24-1.07.7-1.4A5.5 5.5 0 0 0 10 1.5Zm-1.5 16a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-.5h-3v.5Z" />
-            </svg>
-            Pergunte agora
-          </p>
-          <p className="text-titulo font-bold leading-snug text-tinta sm:text-display">{sugestao.proxima_pergunta.texto}</p>
+        <div className="rounded-controle border border-linha px-3 py-2.5">
+          <p className="text-subtitulo font-bold leading-snug text-tinta">{sugestao.proxima_pergunta.texto}</p>
           {sugestao.proxima_pergunta.motivo && (
-            <p className="mt-2 text-sm text-tinta-suave">
+            <p className="mt-1.5 text-sm text-tinta-suave">
               <span className="font-medium text-tinta-fraca">Por quê: </span>
               {sugestao.proxima_pergunta.motivo}
             </p>
           )}
           {sugestao.proxima_pergunta.evidencia && (
-            <div className="mt-2">
+            <div className="mt-1.5">
               <Evidencia texto={sugestao.proxima_pergunta.evidencia} rotulo="O cliente disse" />
             </div>
           )}
@@ -1274,7 +1284,7 @@ function FaltaNoBloco({ falta }: { falta: { campos: { id: string; rotulo: string
   const semObservar = falta.observar.length === 0;
 
   return (
-    <Cartao rotulo="Neste bloco" titulo="O que falta" preenchimento="compacto">
+    <Quadro rotulo="Falta neste bloco">
       {semCampos && semObservar ? (
         <p className="text-sm text-tinta-suave">Este bloco não tem campo nem ponto de observação cadastrado no roteiro.</p>
       ) : (
@@ -1308,14 +1318,14 @@ function FaltaNoBloco({ falta }: { falta: { campos: { id: string; rotulo: string
           )}
         </div>
       )}
-    </Cartao>
+    </Quadro>
   );
 }
 
 function SimsPendentes({ pendentes }: { pendentes: { sim: string; rotulo: string }[] }) {
   const registrados = 4 - pendentes.length;
   return (
-    <Cartao rotulo="Os 4 SIMs" titulo="SIMs pendentes" preenchimento="compacto" acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4</Selo>}>
+    <Quadro rotulo="SIMs pendentes" acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4</Selo>}>
       {pendentes.length === 0 ? (
         <p className="text-sm text-tinta-suave">Os 4 SIMs já foram registrados.</p>
       ) : (
@@ -1327,13 +1337,13 @@ function SimsPendentes({ pendentes }: { pendentes: { sim: string; rotulo: string
           ))}
         </ul>
       )}
-    </Cartao>
+    </Quadro>
   );
 }
 
 function BlocosNaoPercorridos({ blocos }: { blocos: { id: string; titulo: string }[] }) {
   return (
-    <Cartao rotulo="Roteiro" titulo="Blocos ainda não percorridos" preenchimento="compacto" acao={<Selo tom="neutro">{blocos.length}</Selo>}>
+    <Quadro rotulo="Blocos ainda não percorridos" acao={<Selo tom="neutro">{blocos.length}</Selo>}>
       {blocos.length === 0 ? (
         <p className="text-sm text-tinta-suave">Este é o último bloco do roteiro.</p>
       ) : (
