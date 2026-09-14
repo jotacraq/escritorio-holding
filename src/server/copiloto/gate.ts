@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { temConsentimento } from "@/server/ia/consentimento";
+import { lerConfiguracaoBool } from "@/server/ia/configuracao";
 
 /**
  * O gate jurídico do copiloto ao vivo, conferido ANTES de montar contexto e
@@ -37,6 +38,7 @@ export interface ResultadoGateCopiloto {
 
 const ESCOPO_DECISAO = "sessao.copiloto_ao_vivo";
 const TIPO_CONSENTIMENTO = "copiloto_sessao_ao_vivo";
+const CHAVE_DISPENSA_GATE = "copiloto_sessao.dispensa_gate_juridico";
 
 /**
  * `select 1 ... where escopo = $1 and revogada_em is null` — MESMO predicado,
@@ -57,6 +59,21 @@ async function existeDecisaoAtiva(admin: SupabaseClient): Promise<boolean> {
 }
 
 /**
+ * Lê `copiloto_sessao.dispensa_gate_juridico` (0100). TRUE = o gate jurídico
+ * não é conferido — ver o comentário dentro de `conferirGateCopiloto`.
+ * Fail-closed: ausência da chave, erro de leitura ou valor de outro tipo
+ * devolvem `false`, ou seja, o gate CONTINUA valendo. "Não saber" nunca
+ * dispensa — é o mesmo princípio de `copilotoEstaAtivo`, invertido.
+ */
+async function gateJuridicoDispensado(admin: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(admin, CHAVE_DISPENSA_GATE, false);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Confere as DUAS condições que o INSERT em `copiloto_sugestoes`/
  * `sessoes_copiloto_segmentos(origem='bot')`/`sessoes_copiloto.gravacao_externa_id`
  * exigiria no banco (0093) — mas ANTES de gastar uma chamada de IA. Chamar
@@ -69,6 +86,22 @@ export async function conferirGateCopiloto(
   params: { sessaoId: string; pessoaId: string },
 ): Promise<ResultadoGateCopiloto> {
   try {
+    // 🔴 DISPENSA EXPLÍCITA — decisão do Marcio, 14/09/2026, reafirmada depois
+    // de eu apontar o risco duas vezes. Espelha a remoção das 3 triggers pela
+    // migration 0099. Com `copiloto_sessao.dispensa_gate_juridico = true`, o
+    // copiloto opera SEM registro de quem autorizou gravar, e revogar o
+    // consentimento de um titular deixa de barrar qualquer caminho.
+    //
+    // Continua FALSE por padrão e fail-closed em erro de leitura: ninguém
+    // dispensa o gate por acidente, só por ato deliberado em Admin.
+    //
+    // Para religar a trava inteira: `update configuracoes set valor='false'
+    // where chave='copiloto_sessao.dispensa_gate_juridico'` — e recriar as 3
+    // triggers (o SQL exato está no cabeçalho da 0099; a função foi preservada).
+    if (await gateJuridicoDispensado(admin)) {
+      return { liberado: true, motivo: null };
+    }
+
     const decisaoAtiva = await existeDecisaoAtiva(admin);
     if (!decisaoAtiva) {
       return { liberado: false, motivo: "sem_decisao_juridica" };
