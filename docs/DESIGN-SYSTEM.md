@@ -238,27 +238,31 @@ trabalho. Hierarquia visual é a informação.
 - Alvo de clique/toque **≥ 44 × 44 px** (`min-h-11`); ícone sozinho = `h-11 w-11` + `sr-only`/`aria-label`.
 - Fonte **≥ 12 px** (`text-legenda` é o piso); corpo **14 px** (B3: fixo, não sobe para 15/16 — decisão
   do Marcio na migração de 14/09, "tá tudo muito grande, tenho que escrolar muito").
-- **Piso AAA (7:1 texto, 3:1 borda de controle), migração GPS-THB (14/09/2026).** Medido por
-  `node scripts/contraste.mjs` (fórmula WCAG 2.1, lê os tokens direto do `globals.css`, roda
-  nos dois temas) — não pelo `scripts/a11y.mjs` (axe, piso AA/4,5:1, não prova AAA). Números
-  antes/depois em `tmp/squad/contraste/baseline-antes.txt` e `depois-migracao.txt`:
-  - `--tinta` 15,4–17,4:1 (claro) / 13,9–15,4:1 (escuro) — ok nas três superfícies, nos dois temas.
-  - `--tinta-suave` 8,4–9,5:1 (claro) / 7,8–8,6:1 (escuro) — ok.
-  - `--tinta-fraca` **5,3–6,0:1 (claro) / 5,6–6,3:1 (escuro) — abaixo do piso AAA nas quatro
-    combinações (papel-fundo/papel/papel-elevado/linha), nos dois temas.** Falha PRÉ-EXISTENTE
-    (mesmos números antes e depois desta migração, dentro de ±0,1) — não é escopo desta rodada,
-    registrada como dívida em `CONTINUAR-AQUI.md`.
-  - `--latao` (B1, `#8f3600`): 6,89–7,79:1 no claro, 6,22–6,90:1 no escuro — **exceção AAA
-    documentada em `globals.css`** (pior caso 6,22:1 contra `--latao-fraco` no escuro; passa AA
-    com folga, é chip/selo de marca, nunca corpo de texto).
-  - `--linha-controle`: 3,10–3,50:1 (claro) / **3,94–4,37:1 (escuro, melhorou com o derivado
-    quente)** — ok (piso 3:1, WCAG 1.4.11).
-  - `--estado-*` (selo, Fase 8, §12.3): todos ≥ 7,0:1 nos dois temas, sobre as quatro superfícies
-    onde aparecem — inalterado por esta migração.
-  Sobre fundo tingido (`--latao-fraco`, `--verde-fraco`, `--ambar-fraco`, `--vermelho-fraco`,
-  `--azul-fraco`, `--linha`) `--tinta-fraca` fica entre **4,48 e 5,30:1** nos dois temas — o
-  piso é o chip `--linha` do escuro. `--linha-forte` **nunca** é fundo de texto (só linha e
-  ponto): ali `--tinta-fraca` cairia a 3,6–3,9:1.
+- **Piso AAA (7:1 texto, 3:1 borda de controle), migração GPS-THB (14/09/2026, 2 rodadas).**
+  Medido por `node scripts/contraste.mjs` (fórmula WCAG 2.1, lê os tokens direto do
+  `globals.css`, roda nos dois temas) — não pelo `scripts/a11y.mjs` (axe, piso AA/4,5:1, não
+  prova AAA). A 1ª rodada só tinha `--papel`/`--latao` aplicados (a tabela completa não tinha
+  sido enviada ainda) e saiu com 8 falhas em `--tinta-fraca`. A 2ª rodada aplicou a tabela
+  inteira do Marcio: **8 falhas → 3.**
+  - `--tinta` 15,3–17,5:1 (claro) / 15,3–17,7:1 (escuro) — ok.
+  - `--tinta-suave` `#57514b`/`#c2bbb1`: 7,4–7,8:1 (claro) / 8,5–9,8:1 (escuro) — ok, **exceto
+    `tinta-suave / papel` no claro, 6,96:1** — abaixo do piso por 0,04; é o próprio valor da
+    tabela recebida, não forçado a outro número. Reportado, não escondido.
+  - `--tinta-fraca` `#524d47`/`#b8b1a8`: 7,4–8,4:1 (claro) / 7,6–8,8:1 (escuro) sobre
+    papel-fundo/papel/papel-elevado — **resolvida** a falha que a 1ª rodada tinha deixado
+    pendente. Só **`tinta-fraca / linha`** continua abaixo (6,49 claro / 6,33 escuro) — par
+    fora da tabela recebida; `--linha` não tem par de texto real medido no código (grep não
+    achou `text-tinta-fraca` sobre `bg-linha` como superfície de leitura — `--linha` só
+    aparece como trilha/fundo decorativo nos usos atuais). Achado a decidir: tirar o par da
+    lista de prova, ou tratar como exceção, ou escurecer `--tinta-fraca` mais um degrau.
+  - `--latao` (B1, `#8f3600`): 7,4–9,6:1 no escuro (melhorou — `--latao` escuro agora é
+    `#ffa559`, o `#ef7d00` antigo media só 5,87:1 e reprovava), 7,35–7,79:1 no claro — só
+    **`latao / latao-fraco` = 6,80:1** segue como **exceção AAA documentada** (chip/selo de
+    marca, nunca corpo de texto; passa AA com folga). `--estado-latao` usa o mesmo valor e
+    herda a mesma exceção.
+  - `--linha-controle`: 3,35–3,77:1 (claro) / 3,50–4,03:1 (escuro) — ok (piso 3:1, WCAG 1.4.11).
+  - `--estado-*` (selo, Fase 8, §12.3): todos ≥ 7,08:1 nos dois temas, sobre as quatro
+    superfícies onde aparecem — ok, com folga maior no escuro (8,1–11,0:1).
 - **Auditoria de contraste rodada no DOM (Fase 7), não estimada.** Varredura de todo nó de
   texto visível com a cor e o fundo COMPUTADOS pelo navegador (fundo resolvido subindo a
   árvore, com composição de alfa), mínimo 4,5:1 (3:1 para ≥ 24 px ou ≥ 18,66 px bold), com
@@ -433,9 +437,15 @@ e sem alteração (`--papel*`, `--tinta*`, `--linha*`, `--latao*`) — só o VAL
 - **B1** — `--latao: #8f3600` (era `#a84d00`). Exceção AAA documentada em `globals.css`; ver §6.
 - **CF4** — `--papel: #f5f1ec` (não o `#f1ede8` cru do GPS): com o valor cru, `--tinta-suave` caía a
   6,71:1 sobre `--papel`, abaixo do piso desta rodada.
-- **B5** — tema escuro derivado QUENTE (`#14120f`/`#1c1815`/`#221c17`, viés marrom — não mais
-  cinza-azulado neutro), luminância equivalente ao anterior (todo par que já batia o piso continua
-  batendo; `linha-controle` melhorou 3,07–3,48 → 3,94–4,37).
+- **2ª rodada (correção do Marcio, mesmo dia)** — a 1ª rodada só tinha `--papel`/`--latao`
+  aplicados; a tabela completa (superfícies claras + tema escuro derivado) não tinha sido
+  enviada ainda. Aplicada na íntegra: `--tinta`/`-suave`/`-fraca`, `--linha`/`-forte`/
+  `-controle`, `--latao-forte`/`-fraco`/`-cta`/`-cta-forte`/`-cta-texto`, `--verde`/
+  `--vermelho`/`--ambar` (+`-fraco`), `--estado-*` nos dois temas. `--azul`/`--ambar-borda`
+  mantidos (sem equivalente no GPS). `scripts/contraste.mjs`: 8 falhas → 3 (ver §6).
+- **B5** — tema escuro derivado QUENTE (`#14120f`/`#1c1917`/`#23201d`, viés marrom — não mais
+  cinza-azulado neutro). `--latao` escuro corrigido para `#ffa559` na 2ª rodada — o `#ef7d00`
+  da 1ª rodada media só 5,87:1, abaixo do piso; `linha-controle` melhorou 3,10–3,50 → 3,50–4,03.
 - **B2** — `Botao` primário: retângulo chapado (`rounded-controle`, sem aresta 3D, sem
   `hover:-translate-y-px`).
 - **B3** — corpo continua 14px; só o `line-height` subiu para 1,6 (do GPS).
@@ -451,10 +461,16 @@ e sem alteração (`--papel*`, `--tinta*`, `--linha*`, `--latao*`) — só o VAL
   `CONTINUAR-AQUI.md`.
 - **`Cartao.realce`** estreitado de `"latao"|"ambar"|"verde"|"vermelho"` para `"ambar"|"vermelho"`
   (só alerta real); `border-l-4`→`border-l-2`. 6 consumidores decorativos perderam a prop.
-- **`Quadro.tom`** (painel do Copiloto) **NÃO foi estreitado** — medição dos 8 usos mostrou que
-  nenhum é cor-como-único-sinal (todos têm rótulo em texto + ícone dedicado); é taxonomia de
-  NATUREZA do bloco (ação/alerta/bloco/contexto/insight), dimensão diferente do `realce` de
-  `Cartao` (escala de alerta). Só `border-l-4`→`border-l-2` e `uppercase`→`font-semibold`.
+- **`Quadro.tom`** (painel do Copiloto) — proposta inicial de manter os 5 tons por "natureza
+  do bloco" foi **revista e revertida pelo Marcio**: medido de novo, `roxo` e `azul`
+  renderizavam a MESMA `var(--azul)` (só a opacidade do fundo mudava) e `ambar` marcava dois
+  quadros diferentes (5 e 6) sem diferenciá-los — 5 tons produzindo 4 cores, 2 indistinguíveis,
+  não é taxonomia. Decisão final: `TomQuadro` estreita para `"ambar"|"vermelho"`; só o quadro 2
+  (Alerta) e o quadro 7 quando `!acertou` mantêm cor — os quadros 1, 3, 4, 5, 6 e o 7 quando
+  `acertou` ficam sem `tom` (chapados). `bg-*-fraco/40` (fundo tingido) removido — não estava na
+  instrução do mock e é mais enfeite que a borda. `border-l-4`→`border-l-2` e
+  `uppercase`→`font-semibold` mantidos. Estrutura dos 7 quadros (posição, ordem, numeração)
+  intocada.
 - **Divergências do plano com a realidade medida** (reportadas, não corrigidas por conta própria):
   a tabela completa "valores crus do GPS" citada no plano (sombras `--shadow-raised`/`-hover`,
   demais tokens C1–C9) não estava disponível nesta execução — só os pontos citados explicitamente
