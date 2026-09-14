@@ -122,7 +122,6 @@ export function ListaSessoes() {
         rotulo="Em destaque"
         titulo="Próximos 7 dias"
         preenchimento="sem"
-        realce="latao"
       >
         {resumo.proximos.length === 0 ? (
           <div className="p-5 sm:p-6">

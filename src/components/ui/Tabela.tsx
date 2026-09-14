@@ -137,7 +137,7 @@ export function Tabela<L>({
                 <th
                   key={coluna.chave}
                   scope="col"
-                  className={`px-3 py-2 text-rotulo font-medium uppercase text-tinta-fraca ${coluna.numerica ? "text-right" : "text-left"} ${coluna.classe ?? ""}`}
+                  className={`px-3 py-2 text-rotulo font-semibold text-tinta-fraca ${coluna.numerica ? "text-right" : "text-left"} ${coluna.classe ?? ""}`}
                 >
                   <span className={coluna.cabecalhoOculto ? "sr-only" : undefined}>{coluna.cabecalho}</span>
                 </th>
@@ -214,7 +214,7 @@ export function Tabela<L>({
                   .filter((coluna) => !coluna.ocultarNoCartao)
                   .map((coluna) => (
                     <div key={coluna.chave} className="flex items-baseline justify-between gap-3">
-                      <dt className="shrink-0 text-rotulo font-medium uppercase text-tinta-fraca">
+                      <dt className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
                         {coluna.rotuloNoCartao ?? coluna.cabecalho}
                       </dt>
                       <dd className={`min-w-0 text-right text-sm text-tinta-suave ${coluna.numerica ? "tabular-nums" : ""}`}>

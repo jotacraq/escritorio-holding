@@ -165,7 +165,7 @@ function CartaoIntegracao({ item, aoMudar }: { item: IntegracaoEstado; aoMudar: 
   return (
     <Cartao
       como="article"
-      realce={item.configurado ? "verde" : "ambar"}
+      realce={item.configurado ? undefined : "ambar"}
       titulo={item.rotulo}
       descricao={DESCRICAO[item.chave]}
       acao={item.configurado ? <Selo tom="verde">Ligada</Selo> : <Selo tom="ambar">Falta configurar</Selo>}

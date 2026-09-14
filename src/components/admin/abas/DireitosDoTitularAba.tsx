@@ -405,7 +405,7 @@ function PainelDoTitular({ pessoa, aoTrocar }: { pessoa: JornadaKanban; aoTrocar
       )}
 
       {dados && anonimizada && (
-        <Cartao realce="latao" titulo="Tratamento encerrado" descricao="O registro abaixo é imutável — é a prova de que o pedido foi atendido.">
+        <Cartao titulo="Tratamento encerrado" descricao="O registro abaixo é imutável — é a prova de que o pedido foi atendido.">
           <div className="flex flex-col gap-item">
             {registroAnonimizacao ? (
               <div className="flex flex-col gap-1 text-sm text-tinta">

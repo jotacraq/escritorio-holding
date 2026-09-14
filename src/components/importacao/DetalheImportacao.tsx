@@ -157,7 +157,7 @@ export function DetalheImportacao({ importacaoId }: { importacaoId: string }) {
       {ehPrevia ? (
         <Passos passos={[...PASSOS_IMPORTACAO]} atual="confirmar" rotulo="Etapas da importação" />
       ) : (
-        <Cartao realce={importacao.status === "confirmada" ? "verde" : undefined} preenchimento="compacto">
+        <Cartao preenchimento="compacto">
           <p className="text-sm text-tinta-suave">
             {importacao.status === "confirmada" ? (
               <>

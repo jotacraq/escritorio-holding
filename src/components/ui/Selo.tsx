@@ -23,7 +23,7 @@ export function SeloDadoExemplo({ className = "" }: { className?: string }) {
   return (
     <span
       title="Este registro é dado de exemplo (seed de desenvolvimento), não cliente real."
-      className={`inline-flex items-center gap-1 rounded-full border border-linha-forte bg-papel px-2 py-0.5 text-legenda font-medium uppercase tracking-wide text-tinta-fraca ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full border border-linha-forte bg-papel px-2 py-0.5 text-legenda font-semibold text-tinta-fraca ${className}`}
     >
       exemplo
     </span>
@@ -53,7 +53,7 @@ export function SeloDemonstracao({ children, className = "" }: { children?: Reac
         <p className="text-sm font-bold leading-snug sm:text-base">{FRASE_DEMONSTRACAO}</p>
       </div>
       {children && <div className="relative z-[1] px-4 py-4">{children}</div>}
-      <p className="relative z-[1] border-t-2 border-dashed border-[color:var(--demo-faixa-forte)] px-4 py-2 text-legenda font-medium uppercase tracking-wide text-[color:var(--demo-faixa-forte)]">
+      <p className="relative z-[1] border-t-2 border-dashed border-[color:var(--demo-faixa-forte)] px-4 py-2 text-legenda font-semibold text-[color:var(--demo-faixa-forte)]">
         Demonstração · grau de confiança 0 · nenhum dado real deste cliente foi analisado
       </p>
     </div>

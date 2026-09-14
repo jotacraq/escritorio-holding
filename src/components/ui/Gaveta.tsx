@@ -93,7 +93,7 @@ export function Gaveta({ aberta, aoFechar, titulo, rotulo, descricao, rodape, la
       >
         <div className="flex items-start justify-between gap-3 border-b border-linha px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            {rotulo && <p className="text-rotulo font-medium uppercase text-tinta-fraca">{rotulo}</p>}
+            {rotulo && <p className="text-rotulo font-semibold text-tinta-fraca">{rotulo}</p>}
             <h2 id={tituloId} className="text-titulo font-bold text-tinta">
               {titulo}
             </h2>

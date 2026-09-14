@@ -61,7 +61,7 @@ export function Passos({ passos, atual, rotulo = "Etapas do processo", aoEscolhe
                 {passo.rotulo}
                 <span className="sr-only">{estado === "feito" ? " (concluído)" : estado === "atual" ? " (etapa atual)" : " (ainda não)"}</span>
               </span>
-              {passo.quem && <span className="text-legenda uppercase tracking-wide text-tinta-fraca">{passo.quem}</span>}
+              {passo.quem && <span className="text-legenda font-medium text-tinta-fraca">{passo.quem}</span>}
               {passo.descricao && estado === "atual" && <span className="mt-0.5 text-legenda text-tinta-suave">{passo.descricao}</span>}
             </span>
           </>

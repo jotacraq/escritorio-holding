@@ -77,7 +77,7 @@ export function ConfirmarAcao({
         aria-describedby={efeitoId}
         className="anim-surgir relative w-full max-w-md rounded-cartao border border-linha bg-papel-elevado p-6 shadow-flutuante"
       >
-        {perigo && <p className="mb-2 text-rotulo font-medium uppercase text-[color:var(--vermelho)]">Não dá para desfazer</p>}
+        {perigo && <p className="mb-2 text-rotulo font-semibold text-[color:var(--vermelho)]">Não dá para desfazer</p>}
         <h2 id={tituloId} className="text-titulo font-bold text-tinta">
           {titulo}
         </h2>

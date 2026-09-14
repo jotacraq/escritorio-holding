@@ -33,10 +33,14 @@ export function Kpi({ rotulo, valor, unidade, comparacao, visual, motivoVazio, a
   const vazio = valor === null || valor === undefined || valor === "";
   return (
     <div className={`flex flex-col gap-2 rounded-cartao border border-linha bg-papel-elevado p-5 shadow-cartao ${className}`}>
-      <p className="text-rotulo font-medium uppercase text-tinta-fraca">{rotulo}</p>
+      <p className="text-rotulo font-semibold text-tinta-fraca">{rotulo}</p>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="flex items-baseline gap-1.5">
-          <span className={`font-bold tabular-nums ${vazio ? "text-titulo text-tinta-fraca" : "text-display text-tinta"}`}>{vazio ? "—" : valor}</span>
+          <span
+            className={`font-display font-bold tabular-nums ${vazio ? "text-titulo text-tinta-fraca" : "text-numero text-tinta"}`}
+          >
+            {vazio ? "—" : valor}
+          </span>
           {!vazio && unidade && <span className="text-sm font-medium text-tinta-suave">{unidade}</span>}
         </p>
         {visual && (

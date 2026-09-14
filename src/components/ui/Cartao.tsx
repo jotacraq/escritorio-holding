@@ -16,8 +16,13 @@ interface CartaoProps extends HTMLAttributes<HTMLElement> {
   acao?: ReactNode;
   /** `sem` tira o padding do corpo (tabelas e listas com divisor). */
   preenchimento?: "normal" | "compacto" | "sem";
-  /** Realce lateral por estado — o único lugar em que o cartão fala cor. */
-  realce?: "latao" | "ambar" | "verde" | "vermelho";
+  /** Realce lateral por ALERTA — o único lugar em que o cartão fala cor.
+   * Migração GPS-THB (14/09/2026): estreitado de 4 para 2 tons. `latao` e
+   * `verde` eram decorativos (cor de marca / sucesso já dito no texto, sem
+   * significar risco) em todos os 15 usos medidos na migração — o
+   * compilador agora IMPEDE decoração lateral colorida sem significado de
+   * alerta; quem precisar de destaque neutro usa outro recurso, não cor. */
+  realce?: "ambar" | "vermelho";
   /** `section` por padrão; `article` para item de lista autocontido. */
   como?: "section" | "article" | "div";
   children?: ReactNode;
@@ -30,10 +35,8 @@ const PREENCHIMENTO = {
 } as const;
 
 const REALCE = {
-  latao: "border-l-4 border-l-[color:var(--latao-cta)]",
-  ambar: "border-l-4 border-l-ambar-borda",
-  verde: "border-l-4 border-l-[color:var(--verde)]",
-  vermelho: "border-l-4 border-l-[color:var(--vermelho)]",
+  ambar: "border-l-2 border-l-ambar-borda",
+  vermelho: "border-l-2 border-l-[color:var(--vermelho)]",
 } as const;
 
 /**
@@ -74,7 +77,7 @@ export function Cartao({
               Com a base declarada, quando não cabem os dois, é a AÇÃO que
               desce para a linha de baixo, que é a ordem de leitura certa. */}
           <div className="min-w-0 flex-1 basis-56">
-            {rotulo && <p className="text-rotulo font-medium uppercase text-tinta-fraca">{rotulo}</p>}
+            {rotulo && <p className="text-rotulo font-semibold text-tinta-fraca">{rotulo}</p>}
             {/* `break-words` (Fase 7 r2, 390px): `min-w-0 flex-1` deixa a caixa
                 encolher, mas um título SEM espaço — `cartorio.certidao.valor`,
                 um e-mail, uma URL — não tem onde quebrar e VAZA por baixo do

@@ -465,7 +465,6 @@ export function RelatorioAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: str
         rotulo="Números da sessão"
         titulo="Cenário Patrimonial"
         descricao="Custo de cada caminho (inventário, doação, holding) rubrica por rubrica — com a origem de cada número. O sistema não calcula imposto sozinho."
-        realce="latao"
         acao={
           <Botao variante="primario" tamanho="compacto" onClick={() => setCenarioAberto(true)}>
             Abrir cenário

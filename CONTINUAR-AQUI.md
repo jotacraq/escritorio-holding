@@ -1,5 +1,21 @@
 # Continuar daqui — SIC-HF
 
+> ### 🔴 PENDÊNCIA — 90 `uppercase` fora do design system, migração GPS-THB (14/09/2026)
+>
+> Decisão do Marcio (B7): a migração de paleta/tipografia para o padrão GPS-THB trocou os
+> 12 `uppercase` **de dentro de** `src/components/ui/` por `font-semibold` sentence case
+> (`Abas`, `CabecalhoPagina`, `Cartao`, `ConfirmarAcao`, `Gaveta`, `Kpi`, `Passos`, `Quadro`,
+> `Selo`×2, `Tabela`×2). Os que ficam em telas/abas específicas, **fora** do design system,
+> ficaram de fora de propósito — não entram nesta rodada.
+>
+> **Medido (não estimado):** `grep -rn "uppercase" src/ | grep -v "src/components/ui/"` →
+> **90 ocorrências em 47 arquivos**. (O pedido original citava "101" — o número que reproduz
+> ao rodar o grep na base atual é 90; divergência registrada, não o valor usado na entrega.)
+>
+> **Quando entrar:** rodada separada, mesmo padrão (`uppercase` → `font-semibold` sentence
+> case, checar contraste com `scripts/contraste.mjs` se algum caso usar `--latao`/`--estado-*`
+> em texto pequeno). Não é urgente — é debt visual, não funcional.
+
 > ### 🔴 PENDÊNCIA — falta o botão de pedir o bot com o link da sala (14/09/2026)
 >
 > Pedido do Marcio, literal: *"preciso que tenha um botão pra eu colocar o link

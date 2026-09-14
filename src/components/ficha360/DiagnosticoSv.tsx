@@ -303,7 +303,6 @@ function BlocoEditor({
       como="article"
       rotulo={`Bloco ${String(numero).padStart(2, "0")}${interno ? " · interno" : ""}`}
       titulo={bloco.titulo}
-      realce={bloco.visivel_ao_cliente ? "latao" : undefined}
       acao={
         <div className="nao-imprimir flex flex-wrap items-center gap-2">
           <Selo tom={categoria.tom}>{categoria.rotulo}</Selo>

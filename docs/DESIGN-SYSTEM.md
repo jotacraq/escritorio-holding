@@ -93,7 +93,7 @@ que ele faria não acontece. Para admin, aviso de sistema é 1 linha + 1 link, n
 | Corpo | `text-corpo text-tinta` / `text-tinta-suave` | **14px** | 16px | 400 |
 | Corpo compacto (tabela, lista densa) | `text-sm` | **13px** | 15px | 400/500 |
 | Legenda / meta | `text-legenda text-tinta-suave` | **12px** | 13px | 400 |
-| Rótulo caixa alta | `text-rotulo font-medium uppercase text-tinta-fraca` | 12px | 12px | 500 |
+| Rótulo (sentence case, migração GPS-THB 14/09) | `text-rotulo font-semibold text-tinta-fraca` | 12px | 12px | 600 |
 | Mínimo absoluto | `text-legenda` | 12px | 12px | — |
 
 > **Um degrau, um nome.** `text-legenda` É o mínimo absoluto E a legenda/meta — a linha anterior e esta
@@ -115,8 +115,16 @@ Exceção declarada da WCAG 2.5.8: link **dentro de uma frase** (ex.: "3 produto
 preencher em Produtos", Admin → Integrações) é alvo *inline* e não precisa de 44 px —
 esticá-lo quebraria a linha do texto.
 
-Pesos: **400, 500, 700 apenas** (`font-medium`, `font-bold`). `font-semibold` sintetiza bold falso — proibido.
-Fonte: Neuetra vem do `body`; não declare `font-family`.
+Pesos (migração GPS-THB, 14/09/2026): **400, 500, 600, 700** (`font-normal`, `font-medium`,
+`font-semibold`, `font-bold`). A proibição de `font-semibold` da V1 valia para a Neuetra
+(estática, só declarava 400/500/700 em `@font-face` — 600 seria sintetizado pelo navegador).
+Ela saiu: Inter (corpo) e Space Grotesk (títulos) são fontes VARIÁVEIS — 600 é peso real,
+carregado pelo `next/font/google`, nunca sintetizado (por isso `font-synthesis: none` também
+saiu do `body`). `font-semibold` é agora o peso do rótulo que perdeu o `uppercase` (§8, B7).
+Fonte: `text-corpo`/`text-sm`/`text-legenda`/`text-rotulo`/`text-subtitulo` herdam `--font-sans`
+(Inter) do `body`; `h1..h4`, `text-titulo` e `text-display` usam `--font-serif` (alias de
+`--font-display`, Space Grotesk); `--text-numero` (`Kpi`) declara `font-display` explícito.
+Não declare `font-family` fora desses casos.
 
 ## 3. Catálogo de componentes (`@/components/ui/*`)
 
@@ -228,8 +236,25 @@ trabalho. Hierarquia visual é a informação.
 ## 6. Acessibilidade (regras medidas)
 
 - Alvo de clique/toque **≥ 44 × 44 px** (`min-h-11`); ícone sozinho = `h-11 w-11` + `sr-only`/`aria-label`.
-- Fonte **≥ 12 px** (`text-legenda` é o piso); corpo 15–16 px.
-- Contraste medido (fórmula WCAG): `--tinta` 17,4:1 · `--tinta-suave` 9,5:1 · `--tinta-fraca` 5,3:1 (creme) / 5,6:1 (`--papel`) / 6,0:1 (branco) · `--latao` 5,0:1 (creme) / 5,6:1 (branco) · CTA texto 6,4:1 · `--linha-controle` 3,5:1 (branco) / 3,1:1 (creme) · escuro: `--tinta-fraca` 5,5:1 (elevado) / 6,3:1 (fundo), `--latao` 6,1:1, `--linha-controle` 3,1:1.
+- Fonte **≥ 12 px** (`text-legenda` é o piso); corpo **14 px** (B3: fixo, não sobe para 15/16 — decisão
+  do Marcio na migração de 14/09, "tá tudo muito grande, tenho que escrolar muito").
+- **Piso AAA (7:1 texto, 3:1 borda de controle), migração GPS-THB (14/09/2026).** Medido por
+  `node scripts/contraste.mjs` (fórmula WCAG 2.1, lê os tokens direto do `globals.css`, roda
+  nos dois temas) — não pelo `scripts/a11y.mjs` (axe, piso AA/4,5:1, não prova AAA). Números
+  antes/depois em `tmp/squad/contraste/baseline-antes.txt` e `depois-migracao.txt`:
+  - `--tinta` 15,4–17,4:1 (claro) / 13,9–15,4:1 (escuro) — ok nas três superfícies, nos dois temas.
+  - `--tinta-suave` 8,4–9,5:1 (claro) / 7,8–8,6:1 (escuro) — ok.
+  - `--tinta-fraca` **5,3–6,0:1 (claro) / 5,6–6,3:1 (escuro) — abaixo do piso AAA nas quatro
+    combinações (papel-fundo/papel/papel-elevado/linha), nos dois temas.** Falha PRÉ-EXISTENTE
+    (mesmos números antes e depois desta migração, dentro de ±0,1) — não é escopo desta rodada,
+    registrada como dívida em `CONTINUAR-AQUI.md`.
+  - `--latao` (B1, `#8f3600`): 6,89–7,79:1 no claro, 6,22–6,90:1 no escuro — **exceção AAA
+    documentada em `globals.css`** (pior caso 6,22:1 contra `--latao-fraco` no escuro; passa AA
+    com folga, é chip/selo de marca, nunca corpo de texto).
+  - `--linha-controle`: 3,10–3,50:1 (claro) / **3,94–4,37:1 (escuro, melhorou com o derivado
+    quente)** — ok (piso 3:1, WCAG 1.4.11).
+  - `--estado-*` (selo, Fase 8, §12.3): todos ≥ 7,0:1 nos dois temas, sobre as quatro superfícies
+    onde aparecem — inalterado por esta migração.
   Sobre fundo tingido (`--latao-fraco`, `--verde-fraco`, `--ambar-fraco`, `--vermelho-fraco`,
   `--azul-fraco`, `--linha`) `--tinta-fraca` fica entre **4,48 e 5,30:1** nos dois temas — o
   piso é o chip `--linha` do escuro. `--linha-forte` **nunca** é fundo de texto (só linha e
@@ -253,13 +278,13 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
 
 ## 8. Não fazer
 
-`text-[10px]` / `text-[11px]` · `font-semibold` · cor fixa (`#…`, `slate-*`, `bg-white`, `text-black`) fora de token · texto claro sobre laranja · `--latao` como fundo (use `--latao-cta`) · `--linha` em borda de input · `outline-none` sem substituto · `rounded-sm` novo (use `rounded-controle`/`rounded-cartao`) · "Tem certeza?" (descreva o efeito) · modal genérico · spinner em página inteira · polling · `opacity` para "desabilitar" texto que precisa ser lido · ícone sem `aria-hidden` ou sem rótulo.
+`text-[10px]` / `text-[11px]` · cor fixa (`#…`, `slate-*`, `bg-white`, `text-black`) fora de token · texto claro sobre laranja · `--latao` como fundo (use `--latao-cta`) · `--linha` em borda de input · `outline-none` sem substituto · `rounded-sm` novo (use `rounded-controle`/`rounded-cartao`) · "Tem certeza?" (descreva o efeito) · modal genérico · spinner em página inteira · polling · `opacity` para "desabilitar" texto que precisa ser lido · ícone sem `aria-hidden` ou sem rótulo · `uppercase` novo em rótulo de componente do design system (migração GPS-THB, B7: os 12 que existiam em `src/components/ui/` viraram `font-semibold` sentence case; `font-semibold` deixou de ser proibido — ver §2).
 
 ## 9. Checklist de migração de uma tela (10 itens)
 
 1. `CabecalhoPagina` com rótulo da área, título, descrição e ações — único `h1`.
 2. Todo bloco em `Cartao` (raio 1.25rem, sombra) ou grade de `Cartao`; nada de `border rounded-sm bg-papel-elevado` solto.
-3. Zero `text-[10px]`/`text-[11px]`/`font-semibold`/hex fixo — grep antes de fechar.
+3. Zero `text-[10px]`/`text-[11px]`/hex fixo — grep antes de fechar. `font-semibold` é peso válido desde a migração GPS-THB (§2).
 4. Todo botão é `Botao`; um `primario` por tela; todos com `carregando` na ação assíncrona.
 5. Todo input dentro de `Campo` (rótulo, ajuda, erro); alvo ≥ 44px; erro humano com o que fazer.
 6. Estados: `Esqueleto*` ao carregar, `EstadoErro` com tentar de novo, `EstadoVazio` com ação, `SeloStub` no que não existe.
@@ -392,6 +417,53 @@ servidor é "Estado desconhecido", nunca "desligada"** (`classificarIntegracao`)
 
 **Nenhuma tela escolhe `tom` na mão a partir da Fase 8.** O tom é do ESTADO, não da tela — era assim que
 a mesma situação aparecia âmbar num lugar e cinza no outro. Não há prop de cor nem de rótulo, de propósito.
+
+### 12.4 Migração de paleta/tipografia GPS-THB (14/09/2026)
+
+Ordem do Marcio: trocar paleta e tipografia do SIC-HF para o padrão visual do GPS-THB, preservando
+nome de token (B4), corpo 14px (B3) e a trava AAA/7:1 (Fase 8). Nomes de token continuam em português
+e sem alteração (`--papel*`, `--tinta*`, `--linha*`, `--latao*`) — só o VALOR mudou.
+
+- **Fonte:** Neuetra (3 `@font-face` locais) → Inter (`--font-sans`, corpo) + Space Grotesk
+  (`--font-display`, títulos/`--text-numero`), via `next/font/google` em `layout.tsx`, `display:
+  "swap"`. `font-synthesis: none` saiu do `body` — as duas são fontes VARIÁVEIS (eixo completo),
+  600 é peso real, não sintetizado. `.woff2` da Neuetra continuam em `public/fonts/` até aprovação
+  do Marcio (remoção em commit separado, granularidade de reversão).
+- **`font-semibold` deixou de ser proibido** (§2, §8) — a proibição valia só para a Neuetra estática.
+- **B1** — `--latao: #8f3600` (era `#a84d00`). Exceção AAA documentada em `globals.css`; ver §6.
+- **CF4** — `--papel: #f5f1ec` (não o `#f1ede8` cru do GPS): com o valor cru, `--tinta-suave` caía a
+  6,71:1 sobre `--papel`, abaixo do piso desta rodada.
+- **B5** — tema escuro derivado QUENTE (`#14120f`/`#1c1815`/`#221c17`, viés marrom — não mais
+  cinza-azulado neutro), luminância equivalente ao anterior (todo par que já batia o piso continua
+  batendo; `linha-controle` melhorou 3,07–3,48 → 3,94–4,37).
+- **B2** — `Botao` primário: retângulo chapado (`rounded-controle`, sem aresta 3D, sem
+  `hover:-translate-y-px`).
+- **B3** — corpo continua 14px; só o `line-height` subiu para 1,6 (do GPS).
+- **Raio/foco/sombra:** `--raio-cartao` 1rem→0.75rem, `--raio-controle` 0.75rem→0.5rem; `--foco`
+  halo `rgba(239,125,0,.28)` (o `--ring:#ef7d00` cru do GPS mede 2,76:1 como contorno sólido,
+  abaixo do piso 3:1 de 1.4.11 — por isso o contorno de `:focus-visible` continua em `--latao`);
+  `--sombra-cartao` reduzida (CF3) — **cartão passa a se distinguir quase só pela borda** (1,12:1
+  entre `--papel-elevado` e `--papel`); confirmar em captura real antes de considerar fechado, e se
+  a distinção não bastar o remédio é escurecer `--papel-fundo`, nunca reengordar a sombra.
+- **B7** — os 12 `uppercase` de `src/components/ui/` viraram `font-semibold` sentence case
+  (`Abas`, `CabecalhoPagina`, `Cartao`, `ConfirmarAcao`, `Gaveta`, `Kpi`, `Passos`, `Quadro`,
+  `Selo`×2, `Tabela`×2). Os demais ~90 `uppercase` fora do DS ficaram de fora — pendência em
+  `CONTINUAR-AQUI.md`.
+- **`Cartao.realce`** estreitado de `"latao"|"ambar"|"verde"|"vermelho"` para `"ambar"|"vermelho"`
+  (só alerta real); `border-l-4`→`border-l-2`. 6 consumidores decorativos perderam a prop.
+- **`Quadro.tom`** (painel do Copiloto) **NÃO foi estreitado** — medição dos 8 usos mostrou que
+  nenhum é cor-como-único-sinal (todos têm rótulo em texto + ícone dedicado); é taxonomia de
+  NATUREZA do bloco (ação/alerta/bloco/contexto/insight), dimensão diferente do `realce` de
+  `Cartao` (escala de alerta). Só `border-l-4`→`border-l-2` e `uppercase`→`font-semibold`.
+- **Divergências do plano com a realidade medida** (reportadas, não corrigidas por conta própria):
+  a tabela completa "valores crus do GPS" citada no plano (sombras `--shadow-raised`/`-hover`,
+  demais tokens C1–C9) não estava disponível nesta execução — só os pontos citados explicitamente
+  no pedido; os tokens não especificados foram preservados como já corrigidos (Fase 8). O número
+  "6,80 sobre `--latao-fraco`" citado para B1 não reproduziu — medido 6,34 (claro) / 5,16 (escuro,
+  antes do ajuste do derivado quente) contra o `--latao-fraco` real do arquivo; a exceção documentada
+  usa o número medido. `--marrom`: plano citava 11 usos a auditar; medido, existem 4 ocorrências no
+  código (2 declarações de tema + 1 mapeamento `@theme` + 1 consumidor funcional em
+  `esteira/etapas.ts`, cor da etapa `violet` vinda do banco) — token fica, não é decorativo.
 Chave que o catálogo não conhece vira **"Sem informação"**, nunca um rótulo plausível (§7, "vazio é vazio").
 `Selo` continua existindo para chip que **não** é status (contagem, marcador, `SeloStub`, `SeloIA`).
 

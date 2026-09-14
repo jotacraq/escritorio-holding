@@ -136,7 +136,7 @@ export function Abas({
                 type="button"
                 aria-current={selecionado ? "true" : undefined}
                 onClick={() => !selecionado && ativar(grupo.abas[0].id)}
-                className={`min-h-11 rounded-full px-4 text-rotulo font-bold uppercase transition-colors duration-[var(--transicao-rapida)] ${
+                className={`min-h-11 rounded-full px-4 text-rotulo font-bold transition-colors duration-[var(--transicao-rapida)] ${
                   selecionado
                     ? "bg-[color:var(--tinta)] text-[color:var(--papel-elevado)]"
                     : "text-tinta-suave hover:bg-papel-elevado hover:text-tinta"

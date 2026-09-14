@@ -38,7 +38,7 @@ export function CabecalhoPagina({ rotulo, titulo, descricao, acoes, meta, acima,
       {acima && <div className="text-sm text-tinta-suave">{acima}</div>}
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 max-w-3xl">
-          {rotulo && <p className="mb-0.5 text-rotulo font-medium uppercase text-[color:var(--latao)]">{rotulo}</p>}
+          {rotulo && <p className="mb-0.5 text-rotulo font-semibold text-[color:var(--latao)]">{rotulo}</p>}
           <h1 className="text-display font-bold text-tinta">{titulo}</h1>
           {descricao && (
             <p data-proposito className="mt-1 max-w-2xl text-sm text-tinta-suave">
