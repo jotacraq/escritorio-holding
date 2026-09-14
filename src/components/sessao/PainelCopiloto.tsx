@@ -368,9 +368,22 @@ export function PainelCopiloto({
        * PERGUNTE AGORA é o primeiro quadro, topo-esquerda: a hierarquia é
        * por POSIÇÃO, nunca por decoração. `items-start` (não `stretch`):
        * cada quadro tem a altura do próprio conteúdo, sem esticar para
-       * casar com o vizinho mais alto — é isso que dá densidade real. */}
+       * casar com o vizinho mais alto — é isso que dá densidade real.
+       *
+       * Correção do Marcio (14/09, rodada de layout): a ANOTAÇÃO RÁPIDA
+       * (`RegistroManual`, textarea + lista de trechos) saiu desta grade —
+       * ela é secundária ao vivo (registro de apoio, não a informação que a
+       * Dra. Elaine precisa achar em meio segundo) e antes competia em
+       * largura/altura com PERGUNTE AGORA e FALTA NESTE BLOCO. Agora é uma
+       * seção própria, abaixo do mosaico, antes de "Encerrar copiloto". */}
       <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
-        <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        <PainelPerguntaAgora
+          sessaoId={sessaoId}
+          indiceAtual={indiceAtual}
+          sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
+          blocosRoteiro={blocosRoteiro}
+          irPara={irPara}
+        />
 
         {!estado.bloco_atual_id ? (
           <Quadro rotulo="Neste bloco">
@@ -380,28 +393,24 @@ export function PainelCopiloto({
           <FaltaNoBloco falta={estado.falta_no_bloco} />
         )}
 
-        {!sessaoEncerrada && (
-          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-        )}
-
         {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
 
         <SimsPendentes pendentes={estado.sims_pendentes} />
         <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
-
-        {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
-         * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
-         * estado LOCAL desta aba (encerramento manual/por duração máxima
-         * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
-         * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
-         * Sem o segundo, recarregar a página depois de encerrar reabriria o
-         * campo — texto digitado ali não entra mais em `transcricoes`
-         * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
-         * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
-         * impede o erro; a trava de verdade é do backend (409 no POST, mais
-         * o backstop do DELETE por `criado_em <= encerrado_em`). */}
-        <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
       </div>
+
+      {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
+       * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
+       * estado LOCAL desta aba (encerramento manual/por duração máxima
+       * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
+       * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
+       * Sem o segundo, recarregar a página depois de encerrar reabriria o
+       * campo — texto digitado ali não entra mais em `transcricoes`
+       * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
+       * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
+       * impede o erro; a trava de verdade é do backend (409 no POST, mais
+       * o backstop do DELETE por `criado_em <= encerrado_em`). */}
+      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
 
       {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
     </div>
@@ -524,7 +533,18 @@ function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
  * é diferente disso: nada pisca, nada anima, nada rouba foco — a sugestão
  * nova substitui a anterior NO MESMO LUGAR (mesmo card, mesma posição), sem
  * salto de scroll nem troca de aba. Histórico (sugestões anteriores à mais
- * recente) fica recolhido em lista — não é a informação do agora.
+ * recente) fica compacto — recolhido de conteúdo (evitar 6+ cards de texto
+ * duplicando a mesma altura da tela), NUNCA recolhido de existência: o
+ * `<summary>` já mostra a contagem, e abrir não é condição para a Dra.
+ * Elaine saber que há histórico.
+ *
+ * Correção do Marcio (14/09, rodada de layout): este bloco deixou de abrir
+ * o próprio `Quadro` — mora agora DENTRO do quadro único "Pergunte agora"
+ * (ver `PainelPerguntaAgora` abaixo). Dois quadros com pergunta (um do
+ * clique manual, outro do ciclo automático) eram exatamente o "duas fontes
+ * concorrentes" que fez a pergunta real de 0,80 de confiança passar batido
+ * no print que ele mandou: ela estava no quadro errado, recolhida por baixo
+ * do resumo explicativo do quadro certo.
  */
 function SugestoesDoCiclo({
   sessaoId,
@@ -546,7 +566,7 @@ function SugestoesDoCiclo({
   const anteriores = pendentes.slice(0, -1);
 
   return (
-    <Quadro rotulo="Sugestão" como="article" className="sm:col-span-2">
+    <div className="flex flex-col gap-2">
       <div className="rounded-controle border border-linha p-2.5">
         <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[recente.gatilho]}</p>
         {!recente.visivel || !recente.sugestao ? (
@@ -600,7 +620,7 @@ function SugestoesDoCiclo({
           </ul>
         </details>
       )}
-    </Quadro>
+    </div>
   );
 }
 
@@ -666,21 +686,79 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
 }
 
 /**
+ * Quadro único "Pergunte agora" (correção do Marcio, 14/09, rodada de
+ * layout): a pergunta que a Dra. Elaine precisa achar em meio segundo pode
+ * vir de DUAS fontes — o ciclo automático (`polling`, sem clique nenhum) ou
+ * o clique explícito em "Me ajuda agora" — mas ela é UMA coisa na tela, não
+ * duas concorrendo por atenção em quadros separados. Antes desta correção
+ * existiam dois quadros ("Pergunte agora" e "Sugestão"); uma sugestão de
+ * 0,80 de confiança gerada pelo ciclo automático morava só no segundo, e
+ * ficou fora do quadro que o nome dizia ser "a pergunta agora" — exatamente
+ * o que o Marcio relatou não ter visto.
+ *
+ * Prioridade de exibição, de cima para baixo dentro do MESMO quadro:
+ *  1. Sugestão mais recente do ciclo automático, se existir (nunca precisa
+ *     de clique — é o normal da Fatia 3 rodando sozinha).
+ *  2. Ação manual "Me ajuda agora" + a resposta do último clique, sempre
+ *     disponível como complemento (a advogada pode pedir de novo a
+ *     qualquer momento, mesmo com sugestão automática já visível).
+ *  3. Sem nenhuma das duas ainda: uma linha curta dizendo que está
+ *     aguardando — nunca um parágrafo explicando como o recurso funciona
+ *     (isso é `aria-describedby` do botão, não conteúdo do quadro).
+ */
+function PainelPerguntaAgora({
+  sessaoId,
+  indiceAtual,
+  sugestoesCiclo,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  indiceAtual: number;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+  blocosRoteiro?: { id: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const temSugestaoCiclo = sugestoesCiclo.length > 0;
+
+  return (
+    <Quadro rotulo="Pergunte agora" como="article" className="sm:col-span-2">
+      <div className="flex flex-col gap-3">
+        {temSugestaoCiclo && (
+          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        )}
+
+        <div className={temSugestaoCiclo ? "border-t border-dashed border-linha pt-3" : undefined}>
+          <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} temSugestaoCiclo={temSugestaoCiclo} />
+        </div>
+      </div>
+    </Quadro>
+  );
+}
+
+/**
  * O botão "Me ajuda agora" e a apresentação da sugestão (Fase 10, Fatia 2).
  * B71: nada pisca, nada toca, nada abre sozinho — a sugestão só existe na
  * tela depois do clique explícito da Dra. Elaine, e fica onde apareceu até
  * ela pedir outra ou trocar de bloco/sessão (não há timer nem auto-refresh).
+ *
+ * Deixou de abrir o próprio `Quadro` — mora dentro de `PainelPerguntaAgora`.
+ * `temSugestaoCiclo` só muda o texto do estado ocioso: com sugestão
+ * automática já visível acima, "aguardando pergunta" seria falso (já existe
+ * uma); sem nenhuma das duas, a linha diz que ainda não há nada.
  */
 function SugestaoIA({
   sessaoId,
   indiceAtual,
   blocosRoteiro,
   irPara,
+  temSugestaoCiclo,
 }: {
   sessaoId: string;
   indiceAtual: number;
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
+  temSugestaoCiclo: boolean;
 }) {
   const [pedindo, setPedindo] = useState(false);
   const [resposta, setResposta] = useState<RespostaSugestaoCopiloto | null>(null);
@@ -702,51 +780,49 @@ function SugestaoIA({
   }
 
   return (
-    <Quadro rotulo="Pergunte agora" como="article" className="sm:col-span-2">
-      <div className="flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Botao
-            type="button"
-            variante="primario"
-            tamanho="compacto"
-            carregando={pedindo}
-            onClick={() => void pedir()}
-            aria-describedby="copiloto-ia-nota"
-          >
-            Me ajuda agora
-          </Botao>
-          <span id="copiloto-ia-nota" className="sr-only">
-            Pede à IA uma sugestão para o momento atual da sessão. Pode levar até 8 segundos.
-          </span>
-        </div>
-
-        {pedindo && (
-          <p role="status" aria-live="polite" className="text-sm text-tinta-suave">
-            Pensando…
-          </p>
-        )}
-
-        {!pedindo && erro !== null && (
-          <MensagemRecusa erro={erro} aoTentarDeNovo={() => void pedir()} />
-        )}
-
-        {!pedindo && !erro && resposta && !resposta.visivel && (
-          <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-            Confiança abaixo do mínimo configurado — nada mostrado.
-          </p>
-        )}
-
-        {!pedindo && !erro && resposta && resposta.visivel && resposta.sugestao && (
-          <ApresentacaoSugestao
-            sessaoId={sessaoId}
-            sugestaoId={resposta.sugestao_id}
-            sugestao={resposta.sugestao}
-            blocosRoteiro={blocosRoteiro}
-            irPara={irPara}
-          />
-        )}
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Botao
+          type="button"
+          variante="primario"
+          tamanho="compacto"
+          carregando={pedindo}
+          onClick={() => void pedir()}
+          aria-describedby="copiloto-ia-nota"
+        >
+          Me ajuda agora
+        </Botao>
+        <span id="copiloto-ia-nota" className="sr-only">
+          Pede à IA uma sugestão para o momento atual da sessão. Pode levar até 8 segundos.
+        </span>
       </div>
-    </Quadro>
+
+      {pedindo && (
+        <p role="status" aria-live="polite" className="text-sm text-tinta-suave">
+          Pensando…
+        </p>
+      )}
+
+      {!pedindo && erro !== null && <MensagemRecusa erro={erro} aoTentarDeNovo={() => void pedir()} />}
+
+      {!pedindo && !erro && resposta && !resposta.visivel && (
+        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+          Confiança abaixo do mínimo configurado — nada mostrado.
+        </p>
+      )}
+
+      {!pedindo && !erro && resposta && resposta.visivel && resposta.sugestao && (
+        <ApresentacaoSugestao
+          sessaoId={sessaoId}
+          sugestaoId={resposta.sugestao_id}
+          sugestao={resposta.sugestao}
+          blocosRoteiro={blocosRoteiro}
+          irPara={irPara}
+        />
+      )}
+
+      {!pedindo && !erro && !resposta && !temSugestaoCiclo && <p className="text-sm text-tinta-suave">Aguardando pergunta.</p>}
+    </div>
   );
 }
 
@@ -1262,42 +1338,42 @@ function CopilotoDesligado() {
   );
 }
 
+/** Correção do Marcio (14/09, mesma regra já aplicada em `PainelBot`): um
+ * quadro que só existe para dizer "não há nada aqui" ocupa lugar na grade
+ * sem entregar nada — nasce `null`. Bloco sem campo cadastrado E sem ponto
+ * de observação no roteiro é comum (nem todo bloco do script tem os dois),
+ * não é erro nem estado a explicar. */
 function FaltaNoBloco({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
-  const semCampos = falta.campos.length === 0;
-  const semObservar = falta.observar.length === 0;
+  if (falta.campos.length === 0 && falta.observar.length === 0) return null;
 
   return (
     <Quadro rotulo="Falta neste bloco">
-      {semCampos && semObservar ? (
-        <p className="text-sm text-tinta-suave">Este bloco não tem campo nem ponto de observação cadastrado no roteiro.</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {falta.campos.length > 0 && (
-            <div>
-              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">A preencher</p>
-              <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
-                {falta.campos.map((campo) => (
-                  <li key={campo.id} className="text-sm text-tinta">
-                    {campo.rotulo}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {falta.observar.length > 0 && (
-            <div>
-              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
-              <ul className="flex flex-col gap-1">
-                {falta.observar.map((item, i) => (
-                  <li key={i} className="text-sm text-tinta-suave">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="flex flex-col gap-3">
+        {falta.campos.length > 0 && (
+          <div>
+            <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">A preencher</p>
+            <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
+              {falta.campos.map((campo) => (
+                <li key={campo.id} className="text-sm text-tinta">
+                  {campo.rotulo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {falta.observar.length > 0 && (
+          <div>
+            <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
+            <ul className="flex flex-col gap-1">
+              {falta.observar.map((item, i) => (
+                <li key={i} className="text-sm text-tinta-suave">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </Quadro>
   );
 }
@@ -1397,69 +1473,77 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
     );
   }
 
+  // Correção do Marcio (14/09, rodada de layout): "anotação rápida" saiu do
+  // centro da tela (competia com PERGUNTE AGORA) e virou uma faixa
+  // horizontal compacta no rodapé do mosaico — formulário e histórico lado
+  // a lado (a largura toda já está disponível aqui fora da grade 2 colunas),
+  // `rows`/`max-h` menores que antes, mesmo princípio de B73 (rolagem
+  // INTERNA da lista, nunca da página).
   return (
-    <Quadro rotulo="Transcrição ao vivo" como="article" className="sm:col-span-2">
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void enviar();
-        }}
-      >
-        <Campo rotulo="Trecho da fala" ajuda="Fica registrado como transcrição desta sessão — não é o prontuário jurídico.">
-          <AreaTexto
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            rows={3}
-            placeholder="Ex.: o cliente disse que o filho mais velho não pôde vir hoje…"
-          />
-        </Campo>
-        {erroEnvio && (
-          <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
-            {erroEnvio}
-          </p>
-        )}
-        <Botao type="submit" variante="primario" tamanho="compacto" carregando={enviando} disabled={!texto.trim()} className="self-start">
-          Registrar trecho
-        </Botao>
-      </form>
+    <Quadro rotulo="Transcrição ao vivo" como="article">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void enviar();
+          }}
+        >
+          <Campo rotulo="Trecho da fala" ajuda="Fica registrado como transcrição desta sessão — não é o prontuário jurídico.">
+            <AreaTexto
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              rows={2}
+              placeholder="Ex.: o cliente disse que o filho mais velho não pôde vir hoje…"
+            />
+          </Campo>
+          {erroEnvio && (
+            <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
+              {erroEnvio}
+            </p>
+          )}
+          <Botao type="submit" variante="primario" tamanho="compacto" carregando={enviando} disabled={!texto.trim()} className="self-start">
+            Registrar trecho
+          </Botao>
+        </form>
 
-      <div className="mt-3 border-t border-linha pt-3">
-        {carregando && <EstadoCarregando rotulo="Carregando transcrição…" />}
-        {!carregando && Boolean(erro) && (
-          <p role="alert" className="flex flex-col items-start gap-1.5 text-legenda text-[color:var(--vermelho)]">
-            Não foi possível carregar os trechos já registrados.
-            <Botao variante="perigo" tamanho="compacto" onClick={recarregar}>
-              Tentar de novo
-            </Botao>
-          </p>
-        )}
-        {!carregando && !erro && segmentos && segmentos.length === 0 && (
-          <EstadoVazio compacto titulo="Nenhum trecho registrado ainda" descricao="O que for digitado ou colado acima aparece aqui, em ordem." />
-        )}
-        {!carregando && !erro && segmentos && segmentos.length > 0 && (
-          // "Últimos primeiro" (pedido do Marcio): é ordem de EXIBIÇÃO, não
-          // muda `segmentos` nem o cursor do `useRecurso` — `.slice()` antes
-          // de `.reverse()` porque `reverse()` muda o array in-place.
-          // B73: teto de altura + rolagem INTERNA — a transcrição de uma
-          // sessão de 40min pode ter dezenas de trechos; é o quadro que
-          // rola, nunca a página (pedido do Marcio: "não quero ficar
-          // escrolando pra baixo... pra entender o dinamismo da sessão").
-          <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
-            {segmentos
-              .slice()
-              .reverse()
-              .map((segmento) => (
-                <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
-                  <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
-                    <span>{formatarDataHora(segmento.criado_em)}</span>
-                    {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
-                  </p>
-                  <p>{segmento.texto}</p>
-                </li>
-              ))}
-          </ul>
-        )}
+        <div>
+          {carregando && <EstadoCarregando rotulo="Carregando transcrição…" />}
+          {!carregando && Boolean(erro) && (
+            <p role="alert" className="flex flex-col items-start gap-1.5 text-legenda text-[color:var(--vermelho)]">
+              Não foi possível carregar os trechos já registrados.
+              <Botao variante="perigo" tamanho="compacto" onClick={recarregar}>
+                Tentar de novo
+              </Botao>
+            </p>
+          )}
+          {!carregando && !erro && segmentos && segmentos.length === 0 && (
+            <EstadoVazio compacto titulo="Nenhum trecho registrado ainda" descricao="O que for digitado ou colado acima aparece aqui, em ordem." />
+          )}
+          {!carregando && !erro && segmentos && segmentos.length > 0 && (
+            // "Últimos primeiro" (pedido do Marcio): é ordem de EXIBIÇÃO, não
+            // muda `segmentos` nem o cursor do `useRecurso` — `.slice()` antes
+            // de `.reverse()` porque `reverse()` muda o array in-place.
+            // B73: teto de altura + rolagem INTERNA — a transcrição de uma
+            // sessão de 40min pode ter dezenas de trechos; é o quadro que
+            // rola, nunca a página (pedido do Marcio: "não quero ficar
+            // escrolando pra baixo... pra entender o dinamismo da sessão").
+            <ul className="flex max-h-32 flex-col gap-2 overflow-y-auto pr-1">
+              {segmentos
+                .slice()
+                .reverse()
+                .map((segmento) => (
+                  <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
+                    <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
+                      <span>{formatarDataHora(segmento.criado_em)}</span>
+                      {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
+                    </p>
+                    <p>{segmento.texto}</p>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
       </div>
     </Quadro>
   );
