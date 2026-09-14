@@ -20,7 +20,6 @@ function contextoBase(): ContextoCopiloto {
       titulo: "Radiografia Familiar e Patrimonial",
       objetivo: null,
       acao: null,
-      falas: [],
       campos: ["Filhos", "Regime de casamento"],
       observar: [],
       proibido: [],

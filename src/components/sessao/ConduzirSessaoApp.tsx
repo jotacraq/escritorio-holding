@@ -9,7 +9,7 @@ import type { PrecoCroqui } from "@/types/cenario";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
-import { Cartao } from "@/components/ui/Cartao";
+import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { BarraProgresso } from "@/components/sessao/BarraProgresso";
@@ -19,7 +19,6 @@ import { PainelOferta } from "@/components/sessao/PainelOferta";
 import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
 import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
-import { Abas } from "@/components/ui/Abas";
 import { formatarData } from "@/lib/formatar";
 
 /** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
@@ -228,21 +227,31 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const mostrarOferta = estado.ofertas.length > 0 || indice >= total - 3;
 
   return (
-    <div className="flex flex-col gap-bloco pb-28">
+    <div className="flex flex-col gap-2 pb-28">
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
-       * U1 (ARQUITETURA-FASE-3.md §5.3): o roteiro nunca pode ir para baixo da
-       * dobra por causa do briefing. Em telas largas (notebook 1366×768
-       * incluído — o breakpoint `lg` é 1024px) o briefing vira uma COLUNA ao
-       * lado do roteiro, então ele não ocupa altura nenhuma da coluna
-       * principal. Só em telas estreitas os dois empilham, e aí o briefing
-       * vem DEPOIS do roteiro — a Dra. Elaine já está com o roteiro na tela
-       * antes de rolar até o briefing.
+       * B72 (pedido do Marcio, 11-14/09): painel único, denso, chapado —
+       * "modelo do Juliano". Sem abas: todos os quadros visíveis ao mesmo
+       * tempo, sem clique. A grade tem DUAS regiões:
+       *  - coluna ESTREITA (estado da sessão: progresso, SIMs) — fixa a
+       *    `md`, sempre a primeira na ordem do DOM (mobile lê ela primeiro,
+       *    antes do resto — é o "onde eu estou" da sessão).
+       *  - área PRINCIPAL — bloco atual do roteiro primeiro (a "fala
+       *    agora"), briefing logo abaixo, depois `PainelCopiloto` (que já é
+       *    uma grade densa PRÓPRIA de 2 colunas: PERGUNTE AGORA, FALTA
+       *    NESTE BLOCO, SUGESTÕES, BOT, TRANSCRIÇÃO...) — este wrapper não
+       *    tenta caber os dois lado a lado, cada um já tem sua própria
+       *    largura de leitura confortável.
+       * `items-start` na grade externa: a coluna estreita nunca estica para
+       * casar com a altura da área principal — é isso que dá densidade
+       * real, sem sobra de espaço em branco.
        */}
-      <div className="grid grid-cols-1 items-start gap-bloco lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex flex-col gap-bloco">
-          <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
+      <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-2">
+          <Quadro rotulo="Sessão">
+            <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
+          </Quadro>
 
           <PainelSims
             roteiro={estado.roteiro}
@@ -251,9 +260,19 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
             aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
           />
 
-          <Cartao como="div" realce="latao">
+          <AtalhosTeclado />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Quadro rotulo="Bloco atual" como="article">
             <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
-          </Cartao>
+          </Quadro>
+
+          <Quadro rotulo="Briefing" como="article">
+            <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
+          </Quadro>
+
+          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
 
           {mostrarOferta && (
             <PainelOferta
@@ -263,41 +282,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
               aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
             />
           )}
-
-          <AtalhosTeclado />
         </div>
-
-        {/*
-         * C10 (ARQUITETURA-FASE-10.md §9): a coluna de 320px já era do
-         * briefing sozinho — copiloto e briefing brigam pelo mesmo espaço.
-         * Resolvido com abas, briefing como default. As abas em si não
-         * mudam a altura ocupada na coluna principal (U1 continua intacto):
-         * o `sticky`/scroll interno de cada painel é decisão de CADA aba,
-         * não deste wrapper.
-         */}
-        <Abas
-          semMoldura
-          abaInicial="briefing"
-          abas={[
-            {
-              id: "briefing",
-              rotulo: "Briefing",
-              conteudo: <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />,
-            },
-            {
-              id: "copiloto",
-              rotulo: "Copiloto",
-              conteudo: (
-                <PainelCopiloto
-                  sessaoId={sessaoId}
-                  indiceAtual={indice}
-                  blocosRoteiro={estado.roteiro.definicao.blocos}
-                  irPara={irPara}
-                />
-              ),
-            },
-          ]}
-        />
       </div>
 
       <nav

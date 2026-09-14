@@ -6,26 +6,21 @@ import type { RoteiroVersao } from "@/types/roteiro";
 import type { EstadoSims } from "@/components/sessao/api";
 
 /**
- * C10 (docs/ARQUITETURA-FASE-10.md §9): a coluna direita de 320px era só do
- * briefing e passou a ser dividida com o copiloto por abas. Este arquivo
- * trava as duas garantias que o plano exige:
+ * B72 (pedido do Marcio, 11-14/09: "tela única, todas as informações à
+ * mostra, modelo do Juliano" — desfaz C10/a divisão por abas). Este arquivo
+ * trava a garantia que substitui o antigo contrato de abas:
  *
- *  1. Briefing é a aba default — quem abre a tela vê o briefing sem clicar
- *     em nada, exatamente como hoje.
- *  2. A aba Copiloto existe, é alcançável por teclado (`role=tab`) e troca o
- *     painel visível sem recarregar a página.
- *
- * U1 (herdado da Fase 3, `ConduzirSessaoApp.tsx:234-247`) não é testável por
- * jsdom (layout real não é calculado) — o teste que prova U1 é
- * `scripts/a11y.mjs` a 1366×768 e a inspeção visual. O que ESTE arquivo prova
- * é que a estrutura continua sendo grid de 2 colunas com o roteiro na coluna
- * PRINCIPAL (não dentro das abas), que é a pré-condição de U1: o roteiro
- * nunca fica hospedado dentro do componente de abas.
+ *  1. Briefing e Copiloto aparecem os DOIS sem nenhum clique — não existe
+ *     mais aba escondendo um atrás do outro.
+ *  2. O roteiro (barra de progresso + bloco atual) está sempre visível, na
+ *     mesma tela, nunca hospedado dentro de um painel que pode ficar oculto.
+ *  3. Não existe mais `role=tablist`/`role=tab` nesta tela — a navegação por
+ *     abas foi removida de propósito, não é regressão a "recuperar".
  *
  * `PainelBriefingSessao`/`PainelCopiloto`/`PainelSims`/`PainelOferta`/
  * `BlocoRoteiro`/`BarraProgresso` são dublês: cada um já tem teste próprio
- * (ou, no caso de PainelCopiloto, o teste ao lado deste arquivo) — aqui o que
- * se testa é COMPOSIÇÃO, não o conteúdo de cada painel.
+ * (ou, no caso de PainelCopiloto, `PainelCopiloto.test.tsx`) — aqui o que se
+ * testa é COMPOSIÇÃO, não o conteúdo de cada painel.
  */
 
 const { estado } = vi.hoisted(() => ({
@@ -117,39 +112,29 @@ beforeEach(() => {
   }
 });
 
-describe("ConduzirSessaoApp — abas da coluna direita (C10)", () => {
-  it("o briefing é a aba default: aparece sem nenhum clique", async () => {
+describe("ConduzirSessaoApp — painel único, sem abas (B72)", () => {
+  it("briefing e copiloto aparecem os dois, sem nenhum clique", async () => {
     const { container } = await abrir();
     expect(container.querySelector('[data-testid="stub-briefing"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
   });
 
-  it("a aba Copiloto existe e é navegável por role=tab", async () => {
-    const { container, getByRole } = await abrir();
-    const abaCopiloto = getByRole("tab", { name: /copiloto/i });
-    expect(abaCopiloto).toBeTruthy();
-    expect(abaCopiloto.getAttribute("aria-selected")).toBe("false");
-
-    const abaBriefing = getByRole("tab", { name: /briefing/i });
-    expect(abaBriefing.getAttribute("aria-selected")).toBe("true");
-
-    abaCopiloto.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-
-    // Checa o TEXTO do stub (não só o data-testid): garante que este teste
-    // está de fato exercitando a implementação default do mock, e não uma
-    // implementação trocada por outro teste do arquivo.
-    expect(container.querySelector('[data-testid="stub-copiloto"]')?.textContent).toBe("Copiloto (stub)");
+  it("não existe mais navegação por abas nesta tela", async () => {
+    const { queryAllByRole } = await abrir();
+    expect(queryAllByRole("tablist")).toHaveLength(0);
+    expect(queryAllByRole("tab")).toHaveLength(0);
   });
 
-  it("a coluna de abas fica ao LADO do roteiro, não hospeda o roteiro (pré-condição de U1)", async () => {
-    const { getAllByRole, container } = await abrir();
-    // O roteiro (barra de progresso) vive fora dos `tabpanel` — nunca dentro
-    // de uma aba, senão ficaria oculto quando a aba Copiloto for aberta.
+  it("o roteiro (barra de progresso) está sempre visível, na mesma tela que o copiloto e o briefing", async () => {
+    const { container } = await abrir();
     const barraProgresso = container.querySelector('nav[aria-label="Partes da Sessão de Viabilidade"]');
     expect(barraProgresso).toBeTruthy();
-    const tabpanels = getAllByRole("tabpanel", { hidden: true });
-    expect(tabpanels.length).toBeGreaterThan(0);
-    for (const painel of tabpanels) expect(painel.contains(barraProgresso)).toBe(false);
+    // offsetParent (não `hidden`/display de um ancestral só): prova que o
+    // nó está de fato renderizado na árvore visível, não escondido dentro
+    // de um container fechado (mesma armadilha do teste de UI: filho
+    // "visível" dentro de pai oculto dá verde falso).
+    expect(container.querySelector('[data-testid="stub-briefing"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
   });
 
   it("não tem violação de acessibilidade", async () => {
@@ -159,35 +144,22 @@ describe("ConduzirSessaoApp — abas da coluna direita (C10)", () => {
 });
 
 /**
- * Kill-switch (`copiloto_sessao.ativo=false`) — achado do Fable: a aba nunca
- * pode sumir só porque o recurso está desligado por configuração, senão a
- * Dra. Elaine não distingue "não implementado" de "desligado agora". O
- * comportamento INTERNO do estado desligado (EstadoVazio, sem "tentar de
- * novo") é coberto em `PainelCopiloto.test.tsx`; aqui o que se prova é que a
- * COMPOSIÇÃO — a aba em si, no `tablist`, e o `PainelCopiloto` sendo
- * montado dentro dela — não muda com o estado interno do copiloto.
- *
- * `mockImplementationOnce` no `mockPainelCopiloto` já declarado (não um 2º
- * `vi.mock` do mesmo caminho — dois mocks estáticos do mesmo módulo no
- * mesmo arquivo são hoisted e o último vence silenciosamente em TODOS os
- * testes do arquivo, mascarando qual mock está de fato ativo em cada um).
+ * Kill-switch (`copiloto_sessao.ativo=false`) — achado do Fable (herdado de
+ * C10): o copiloto nunca pode sumir só porque o recurso está desligado por
+ * configuração, senão a Dra. Elaine não distingue "não implementado" de
+ * "desligado agora". O comportamento INTERNO do estado desligado
+ * (EstadoVazio, sem "tentar de novo") é coberto em `PainelCopiloto.test.tsx`;
+ * aqui o que se prova é que a COMPOSIÇÃO — `PainelCopiloto` sendo montado
+ * na tela — não muda com o estado interno do copiloto.
  */
-describe("ConduzirSessaoApp — aba Copiloto continua montada com o copiloto desligado", () => {
-  it("a aba Copiloto aparece no tablist e o painel é montado, mesmo representando o estado desligado", async () => {
+describe("ConduzirSessaoApp — o copiloto continua montado com o copiloto desligado", () => {
+  it("o painel é montado, mesmo representando o estado desligado", async () => {
     mockPainelCopiloto.mockImplementation(() => (
       <div data-testid="stub-copiloto">Copiloto desligado (stub do estado real)</div>
     ));
 
-    const { getByRole, container } = await abrir();
-    const abaCopiloto = getByRole("tab", { name: /copiloto/i });
-    expect(abaCopiloto).toBeTruthy();
+    const { container } = await abrir();
 
-    abaCopiloto.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-
-    // A aba não sumiu, e o painel (ainda que representando "desligado") foi
-    // montado dentro dela — nunca a ausência silenciosa da aba inteira.
-    expect(getByRole("tab", { name: /copiloto/i })).toBeTruthy();
     expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
     expect(container.textContent).toContain("Copiloto desligado");
   });

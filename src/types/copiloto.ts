@@ -118,7 +118,12 @@ export interface ContextoCopiloto {
     titulo: string;
     objetivo: string | null;
     acao: string | null;
-    falas: string[];
+    // `falas` NÃO entra aqui de propósito (14/09/2026): era 94-97% do peso do
+    // bloco e a latência é quase linear no tamanho do contexto (r=0,95;
+    // +1.000 tokens ≈ +2,5 s). As falas existem para a ADVOGADA ler na tela —
+    // o prompt v2 proíbe a IA de redigir fala pronta, então mandá-las
+    // alimentava justamente o que é vedado. Ver o comentário em
+    // `server/copiloto/contexto.ts`, com a medição lado a lado.
     campos: string[];
     observar: string[];
     proibido: string[];

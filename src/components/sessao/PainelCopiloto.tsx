@@ -24,7 +24,6 @@ import type {
   TipoObservacaoCopiloto,
 } from "@/types/copiloto";
 import { useRecurso } from "@/hooks/useRecurso";
-import { Cartao } from "@/components/ui/Cartao";
 import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
@@ -603,7 +602,7 @@ function SugestoesDoCiclo({
           </li>
         ))}
       </ul>
-    </div>
+    </Quadro>
   );
 }
 
@@ -1127,31 +1126,31 @@ function PainelBot({ sessaoId }: { sessaoId: string }) {
   // Estado NORMAL: bot não configurado hoje (default) — não é erro.
   if (codigoErro === "audio_ao_vivo_desligado" || codigoErro === "provedor_audio_nao_configurado") {
     return (
-      <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
+      <Quadro rotulo="Bot na sala">
         <EstadoVazio
           compacto
           ilustracao="pasta"
           titulo="Bot na sala não configurado"
           descricao="Falta a chave do provedor de transcrição no servidor (RECALL_API_KEY e COPILOTO_WEBHOOK_SECRET, em Admin → Integrações). Enquanto isso o copiloto funciona normalmente — o que muda é só quem escreve a transcrição: sem o bot, a fala é digitada aqui."
         />
-      </Cartao>
+      </Quadro>
     );
   }
 
   // Estado NORMAL: idempotência — já existe bot pedido para esta sessão.
   if (codigoErro === "bot_ja_pedido") {
     return (
-      <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
+      <Quadro rotulo="Bot na sala">
         <p role="status" className="text-sm text-tinta-suave">
           Já existe um bot pedido para esta sessão — não é possível pedir um segundo.
         </p>
-      </Cartao>
+      </Quadro>
     );
   }
 
   return (
-    <Cartao rotulo="Bot na sala" titulo="Transcrição ao vivo por bot" preenchimento="compacto">
-      <div className="flex flex-col gap-3">
+    <Quadro rotulo="Bot na sala">
+      <div className="flex flex-col gap-2.5">
         <p className="text-sm text-tinta-suave">
           Um bot entra na sala como participante visível, grava e transcreve ao vivo para o copiloto — nunca sozinho,
           só quando você pedir.
@@ -1169,7 +1168,7 @@ function PainelBot({ sessaoId }: { sessaoId: string }) {
           </p>
         )}
       </div>
-    </Cartao>
+    </Quadro>
   );
 }
 
@@ -1239,7 +1238,7 @@ export function ApresentacaoComparacaoDecisores({ comparacao }: { comparacao: Co
   if (decisores_esperados.length === 0) return null;
 
   return (
-    <Cartao rotulo="Decisores" titulo="Quem o briefing esperava x quem está na sala" preenchimento="compacto">
+    <Quadro rotulo="Decisores esperados x presentes">
       <div className="flex flex-col gap-2 text-sm text-tinta">
         <p>
           O briefing esperava {decisores_esperados.length === 1 ? "1 decisor" : `${decisores_esperados.length} decisores`}:{" "}
@@ -1261,7 +1260,7 @@ export function ApresentacaoComparacaoDecisores({ comparacao }: { comparacao: Co
           </div>
         )}
       </div>
-    </Cartao>
+    </Quadro>
   );
 }
 
@@ -1292,12 +1291,9 @@ function FaltaNoBloco({ falta }: { falta: { campos: { id: string; rotulo: string
           {falta.campos.length > 0 && (
             <div>
               <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">A preencher</p>
-              <ul className="flex flex-col gap-1">
+              <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
                 {falta.campos.map((campo) => (
-                  <li key={campo.id} className="flex items-start gap-1.5 text-sm text-tinta">
-                    <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-current text-[color:var(--ambar)]">
-                      <circle cx="10" cy="10" r="4" />
-                    </svg>
+                  <li key={campo.id} className="text-sm text-tinta">
                     {campo.rotulo}
                   </li>
                 ))}
@@ -1355,7 +1351,7 @@ function BlocosNaoPercorridos({ blocos }: { blocos: { id: string; titulo: string
           ))}
         </ol>
       )}
-    </Cartao>
+    </Quadro>
   );
 }
 
@@ -1392,9 +1388,9 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
   // caminho de leitura) — mesmo tratamento de estado, não de erro.
   if (!carregando && ehCopilotoDesligado(erro)) {
     return (
-      <Cartao rotulo="Transcrição desta sessão" titulo="Digitar ou colar um trecho" preenchimento="compacto">
+      <Quadro rotulo="Transcrição ao vivo">
         <p className="text-sm text-tinta-suave">O copiloto está desligado por configuração — nenhum trecho pode ser registrado agora.</p>
-      </Cartao>
+      </Quadro>
     );
   }
 
@@ -1409,16 +1405,16 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
   // backstop no DELETE por criado_em <= encerrado_em).
   if (sessaoEncerrada) {
     return (
-      <Cartao rotulo="Transcrição desta sessão" titulo="Digitar ou colar um trecho" preenchimento="compacto">
+      <Quadro rotulo="Transcrição ao vivo">
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
           Sessão encerrada — a transcrição já foi consolidada. Não é possível registrar novos trechos aqui.
         </p>
-      </Cartao>
+      </Quadro>
     );
   }
 
   return (
-    <Cartao rotulo="Transcrição desta sessão" titulo="Digitar ou colar um trecho" preenchimento="compacto">
+    <Quadro rotulo="Transcrição ao vivo" como="article" className="sm:col-span-2">
       <form
         className="flex flex-col gap-2"
         onSubmit={(e) => {
@@ -1458,17 +1454,26 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
           <EstadoVazio compacto titulo="Nenhum trecho registrado ainda" descricao="O que for digitado ou colado acima aparece aqui, em ordem." />
         )}
         {!carregando && !erro && segmentos && segmentos.length > 0 && (
+          // "Últimos primeiro" (pedido do Marcio): é ordem de EXIBIÇÃO, não
+          // muda `segmentos` nem o cursor do `useRecurso` — `.slice()` antes
+          // de `.reverse()` porque `reverse()` muda o array in-place.
           <ul className="flex flex-col gap-2">
-            {segmentos.map((segmento) => (
-              <li key={segmento.id} className="rounded-controle border border-linha bg-papel px-3 py-2 text-sm text-tinta">
-                <p className="mb-0.5 text-legenda text-tinta-fraca">{formatarDataHora(segmento.criado_em)}</p>
-                <p>{segmento.texto}</p>
-              </li>
-            ))}
+            {segmentos
+              .slice()
+              .reverse()
+              .map((segmento) => (
+                <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
+                  <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
+                    <span>{formatarDataHora(segmento.criado_em)}</span>
+                    {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
+                  </p>
+                  <p>{segmento.texto}</p>
+                </li>
+              ))}
           </ul>
         )}
       </div>
-    </Cartao>
+    </Quadro>
   );
 }
 

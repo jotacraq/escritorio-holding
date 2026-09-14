@@ -87,7 +87,27 @@ export async function montarContextoCopiloto(
         titulo: blocoAtual.titulo,
         objetivo: blocoAtual.objetivo,
         acao: blocoAtual.acao,
-        falas: blocoAtual.falas.map((f) => f.texto),
+        // 🔴 FALAS FORA DO CONTEXTO (medido em 14/09/2026, sessão real).
+        //
+        // As falas do roteiro eram 94-97% do peso do bloco: `parte_09` ia com
+        // 1.158 tokens, dos quais 1.122 eram só falas — sem elas, 36.
+        //
+        // Isso importava porque a latência é quase linear no tamanho do
+        // contexto: r=0,95 sobre as 8 execuções reais da 1ª sessão ao vivo,
+        // +1.000 tokens ≈ +2,5 s. A 6ª execução estourou o timeout de 8 s
+        // COM cache quente — ou seja, não era o cache, era o bloco.
+        //
+        // E as falas não servem à IA: elas existem para a ADVOGADA ler na
+        // tela. O copiloto precisa saber o OBJETIVO do bloco, os CAMPOS que
+        // faltam, o que OBSERVAR e o que é PROIBIDO — não o roteiro verbatim.
+        // O próprio prompt (v2) proíbe redigir fala pronta para ela recitar,
+        // então mandar as falas alimentava exatamente o que é vedado.
+        //
+        // Comparado com o mesmo contexto real, 3 rodadas cada:
+        //   com falas: 1.753 tokens, lat [6.574, 6.808, 7.617] ms, conf 0,65
+        //   sem falas: 1.525 tokens, lat [5.960, 6.171, 7.007] ms, conf 0,65
+        // Qualidade equivalente — a versão sem falas ainda pegou a contradição
+        // "solteiro × mencionou a esposa" que a outra não listou.
         campos: blocoAtual.campos.map((c) => c.rotulo),
         observar: blocoAtual.observar,
         proibido: blocoAtual.proibido,

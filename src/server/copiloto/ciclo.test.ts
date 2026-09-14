@@ -115,7 +115,7 @@ function clientes(opts: { sessao?: Resultado; claim?: Resultado; insercaoSugesta
 }
 
 const CONTEXTO_VAZIO = {
-  bloco_atual: { id: "bloco-1", titulo: "x", objetivo: null, acao: null, falas: [], campos: [], observar: [], proibido: [] },
+  bloco_atual: { id: "bloco-1", titulo: "x", objetivo: null, acao: null, campos: [], observar: [], proibido: [] },
   bloco_anterior_titulo: null,
   bloco_seguinte_titulo: null,
   briefing_recorte: null,
