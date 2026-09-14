@@ -171,7 +171,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     });
   });
 
-  it("o corpo enviado NUNCA pede audio_url — só o webhook de transcrição por legenda", async () => {
+  it("o corpo pede transcrição pt-BR do fornecedor (NÃO a legenda da plataforma) e nunca audio_url", async () => {
     process.env.RECALL_API_KEY = "chave-teste";
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
@@ -184,7 +184,16 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
 
     const [, init] = fetchEspiao.mock.calls[0] as [string, RequestInit];
     const corpo = JSON.parse(init.body as string);
-    expect(corpo.recording_config.transcript.provider).toEqual({ meeting_captions: {} });
+    // 🔴 MEDIDO em produção 14/09: `meeting_captions` depende do CC estar ligado
+    // na reunião — o bot grava sem gerar texto, e o sintoma é SILÊNCIO. E
+    // `assembly_ai_v3_streaming` só aceita `en`/`multi`, o que devolveu
+    // "natural de trabalho da tijuca" onde o Deepgram pt-BR devolveu
+    // "sou natural da Tijuca". Português dedicado não é preferência: a IA cita
+    // evidência LITERAL, e isto vira o insumo do Agente do Croqui.
+    expect(corpo.recording_config.transcript.provider).toEqual({
+      deepgram_streaming: { model: "nova-2", language: "pt-BR", punctuate: true, smart_format: true },
+    });
+    expect(corpo.recording_config.transcript.provider.meeting_captions).toBeUndefined();
     expect(corpo.audio_url).toBeUndefined();
     expect(corpo.recording_config.realtime_endpoints).toEqual([
       { type: "webhook", url: PARAMS_BASE.webhookUrl, events: ["transcript.data", "participant_events.join", "participant_events.leave"] },

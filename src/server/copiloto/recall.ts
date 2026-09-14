@@ -155,7 +155,31 @@ export async function pedirBot(params: PedirBotParams): Promise<ResultadoPedirBo
     meeting_url: params.linkSala,
     bot_name: params.nomeBot,
     recording_config: {
-      transcript: { provider: { meeting_captions: {} } },
+      // 🔴 MEDIDO EM PRODUÇÃO (14/09/2026), corrige o §4.2 do plano, que assumia
+      // `meeting_captions`. A legenda da própria plataforma NÃO serve: ela só
+      // existe se alguém tiver ligado o CC na reunião — o bot grava minutos sem
+      // produzir uma linha de texto, e o sintoma é SILÊNCIO, não erro.
+      //
+      // Comparação com a MESMA fala real, na mesma sala:
+      //   assembly_ai_v3_streaming (só aceita `en`|`multi`, recusa `pt`):
+      //     "mais tem dois filhos sou natural de trabalho da tijuca do rio de janeiro"
+      //   deepgram_streaming pt-BR:
+      //     "Meu nome é Márcio, sou natural da Tijuca, tenho 2 filhos,"
+      //
+      // Português dedicado acerta nome próprio, topônimo, pontuação e número.
+      // Isso não é estética: a IA do copiloto tem de citar EVIDÊNCIA LITERAL do
+      // que o cliente disse (§4.3), e esta transcrição vira o insumo do Agente
+      // do Croqui ao consolidar. Transcrição ruim = citação que não casa.
+      transcript: {
+        provider: {
+          deepgram_streaming: {
+            model: "nova-2",
+            language: "pt-BR",
+            punctuate: true,
+            smart_format: true,
+          },
+        },
+      },
       realtime_endpoints: [
         {
           type: "webhook",
