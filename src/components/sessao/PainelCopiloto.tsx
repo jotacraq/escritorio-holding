@@ -777,10 +777,15 @@ function SeloConfianca({ confianca }: { confianca: number }) {
 }
 
 /** `evidencia` é citação literal do que o cliente disse — apresentada como
- * citação, visivelmente distinta da conclusão da IA. */
-function Evidencia({ texto }: { texto: string }) {
+ * citação, visivelmente distinta da conclusão da IA. `rotulo` (opcional)
+ * nomeia a citação quando ela aparece perto de outras coisas que também têm
+ * aspas — pedido do Marcio (11/09): "pergunta", "motivo" e "evidência" são
+ * três NATUREZAS diferentes, não três parágrafos parecidos; o rótulo é o que
+ * deixa isso óbvio batendo o olho, sem precisar ler a frase inteira. */
+function Evidencia({ texto, rotulo }: { texto: string; rotulo?: string }) {
   return (
     <blockquote className="border-l-2 border-linha-forte pl-2.5 text-sm italic text-tinta-suave">
+      {rotulo && <span className="mb-0.5 block not-italic text-legenda font-medium uppercase tracking-wide text-tinta-fraca">{rotulo}</span>}
       &ldquo;{texto}&rdquo;
     </blockquote>
   );
@@ -789,6 +794,20 @@ function Evidencia({ texto }: { texto: string }) {
 /**
  * Todo campo de `SugestaoCopiloto` pode vir nulo — nulo é nulo, some, nunca
  * vira texto plausível. Cada bloco abaixo só renderiza se o dado existir.
+ *
+ * Hierarquia (pedido do Marcio, 11/09 — "muito sorrateira... precisa ser mais
+ * objetivo"): a `proxima_pergunta.texto` é o ÚNICO elemento que a advogada
+ * precisa achar em meio segundo, no meio da fala do cliente — é o herói,
+ * card próprio com `realce="latao"` (cor de marca, não de alarme) e o
+ * MESMO degrau tipográfico (`text-titulo`/`sm:text-display`) que
+ * `BlocoRoteiro.tsx` usa para o título do bloco atual: o padrão já existe
+ * na tela de sessão para "a coisa que se lê de relance". `motivo` e
+ * `evidencia` moram dentro do MESMO card, mas menores e com rótulo próprio
+ * — nunca like um 2º e 3º parágrafo do mesmo tamanho (era exatamente o
+ * "ficou tudo junto" que o Marcio apontou). Todo o resto (falta no bloco,
+ * desvio, observação) é apoio, abaixo, cada um com seu próprio peso — a
+ * observação por último e mais discreta, porque é risco a considerar, não
+ * ação a tomar.
  */
 function ApresentacaoSugestao({
   sessaoId,
@@ -820,38 +839,51 @@ function ApresentacaoSugestao({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-linha pt-3">
+    <div className="flex flex-col gap-3">
       {sugestao.proxima_pergunta && (
-        <div className="flex flex-col gap-1">
-          <p className="text-rotulo font-medium uppercase text-tinta-fraca">Próxima pergunta</p>
-          <p className="text-sm font-medium text-tinta">{sugestao.proxima_pergunta.texto}</p>
-          <p className="text-legenda text-tinta-suave">{sugestao.proxima_pergunta.motivo}</p>
-          {sugestao.proxima_pergunta.evidencia && <Evidencia texto={sugestao.proxima_pergunta.evidencia} />}
+        <div className="rounded-cartao border border-linha border-l-4 border-l-[color:var(--latao-cta)] bg-papel px-3.5 py-3">
+          <p className="mb-1 flex items-center gap-1.5 text-rotulo font-semibold uppercase tracking-wide text-[color:var(--latao)]">
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0 fill-current">
+              <path d="M10 1.5a5.5 5.5 0 0 0-3.2 9.98c.46.33.7.85.7 1.4v.62a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-.62c0-.55.24-1.07.7-1.4A5.5 5.5 0 0 0 10 1.5Zm-1.5 16a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-.5h-3v.5Z" />
+            </svg>
+            Pergunte agora
+          </p>
+          <p className="text-titulo font-bold leading-snug text-tinta sm:text-display">{sugestao.proxima_pergunta.texto}</p>
+          {sugestao.proxima_pergunta.motivo && (
+            <p className="mt-2 text-sm text-tinta-suave">
+              <span className="font-medium text-tinta-fraca">Por quê: </span>
+              {sugestao.proxima_pergunta.motivo}
+            </p>
+          )}
+          {sugestao.proxima_pergunta.evidencia && (
+            <div className="mt-2">
+              <Evidencia texto={sugestao.proxima_pergunta.evidencia} rotulo="O cliente disse" />
+            </div>
+          )}
         </div>
       )}
 
       {sugestao.falta_no_bloco.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <p className="text-rotulo font-medium uppercase text-tinta-fraca">A IA notou que falta</p>
-          <ul className="flex flex-col gap-1.5">
+          {/* Chips (pedido do Marcio, 11/09): o prompt v2 já entrega o item
+              curto (3-6 palavras) — cabe em etiqueta, lê mais rápido que
+              lista vertical e não compete em altura com a pergunta acima.
+              A evidência de cada item, quando existe, continua como citação
+              logo abaixo do grupo de chips (não dentro do chip — citação não
+              cabe em pílula sem quebrar o formato). */}
+          <ul className="flex flex-wrap gap-1.5">
             {sugestao.falta_no_bloco.map((item, i) => (
-              <li key={i} className="flex flex-col gap-0.5 text-sm text-tinta">
-                <span>{item.item}</span>
-                {item.evidencia && <Evidencia texto={item.evidencia} />}
+              <li key={i}>
+                <Selo tom="neutro">{item.item}</Selo>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      {sugestao.observacao && (
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Selo tom={TOM_TIPO[sugestao.observacao.tipo]}>{ROTULO_TIPO[sugestao.observacao.tipo]}</Selo>
-            <SeloConfianca confianca={sugestao.observacao.confianca} />
-          </div>
-          <p className="text-sm text-tinta">{sugestao.observacao.texto}</p>
-          {sugestao.observacao.evidencia && <Evidencia texto={sugestao.observacao.evidencia} />}
+          {sugestao.falta_no_bloco
+            .filter((item) => item.evidencia)
+            .map((item, i) => (
+              <Evidencia key={i} texto={item.evidencia as string} />
+            ))}
         </div>
       )}
 
@@ -863,6 +895,17 @@ function ApresentacaoSugestao({
           blocosRoteiro={blocosRoteiro}
           irPara={irPara}
         />
+      )}
+
+      {sugestao.observacao && (
+        <div className="flex flex-col gap-1 border-t border-dashed border-linha pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Selo tom={TOM_TIPO[sugestao.observacao.tipo]}>{ROTULO_TIPO[sugestao.observacao.tipo]}</Selo>
+            <SeloConfianca confianca={sugestao.observacao.confianca} />
+          </div>
+          <p className="text-sm text-tinta-suave">{sugestao.observacao.texto}</p>
+          {sugestao.observacao.evidencia && <Evidencia texto={sugestao.observacao.evidencia} />}
+        </div>
       )}
     </div>
   );
