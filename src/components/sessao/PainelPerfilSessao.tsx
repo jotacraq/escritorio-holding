@@ -27,56 +27,44 @@ const ROTULO_RESULTADO_SESSAO: Record<NonNullable<SessaoViabilidade["resultado"]
 };
 
 /**
- * Coluna esquerda do mock do Marcio (14/09, pixel a pixel): "SAÚDE AO VIVO"
- * (círculo com progresso), "PERFIL" (badge DISC), "LEITURA DECISÓRIA",
- * "MODO", "PREÇO", "ESTADO FINAL DA SESSÃO", "Sessão" (cliente/data/origem).
+ * Redesenho de largura cheia (pedido do Marcio, 14/09): o mock original
+ * (14/09, pixel a pixel) juntava 7 quadros numa única coluna esquerda —
+ * "SAÚDE AO VIVO", "PERFIL", "LEITURA DECISÓRIA", "MODO", "PREÇO", "ESTADO
+ * FINAL DA SESSÃO", "Sessão". Medido de novo: 3 desses 7 campos mostravam
+ * "Sem briefing gerado ainda" na captura que ele mandou, e a promessa da
+ * rodada é "tudo sobre a sessão em andamento" na primeira dobra — não tudo
+ * que existe sobre o cliente. Dividido em dois componentes pela mesma régua
+ * que decide o resto da tela:
  *
- * Mapeamento para dado real (nenhum campo inventado — ver Diário/entrega):
- *  - SAÚDE AO VIVO → não existe métrica de "saúde da sessão" em nenhuma
- *    tabela do domínio. Usa o PROGRESSO real do roteiro (indiceAtual/total,
- *    a mesma métrica de `BarraProgresso`) — é a única contagem "X/Y" que
- *    existe de fato. Rotulado "Progresso da sessão", nunca "saúde", para não
- *    prometer um dado que não existe.
- *  - PERFIL → `briefing.conteudo.perfil_disc` (predominante/secundário).
- *  - LEITURA DECISÓRIA → `briefing.conteudo.resumo_executivo` (já é a
- *    leitura de uma frase que a IA produz sobre a pessoa/família).
- *  - MODO → `briefing.conteudo.estrategia_sessao.ritmo` (a recomendação de
- *    condução mais próxima de "modo" que existe — não existe um campo
- *    "presencial/online" no domínio).
+ *  - `PainelVigilanciaAoVivo` — muda DURANTE a sessão (posição no roteiro,
+ *    resultado registrado ao final). Fica na primeira dobra, ao lado do
+ *    mosaico do copiloto.
+ *  - `PainelPerfilConsulta` — o briefing PRÉ-GERADO antes da sessão (perfil
+ *    DISC, leitura decisória, modo, preço, identificação) não muda com o
+ *    andamento da conversa; é consultado ocasionalmente, não lido a cada
+ *    troca de bloco. Desceu para fora da primeira dobra.
+ *
+ * Nenhum campo mudou de fonte de dado nem de rótulo — só a composição/
+ * posição na tela. Mapeamento para dado real continua o mesmo (nenhum campo
+ * inventado):
+ *  - Progresso da sessão → indiceAtual/totalBlocos (mesma métrica de
+ *    `BarraProgresso`).
+ *  - Estado final da sessão → `sessao.resultado`.
+ *  - PERFIL → `briefing.conteudo.perfil_disc`.
+ *  - LEITURA DECISÓRIA → `briefing.conteudo.resumo_executivo`.
+ *  - MODO → `briefing.conteudo.estrategia_sessao.ritmo`.
  *  - PREÇO → `PrecoCroqui` (mesmo dado que `PainelOferta` já usa).
- *  - ESTADO FINAL DA SESSÃO → `sessao.resultado` (fechou/não fechou/
- *    indefinido/null — null = ainda em andamento).
- *  - Sessão → `pessoa.nome`, `sessao.realizada_em` (ou "ainda não
- *    realizada"), `jornada.origem`.
- *
- * Busca o briefing completo em PARALELO com `PainelBriefingSessao` (que já
- * faz o mesmo GET para o próprio conteúdo expandido) — custo aceitável: é
- * uma 2ª chamada CONSTANTE por abertura de tela (não cresce com volume de
- * dado, não é N×M), e refatorar `PainelBriefingSessao` para aceitar o
- * briefing como prop está fora do escopo desta entrega (mudança de
- * contrato de outro componente, não de layout).
+ *  - Sessão → `pessoa.nome`, `sessao.realizada_em`, `jornada.origem`.
  */
-export function PainelPerfilSessao({
-  pessoa,
-  jornada,
+export function PainelVigilanciaAoVivo({
   sessao,
-  briefingAtual,
-  preco,
   indiceAtual,
   totalBlocos,
 }: {
-  pessoa: Pessoa;
-  jornada: Jornada;
   sessao: SessaoViabilidade;
-  briefingAtual: BriefingResumo | null;
-  preco: PrecoCroqui | null;
   indiceAtual: number;
   totalBlocos: number;
 }) {
-  const buscar = useCallback(() => (briefingAtual ? buscarBriefing(briefingAtual.id) : Promise.resolve(null)), [briefingAtual]);
-  const { dados: briefing, erro } = useRecurso(buscar, [briefingAtual?.id ?? null]);
-  const c = briefing && !(erro instanceof ApiError) ? (briefing.conteudo as unknown as BriefingConteudoV2) : null;
-
   const percentual = totalBlocos > 1 ? Math.round((indiceAtual / (totalBlocos - 1)) * 100) : 0;
   const resultado = sessao.resultado ? ROTULO_RESULTADO_SESSAO[sessao.resultado] : null;
 
@@ -95,6 +83,45 @@ export function PainelPerfilSessao({
         </div>
       </Quadro>
 
+      <Quadro rotulo="Estado final da sessão">
+        {!resultado ? (
+          <p className="text-sm text-tinta-suave">Sessão em andamento — sem resultado registrado ainda.</p>
+        ) : (
+          <Selo tom={resultado.tom}>{resultado.texto}</Selo>
+        )}
+      </Quadro>
+    </div>
+  );
+}
+
+/**
+ * Consulta do briefing (ver comentário de topo) — fora da primeira dobra.
+ * Busca o briefing completo em PARALELO com `PainelBriefingSessao` (que já
+ * faz o mesmo GET para o próprio conteúdo expandido) — custo aceitável: é
+ * uma 2ª chamada CONSTANTE por abertura de tela (não cresce com volume de
+ * dado, não é N×M), e refatorar `PainelBriefingSessao` para aceitar o
+ * briefing como prop está fora do escopo desta entrega (mudança de
+ * contrato de outro componente, não de layout).
+ */
+export function PainelPerfilConsulta({
+  pessoa,
+  jornada,
+  sessao,
+  briefingAtual,
+  preco,
+}: {
+  pessoa: Pessoa;
+  jornada: Jornada;
+  sessao: SessaoViabilidade;
+  briefingAtual: BriefingResumo | null;
+  preco: PrecoCroqui | null;
+}) {
+  const buscar = useCallback(() => (briefingAtual ? buscarBriefing(briefingAtual.id) : Promise.resolve(null)), [briefingAtual]);
+  const { dados: briefing, erro } = useRecurso(buscar, [briefingAtual?.id ?? null]);
+  const c = briefing && !(erro instanceof ApiError) ? (briefing.conteudo as unknown as BriefingConteudoV2) : null;
+
+  return (
+    <div className="flex flex-col gap-2">
       <Quadro rotulo="Perfil" acao={c && <Selo tom="neutro">{c.perfil_disc.predominante}{c.perfil_disc.secundario ? `/${c.perfil_disc.secundario}` : ""}</Selo>}>
         {!c ? (
           <p className="text-sm text-tinta-suave">{briefingAtual ? "Carregando…" : "Sem briefing gerado ainda."}</p>
@@ -124,14 +151,6 @@ export function PainelPerfilSessao({
               <span className="ml-1.5 text-legenda text-tinta-fraca line-through">{formatarMoeda(preco.padrao)}</span>
             )}
           </p>
-        )}
-      </Quadro>
-
-      <Quadro rotulo="Estado final da sessão">
-        {!resultado ? (
-          <p className="text-sm text-tinta-suave">Sessão em andamento — sem resultado registrado ainda.</p>
-        ) : (
-          <Selo tom={resultado.tom}>{resultado.texto}</Selo>
         )}
       </Quadro>
 

@@ -19,7 +19,7 @@ import { PainelOferta } from "@/components/sessao/PainelOferta";
 import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
 import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
-import { PainelPerfilSessao } from "@/components/sessao/PainelPerfilSessao";
+import { PainelVigilanciaAoVivo, PainelPerfilConsulta } from "@/components/sessao/PainelPerfilSessao";
 import { formatarData } from "@/lib/formatar";
 
 /** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
@@ -228,79 +228,100 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const mostrarOferta = estado.ofertas.length > 0 || indice >= total - 3;
 
   return (
-    <div className="flex flex-col gap-2 pb-28">
+    <div className="flex w-full flex-col gap-2 pb-28">
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
-       * Reescrita de layout (pedido do Marcio, 14/09 — "faz IDÊNTICO A TELA
-       * DO JULIANO", mock desenhado à mão): a hierarquia deixa de ser "onde
-       * eu estou" (coluna estreita) + "roteiro reduzido acima do mosaico" e
-       * passa a ser exatamente a do mock — coluna esquerda de
-       * SAÚDE/PERFIL/SESSÃO (`PainelPerfilSessao`) e a área principal
-       * dedicada ao mosaico de 7 quadros numerados + histórico do coach do
-       * `PainelCopiloto` (que agora inclui o quadro "Bloco atual" — o
-       * wrapper duplicado que existia aqui antes saiu, para não mostrar a
-       * mesma posição/título em dois lugares da tela). `items-start`
-       * (nunca estica para casar altura — densidade real).
+       * Redesenho de largura cheia (pedido do Marcio, 14/09): "tudo sobre a
+       * sessão em andamento precisa estar visível na primeira dobra, para
+       * monitorar no segundo monitor durante a sessão em tempo real" — é
+       * painel de VIGILÂNCIA, não página de leitura. Quatro peças formam a
+       * primeira dobra, nesta ordem:
        *
-       * "Sem scroll a 1366×768" (aceite do Marcio) vale para ESTE bloco —
-       * cabeçalho + coluna esquerda + mosaico + histórico: é o que ela
-       * precisa ler em meio segundo durante a sessão. Sessão·navegação,
-       * SIMs, atalhos, anotação, Briefing e Oferta são conteúdo de APOIO
-       * (consulta ocasional, não leitura contínua durante a fala do
-       * cliente) e continuam abaixo, fora da promessa de "sem scroll" —
-       * são a mesma segunda dobra que já existia antes desta reescrita,
-       * só reordenada para não competir com o mosaico pela primeira tela.
+       *  1. Faixa fina do roteiro (logo abaixo) — "Parte X de Y — Título" +
+       *     os N números clicáveis, uma linha, ~60-70px.
+       *  2. Sugestão (quadro 1) + Alerta (quadro 2) do `PainelCopiloto` — o
+       *     copiloto propriamente dito.
+       *  3. Os 4 SIMs, ao lado do mosaico (não mais dentro da 2ª dobra) —
+       *     registrar um SIM não pode exigir rolar a página no meio da
+       *     conversa.
+       *  4. Transcrição ao vivo + registrar trecho — dentro do
+       *     `PainelCopiloto`, logo após o quadro 2 (ver comentário lá).
+       *
+       * `PainelPerfilSessao` deixou de ser a coluna esquerda inteira: só o
+       * que é VIGILÂNCIA AO VIVO (Progresso da sessão, Estado final) continua
+       * aqui em cima, ao lado do mosaico — 5 dos 7 campos (Perfil, Leitura
+       * decisória, Modo, Preço, Sessão) são CONSULTA ocasional do briefing,
+       * não leitura contínua durante a fala do cliente, e desceram para
+       * fora da primeira dobra (ver mais abaixo). `items-start` em toda a
+       * grade: cada bloco tem a altura do próprio conteúdo, nunca estica
+       * para casar com o vizinho mais alto — densidade real, sem espaço
+       * morto. `xl`/`2xl`: a partir de tela larga (monitor de 2560px, navbar
+       * recolhida, ~2500px úteis) a coluna de vigilância ganha largura fixa
+       * e o mosaico usa o resto — 2 colunas continuariam desperdiçando a
+       * metade da tela que motivou este redesenho.
        */}
-      <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[260px_minmax(0,1fr)]">
-        <PainelPerfilSessao
-          pessoa={estado.ficha.pessoa}
-          jornada={estado.ficha.jornada}
-          sessao={estado.ficha.sessao!}
-          briefingAtual={estado.ficha.briefingAtual}
-          preco={estado.preco}
-          indiceAtual={indice}
-          totalBlocos={total}
-        />
+      {/* Sem o wrapper `Quadro` de propósito aqui: um rótulo "ROTEIRO" em
+       * caixa alta acima somaria uma linha inteira a uma faixa que já diz
+       * "Parte X de Y — Título" por extenso (dentro de `BarraProgresso
+       * compacta`) — literalmente o "quadro que não precisa existir"
+       * aplicado à própria faixa. A borda fina do `nao-imprimir` dentro do
+       * componente já delimita a área; aqui só o respiro de padding. */}
+      <div className="rounded-controle border border-linha bg-papel-elevado px-3 py-2">
+        <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} compacta />
+      </div>
 
-        <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 items-start gap-2 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex flex-col gap-2 xl:order-1">
           <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
+        </div>
 
-          <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[200px_minmax(0,1fr)]">
-            <div className="flex flex-col gap-2">
-              <Quadro rotulo="Sessão · navegação">
-                <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
-              </Quadro>
+        <div className="flex flex-col gap-2 xl:order-2">
+          <PainelVigilanciaAoVivo sessao={estado.ficha.sessao!} indiceAtual={indice} totalBlocos={total} />
 
-              <PainelSims
-                roteiro={estado.roteiro}
-                sessaoId={sessaoId}
-                estado={estado.sims}
-                aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
-              />
-
-              <AtalhosTeclado />
-            </div>
-
-            <Quadro rotulo="Anotação da parte atual" como="article">
-              <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
-            </Quadro>
-          </div>
-
-          <Quadro rotulo="Briefing" como="article">
-            <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
-          </Quadro>
-
-          {mostrarOferta && (
-            <PainelOferta
-              jornadaId={jornadaId}
-              ofertas={estado.ofertas}
-              preco={estado.preco}
-              aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
-            />
-          )}
+          <PainelSims
+            roteiro={estado.roteiro}
+            sessaoId={sessaoId}
+            estado={estado.sims}
+            aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
+          />
         </div>
       </div>
+
+      {/* Fora da primeira dobra (ordem de importância, pedido do Marcio):
+       * Anotação da parte · Perfil/briefing de CONSULTA · Atalhos de teclado
+       * · Briefing Estratégico · Oferta. "Histórico do coach" e "Encerrar
+       * copiloto" já vêm depois, dentro do próprio `PainelCopiloto` — nunca
+       * duplicados aqui. */}
+      <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <Quadro rotulo="Anotação da parte atual" como="article">
+          <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
+        </Quadro>
+
+        <div className="flex flex-col gap-2">
+          <PainelPerfilConsulta
+            pessoa={estado.ficha.pessoa}
+            jornada={estado.ficha.jornada}
+            sessao={estado.ficha.sessao!}
+            briefingAtual={estado.ficha.briefingAtual}
+            preco={estado.preco}
+          />
+          <AtalhosTeclado />
+        </div>
+      </div>
+
+      <Quadro rotulo="Briefing" como="article">
+        <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
+      </Quadro>
+
+      {mostrarOferta && (
+        <PainelOferta
+          jornadaId={jornadaId}
+          ofertas={estado.ofertas}
+          preco={estado.preco}
+          aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
+        />
+      )}
 
       <nav
         aria-label="Navegar entre partes"

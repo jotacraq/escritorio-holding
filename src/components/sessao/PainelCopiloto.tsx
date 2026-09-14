@@ -400,13 +400,23 @@ export function PainelCopiloto({
 
       {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
 
-      {/* Mosaico de 7 quadros NUMERADOS, 2 colunas (mock do Marcio, 14/09,
-       * pixel a pixel — "faz IDÊNTICO A TELA DO JULIANO"): a hierarquia é
-       * por POSIÇÃO e por NÚMERO visível, nunca só decoração. `items-start`
-       * (não `stretch`): cada quadro tem a altura do próprio conteúdo, sem
-       * esticar para casar com o vizinho mais alto — densidade real, sem
-       * scroll a 1366×768. Ordem de leitura = ordem do DOM (mobile lê
-       * 1→7 em coluna única, sem precisar reordenar por CSS). */}
+      {/* Mosaico de 7 quadros NUMERADOS (mock do Marcio, 14/09, pixel a pixel
+       * — "faz IDÊNTICO A TELA DO JULIANO"): a hierarquia é por POSIÇÃO e por
+       * NÚMERO visível, nunca só decoração. Ordem de leitura = ordem do DOM
+       * (mobile lê 1→7 em coluna única, sem precisar reordenar por CSS) — a
+       * ordem/numeração NÃO muda nesta rodada (14/09, largura cheia).
+       *
+       * Duas fileiras, separadas pelo peso real do conteúdo (não pela
+       * numeração): quadros 1+2 (Sugestão/Alerta) são "o copiloto
+       * propriamente dito" e ficam em destaque, 2 colunas até `xl` e lado a
+       * lado com espaço de sobra a partir de `xl` (monitor largo tem 2500px
+       * úteis — 2 colunas generosas leem melhor que 4 estreitas para texto
+       * corrido). Quadros 3-7 são leitura de apoio, cada um recolhe para uma
+       * linha fina quando vazio (`Quadro recolhido`, ver comentário de cada
+       * função) — o resultado é uma segunda fileira baixa, não um segundo
+       * mosaico do mesmo peso visual do primeiro. `items-start`: cada quadro
+       * tem a altura do próprio conteúdo, nunca estica para casar com o
+       * vizinho mais alto. */}
       <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
         <PainelPerguntaAgora
           sessaoId={sessaoId}
@@ -421,7 +431,18 @@ export function PainelCopiloto({
           comparacaoDecisores={sessaoEncerrada ? null : polling.comparacaoDecisores}
           sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
         />
+      </div>
 
+      {/* Transcrição ao vivo (pedido do Marcio, 14/09 — largura cheia): sobe
+       * para logo abaixo de Sugestão+Alerta, dentro da promessa de primeira
+       * dobra — é leitura contínua durante a fala do cliente, junto com o
+       * registro do trecho, não conteúdo de apoio consultado depois. Não é
+       * um dos 7 quadros numerados (posição/ordem/numeração deles não muda);
+       * só a posição RELATIVA da Transcrição dentro deste componente subiu,
+       * de depois do Histórico do coach para logo depois do quadro 2. */}
+      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
+
+      <div className="grid grid-cols-1 items-start gap-1.5 lg:grid-cols-2 2xl:grid-cols-3">
         <QuadroBlocoAtual blocoAtualId={estado.bloco_atual_id} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} />
 
         <QuadroOQueAconteceu falta={estado.falta_no_bloco} />
@@ -445,7 +466,9 @@ export function PainelCopiloto({
       />
 
       {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
-       * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
+       * dois precisavam bloquear o registro manual — comentário e trava
+       * continuam válidos, só o componente `RegistroManual` em si subiu de
+       * posição (ver logo após o quadro 2, acima) — `sessaoEncerrada` é o
        * estado LOCAL desta aba (encerramento manual/por duração máxima
        * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
        * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
@@ -455,8 +478,6 @@ export function PainelCopiloto({
        * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
        * impede o erro; a trava de verdade é do backend (409 no POST, mais
        * o backstop do DELETE por `criado_em <= encerrado_em`). */}
-      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
-
       {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
     </div>
   );
@@ -1398,7 +1419,7 @@ function CopilotoDesligado() {
 function QuadroOQueAconteceu({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
   const nada = falta.campos.length === 0 && falta.observar.length === 0;
   return (
-    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article">
+    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article" recolhido={nada}>
       {nada ? (
         <p className="text-sm text-tinta-suave">Nada específico registrado ainda neste bloco.</p>
       ) : (
@@ -1528,9 +1549,9 @@ function QuadroBlocoAtual({
   const titulo = blocosRoteiro?.[indiceAtual]?.titulo;
 
   return (
-    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article">
+    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article" recolhido={!blocoAtualId}>
       {!blocoAtualId ? (
-        <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para conduzir." />
+        <p className="text-sm text-tinta-suave">Sem roteiro ativo — não há bloco atual para conduzir.</p>
       ) : (
         <div className="flex flex-col gap-1">
           <p className="text-rotulo font-medium uppercase text-tinta-fraca">
@@ -1557,7 +1578,7 @@ function QuadroInsightComercial({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCo
   const insight = maisRecente?.visivel && maisRecente.sugestao?.observacao?.tipo === "inferencia" ? maisRecente.sugestao.observacao : null;
 
   return (
-    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article">
+    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article" recolhido={!insight}>
       {!insight ? (
         <p className="text-sm text-tinta-suave">Nenhum insight comercial ainda nesta sessão.</p>
       ) : (
@@ -1592,7 +1613,7 @@ function QuadroPodePularPra({
   const desvio = maisRecente?.visivel ? maisRecente.sugestao?.desvio_sugerido : null;
 
   return (
-    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article">
+    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article" recolhido={!desvio}>
       {!desvio ? (
         <p className="text-sm text-tinta-suave">Nenhum desvio sugerido agora — siga o roteiro na ordem.</p>
       ) : (
@@ -1620,6 +1641,7 @@ function QuadroVoceAcertouOuErrou({ acertou }: { acertou: boolean }) {
       icone={acertou ? <IconeAcerto /> : <IconeErro />}
       tom={acertou ? undefined : "vermelho"}
       como="article"
+      recolhido
     >
       <p className="text-sm text-tinta-suave">Nada a apontar ainda — este dado não existe hoje no sistema.</p>
     </Quadro>

@@ -94,7 +94,7 @@ function LinhaSim({
   }
 
   return (
-    <li className="flex flex-col gap-1 border-b border-linha px-1 py-2 last:border-b-0">
+    <li className="flex flex-col gap-0.5 border-b border-linha px-1 py-1.5 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex min-h-11 items-center gap-2 text-sm text-tinta">
           <NumeroSim>{NUMERO_SIM[sim]}</NumeroSim>
@@ -232,7 +232,7 @@ function LinhaSimGravacao({
   const registrado = consentimento?.concedido ?? null;
 
   return (
-    <li className="flex flex-col gap-1 border-b border-linha px-1 py-2 last:border-b-0">
+    <li className="flex flex-col gap-0.5 border-b border-linha px-1 py-1.5 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex min-h-11 flex-wrap items-center gap-2 text-sm text-tinta">
           <NumeroSim>1</NumeroSim>

@@ -231,6 +231,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <main id="conteudo-principal" tabIndex={-1} className="min-w-0 flex-1 px-3 py-4 outline-none sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+        {/* O `max-w-7xl` cai quando a rota filha marca `.largura-cheia` (ver o
+            `layout.tsx` de `/sessoes/[id]/conduzir` e a regra em `globals.css`).
+            Um Context não serviria aqui: este `<main>` está ACIMA de `{children}`
+            e leria o default para sempre. */}
         <div className="mx-auto w-full max-w-7xl">{children}</div>
       </main>
 

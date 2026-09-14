@@ -41,6 +41,15 @@ interface QuadroProps extends HTMLAttributes<HTMLElement> {
    * ver `TomQuadro`. Ausente = quadro chapado de sempre (default de todo o
    * resto do sistema, fora do mosaico do Copiloto). */
   tom?: TomQuadro;
+  /** Pedido do Marcio (14/09, redesenho de largura cheia): quadro SEM
+   * conteúdo (ex.: "Nada específico registrado", "este dado não existe hoje
+   * no sistema") não pode ocupar espaço nobre da primeira dobra como um
+   * cartão de ~80px. `recolhido=true` faz o MESMO quadro (número, ícone,
+   * rótulo, stub — nada é removido, nada é inventado) caber numa linha fina
+   * de ~40px: rótulo + texto do stub na mesma linha, sem o padding vertical
+   * do card cheio. Continua sendo o mesmo elemento com o mesmo conteúdo —
+   * só a apresentação muda quando não há nada a destacar. */
+  recolhido?: boolean;
   children?: ReactNode;
 }
 
@@ -62,9 +71,27 @@ interface QuadroProps extends HTMLAttributes<HTMLElement> {
  * nunca colorido — quem carrega cor é o CONTEÚDO (um selo de alerta, uma
  * observação âmbar), nunca o wrapper.
  */
-export function Quadro({ rotulo, acao, como = "section", numero, icone, tom, className = "", children, ...props }: QuadroProps) {
+export function Quadro({ rotulo, acao, como = "section", numero, icone, tom, recolhido = false, className = "", children, ...props }: QuadroProps) {
   const Tag = como;
   const corTom = tom ? CORES_TOM[tom] : "border-l-transparent";
+
+  if (recolhido) {
+    return (
+      <Tag
+        className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-controle border border-l-2 border-linha bg-papel-elevado px-3 py-2 ${corTom} ${className}`}
+        {...props}
+      >
+        <p className="flex shrink-0 items-center gap-1.5 text-rotulo font-semibold text-tinta-fraca">
+          {icone}
+          {typeof numero === "number" && <span aria-hidden="true">{numero}.</span>}
+          {rotulo}
+        </p>
+        <div className="min-w-0 flex-1 text-sm text-tinta-suave [&_p]:truncate">{children}</div>
+        {acao}
+      </Tag>
+    );
+  }
+
   return (
     <Tag
       className={`flex flex-col gap-2 rounded-controle border border-l-2 border-linha bg-papel-elevado p-3 ${corTom} ${className}`}

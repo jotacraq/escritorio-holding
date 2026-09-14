@@ -243,6 +243,24 @@ html[data-escala="grande"] {
   }
 }
 
+/* Largura cheia por rota (14/09/2026). O `<main>` do `AppShell` centraliza o
+   conteúdo em `max-w-7xl` — linha de leitura confortável, que é o certo para
+   as ~30 telas de cadastro e relatório. A tela de conduzir sessão é exceção:
+   é painel de vigilância para segundo monitor durante a reunião, e o limite
+   desperdiçava metade de um monitor largo (medido: 284px de vão branco à
+   esquerda, mais a metade direita vazia).
+
+   🔑 POR QUE CSS E NÃO CONTEXT: o `<main>` fica ACIMA de `{children}` na
+   árvore, então um Provider montado no `layout.tsx` da rota é DESCENDENTE de
+   quem precisa da informação — e Context só flui de cima para baixo. A 1ª
+   tentativa fez isso e o shell leu o default para sempre: a tela continuou
+   limitada, com o vão intacto. `:has()` lê para cima e resolve. */
+@media (min-width: 1024px) {
+  main:has(> .largura-cheia) > * {
+    max-width: none;
+  }
+}
+
 .dark {
   /* Migração GPS-THB (14/09/2026, B5): derivado QUENTE (viés marrom, não
      cinza-azulado neutro) — coerente com o `--papel` creme e o `--latao`
