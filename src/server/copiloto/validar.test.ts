@@ -15,6 +15,7 @@ import type { ContextoCopiloto } from "@/types/copiloto";
 
 function contextoBase(): ContextoCopiloto {
   return {
+    roteiro_fonte: "carimbado",
     bloco_atual: {
       id: "parte_03",
       titulo: "Radiografia Familiar e Patrimonial",

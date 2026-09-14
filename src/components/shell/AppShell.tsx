@@ -6,6 +6,7 @@ import { Nav } from "./Nav";
 import { NavInferior } from "./NavInferior";
 import { EscalaTexto, SCRIPT_ESCALA_INICIAL } from "./EscalaTexto";
 import { TemaToggle } from "./TemaToggle";
+import { NavRecolher, SCRIPT_NAV_RECOLHIDA_INICIAL } from "./NavRecolher";
 import { PaletaComandos } from "@/components/comandos/PaletaComandos";
 import { ROTULO_PAPEL, useUsuarioAtual } from "@/hooks/useUsuarioAtual";
 
@@ -19,13 +20,15 @@ function IconeBusca({ className = "h-5 w-5" }: { className?: string }) {
 
 function Marca({ className = "" }: { className?: string }) {
   return (
-    <Link href="/hoje" className={`group flex min-h-11 items-center gap-2.5 rounded-controle ${className}`}>
-      <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)] shadow-[0_2px_0_0_var(--latao-cta-forte)]">
+    <Link href="/hoje" aria-label="SIC-HF — Time Holding Brasil, ir para Hoje" className={`group flex min-h-11 items-center gap-2.5 rounded-controle ${className}`}>
+      <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)] shadow-[0_2px_0_0_var(--latao-cta-forte)]">
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3.5 8.5 10 3.5l6.5 5M5.5 9v6.5M10 9v6.5M14.5 9v6.5M4 16.25h12" />
         </svg>
       </span>
-      <span className="flex flex-col leading-tight">
+      {/* `nav-so-icone`: some com a lateral recolhida (`lg`) — o glifo sozinho
+          já leva para /hoje, e o nome completo do sistema não cabe em 4.5rem. */}
+      <span className="nav-so-icone flex flex-col leading-tight">
         <span className="text-corpo font-bold text-tinta">SIC-HF</span>
         <span className="text-legenda text-tinta-fraca">Time Holding Brasil</span>
       </span>
@@ -54,7 +57,7 @@ function CartaoUsuario() {
       <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-latao-fraco text-sm font-bold text-[color:var(--latao)]">
         {inicial}
       </span>
-      <span className="flex min-w-0 flex-col leading-tight">
+      <span className="nav-so-icone flex min-w-0 flex-col leading-tight">
         <span className="truncate text-sm font-bold text-tinta">{nome}</span>
         <span className="truncate text-legenda text-tinta-suave">{usuario.papel ? ROTULO_PAPEL[usuario.papel] : usuario.email}</span>
       </span>
@@ -112,28 +115,38 @@ export function AppShell({ children }: { children: ReactNode }) {
     <button
       type="button"
       onClick={() => setPaletaAberta(true)}
+      aria-label="Buscar cliente ou tela"
+      title="Buscar cliente…"
       className="flex min-h-11 w-full items-center gap-2.5 rounded-controle border border-linha-forte bg-papel-elevado px-3.5 text-sm text-tinta-suave transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)] hover:text-tinta"
     >
-      <IconeBusca className="h-4 w-4 opacity-80" />
-      <span className="flex-1 text-left">Buscar cliente…</span>
-      <kbd className="rounded-md border border-linha-forte bg-papel px-1.5 py-0.5 font-mono text-legenda text-tinta-fraca">{teclaAtalho}</kbd>
+      <IconeBusca className="h-4 w-4 shrink-0 opacity-80" />
+      <span aria-hidden="true" className="nav-so-icone flex-1 text-left">Buscar cliente…</span>
+      <kbd aria-hidden="true" className="nav-so-icone rounded-md border border-linha-forte bg-papel px-1.5 py-0.5 font-mono text-legenda text-tinta-fraca">{teclaAtalho}</kbd>
     </button>
   );
 
   const conteudoLateral = (
     <>
-      <Marca className="px-2" />
+      <div className="flex items-center gap-1.5 px-2">
+        <Marca className="min-w-0 flex-1" />
+        <NavRecolher />
+      </div>
       {botaoBuscar}
       <Nav aoNavegar={() => setGavetaAberta(false)} />
       <div className="mt-auto flex flex-col gap-2 border-t border-linha pt-3">
         <CartaoUsuario />
         {/* Fase 8 — as duas preferências de leitura moram juntas, no rodapé da
-            lateral: tamanho do texto (D22) e tema. */}
-        <EscalaTexto className="px-2" />
-        {/* Alinhado à direita, de propósito: o canto inferior esquerdo é onde o
-            indicador de dev do Next se ancora, e os dois não podem se sobrepor. */}
-        <div className="flex justify-end px-2">
-          <TemaToggle />
+            lateral: tamanho do texto (D22) e tema. Escondidas com a lateral
+            recolhida (precisam de espaço de leitura para o rótulo da opção;
+            continuam alcançáveis expandindo de volta). */}
+        <div className="nav-so-icone flex flex-col gap-2">
+          <EscalaTexto className="px-2" />
+          {/* Alinhado à direita, de propósito: o canto inferior esquerdo é onde
+              o indicador de dev do Next se ancora, e os dois não podem se
+              sobrepor. */}
+          <div className="flex justify-end px-2">
+            <TemaToggle />
+          </div>
         </div>
       </div>
     </>
@@ -147,6 +160,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           a escala é preferência da ÁREA DA EQUIPE; a área pública do cliente
           não tem seletor (`.area-publica` zera o fator). */}
       <script dangerouslySetInnerHTML={{ __html: SCRIPT_ESCALA_INICIAL }} />
+      {/* Idem para a lateral recolhida (pedido do Marcio, 14/09) — sem isto
+          a lateral nasceria larga e encolheria de repente na frente de quem
+          já tinha recolhido, em TODA tela do sistema. */}
+      <script dangerouslySetInnerHTML={{ __html: SCRIPT_NAV_RECOLHIDA_INICIAL }} />
 
       <a
         href="#conteudo-principal"
@@ -206,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
            `visibility` entra na lista de transição de propósito: propriedade
            discreta só vira `hidden` no FIM da transição, então a gaveta ainda
            desliza inteira antes de sumir. */
-        className={`nao-imprimir z-40 flex w-[17rem] max-w-[88vw] shrink-0 flex-col gap-3 overflow-y-auto border-r border-linha bg-papel px-3 py-4 transition-[transform,visibility] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:visible lg:translate-x-0 ${
+        className={`nao-imprimir nav-lateral z-40 flex w-[17rem] max-w-[88vw] shrink-0 flex-col gap-3 overflow-y-auto border-r border-linha bg-papel px-3 py-4 transition-[transform,visibility,width] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:visible lg:translate-x-0 ${
           gavetaAberta ? "fixed inset-y-0 left-0 translate-x-0 shadow-flutuante" : "invisible fixed inset-y-0 left-0 -translate-x-full lg:relative lg:shadow-none"
         }`}
       >

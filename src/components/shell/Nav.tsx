@@ -81,6 +81,12 @@ export function Nav({ aoNavegar }: { aoNavegar?: () => void }) {
             href={item.href}
             onClick={aoNavegar}
             aria-current={ativo ? "page" : undefined}
+            /* `aria-label` fixo (não só o texto visível do `<span>`): com a
+               lateral recolhida (`nav-so-icone` em `display:none`), o nome
+               acessível do link não pode depender de um nó que sumiu do DOM
+               visual — CSS `display:none` também tira o nó da árvore de
+               acessibilidade. */
+            aria-label={item.rotulo}
             title={item.descricao}
             className={`group relative flex min-h-11 items-start gap-3 rounded-controle px-3 py-2 transition-colors duration-[var(--transicao-rapida)] ${
               ativo ? "bg-latao-fraco text-tinta" : "text-tinta-suave hover:bg-papel-elevado hover:text-tinta focus-visible:bg-papel-elevado"
@@ -94,7 +100,10 @@ export function Nav({ aoNavegar }: { aoNavegar?: () => void }) {
             >
               {ICONES_NAVEGACAO[item.icone]}
             </svg>
-            <span className="flex min-w-0 flex-col">
+            {/* `nav-so-icone`: some com a lateral recolhida — o `title` no
+                `<Link>` (acima) continua dando o rótulo por hover/leitor de
+                tela; o glifo sozinho é o alvo clicável de 44px inteiro. */}
+            <span className="nav-so-icone flex min-w-0 flex-col">
               <span className={`text-sm leading-5 ${ativo ? "font-bold" : "font-medium"}`}>{item.rotulo}</span>
               <span
                 className={`grid transition-[grid-template-rows,opacity] duration-[var(--transicao-normal)] ease-[var(--suavizacao)] ${

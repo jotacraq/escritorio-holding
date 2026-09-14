@@ -3,8 +3,7 @@
 import { useMemo, useState } from "react";
 import type { RoteiroFala, RoteiroVersao, SimIdentificador } from "@/types/roteiro";
 import { ErroSessao, registrarSim, type EstadoSims } from "@/components/sessao/api";
-import { Botao } from "@/components/ui/Botao";
-import { Cartao } from "@/components/ui/Cartao";
+import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
 import { formatarDataHora } from "@/lib/formatar";
 import { NUMERO_SIM, ORDEM_SIMS, ROTULO_SIM } from "@/components/sessao/rotulos";
@@ -16,6 +15,54 @@ function acharFalaDoSim(roteiro: RoteiroVersao, sim: SimIdentificador): RoteiroF
     if (fala) return fala;
   }
   return null;
+}
+
+/**
+ * Ação por TEXTO, nunca botão redondo (pedido do Marcio, 11-14/09: "o botão
+ * da ética e licitude está como um botão redondo"). Continua sendo um
+ * `<button>` de verdade — alvo ≥44px, `hover`/`focus-visible` — só sem a
+ * forma de pílula colorida do `Botao` primário/perigo: aqui o texto sublinhado
+ * chapado é a própria affordance, como link de ação de sistema legado.
+ */
+function AcaoTexto({
+  tom,
+  carregando,
+  disabled,
+  onClick,
+  children,
+}: {
+  tom: "neutro" | "vermelho";
+  carregando?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={carregando || undefined}
+      className={`flex min-h-11 items-center gap-1.5 rounded-controle px-2 text-sm font-medium underline decoration-1 underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+        tom === "vermelho" ? "text-[color:var(--vermelho)] hover:bg-vermelho-fraco" : "text-tinta hover:bg-papel"
+      }`}
+    >
+      {carregando && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />}
+      {children}
+    </button>
+  );
+}
+
+/** Número do SIM — quadrado chapado (`rounded-controle`), nunca círculo. */
+function NumeroSim({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-controle border border-linha-forte bg-papel text-legenda font-bold text-tinta-suave"
+    >
+      {children}
+    </span>
+  );
 }
 
 function LinhaSim({
@@ -31,7 +78,6 @@ function LinhaSim({
   emQue: string | null;
   aoRegistrar: (sim: SimIdentificador, confirmado: boolean) => Promise<void>;
 }) {
-  const [expandido, setExpandido] = useState(false);
   const [enviando, setEnviando] = useState<"sim" | "nao" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -47,42 +93,22 @@ function LinhaSim({
     }
   }
 
-  const tomBorda =
-    registrado === true ? "border-l-[color:var(--verde)]" : registrado === false ? "border-l-[color:var(--vermelho)]" : "border-l-linha-forte";
-
   return (
-    <li className={`flex flex-col gap-2 border-l-4 px-4 py-3 sm:px-5 ${tomBorda}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setExpandido((v) => !v)}
-          aria-expanded={expandido}
-          className="flex min-h-11 items-center gap-2.5 rounded-controle text-left text-sm font-medium text-tinta"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-linha-forte bg-papel text-legenda font-bold text-tinta-suave"
-          >
-            {NUMERO_SIM[sim]}
-          </span>
+    <li className="flex flex-col gap-1 border-b border-linha px-1 py-2 last:border-b-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-h-11 items-center gap-2 text-sm text-tinta">
+          <NumeroSim>{NUMERO_SIM[sim]}</NumeroSim>
           {ROTULO_SIM[sim]}
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            className={`h-3.5 w-3.5 shrink-0 fill-current text-tinta-fraca transition-transform ${expandido ? "rotate-180" : ""}`}
-          >
-            <path d="M5.5 7.5 10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        </span>
 
         {registrado === null ? (
-          <div className="flex items-center gap-2">
-            <Botao variante="primario" tamanho="compacto" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
+          <div className="flex items-center gap-1">
+            <AcaoTexto tom="neutro" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
               Cliente disse sim
-            </Botao>
-            <Botao variante="perigo" tamanho="compacto" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
+            </AcaoTexto>
+            <AcaoTexto tom="vermelho" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
               Não confirmou
-            </Botao>
+            </AcaoTexto>
           </div>
         ) : (
           <Selo tom={registrado ? "verde" : "vermelho"}>
@@ -98,10 +124,15 @@ function LinhaSim({
         </p>
       )}
 
-      {expandido && fala && (
-        <blockquote className="rounded-controle border border-linha bg-papel px-4 py-3 text-sm italic leading-relaxed text-tinta-suave">
-          “{fala.texto}”
-        </blockquote>
+      {fala && (
+        <details className="group">
+          <summary className="min-h-6 cursor-pointer list-none text-legenda text-tinta-fraca marker:content-none [&::-webkit-details-marker]:hidden">
+            Ver fala do roteiro
+          </summary>
+          <blockquote className="mt-1 rounded-controle border border-linha bg-papel px-3 py-2 text-sm italic leading-relaxed text-tinta-suave">
+            “{fala.texto}”
+          </blockquote>
+        </details>
       )}
     </li>
   );
@@ -137,14 +168,8 @@ export function PainelSims({
     (estado.sigilo_gravacao ? 1 : 0) + Object.values(estado.sims).filter((s) => s?.ok !== undefined).length;
 
   return (
-    <Cartao
-      rotulo="Parte 01"
-      titulo="Os 4 SIMs"
-      descricao="Sigilo, licitude, decisores e próximo passo — registre cada um assim que o cliente responder."
-      preenchimento="sem"
-      acao={<Selo tom={totalRegistrados === 4 ? "verde" : "neutro"}>{totalRegistrados} de 4 registrados</Selo>}
-    >
-      <ul className="flex flex-col divide-y divide-linha">
+    <Quadro rotulo="SIMs" acao={<Selo tom={totalRegistrados === 4 ? "verde" : "neutro"}>{totalRegistrados} de 4</Selo>}>
+      <ul className="flex flex-col">
         {ORDEM_SIMS.map((sim) => {
           if (sim === "sigilo_gravacao") {
             const consentimento = estado.sigilo_gravacao;
@@ -170,7 +195,7 @@ export function PainelSims({
           );
         })}
       </ul>
-    </Cartao>
+    </Quadro>
   );
 }
 
@@ -189,7 +214,6 @@ function LinhaSimGravacao({
   consentimento: import("@/types/roteiro").ConsentimentoGravacao | null;
   aoRegistrar: (confirmado: boolean) => Promise<void>;
 }) {
-  const [expandido, setExpandido] = useState(!consentimento);
   const [enviando, setEnviando] = useState<"sim" | "nao" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -206,36 +230,24 @@ function LinhaSimGravacao({
   }
 
   const registrado = consentimento?.concedido ?? null;
-  const tomBorda =
-    registrado === true ? "border-l-[color:var(--verde)]" : registrado === false ? "border-l-[color:var(--vermelho)]" : "border-l-linha-forte";
 
   return (
-    <li className={`flex flex-col gap-2 border-l-4 px-4 py-3 sm:px-5 ${tomBorda}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setExpandido((v) => !v)}
-          aria-expanded={expandido}
-          className="flex min-h-11 flex-wrap items-center gap-2.5 rounded-controle text-left text-sm font-medium text-tinta"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-linha-forte bg-papel text-legenda font-bold text-tinta-suave"
-          >
-            1
-          </span>
+    <li className="flex flex-col gap-1 border-b border-linha px-1 py-2 last:border-b-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-h-11 flex-wrap items-center gap-2 text-sm text-tinta">
+          <NumeroSim>1</NumeroSim>
           Sigilo e Gravação
-          <span className="rounded-full border border-linha-forte px-2 py-0.5 text-legenda font-medium uppercase text-tinta-fraca">registro jurídico</span>
-        </button>
+          <span className="rounded-controle border border-linha-forte px-1.5 py-0.5 text-legenda font-medium uppercase text-tinta-fraca">registro jurídico</span>
+        </span>
 
         {!consentimento ? (
-          <div className="flex items-center gap-2">
-            <Botao variante="primario" tamanho="compacto" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
+          <div className="flex items-center gap-1">
+            <AcaoTexto tom="neutro" carregando={enviando === "sim"} disabled={enviando !== null} onClick={() => registrar(true)}>
               Cliente disse sim
-            </Botao>
-            <Botao variante="perigo" tamanho="compacto" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
+            </AcaoTexto>
+            <AcaoTexto tom="vermelho" carregando={enviando === "nao"} disabled={enviando !== null} onClick={() => registrar(false)}>
               Não confirmou
-            </Botao>
+            </AcaoTexto>
           </div>
         ) : (
           <Selo tom={registrado ? "verde" : "vermelho"}>
@@ -250,16 +262,19 @@ function LinhaSimGravacao({
         </p>
       )}
 
-      {expandido && (
-        <blockquote className="rounded-controle border border-linha bg-papel px-4 py-3 text-sm italic leading-relaxed text-tinta-suave">
+      <details className="group" open={!consentimento}>
+        <summary className="min-h-6 cursor-pointer list-none text-legenda text-tinta-fraca marker:content-none [&::-webkit-details-marker]:hidden">
+          Ver texto apresentado
+        </summary>
+        <blockquote className="mt-1 rounded-controle border border-linha bg-papel px-3 py-2 text-sm italic leading-relaxed text-tinta-suave">
           “{consentimento?.texto_apresentado ?? fala?.texto ?? "Texto do roteiro não encontrado."}”
         </blockquote>
-      )}
-      {consentimento && (
-        <p className="text-legenda text-tinta-fraca">
-          Texto congelado no momento do registro · versão {consentimento.versao_texto} · canal {consentimento.canal}
-        </p>
-      )}
+        {consentimento && (
+          <p className="mt-1 text-legenda text-tinta-fraca">
+            Texto congelado no momento do registro · versão {consentimento.versao_texto} · canal {consentimento.canal}
+          </p>
+        )}
+      </details>
     </li>
   );
 }

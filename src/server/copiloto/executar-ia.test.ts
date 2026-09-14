@@ -21,6 +21,7 @@ afterEach(() => {
 });
 
 const contextoVazio: ContextoCopiloto = {
+  roteiro_fonte: "nenhum",
   bloco_atual: null,
   bloco_anterior_titulo: null,
   bloco_seguinte_titulo: null,

@@ -113,6 +113,21 @@ export interface RespostaSegmentos {
  * Nenhum nome de decisor, nenhum valor de patrimônio, nenhum CPF — ver §7 do
  * plano. Exportado para o teste de mesa do montador de contexto. */
 export interface ContextoCopiloto {
+  /** De onde veio o roteiro deste contexto (14/09/2026, achado em produção:
+   * `sessoes_viabilidade.roteiro_versao_id` só é carimbado no 1º SIM —
+   * `registrar_sim_sessao`, 0030 — então toda sessão nova começa sem ele).
+   * `'carimbado'` = `roteiro_versao_id` da própria sessão (o roteiro que
+   * REALMENTE conduziu, se já houve 1º SIM). `'ativo_fallback'` = nenhum
+   * carimbo ainda; usou o roteiro ATIVO global (`roteiros_versoes` da chave
+   * 'sessao_viabilidade') só para o copiloto não ficar cego antes do 1º SIM —
+   * este módulo NUNCA escreve esse fallback de volta em
+   * `sessoes_viabilidade.roteiro_versao_id` (carimbar é ato de
+   * `registrar_sim_sessao`, com autoria; o copiloto só lê). `'nenhum'` = sem
+   * carimbo e sem versão ativa da chave — `bloco_atual` fica `null`, como
+   * antes desta correção. Fica gravado em `copiloto_sugestoes.conteudo`
+   * (via `execucoes_ia`/contexto enviado) para auditoria futura de por que a
+   * IA sugeriu o que sugeriu. */
+  roteiro_fonte: "carimbado" | "ativo_fallback" | "nenhum";
   bloco_atual: {
     id: string;
     titulo: string;

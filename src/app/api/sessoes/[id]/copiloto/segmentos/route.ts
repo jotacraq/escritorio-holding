@@ -5,9 +5,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { criarClienteAdmin } from "@/lib/supabase/admin";
 import { exigirVePatrimonio } from "@/server/auth";
-import { erroConflito, erroNaoEncontrado, erroValidacao, respostaErro } from "@/server/erros";
+import { erroConflito, erroNaoEncontrado, erroValidacao, registrarErro, respostaErro } from "@/server/erros";
 import { copilotoEstaAtivo } from "@/server/copiloto/config";
+import { dispararWarmupCopiloto } from "@/server/copiloto/warmup";
 import type { RespostaSegmentos, SegmentoCopiloto } from "@/types/copiloto";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
@@ -25,12 +27,17 @@ const QuerySchema = z.object({
 
 interface SessaoLookup {
   id: string;
+  jornada_id: string;
+  // Embed só para o warm-up de cache (0099): a pessoa titular do gate
+  // jurídico, na MESMA query que já busca a sessão — não uma 2ª ida ao banco
+  // só para o caminho raro (1º segmento) que dispara o warm-up.
+  jornadas: { pessoa_id: string } | null;
 }
 
 async function buscarSessaoOuFalhar(supabase: SupabaseClient, sessaoId: string): Promise<SessaoLookup> {
   const { data, error } = await supabase
     .from("sessoes_viabilidade")
-    .select("id")
+    .select("id, jornada_id, jornadas(pessoa_id)")
     .eq("id", sessaoId)
     .maybeSingle<SessaoLookup>();
   if (error) throw error;
@@ -113,8 +120,20 @@ async function inserirSegmentoComRetentativa(
  *
  * Agora devolve o `estado` lido — o CHAMADOR (`POST`) decide recusar antes
  * de qualquer escrita, sem uma 2ª leitura só para isso.
+ *
+ * TAMBÉM devolve `iniciadoAgora`/`iniciadoEm` (warm-up de cache, 0099): o
+ * CHAMADOR usa `iniciadoAgora` para decidir se dispara
+ * `dispararWarmupCopiloto` — só na transição REAL para 'ativo' (linha nasce
+ * OU sai de 'aguardando'), nunca em todo POST subsequente da mesma sessão. A
+ * exatidão sob corrida de duas abas não depende deste flag: a claim de
+ * verdade é o `update ... where aquecido_em is null` dentro do próprio
+ * `warmup.ts` — este flag só evita a TENTATIVA (leitura de config + UPDATE
+ * que sempre falharia depois da 1ª vez) no caminho comum.
  */
-async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string): Promise<{ estado: string }> {
+async function ativarSessaoCopiloto(
+  supabase: SupabaseClient,
+  sessaoId: string,
+): Promise<{ estado: string; iniciadoAgora: boolean; iniciadoEm: string }> {
   const { data: existente, error: erroLeitura } = await supabase
     .from("sessoes_copiloto")
     .select("estado, iniciado_em")
@@ -123,32 +142,46 @@ async function ativarSessaoCopiloto(supabase: SupabaseClient, sessaoId: string):
   if (erroLeitura) throw erroLeitura;
 
   if (!existente) {
+    const agora = new Date().toISOString();
     const { error: erroInsercao } = await supabase
       .from("sessoes_copiloto")
-      .insert({ sessao_id: sessaoId, estado: "ativo", iniciado_em: new Date().toISOString() });
-    // 23505: outra requisição concorrente já criou a linha — não é falha.
-    if (erroInsercao && (erroInsercao as ErroPostgrest).code !== "23505") throw erroInsercao;
-    return { estado: "ativo" };
+      .insert({ sessao_id: sessaoId, estado: "ativo", iniciado_em: agora });
+    // 23505: outra requisição concorrente já criou a linha — não é falha, mas
+    // também não foi ESTA requisição que transicionou (a outra que ganhou a
+    // corrida é quem deve dispararia o warm-up dela, não nós).
+    if (erroInsercao) {
+      if ((erroInsercao as ErroPostgrest).code !== "23505") throw erroInsercao;
+      return { estado: "ativo", iniciadoAgora: false, iniciadoEm: agora };
+    }
+    return { estado: "ativo", iniciadoAgora: true, iniciadoEm: agora };
   }
 
   // 🔴 Sessão já encerrada/em erro — NÃO ativa, NÃO atualiza. O CHAMADOR
   // recusa o POST com base neste retorno, antes de tentar inserir o
   // segmento (ver `POST` abaixo).
   if (existente.estado === "encerrado" || existente.estado === "erro") {
-    return { estado: existente.estado };
+    return { estado: existente.estado, iniciadoAgora: false, iniciadoEm: existente.iniciado_em ?? "" };
   }
 
   if (existente.estado === "aguardando") {
-    const { error: erroAtualizacao } = await supabase
+    const iniciadoEm = existente.iniciado_em ?? new Date().toISOString();
+    // `{ count: "exact" }` como 2º argumento de `.update()` — mesmo padrão de
+    // `server/copiloto/expurgo.ts::carimbar` (idêntico caso de corrida:
+    // "devolve true se a linha foi carimbada AGORA").
+    const { error: erroAtualizacao, count } = await supabase
       .from("sessoes_copiloto")
-      .update({ estado: "ativo", iniciado_em: existente.iniciado_em ?? new Date().toISOString() })
+      .update({ estado: "ativo", iniciado_em: iniciadoEm }, { count: "exact" })
       .eq("sessao_id", sessaoId)
       .eq("estado", "aguardando"); // não pisa em 'encerrado'/'erro' que tenha mudado entre a leitura e aqui
     if (erroAtualizacao) throw erroAtualizacao;
-    return { estado: "ativo" };
+    // `count === 1`: ESTA requisição venceu a corrida `aguardando`→`ativo`.
+    // `count === 0`: outra requisição já tinha transicionado entre a leitura
+    // e este UPDATE (o `.eq("estado", "aguardando")` não bateu em nada) — não
+    // fomos nós, não disparamos warm-up.
+    return { estado: "ativo", iniciadoAgora: count === 1, iniciadoEm };
   }
 
-  return { estado: existente.estado }; // já 'ativo'
+  return { estado: existente.estado, iniciadoAgora: false, iniciadoEm: existente.iniciado_em ?? "" }; // já 'ativo'
 }
 
 /**
@@ -235,6 +268,11 @@ const CorpoSchema = z.object({
  * KILL-SWITCH: `copiloto_sessao.ativo=false` devolve 409 `copiloto_desligado`
  * ANTES de qualquer escrita — nenhuma rota do copiloto grava nada desligada,
  * como a migration promete.
+ *
+ * WARM-UP DE CACHE (0099): na transição REAL 'aguardando'→'ativo' desta
+ * sessão, dispara `dispararWarmupCopiloto` SEM `await` (fire-and-forget) —
+ * esta resposta nunca espera por ele. Ver `server/copiloto/warmup.ts` para a
+ * ordem completa de travas (mesmo gate jurídico e orçamento do ciclo real).
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -255,8 +293,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    await buscarSessaoOuFalhar(supabase, sessaoId);
-    const { estado } = await ativarSessaoCopiloto(supabase, sessaoId);
+    const sessao = await buscarSessaoOuFalhar(supabase, sessaoId);
+    const { estado, iniciadoAgora, iniciadoEm } = await ativarSessaoCopiloto(supabase, sessaoId);
 
     // 🔴 CORREÇÃO (achado do coordenador — ver comentário de topo de
     // `ativarSessaoCopiloto`): sessão já encerrada/em erro RECUSA o
@@ -268,6 +306,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         "sessao_ja_encerrada",
         "Esta sessão do copiloto já está encerrada — a transcrição já foi consolidada e não é possível adicionar novo segmento.",
       );
+    }
+
+    // WARM-UP DE CACHE (0099) — FIRE-AND-FORGET, sem `await`: nunca atrasa
+    // esta resposta. Só na transição REAL 'aguardando'→'ativo' desta sessão
+    // (`iniciadoAgora`, ver comentário de `ativarSessaoCopiloto`) — não em
+    // todo POST subsequente. `pessoaId` ausente (jornada sem vínculo) é
+    // silenciosamente ignorado aqui: é o MESMO dado que o ciclo automático
+    // exige (`executarCicloCopiloto` recusa sem `jornadas.pessoa_id`), então
+    // se faltasse o ciclo real também não rodaria — não é o warm-up quem
+    // decide isso, só não tenta sem o dado mínimo.
+    const pessoaId = sessao.jornadas?.pessoa_id;
+    if (iniciadoAgora && pessoaId) {
+      try {
+        const admin = criarClienteAdmin();
+        void dispararWarmupCopiloto(admin, {
+          sessaoId,
+          jornadaId: sessao.jornada_id,
+          pessoaId,
+          inicioSessaoIso: iniciadoEm,
+        });
+      } catch (erroWarmup) {
+        // `criarClienteAdmin()` pode lançar (env ausente) — mesma regra de
+        // "falha em silêncio": nunca derruba o POST de segmento.
+        registrarErro("POST /api/sessoes/[id]/copiloto/segmentos (warmup)", erroWarmup, { sessao_id: sessaoId });
+      }
     }
 
     const inserido = await inserirSegmentoComRetentativa(supabase, sessaoId, corpo.texto, corpo.falante ?? null);

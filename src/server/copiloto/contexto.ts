@@ -26,6 +26,8 @@ import { erroNaoEncontrado } from "@/server/erros";
 const JANELA_TRANSCRICAO_SEGUNDOS = 90;
 const MAX_SEGMENTOS_JANELA = 40; // teto defensivo: ~90s de fala não passa disto em ritmo humano
 
+const CHAVE_ROTEIRO_SESSAO_VIABILIDADE = "sessao_viabilidade";
+
 interface SessaoParaContexto {
   id: string;
   roteiro_versao_id: string | null;
@@ -73,7 +75,49 @@ export async function montarContextoCopiloto(
   if (error) throw error;
   if (!data) throw erroNaoEncontrado("Sessão de Viabilidade não encontrada.");
 
-  const blocos = data.roteiros_versoes?.definicao?.blocos ?? [];
+  // 🔴 FALLBACK DE ROTEIRO ATIVO (achado do coordenador, 14/09/2026, medido em
+  // sessão real): `roteiro_versao_id` só é carimbado por `registrar_sim_sessao`
+  // (0030) no 1º SIM — toda sessão nova chega aqui com o campo NULO enquanto
+  // a advogada ainda não confirmou o 1º SIM, e na vida real o bot já está
+  // ouvindo e ela já está falando ANTES disso. Sem fallback, `bloco_atual`
+  // sai vazio e a IA perde o método inteiro (medido: confiança 0,30, "sem
+  // roteiro carregado").
+  //
+  // UMA QUERY NO CAMINHO COMUM: o embed acima (`roteiros_versoes(definicao)`)
+  // já resolve pela FK `roteiro_versao_id` — quando ela existe (sessão que já
+  // passou pelo 1º SIM, que é a maioria do tempo de vida de uma sessão), zero
+  // custo extra. Só quando `roteiro_versao_id IS NULL` — a janela estreita
+  // entre "bot ligado" e "1º SIM confirmado" — é que uma 2ª query busca a
+  // versão ATIVA da chave 'sessao_viabilidade'. Não dá para resolver isso
+  // dentro do MESMO select: o PostgREST só embeda por relação FK, e não há FK
+  // de `sessoes_viabilidade` para "a versão ativa agora" (é uma condição
+  // `where chave=... and ativo`, não um vínculo de linha). Medido: a query de
+  // fallback é `select id, definicao from roteiros_versoes where chave=$1 and
+  // ativo limit 1` sobre `uniq_roteiro_ativo` (índice único parcial em
+  // `(chave) where ativo`, 0030) — Index Scan por igualdade, sub-ms.
+  //
+  // NUNCA escreve `roteiro_versao_id` de volta aqui — carimbar é ato de
+  // `registrar_sim_sessao`, com autoria; este módulo só LÊ (requisito
+  // explícito do coordenador: inventar o carimbo contaminaria o registro de
+  // qual roteiro realmente conduziu a sessão).
+  let definicaoRoteiro = data.roteiros_versoes?.definicao ?? null;
+  let roteiroFonte: ContextoCopiloto["roteiro_fonte"] = definicaoRoteiro ? "carimbado" : "nenhum";
+
+  if (!definicaoRoteiro) {
+    const { data: ativo, error: erroAtivo } = await supabase
+      .from("roteiros_versoes")
+      .select("definicao")
+      .eq("chave", CHAVE_ROTEIRO_SESSAO_VIABILIDADE)
+      .eq("ativo", true)
+      .maybeSingle<{ definicao: RoteiroDefinicao }>();
+    if (erroAtivo) throw erroAtivo;
+    if (ativo) {
+      definicaoRoteiro = ativo.definicao;
+      roteiroFonte = "ativo_fallback";
+    }
+  }
+
+  const blocos = definicaoRoteiro?.blocos ?? [];
   const indice =
     Number.isInteger(indiceBlocoAtual) && indiceBlocoAtual >= 0 && indiceBlocoAtual < blocos.length
       ? indiceBlocoAtual
@@ -143,6 +187,7 @@ export async function montarContextoCopiloto(
   const resumoE = data.sessoes_copiloto?.resumo_acumulado ?? {};
 
   return {
+    roteiro_fonte: roteiroFonte,
     bloco_atual: blocoA,
     bloco_anterior_titulo: blocoAnteriorTitulo,
     bloco_seguinte_titulo: blocoSeguinteTitulo,

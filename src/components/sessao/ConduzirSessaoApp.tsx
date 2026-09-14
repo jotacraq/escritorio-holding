@@ -231,21 +231,27 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
-       * B72 (pedido do Marcio, 11-14/09): painel único, denso, chapado —
-       * "modelo do Juliano". Sem abas: todos os quadros visíveis ao mesmo
-       * tempo, sem clique. A grade tem DUAS regiões:
-       *  - coluna ESTREITA (estado da sessão: progresso, SIMs) — fixa a
-       *    `md`, sempre a primeira na ordem do DOM (mobile lê ela primeiro,
-       *    antes do resto — é o "onde eu estou" da sessão).
-       *  - área PRINCIPAL — bloco atual do roteiro primeiro (a "fala
-       *    agora"), briefing logo abaixo, depois `PainelCopiloto` (que já é
-       *    uma grade densa PRÓPRIA de 2 colunas: PERGUNTE AGORA, FALTA
-       *    NESTE BLOCO, SUGESTÕES, BOT, TRANSCRIÇÃO...) — este wrapper não
-       *    tenta caber os dois lado a lado, cada um já tem sua própria
-       *    largura de leitura confortável.
-       * `items-start` na grade externa: a coluna estreita nunca estica para
-       * casar com a altura da área principal — é isso que dá densidade
-       * real, sem sobra de espaço em branco.
+       * B73 (pedido do Marcio, 14/09): "quero ver toda a sessão em UMA TELA
+       * SÓ" — "modelo do Juliano": mosaico de quadros PEQUENOS, nenhum
+       * dominante, sem precisar escrolar para entender o fluxo. Decisão que
+       * muda tudo: "o roteiro a IA quem tem que entender e ir orientando, o
+       * visual deve ser... uma visão abrangente do todo da sessão" — o
+       * roteiro (script de até 4.274 caracteres por bloco, ver
+       * `BlocoRoteiro.tsx`) NÃO é mais o conteúdo principal da tela; é
+       * insumo que só a IA lê. A tela mostra ESTADO, não o script.
+       *
+       * A grade tem DUAS regiões, `items-start` (nunca estica para casar
+       * altura — é isso que dá densidade real):
+       *  - coluna ESTREITA (220px): "onde eu estou" — progresso da sessão,
+       *    os 4 SIMs (linha/chip, nunca botão redondo — Quadro dentro de
+       *    PainelSims), atalhos. Primeira no DOM: mobile lê antes do resto.
+       *  - área PRINCIPAL: bloco atual REDUZIDO a número+título+progresso
+       *    (nunca o texto do roteiro) logo acima do mosaico denso do
+       *    `PainelCopiloto` (PERGUNTE AGORA, FALTA NESTE BLOCO, SUGESTÕES,
+       *    BOT, TRANSCRIÇÃO — já é uma grade 2 colunas própria de quadros
+       *    curtos). O Briefing (documento longo por natureza, com colapso
+       *    PRÓPRIO persistido) e a Oferta ficam DEPOIS do mosaico — não
+       *    competem com o "estado ao vivo" pela primeira dobra.
        */}
       <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[220px_minmax(0,1fr)]">
         <div className="flex flex-col gap-2">
@@ -268,11 +274,11 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
             <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
           </Quadro>
 
+          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
+
           <Quadro rotulo="Briefing" como="article">
             <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
           </Quadro>
-
-          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
 
           {mostrarOferta && (
             <PainelOferta

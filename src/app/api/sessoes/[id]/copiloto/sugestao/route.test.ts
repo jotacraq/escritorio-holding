@@ -123,6 +123,14 @@ function montarCenario(c: Cenario, insertExecucoesIaSpy: ReturnType<typeof vi.fn
     if (tabela === "sessoes_copiloto_segmentos") {
       return consultaEncadeavel({ data: [], error: null });
     }
+    if (tabela === "roteiros_versoes") {
+      // Fallback de roteiro ATIVO (0099/coordenador, 14/09/2026): este
+      // fixture tem `roteiro_versao_id: null` — `montarContextoCopiloto`
+      // busca a versão ativa da chave 'sessao_viabilidade'. Sem versão
+      // ativa aqui: `bloco_atual` continua null, igual ao comportamento
+      // anterior a esta correção (o teste não depende do conteúdo do roteiro).
+      return consultaEncadeavel({ data: null, error: null });
+    }
     throw new Error(`tabela não mockada em supabaseServidorMock: ${tabela}`);
   });
 

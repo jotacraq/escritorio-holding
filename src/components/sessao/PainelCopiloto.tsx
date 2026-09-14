@@ -553,7 +553,10 @@ function SugestoesDoCiclo({
       <p role="status" aria-live="polite" className="text-legenda font-medium uppercase text-tinta-fraca">
         {pendentes.length === 1 ? "1 sugestão nova" : `${pendentes.length} sugestões novas`}
       </p>
-      <ul className="flex flex-col gap-2">
+      {/* B73: teto de altura + rolagem interna — sugestões só CRESCEM ao
+       * longo da sessão (nunca são removidas por chegar uma nova), então
+       * sem teto este quadro venceria a tela inteira numa sessão longa. */}
+      <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
         {pendentes.map((s) => (
           <li key={s.sugestao_id}>
             {abertas[s.sugestao_id] ? (
@@ -1343,7 +1346,7 @@ function BlocosNaoPercorridos({ blocos }: { blocos: { id: string; titulo: string
       {blocos.length === 0 ? (
         <p className="text-sm text-tinta-suave">Este é o último bloco do roteiro.</p>
       ) : (
-        <ol className="flex flex-col gap-1">
+        <ol className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
           {blocos.map((bloco) => (
             <li key={bloco.id} className="text-sm text-tinta-suave">
               {bloco.titulo}
@@ -1457,7 +1460,11 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
           // "Últimos primeiro" (pedido do Marcio): é ordem de EXIBIÇÃO, não
           // muda `segmentos` nem o cursor do `useRecurso` — `.slice()` antes
           // de `.reverse()` porque `reverse()` muda o array in-place.
-          <ul className="flex flex-col gap-2">
+          // B73: teto de altura + rolagem INTERNA — a transcrição de uma
+          // sessão de 40min pode ter dezenas de trechos; é o quadro que
+          // rola, nunca a página (pedido do Marcio: "não quero ficar
+          // escrolando pra baixo... pra entender o dinamismo da sessão").
+          <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
             {segmentos
               .slice()
               .reverse()

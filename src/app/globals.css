@@ -191,6 +191,25 @@ html[data-escala="grande"] {
   }
 }
 
+/* Navbar recolhível do desktop (pedido do Marcio, 14/09; `NavRecolher.tsx`).
+   Mesmo padrão do `data-escala`: atributo no `documentElement`, não classe —
+   é estado de preferência, aplicado por script inline ANTES do 1º paint para
+   não piscar expandida e encolher na frente de quem já escolheu recolher.
+   `.nav-so-icone` marca o texto que só existe quando a lateral está cheia
+   (rótulo do link, descrição, busca por extenso, nome/papel do usuário) —
+   os `<svg>` de ícone continuam, sempre visíveis, para a lateral recolhida
+   nunca virar uma faixa vazia sem significado. Só entra em campo a partir de
+   `lg` (mesmo breakpoint em que a lateral fixa existe; abaixo disso é gaveta
+   e este atributo não se aplica). */
+@media (min-width: 1024px) {
+  html[data-nav-recolhida="1"] .nav-lateral {
+    width: 4.5rem;
+  }
+  html[data-nav-recolhida="1"] .nav-so-icone {
+    display: none;
+  }
+}
+
 .dark {
   --papel-fundo: #111214;
   --papel: #17181b;
