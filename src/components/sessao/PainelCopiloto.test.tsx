@@ -268,10 +268,18 @@ describe("PainelCopiloto", () => {
     expect(container.textContent).toContain("2 de 4");
   });
 
-  it("mostra os blocos ainda não percorridos", async () => {
-    const { container } = await abrir();
-    expect(container.textContent).toContain("PARTE 03 — Radiografia");
-    expect(container.textContent).toContain("PARTE 04 — Objeções");
+  it("Histórico do coach mostra os blocos já percorridos (o inverso de blocos_nao_percorridos), nunca os que faltam", async () => {
+    // ESTADO_BASE.blocos_nao_percorridos usa `indice: 2` e `indice: 3` — com
+    // BLOCOS_ROTEIRO de 3 itens (posições de array 0,1,2) e indiceAtual=1,
+    // os blocos "percorridos" (posição <= atual E fora do conjunto de
+    // índices não percorridos) são os de posição 0 e 1. O quadro 4 "O que
+    // aconteceu" continua mostrando o que falta no bloco ATUAL — o
+    // histórico no rodapé é sobre o CAMINHO já andado, não o que falta.
+    const { container } = await abrirComRoteiro();
+    expect(container.textContent).toContain("Histórico do coach");
+    expect(container.textContent).toContain("PARTE 01 — Abertura");
+    expect(container.textContent).toContain("PARTE 02 — Diagnóstico");
+    expect(container.textContent).not.toContain("PARTE 03 — Radiografia");
   });
 
   it("sem bloco atual: estado vazio explícito, nunca listas fantasmas", async () => {
@@ -423,7 +431,19 @@ const SUGESTAO_COMPLETA: SugestaoCopiloto = {
   campos_evidencia_nao_conferida: [],
 };
 
-const BLOCOS_ROTEIRO = [{ id: "b1" }, { id: "b2" }, { id: "b3" }];
+// `titulo` acrescido (mock do Marcio: Histórico do coach mostra título do
+// bloco) SEM mudar `id`/posição — outros testes deste arquivo (ex.: "ir
+// para lá" navegando para o índice 1) dependem de `blocosRoteiro[1].id ===
+// "b2"` continuar valendo. Índices casam de propósito com
+// `ESTADO_BASE.blocos_nao_percorridos` (`{id:"b2", indice:2}` não existe
+// aqui por posição — é o `indice` do próprio objeto que `HistoricoCoach`
+// usa para inverter "o que falta" em "o que já passou", não a posição no
+// array de `BLOCOS_ROTEIRO`; ver teste "Histórico do coach…").
+const BLOCOS_ROTEIRO = [
+  { id: "b1", titulo: "PARTE 01 — Abertura" },
+  { id: "b2", titulo: "PARTE 02 — Diagnóstico" },
+  { id: "b3", titulo: "PARTE 03 — Radiografia" },
+];
 
 async function abrirComRoteiro(irPara?: (i: number) => void) {
   const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} blocosRoteiro={BLOCOS_ROTEIRO} irPara={irPara} />);

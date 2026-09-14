@@ -19,6 +19,7 @@ import { PainelOferta } from "@/components/sessao/PainelOferta";
 import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
 import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
+import { PainelPerfilSessao } from "@/components/sessao/PainelPerfilSessao";
 import { formatarData } from "@/lib/formatar";
 
 /** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
@@ -231,50 +232,60 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
-       * B73 (pedido do Marcio, 14/09): "quero ver toda a sessão em UMA TELA
-       * SÓ" — "modelo do Juliano": mosaico de quadros PEQUENOS, nenhum
-       * dominante, sem precisar escrolar para entender o fluxo. Decisão que
-       * muda tudo: "o roteiro a IA quem tem que entender e ir orientando, o
-       * visual deve ser... uma visão abrangente do todo da sessão" — o
-       * roteiro (script de até 4.274 caracteres por bloco, ver
-       * `BlocoRoteiro.tsx`) NÃO é mais o conteúdo principal da tela; é
-       * insumo que só a IA lê. A tela mostra ESTADO, não o script.
+       * Reescrita de layout (pedido do Marcio, 14/09 — "faz IDÊNTICO A TELA
+       * DO JULIANO", mock desenhado à mão): a hierarquia deixa de ser "onde
+       * eu estou" (coluna estreita) + "roteiro reduzido acima do mosaico" e
+       * passa a ser exatamente a do mock — coluna esquerda de
+       * SAÚDE/PERFIL/SESSÃO (`PainelPerfilSessao`) e a área principal
+       * dedicada ao mosaico de 7 quadros numerados + histórico do coach do
+       * `PainelCopiloto` (que agora inclui o quadro "Bloco atual" — o
+       * wrapper duplicado que existia aqui antes saiu, para não mostrar a
+       * mesma posição/título em dois lugares da tela). `items-start`
+       * (nunca estica para casar altura — densidade real).
        *
-       * A grade tem DUAS regiões, `items-start` (nunca estica para casar
-       * altura — é isso que dá densidade real):
-       *  - coluna ESTREITA (220px): "onde eu estou" — progresso da sessão,
-       *    os 4 SIMs (linha/chip, nunca botão redondo — Quadro dentro de
-       *    PainelSims), atalhos. Primeira no DOM: mobile lê antes do resto.
-       *  - área PRINCIPAL: bloco atual REDUZIDO a número+título+progresso
-       *    (nunca o texto do roteiro) logo acima do mosaico denso do
-       *    `PainelCopiloto` (PERGUNTE AGORA, FALTA NESTE BLOCO, SUGESTÕES,
-       *    BOT, TRANSCRIÇÃO — já é uma grade 2 colunas própria de quadros
-       *    curtos). O Briefing (documento longo por natureza, com colapso
-       *    PRÓPRIO persistido) e a Oferta ficam DEPOIS do mosaico — não
-       *    competem com o "estado ao vivo" pela primeira dobra.
+       * "Sem scroll a 1366×768" (aceite do Marcio) vale para ESTE bloco —
+       * cabeçalho + coluna esquerda + mosaico + histórico: é o que ela
+       * precisa ler em meio segundo durante a sessão. Sessão·navegação,
+       * SIMs, atalhos, anotação, Briefing e Oferta são conteúdo de APOIO
+       * (consulta ocasional, não leitura contínua durante a fala do
+       * cliente) e continuam abaixo, fora da promessa de "sem scroll" —
+       * são a mesma segunda dobra que já existia antes desta reescrita,
+       * só reordenada para não competir com o mosaico pela primeira tela.
        */}
-      <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="flex flex-col gap-2">
-          <Quadro rotulo="Sessão">
-            <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
-          </Quadro>
-
-          <PainelSims
-            roteiro={estado.roteiro}
-            sessaoId={sessaoId}
-            estado={estado.sims}
-            aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
-          />
-
-          <AtalhosTeclado />
-        </div>
+      <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[260px_minmax(0,1fr)]">
+        <PainelPerfilSessao
+          pessoa={estado.ficha.pessoa}
+          jornada={estado.ficha.jornada}
+          sessao={estado.ficha.sessao!}
+          briefingAtual={estado.ficha.briefingAtual}
+          preco={estado.preco}
+          indiceAtual={indice}
+          totalBlocos={total}
+        />
 
         <div className="flex flex-col gap-2">
-          <Quadro rotulo="Bloco atual" como="article">
-            <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
-          </Quadro>
-
           <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
+
+          <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[200px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-2">
+              <Quadro rotulo="Sessão · navegação">
+                <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} />
+              </Quadro>
+
+              <PainelSims
+                roteiro={estado.roteiro}
+                sessaoId={sessaoId}
+                estado={estado.sims}
+                aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
+              />
+
+              <AtalhosTeclado />
+            </div>
+
+            <Quadro rotulo="Anotação da parte atual" como="article">
+              <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
+            </Quadro>
+          </div>
 
           <Quadro rotulo="Briefing" como="article">
             <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />

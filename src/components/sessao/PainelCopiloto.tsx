@@ -43,6 +43,29 @@ import { formatarDataHora, formatarHora } from "@/lib/formatar";
  * mensagem (muda). */
 const CODIGO_COPILOTO_DESLIGADO = "copiloto_desligado";
 
+// ---------------------------------------------------------------------------
+// Ícones do mosaico (16×16, `aria-hidden`, `stroke="currentColor"` — herdam a
+// cor do texto do rótulo, nunca cor fixa própria). Reforço visual do TIPO de
+// cada quadro numerado (pedido do Marcio, 14/09: mock pixel a pixel) — nunca
+// o único sinal: o rótulo em maiúsculas ao lado já diz a mesma coisa por
+// extenso, e `Quadro` nunca depende só da borda colorida para comunicar tipo.
+// Sem `lucide-react` (armadilha conhecida: quebra build no Windows ao
+// importar do barrel) — mesmo padrão inline já usado em `Selo.tsx`/`Estado.tsx`.
+// ---------------------------------------------------------------------------
+const iconeSvg = (path: string) => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d={path} />
+  </svg>
+);
+const IconeAcao = () => iconeSvg("M8 1.5 3 9h4.5L7 14.5 13 7H8.5L8 1.5Z");
+const IconeAlerta = () => iconeSvg("M8 1.5 15 14.5H1L8 1.5Zm0 4.6v3.6M8 12.1h.01");
+const IconeBloco = () => iconeSvg("M2.5 4.5h11M2.5 8h11M2.5 11.5h7");
+const IconeContexto = () => iconeSvg("M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8Zm0 3.2v3.4l2.4 1.4");
+const IconeInsight = () => iconeSvg("M8 1.5l1.1 3.1 3.1 1.1-3.1 1.1L8 9.9 6.9 6.7 3.8 5.6l3.1-1.1L8 1.5ZM12.5 10.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6.6-1.7Z");
+const IconeAcerto = () => iconeSvg("M3 8.5l3.2 3.2L13 4.5");
+const IconeErro = () => iconeSvg("M4 4l8 8M12 4l-8 8");
+const IconeHistorico = () => iconeSvg("M8 4.2V8l2.6 1.6M14.2 8A6.2 6.2 0 1 1 8 1.8c2.4 0 4.5 1.3 5.5 3.3M13.5 2v2.8h-2.8");
+
 function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
   return erro instanceof ErroSessao && erro.codigo === CODIGO_COPILOTO_DESLIGADO;
 }
@@ -95,6 +118,14 @@ interface EstadoPollingCopiloto {
    * existente, e não faz sentido metralhar o servidor de 409 em loop até o
    * fim da sessão (achado ii do Fable). */
   desligadoPeloKillSwitch: boolean;
+  /** Snapshot mais recente de `EstadoCopilotoComPolling.comparacao_decisores`
+   * (Fatia 4/§5) — alimenta o quadro 2 "ALERTA" do mosaico (mock do Marcio,
+   * 14/09). Diferente de `sugestoes`, este campo NÃO acumula: cada resposta
+   * do servidor já é o fato mais atual (quem está na sala agora), então o
+   * valor é sempre SUBSTITUÍDO, nunca concatenado. `null` do servidor
+   * também substitui — se a sala esvaziar, o alerta deve sumir, não travar
+   * no último snapshot com gente que já saiu. */
+  comparacaoDecisores: ComparacaoDecisoresPresentes | null;
 }
 
 /**
@@ -117,6 +148,7 @@ function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerra
     falhasConsecutivas: 0,
     falhandoDesde: null,
     desligadoPeloKillSwitch: false,
+    comparacaoDecisores: null,
   };
   const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
   const cursorSegmentoRef = useRef(0);
@@ -190,6 +222,9 @@ function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerra
           falhasConsecutivas: 0,
           falhandoDesde: null,
           desligadoPeloKillSwitch: false,
+          // Substitui sempre (nunca acumula) — é o fato mais atual de quem
+          // está na sala agora, não um histórico de quem já esteve.
+          comparacaoDecisores: resposta.comparacao_decisores,
         }));
       } catch (e) {
         if (!vivo) return;
@@ -297,8 +332,10 @@ export function PainelCopiloto({
    * é contra esta lista (não contra o payload do GET, que só traz os "não
    * percorridos") que o desvio sugerido resolve `bloco_id` em índice real
    * para navegar. Opcional: sem ela, a sugestão de desvio aparece só como
-   * informação, sem o botão "Ir para lá". */
-  blocosRoteiro?: { id: string }[];
+   * informação, sem o botão "Ir para lá". `titulo` (opcional) alimenta o
+   * quadro 3 "BLOCO ATUAL" do mosaico (mock do Marcio) — sem ele o quadro
+   * mostra só a posição numérica, nunca um título inventado. */
+  blocosRoteiro?: { id: string; titulo?: string }[];
   /** `ConduzirSessaoApp.tsx` — a mesma função que as setas do teclado chamam
    * (B70/§5 camada 3). Se ausente, o botão "Ir para" do desvio sugerido não
    * aparece — nunca navega sozinho e nunca falha silenciosamente. */
@@ -363,19 +400,13 @@ export function PainelCopiloto({
 
       {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
 
-      {/* Grade densa de quadros (pedido do Marcio, 11-14/09: "modelo do
-       * Juliano" — painel único, tudo visível, sem abas, sem card-herói).
-       * PERGUNTE AGORA é o primeiro quadro, topo-esquerda: a hierarquia é
-       * por POSIÇÃO, nunca por decoração. `items-start` (não `stretch`):
-       * cada quadro tem a altura do próprio conteúdo, sem esticar para
-       * casar com o vizinho mais alto — é isso que dá densidade real.
-       *
-       * Correção do Marcio (14/09, rodada de layout): a ANOTAÇÃO RÁPIDA
-       * (`RegistroManual`, textarea + lista de trechos) saiu desta grade —
-       * ela é secundária ao vivo (registro de apoio, não a informação que a
-       * Dra. Elaine precisa achar em meio segundo) e antes competia em
-       * largura/altura com PERGUNTE AGORA e FALTA NESTE BLOCO. Agora é uma
-       * seção própria, abaixo do mosaico, antes de "Encerrar copiloto". */}
+      {/* Mosaico de 7 quadros NUMERADOS, 2 colunas (mock do Marcio, 14/09,
+       * pixel a pixel — "faz IDÊNTICO A TELA DO JULIANO"): a hierarquia é
+       * por POSIÇÃO e por NÚMERO visível, nunca só decoração. `items-start`
+       * (não `stretch`): cada quadro tem a altura do próprio conteúdo, sem
+       * esticar para casar com o vizinho mais alto — densidade real, sem
+       * scroll a 1366×768. Ordem de leitura = ordem do DOM (mobile lê
+       * 1→7 em coluna única, sem precisar reordenar por CSS). */}
       <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
         <PainelPerguntaAgora
           sessaoId={sessaoId}
@@ -385,19 +416,33 @@ export function PainelCopiloto({
           irPara={irPara}
         />
 
-        {!estado.bloco_atual_id ? (
-          <Quadro rotulo="Neste bloco">
-            <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para mostrar o que falta." />
-          </Quadro>
-        ) : (
-          <FaltaNoBloco falta={estado.falta_no_bloco} />
-        )}
+        <QuadroAlerta
+          pendentes={estado.sims_pendentes}
+          comparacaoDecisores={sessaoEncerrada ? null : polling.comparacaoDecisores}
+          sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
+        />
 
-        {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
+        <QuadroBlocoAtual blocoAtualId={estado.bloco_atual_id} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} />
 
-        <SimsPendentes pendentes={estado.sims_pendentes} />
-        <BlocosNaoPercorridos blocos={estado.blocos_nao_percorridos} />
+        <QuadroOQueAconteceu falta={estado.falta_no_bloco} />
+
+        <QuadroInsightComercial sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} />
+
+        <QuadroPodePularPra sessaoId={sessaoId} sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+
+        <QuadroVoceAcertouOuErrou acertou />
+        <QuadroVoceAcertouOuErrou acertou={false} />
       </div>
+
+      {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
+
+      <HistoricoCoach
+        blocosNaoPercorridos={estado.blocos_nao_percorridos}
+        indiceAtual={indiceAtual}
+        sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
+        blocosRoteiro={blocosRoteiro}
+        irPara={irPara}
+      />
 
       {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
        * dois precisam bloquear o registro manual — `sessaoEncerrada` é o
@@ -716,13 +761,13 @@ function PainelPerguntaAgora({
   sessaoId: string;
   indiceAtual: number;
   sugestoesCiclo: SugestaoCopilotoPolling[];
-  blocosRoteiro?: { id: string }[];
+  blocosRoteiro?: { id: string; titulo?: string }[];
   irPara?: (indice: number) => void;
 }) {
   const temSugestaoCiclo = sugestoesCiclo.length > 0;
 
   return (
-    <Quadro rotulo="Pergunte agora" como="article" className="sm:col-span-2">
+    <Quadro rotulo="Próximo movimento — fale agora" numero={1} icone={<IconeAcao />} como="article">
       <div className="flex flex-col gap-3">
         {temSugestaoCiclo && (
           <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
@@ -1343,74 +1388,305 @@ function CopilotoDesligado() {
  * sem entregar nada — nasce `null`. Bloco sem campo cadastrado E sem ponto
  * de observação no roteiro é comum (nem todo bloco do script tem os dois),
  * não é erro nem estado a explicar. */
-function FaltaNoBloco({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
-  if (falta.campos.length === 0 && falta.observar.length === 0) return null;
+/**
+ * Quadro 4 "O QUE ACONTECEU" do mock (mapeamento pedido pelo Marcio, 14/09):
+ * é exatamente o antigo "Falta neste bloco" — o que o roteiro/o servidor já
+ * sabe que ainda não apareceu na fala, derivado de dado real, zero IA.
+ * Reaproveita 100% da regra anterior: quadro nasce `null` quando não há
+ * nada, nunca mostra lista vazia fingindo que faltou algo.
+ */
+function QuadroOQueAconteceu({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
+  const nada = falta.campos.length === 0 && falta.observar.length === 0;
+  return (
+    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article">
+      {nada ? (
+        <p className="text-sm text-tinta-suave">Nada específico registrado ainda neste bloco.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {falta.campos.length > 0 && (
+            <div>
+              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Ainda falta preencher</p>
+              <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
+                {falta.campos.map((campo) => (
+                  <li key={campo.id} className="text-sm text-tinta">
+                    {campo.rotulo}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {falta.observar.length > 0 && (
+            <div>
+              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
+              <ul className="flex flex-col gap-1">
+                {falta.observar.map((item, i) => (
+                  <li key={i} className="text-sm text-tinta-suave">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Quadro>
+  );
+}
+
+/**
+ * Quadro 2 "ALERTA" do mock: junta os 3 sinais de risco que já existem no
+ * payload, sem IA e sem inventar um 4º — SIMs pendentes (POP 05, mesma
+ * contagem/rótulo de sempre, testado em `PainelCopiloto.test.tsx`),
+ * observação de alta confiança do ciclo automático quando `tipo` é
+ * `recomendacao`/`hipotese`, e decisores esperados que não entraram na sala
+ * (`comparacao_decisores.ausentes`, Fatia 4/§5). Cada fonte aparece só
+ * quando tem dado — o quadro nunca fica com um título de alerta e nada
+ * embaixo (isso seria alarme falso, o oposto do que "ALERTA" promete).
+ */
+function QuadroAlerta({
+  pendentes,
+  comparacaoDecisores,
+  sugestoesCiclo,
+}: {
+  pendentes: { sim: string; rotulo: string }[];
+  comparacaoDecisores: ComparacaoDecisoresPresentes | null;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+}) {
+  const registrados = 4 - pendentes.length;
+
+  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
+  const observacaoCritica =
+    maisRecente?.visivel && maisRecente.sugestao?.observacao && (maisRecente.sugestao.observacao.tipo === "recomendacao" || maisRecente.sugestao.observacao.tipo === "hipotese")
+      ? maisRecente.sugestao.observacao
+      : null;
+
+  const decisoresAusentes = comparacaoDecisores?.ausentes ?? [];
+
+  const semNadaAlem = pendentes.length === 0 && !observacaoCritica && decisoresAusentes.length === 0;
 
   return (
-    <Quadro rotulo="Falta neste bloco">
-      <div className="flex flex-col gap-3">
-        {falta.campos.length > 0 && (
-          <div>
-            <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">A preencher</p>
-            <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
-              {falta.campos.map((campo) => (
-                <li key={campo.id} className="text-sm text-tinta">
-                  {campo.rotulo}
-                </li>
-              ))}
-            </ul>
+    <Quadro
+      rotulo="Alerta"
+      numero={2}
+      icone={<IconeAlerta />}
+      tom="vermelho"
+      como="article"
+      acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4 SIMs</Selo>}
+    >
+      <div className="flex flex-col gap-2.5">
+        {pendentes.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {pendentes.map((p) => (
+              <li key={p.sim} className="text-sm text-tinta">
+                {p.rotulo}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {decisoresAusentes.length > 0 && (
+          <p className="text-sm text-tinta">
+            <span className="font-bold">{decisoresAusentes.length === 1 ? "Não entrou na sala: " : "Não entraram na sala: "}</span>
+            {decisoresAusentes.join(", ")}
+          </p>
+        )}
+
+        {observacaoCritica && (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Selo tom={TOM_TIPO[observacaoCritica.tipo]}>{ROTULO_TIPO[observacaoCritica.tipo]}</Selo>
+              <SeloConfianca confianca={observacaoCritica.confianca} />
+            </div>
+            <p className="text-sm text-tinta">{observacaoCritica.texto}</p>
           </div>
         )}
-        {falta.observar.length > 0 && (
-          <div>
-            <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
-            <ul className="flex flex-col gap-1">
-              {falta.observar.map((item, i) => (
-                <li key={i} className="text-sm text-tinta-suave">
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+
+        {semNadaAlem && <p className="text-sm text-tinta-suave">Os 4 SIMs já foram registrados. Nada a apontar agora.</p>}
       </div>
     </Quadro>
   );
 }
 
-function SimsPendentes({ pendentes }: { pendentes: { sim: string; rotulo: string }[] }) {
-  const registrados = 4 - pendentes.length;
+/**
+ * Quadro 3 "BLOCO ATUAL" do mock. Título vem de `blocosRoteiro` (a mesma
+ * lista que `ConduzirSessaoApp.tsx` já carrega do roteiro ativo) — quando
+ * ausente, mostra só a posição numérica, nunca um título inventado.
+ * "Tempo no bloco" e "confiança" do mock NÃO existem hoje em nenhuma tabela
+ * do domínio (`RoteiroBloco`/`EstadoCopiloto`) — ver nota de entrega: campo
+ * novo nasce vazio, esta tela não fabrica um relógio nem um score.
+ */
+function QuadroBlocoAtual({
+  blocoAtualId,
+  indiceAtual,
+  blocosRoteiro,
+}: {
+  blocoAtualId: string | null;
+  indiceAtual: number;
+  blocosRoteiro?: { id: string; titulo?: string }[];
+}) {
+  const total = blocosRoteiro?.length ?? 0;
+  const titulo = blocosRoteiro?.[indiceAtual]?.titulo;
+
   return (
-    <Quadro rotulo="SIMs pendentes" acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4</Selo>}>
-      {pendentes.length === 0 ? (
-        <p className="text-sm text-tinta-suave">Os 4 SIMs já foram registrados.</p>
+    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article">
+      {!blocoAtualId ? (
+        <EstadoVazio compacto titulo="Sem roteiro ativo" descricao="Não há bloco atual para conduzir." />
       ) : (
-        <ul className="flex flex-col gap-1">
-          {pendentes.map((p) => (
-            <li key={p.sim} className="text-sm text-tinta">
-              {p.rotulo}
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-1">
+          <p className="text-rotulo font-medium uppercase text-tinta-fraca">
+            Parte {String(indiceAtual).padStart(2, "0")}
+            {total > 0 ? ` de ${total - 1}` : ""}
+          </p>
+          <p className="text-sm font-bold text-tinta">{titulo ?? "—"}</p>
+        </div>
       )}
     </Quadro>
   );
 }
 
-function BlocosNaoPercorridos({ blocos }: { blocos: { id: string; titulo: string }[] }) {
+/**
+ * Quadro 5 "INSIGHT COMERCIAL" do mock: a observação do tipo `inferencia`
+ * mais recente do ciclo automático — a leitura da IA sobre padrão comercial
+ * (ex.: "está adiando decisão"), sempre com confiança visível ao lado
+ * (regra da casa: tipo + confiança, nunca um dos dois sozinho). Distinto do
+ * quadro 2 (ALERTA usa `recomendacao`/`hipotese` — risco a agir); aqui é
+ * leitura, não convite a ação imediata.
+ */
+function QuadroInsightComercial({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
+  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
+  const insight = maisRecente?.visivel && maisRecente.sugestao?.observacao?.tipo === "inferencia" ? maisRecente.sugestao.observacao : null;
+
   return (
-    <Quadro rotulo="Blocos ainda não percorridos" acao={<Selo tom="neutro">{blocos.length}</Selo>}>
-      {blocos.length === 0 ? (
-        <p className="text-sm text-tinta-suave">Este é o último bloco do roteiro.</p>
+    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article">
+      {!insight ? (
+        <p className="text-sm text-tinta-suave">Nenhum insight comercial ainda nesta sessão.</p>
       ) : (
-        <ol className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
-          {blocos.map((bloco) => (
-            <li key={bloco.id} className="text-sm text-tinta-suave">
-              {bloco.titulo}
-            </li>
-          ))}
-        </ol>
+        <div className="flex flex-col gap-1.5">
+          <SeloConfianca confianca={insight.confianca} />
+          <p className="text-sm text-tinta">{insight.texto}</p>
+          {insight.evidencia && <Evidencia texto={insight.evidencia} />}
+        </div>
       )}
+    </Quadro>
+  );
+}
+
+/**
+ * Quadro 6 "PODE PULAR PRA" do mock: mesmo `desvio_sugerido` de sempre
+ * (`DesvioSugerido`), agora com quadro/número/tom próprios em vez de morar
+ * dentro do card de "Pergunte agora". Continua com botão "Ir para lá" +
+ * "Ignorar" e telemetria de desfecho — nada disso muda.
+ */
+function QuadroPodePularPra({
+  sessaoId,
+  sugestoesCiclo,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+  blocosRoteiro?: { id: string; titulo?: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
+  const desvio = maisRecente?.visivel ? maisRecente.sugestao?.desvio_sugerido : null;
+
+  return (
+    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article">
+      {!desvio ? (
+        <p className="text-sm text-tinta-suave">Nenhum desvio sugerido agora — siga o roteiro na ordem.</p>
+      ) : (
+        <DesvioSugerido sessaoId={sessaoId} sugestaoId={maisRecente.sugestao_id} desvio={desvio} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+      )}
+    </Quadro>
+  );
+}
+
+/**
+ * Quadros 7 "VOCÊ ACERTOU" / "VOCÊ ERROU" do mock. **Não implementados com
+ * dado real** — não existe hoje, em nenhuma tabela do domínio, um registro
+ * de acerto/erro da advogada na condução da sessão (`copiloto_sugestoes`
+ * guarda `desfecho` de CADA sugestão — aceita/ignorada/expirada — mas isso
+ * é telemetria de UMA sugestão específica, não um veredito "ela acertou/
+ * errou aqui"). Regra da casa: campo novo nasce vazio e a tela mostra
+ * vazio — nunca dado plausível. Ver nota de entrega para o que o backend
+ * precisaria produzir para isto deixar de ser um estado vazio honesto.
+ */
+function QuadroVoceAcertouOuErrou({ acertou }: { acertou: boolean }) {
+  return (
+    <Quadro
+      rotulo={acertou ? "Você acertou" : "Você errou"}
+      numero={7}
+      icone={acertou ? <IconeAcerto /> : <IconeErro />}
+      tom={acertou ? undefined : "vermelho"}
+      como="article"
+    >
+      <p className="text-sm text-tinta-suave">Nada a apontar ainda — este dado não existe hoje no sistema.</p>
+    </Quadro>
+  );
+}
+
+/**
+ * Rodapé, largura inteira: linha do tempo horizontal dos blocos já
+ * percorridos (o inverso de `blocos_nao_percorridos` — o que falta virou o
+ * histórico do que já passou, mesma fonte de dado, zero campo novo no
+ * backend) + "Próximo passo" (o mesmo `desvio_sugerido` do quadro 6, para
+ * não fazer a advogada procurar em dois lugares o botão de navegar).
+ */
+function HistoricoCoach({
+  blocosNaoPercorridos,
+  indiceAtual,
+  sugestoesCiclo,
+  blocosRoteiro,
+  irPara,
+}: {
+  blocosNaoPercorridos: { id: string; titulo: string; indice: number }[];
+  indiceAtual: number;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+  blocosRoteiro?: { id: string; titulo?: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const indicesNaoPercorridos = new Set(blocosNaoPercorridos.map((b) => b.indice));
+  const percorridos = (blocosRoteiro ?? [])
+    .map((bloco, indice) => ({ id: bloco.id, titulo: bloco.titulo ?? "—", indice }))
+    .filter((bloco) => bloco.indice <= indiceAtual && !indicesNaoPercorridos.has(bloco.indice));
+
+  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
+  const desvio = maisRecente?.visivel ? maisRecente.sugestao?.desvio_sugerido : null;
+  const indiceAlvo = desvio ? (blocosRoteiro?.findIndex((b) => b.id === desvio.bloco_id) ?? -1) : -1;
+
+  return (
+    <Quadro rotulo="Histórico do coach" icone={<IconeHistorico />} como="article">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        {percorridos.length === 0 ? (
+          <p className="text-sm text-tinta-suave">Nenhum bloco percorrido ainda.</p>
+        ) : (
+          <ol className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 overflow-x-auto pb-1">
+            {percorridos.map((bloco) => (
+              <li key={bloco.id} className="flex items-center gap-1.5">
+                <Selo tom={bloco.indice === indiceAtual ? "latao" : "neutro"}>P{String(bloco.indice).padStart(2, "0")}</Selo>
+                <span className="text-sm text-tinta-suave">{bloco.titulo}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        <div className="flex shrink-0 flex-col items-start gap-1.5 border-t border-dashed border-linha pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+          <p className="text-rotulo font-medium uppercase text-tinta-fraca">Próximo passo</p>
+          {!desvio ? (
+            <p className="text-sm text-tinta-suave">Seguir o roteiro na ordem.</p>
+          ) : (
+            <>
+              <p className="text-sm text-tinta">{desvio.motivo}</p>
+              {irPara && indiceAlvo >= 0 && (
+                <Botao variante="secundario" tamanho="compacto" onClick={() => irPara(indiceAlvo)}>
+                  Ir para
+                </Botao>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </Quadro>
   );
 }

@@ -156,14 +156,18 @@ const PARES = [
   { nome: "linha-controle / papel-elevado", a: "linha-controle", b: "papel-elevado", tipo: "controle" },
 
   // Estado (selo Fase 8, §12) — cada `--estado-*` sobre seu `-fraco` E sobre
-  // as três superfícies onde o selo aparece.
+  // as três superfícies onde o selo aparece. `estado-latao` usa o MESMO
+  // valor de `--latao` (decisão do Marcio, tabela GPS-THB 14/09: "exceção
+  // B1") — herda a mesma exceção documentada, pelo mesmo motivo (chip/selo,
+  // nunca corpo de texto corrido).
   ...["verde", "ambar", "vermelho", "azul", "latao", "neutro"].flatMap((tom) => {
     const corTexto = `estado-${tom}`;
     const corFraca = tom === "latao" ? "latao-fraco" : tom === "neutro" ? "papel" : `${tom}-fraco`;
-    const pares = [{ nome: `${corTexto} / ${corFraca}`, a: corTexto, b: corFraca, tipo: "texto" }];
+    const excecao = tom === "latao" ? "chip/selo de marca, não corpo de texto — B1 (estado-latao = latao)" : undefined;
+    const pares = [{ nome: `${corTexto} / ${corFraca}`, a: corTexto, b: corFraca, tipo: "texto", excecao }];
     for (const sup of ["papel", "papel-elevado", "papel-fundo"]) {
       if (sup === corFraca) continue;
-      pares.push({ nome: `${corTexto} / ${sup}`, a: corTexto, b: sup, tipo: "texto" });
+      pares.push({ nome: `${corTexto} / ${sup}`, a: corTexto, b: sup, tipo: "texto", excecao });
     }
     return pares;
   }),
