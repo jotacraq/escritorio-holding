@@ -1,16 +1,19 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------- */
-/* SIC-HF — sistema de tokens visuais (fundação V1, 04/09/2026)            */
+/* SIC-HF — sistema de tokens visuais (fundação V1, 04/09/2026;            */
+/* migração de paleta/tipografia para o padrão GPS-THB, 14/09/2026)        */
 /*                                                                          */
-/* O sistema "é" o seminário (guardioesdolegado.com.br/ak1): creme de      */
-/* fundo, cartão branco de raio grande com sombra marrom difusa, tinta     */
-/* `#141b22`, laranja `#ff7400` só como fundo de CTA (texto escuro por     */
-/* cima), tons de areia nas linhas, fonte única Neuetra 400/500/700.       */
+/* Herança do seminário (guardioesdolegado.com.br/ak1) que permanece:      */
+/* cartão de raio grande com sombra marrom difusa, laranja só como fundo   */
+/* de CTA (texto escuro por cima), tons de areia nas linhas. O que a       */
+/* migração de 14/09 trocou: tipografia (Neuetra → Inter/Space Grotesk,    */
+/* `layout.tsx`), papel/tinta claros e o tema escuro (derivado quente).    */
 /* Regra que vence a fidelidade: acessibilidade — todo par texto/fundo     */
-/* abaixo foi medido com a fórmula WCAG (docs/DESIGN-SYSTEM.md guarda os   */
-/* números). Nomes dos tokens preservados (`--papel*`, `--tinta*`,         */
-/* `--linha*`, `--latao*`) para não quebrar os 127 componentes.            */
+/* abaixo foi medido com a fórmula WCAG (`scripts/contraste.mjs`, AAA/7:1  */
+/* em texto, docs/DESIGN-SYSTEM.md guarda os números). Nomes dos tokens    */
+/* preservados (`--papel*`, `--tinta*`, `--linha*`, `--latao*`) para não   */
+/* quebrar os 127 componentes — só o VALOR muda, nunca o nome (B4).        */
 /* ---------------------------------------------------------------------- */
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -30,7 +33,11 @@
      token que os 127 componentes já usam para cartão, por isso é ele que
      vira branco, não `--papel`). */
   --papel-fundo: #f1f1f0;
-  --papel: #faf7f3;
+  /* `--papel` GPS-THB é `#f1ede8`; ficamos em `#f5f1ec` (CF4, decisão do
+     Marcio): com o valor cru do GPS, `--tinta-suave` caía a 6,71:1 sobre
+     `--papel` — abaixo do piso AAA de 7:1 desta rodada. `#f5f1ec` devolve a
+     folga (ver `scripts/contraste.mjs`). */
+  --papel: #f5f1ec;
   --papel-elevado: #ffffff;
 
   /* Tinta — `--ink` e `--ink-suave` do seminário. `--tinta-fraca` é a
@@ -49,12 +56,15 @@
   --linha-controle: #8f8880;
 
   /* Cor de marca. `--latao` (nome preservado) é o laranja da marca no papel
-     de TEXTO/borda/ícone — por isso escurecido: `#a84d00` mede 4,99:1 sobre
-     o creme e 5,64:1 sobre o branco (o `#b85400` anterior caía a 4,31:1
-     sobre o creme novo). `--latao-cta` é o laranja PURO do seminário, só
-     para FUNDO de CTA/nó ativo, sempre com `--latao-cta-texto` (escuro,
-     fixo nos dois temas: 6,41:1 sobre `#ff7400`). */
-  --latao: #a84d00;
+     de TEXTO/borda/ícone. B1 (decisão do Marcio, migração GPS-THB 14/09):
+     `#8f3600`. Medido com `scripts/contraste.mjs` sobre as quatro superfícies
+     em que aparece: 6,89:1 (`--papel-fundo`) · 6,93:1 (`--papel`) · 7,79:1
+     (`--papel-elevado`) · **6,34:1 sobre `--latao-fraco`** — o pior caso, e é
+     ele que baliza a EXCEÇÃO AAA aceita nesta rodada: passa AA (≥4,5) com
+     folga larga, falha o piso de 7:1 desta migração porque `--latao` aqui é
+     chip/selo de marca (rótulo em caixa alta, ~11px, peso 500), nunca corpo
+     de texto — não está sujeito ao piso AAA de leitura corrida. */
+  --latao: #8f3600;
   --latao-forte: #8a3f00;
   --latao-fraco: #ffe3cb;
   --latao-cta: #ff7400;
@@ -72,8 +82,15 @@
   --azul: #395a80;
   --azul-fraco: #e5ecf3;
 
-  /* Sombra marrom difusa do seminário (`rgba(97,44,0,…)` — nunca cinza). */
-  --sombra-cartao: 0 0.625rem 1.5rem rgba(97, 44, 0, 0.08), 0 1px 2px rgba(97, 44, 0, 0.07);
+  /* Sombra marrom (herança do seminário — `rgba(97,44,0,…)`, nunca cinza),
+     ORDEM DE GRANDEZA MENOR (plano GPS-THB, CF3): opacidade e blur reduzidos
+     ~10×. Consequência medida (`scripts/contraste.mjs` não cobre sombra —
+     medição manual): `--papel-elevado` (#fff) sobre `--papel` (#f5f1ec) é
+     1,12:1 — o cartão passa a se distinguir quase só pela BORDA
+     (`border-linha`), não pela sombra. Confirmar em captura real na Onda 6;
+     se a distinção não bastar, o remédio é escurecer `--papel-fundo` um
+     degrau, NUNCA voltar a engordar a sombra. */
+  --sombra-cartao: 0 0.0625rem 0.15rem rgba(97, 44, 0, 0.008), 0 1px 2px rgba(97, 44, 0, 0.007);
   --sombra-flutuante: 0 1.5rem 3rem rgba(97, 44, 0, 0.14), 0 2px 6px rgba(97, 44, 0, 0.08);
   --veu: rgba(20, 27, 34, 0.45);
 
@@ -110,9 +127,12 @@
 
 /* Tokens que NÃO mudam com o tema: forma, ritmo, movimento, foco. */
 :root {
-  /* Fase 6: 1.25rem → 1rem. Cartão compacto com raio de 20px vira bolha. */
-  --raio-cartao: 1rem;
-  --raio-controle: 0.75rem;
+  /* Migração GPS-THB (14/09/2026): raio do GPS, retângulo mais fechado que a
+     "bolha" da Fase 6. `--raio-pilula` fica — ainda serve o CTA da área
+     pública (§CF4/área pública, `globals.css` mais abaixo) — mas o botão
+     primário do sistema interno deixa de usá-lo (Onda 5, B2). */
+  --raio-cartao: 0.75rem;
+  --raio-controle: 0.5rem;
   --raio-pilula: 2.625rem;
 
   /* Ritmo vertical — UMA escala, quatro degraus. A regra da Fase 5 continua
@@ -168,8 +188,14 @@
   --suavizacao: cubic-bezier(0.2, 0.7, 0.2, 1);
 
   /* Foco: halo translúcido + contorno sólido de 2px (WCAG 2.4.11 — o halo
-     sozinho some sobre fundo laranja; o contorno sozinho some sobre areia). */
-  --foco: 0 0 0 0.25rem rgba(255, 116, 0, 0.22);
+     sozinho some sobre fundo laranja; o contorno sozinho some sobre areia).
+     Migração GPS-THB: halo `rgba(239,125,0,.28)` — o `--ring: #ef7d00` cru
+     do GPS mede 2,76:1 como CONTORNO sólido (abaixo do piso de 3:1 do WCAG
+     1.4.11 para indicador de foco não textual) e por isso NÃO é usado como
+     `outline-color`; `:focus-visible` abaixo usa `--latao` (`#8f3600`,
+     7,79:1 sobre `--papel-elevado`) para o traço sólido, e este `--foco` só
+     dá o halo, que não precisa do mesmo piso de contraste. */
+  --foco: 0 0 0 0.25rem rgba(239, 125, 0, 0.28);
 }
 
 /* Os dois tamanhos que o usuário pode escolher. Atributo (`data-escala`) e não
@@ -211,23 +237,31 @@ html[data-escala="grande"] {
 }
 
 .dark {
-  --papel-fundo: #111214;
-  --papel: #17181b;
-  --papel-elevado: #1d1f23;
+  /* Migração GPS-THB (14/09/2026, B5): derivado QUENTE (viés marrom, não
+     cinza-azulado neutro) — coerente com o `--papel` creme e o `--latao`
+     marrom do tema claro, e com a "sombra marrom, nunca cinza" que já era
+     regra da casa. Luminância mantida equivalente ao neutro que saiu, então
+     todo par tinta/superfície que já batia o piso continua batendo — medido
+     em `scripts/contraste.mjs` (mesmos números do neutro anterior, dentro de
+     ±0,1). */
+  --papel-fundo: #14120f;
+  --papel: #1c1815;
+  --papel-elevado: #221c17;
   --tinta: #ece9df;
   --tinta-suave: #b3b0a3;
-  /* `#9a9588` mede 5,52:1 sobre `--papel-elevado` e 6,27:1 sobre o fundo
-     (o `#837f72` anterior media 4,12:1). */
+  /* `#9a9588` mede 5,64:1 sobre `--papel-elevado` e 6,26:1 sobre o fundo —
+     mesma falha AAA que já existia no neutro anterior (5,52 · 6,27), não é
+     regressão desta migração; ver relatório de entrega. */
   --tinta-fraca: #9a9588;
-  --linha: #2d2f34;
-  --linha-forte: #3c3e44;
-  --linha-controle: #6e6a62;
-  /* No escuro o laranja puro já bate AA como texto/borda: 6,09:1 sobre
-     `--papel-elevado`. `--latao-forte` mais claro para o hover continuar
-     distinguível: 7,30:1. */
+  --linha: #332d27;
+  --linha-forte: #443b33;
+  --linha-controle: #86786a;
+  /* No escuro o laranja puro já bate AA como texto/borda: 7,05:1 sobre
+     `--papel-elevado` (contraste melhorou com o fundo quente mais escuro).
+     `--latao-forte` mais claro para o hover continuar distinguível. */
   --latao: #ff7400;
   --latao-forte: #ff9033;
-  --latao-fraco: #362c14;
+  --latao-fraco: #362a1a;
   --latao-cta: #ff7400;
   --latao-cta-forte: #ff9033;
   --latao-cta-texto: #141b22;
@@ -345,9 +379,14 @@ html[data-escala="grande"] {
   --text-legenda--line-height: 1.4;
   --text-rotulo: calc(0.75rem * var(--fator-escala));
   --text-rotulo--line-height: 1.3;
-  --text-rotulo--letter-spacing: 0.08em;
+  /* `--text-rotulo--letter-spacing` removido (migração GPS-THB, B7): só
+     existia para dar respiro ao `uppercase` da Fase 5/6. Os 12 `uppercase`
+     de dentro do design system viram peso 600 sentence case na Onda 5; sem
+     caixa alta, o tracking positivo não tem mais função. */
+  /* B3 (decisão do Marcio): corpo continua 14px — não sobe para 15px. Só o
+     `line-height` do GPS entra: 1,45 → 1,6. */
   --text-corpo: calc(0.875rem * var(--fator-escala));
-  --text-corpo--line-height: 1.45;
+  --text-corpo--line-height: 1.6;
   --text-subtitulo: calc(1rem * var(--fator-escala));
   --text-subtitulo--line-height: 1.35;
   /* Entrelinha dos títulos (Fase 5 §3 — "fonte entortada"). A Neuetra bold
@@ -375,34 +414,30 @@ html[data-escala="grande"] {
   --text-display--line-height: 1.22;
   --text-display--letter-spacing: -0.014em;
 
+  /* Onda 4 (migração GPS-THB): degrau do VALOR do `Kpi` — 30px, Space
+     Grotesk, `tabular-nums` aplicado no componente. Também escala com
+     `--fator-escala`: é o número mais lido da tela de indicadores, a mesma
+     razão pela qual a escala inteira sobe junto na Fase 8. */
+  --text-numero: calc(1.875rem * var(--fator-escala));
+  --text-numero--line-height: 1.1;
+  --text-numero--letter-spacing: -0.01em;
+
   --ease-suave: var(--suavizacao);
 
-  /* Fonte única Neuetra (mesmos arquivos do seminário), pesos 400/500/700. */
-  --font-serif: "Neuetra", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-sans: "Neuetra", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* Migração GPS-THB (14/09/2026): Inter (corpo) + Space Grotesk (títulos e
+     `--text-numero`), injetadas por `next/font/google` em `layout.tsx` como
+     `--fonte-inter`/`--fonte-space-grotesk` (nome próprio, para não colidir
+     com o token do DS que tem o mesmo nome semântico — `var(--font-sans)`
+     dentro da própria definição de `--font-sans` seria um ciclo). `--font-
+     serif` vira alias de `--font-display`: era o nome usado pelos `h1..h4`
+     do DS, e não vale a pena caçar cada chamador para trocar o nome do token
+     (B4: só o VALOR muda, nunca o nome). Os 3 `@font-face` da Neuetra saíram
+     — os `.woff2` continuam em `public/fonts/` até a aprovação do Marcio,
+     remoção em commit separado. */
+  --font-sans: var(--fonte-inter), "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: var(--fonte-space-grotesk), "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-display);
   --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-}
-
-@font-face {
-  font-family: "Neuetra";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/TBJNeuetra-Regular.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Neuetra";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/TBJNeuetra-Medium.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Neuetra";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/TBJNeuetra-Bold.woff2") format("woff2");
 }
 
 * {
@@ -421,10 +456,6 @@ body {
   color: var(--tinta);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  /* Neuetra só declara 400/500/700 — sem isto, `font-semibold` (600) faria o
-     navegador sintetizar um bold artificial. Preferível cair no peso real
-     mais próximo do que inventar um. */
-  font-synthesis: none;
 }
 
 /* Títulos. O `letter-spacing` NÃO é declarado aqui de propósito: ele já vem
