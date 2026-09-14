@@ -1,5 +1,25 @@
 # Continuar daqui — SIC-HF
 
+> ### 🔴 PENDÊNCIA — falta o botão de pedir o bot com o link da sala (14/09/2026)
+>
+> Pedido do Marcio, literal: *"preciso que tenha um botão pra eu colocar o link
+> da reunião"*.
+>
+> **Hoje:** `POST /api/sessoes/[id]/copiloto/bot` existe e funciona, mas lê
+> `sessoes_viabilidade.link_sala` — que é colado à mão na Ficha (ou por SQL,
+> como fiz nos testes de hoje). **Não há caminho pela tela de conduzir.**
+>
+> **O que falta:** na tela `/conduzir`, no quadro "Bot na sala", um campo para
+> colar o link do Meet/Zoom e um botão que grave em `link_sala` e chame a rota
+> do bot na sequência. Estado do bot já vem no payload (`EstadoBotCopiloto`) e
+> a tela já sabe renderizá-lo.
+>
+> **Cuidados** (o desenho já prevê, não reinventar): `meeting_not_found` volta
+> com `sub_code` e a tela tem de dizer "não encontrei reunião nesse link", não
+> erro genérico; `bot_ja_pedido` é estado, não erro; e a rota já confere
+> kill-switch, gate, `audio_ao_vivo` e envs antes de tocar no fornecedor.
+
+
 > ### 🧪 DÍVIDA NOMEADA — 2 testes de a11y falham sob contenção de CPU (11/09/2026)
 >
 > **Arquivos:** `src/components/shell/EscalaTexto.test.tsx` · `src/components/painel/Travado.test.tsx`
