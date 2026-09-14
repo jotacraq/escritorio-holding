@@ -275,8 +275,9 @@ function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerra
  * saber se o recurso não existe ou está desligado por configuração.
  *
  * C12: o roteiro ativo (v4) nunca foi carimbado como oficial pela Dra. Elaine
- * (B15). O aviso do cabeçalho da sessão já diz isso — aqui ele é repetido,
- * sóbrio, porque quem só abre a aba Copiloto pode não ter visto o cabeçalho.
+ * (B15) — o aviso mora só no cabeçalho da sessão. Removido daqui em 14/09
+ * (correção do Marcio): repetir era texto que não muda o que ela faz na
+ * hora, e a tela precisava enxugar, não duplicar.
  *
  * **Kill-switch (`copiloto_sessao.ativo=false`).** É estado, não falha: cai
  * no `EstadoVazio` explicando o desligamento, nunca no `EstadoErro` com
@@ -342,24 +343,21 @@ export function PainelCopiloto({
       {/* Avisos de topo — estado transitório, nunca um "quadro" de conteúdo
        * permanente. Empilhados, full-width, acima da grade (B71: nada disto
        * pisca nem desloca o que já está embaixo — cada um só aparece/some
-       * por mudança de estado real, nunca por timer). */}
-      <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-legenda text-tinta-fraca">
-        Nenhuma das 4 versões do roteiro foi carimbada como oficial pela Dra. Elaine (ver aviso no topo da sessão) — o
-        copiloto aponta com base na versão ativa hoje, não numa versão definitiva.
-      </p>
-
+       * por mudança de estado real, nunca por timer). O aviso de roteiro não
+       * oficial JÁ está no cabeçalho da sessão (C12) — repeti-lo aqui era
+       * texto que não muda o que a Dra. Elaine faz nos próximos 10s
+       * (correção do Marcio, 14/09): removido.  */}
       {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
 
       {encerradaPorDuracaoMaxima && (
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          O copiloto encerrou esta sessão automaticamente por ter passado do tempo máximo configurado — não é falha:
-          a transcrição foi consolidada e nenhuma sugestão nova chega mais.
+          Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
         </p>
       )}
 
       {encerradaManualmente && !encerradaPorDuracaoMaxima && (
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          O copiloto foi encerrado para esta sessão. A transcrição foi consolidada; nenhuma sugestão nova chega mais.
+          Copiloto encerrado — transcrição consolidada, sem novas sugestões.
         </p>
       )}
 
@@ -487,7 +485,7 @@ function AvisoPollingFalhando({ falhasConsecutivas, falhandoDesde }: { falhasCon
   return (
     <p role="status" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
       <span className="mb-0.5 block font-bold text-[color:var(--ambar)]">Copiloto sem conexão desde {formatarHora(falhandoDesde.toISOString())}</span>
-      A sessão segue normalmente pelo roteiro. Assim que a conexão voltar, o copiloto retoma sozinho.
+      A sessão segue pelo roteiro. Retoma sozinho.
     </p>
   );
 }
@@ -513,20 +511,20 @@ function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
   return (
     <p role="alert" className="rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm text-tinta">
       <span className="mb-0.5 block font-bold text-[color:var(--vermelho)]">Copiloto de IA parado nesta sessão</span>
-      {motivo} A transcrição por texto continua sendo registrada normalmente; nenhuma sugestão nova por IA vai aparecer
-      enquanto isto não mudar.
+      {motivo} A transcrição por texto continua normal.
     </p>
   );
 }
 
 /**
- * O AVISO DISCRETO da Fatia 3 (§8/B71): "nada pisca, nada toca, nada abre
- * sozinho". Cada sugestão que chega pelo polling (gatilho automático OU
- * "Me ajuda agora" registrado por outra aba) entra aqui FECHADA — só o
- * card-resumo aparece, sem animação, sem foco roubado, sem som. A Dra.
- * Elaine abre quando quiser, no seu tempo. Se ela está com uma sugestão
- * aberta e chega outra, a nova ESPERA fechada na lista — abrir uma nunca
- * fecha nem substitui outra.
+ * Correção do Marcio (14/09) sobre o próprio B71: durante a sessão ela não
+ * clica em nada — se precisa de clique, a informação não existe. A sugestão
+ * MAIS RECENTE aparece aberta, por inteiro, sem nenhuma ação da Dra. Elaine;
+ * é a resposta, não um link para a resposta. O que o B71 continua protegendo
+ * é diferente disso: nada pisca, nada anima, nada rouba foco — a sugestão
+ * nova substitui a anterior NO MESMO LUGAR (mesmo card, mesma posição), sem
+ * salto de scroll nem troca de aba. Histórico (sugestões anteriores à mais
+ * recente) fica recolhido em lista — não é a informação do agora.
  */
 function SugestoesDoCiclo({
   sessaoId,
@@ -539,33 +537,54 @@ function SugestoesDoCiclo({
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
 }) {
-  // Cada sugestão nasce fechada e nasce "não dispensada" — os dois estados
-  // moram aqui, por id, e nunca são resetados por uma sugestão nova chegar
-  // (chegar sugestão B não fecha nem reabre a sugestão A).
-  const [abertas, setAbertas] = useState<Record<string, boolean>>({});
   const [dispensadas, setDispensadas] = useState<Record<string, boolean>>({});
 
   const pendentes = sugestoes.filter((s) => !dispensadas[s.sugestao_id]);
   if (pendentes.length === 0) return null;
 
+  const recente = pendentes[pendentes.length - 1];
+  const anteriores = pendentes.slice(0, -1);
+
   return (
-    <Quadro rotulo="Sugestões" como="article" className="sm:col-span-2">
-      <p role="status" aria-live="polite" className="text-legenda font-medium uppercase text-tinta-fraca">
-        {pendentes.length === 1 ? "1 sugestão nova" : `${pendentes.length} sugestões novas`}
-      </p>
-      {/* B73: teto de altura + rolagem interna — sugestões só CRESCEM ao
-       * longo da sessão (nunca são removidas por chegar uma nova), então
-       * sem teto este quadro venceria a tela inteira numa sessão longa. */}
-      <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
-        {pendentes.map((s) => (
-          <li key={s.sugestao_id}>
-            {abertas[s.sugestao_id] ? (
-              <div className="rounded-controle border border-linha p-2.5">
+    <Quadro rotulo="Sugestão" como="article" className="sm:col-span-2">
+      <div className="rounded-controle border border-linha p-2.5">
+        <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[recente.gatilho]}</p>
+        {!recente.visivel || !recente.sugestao ? (
+          <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+            Confiança abaixo do mínimo configurado — nada mostrado.
+          </p>
+        ) : (
+          <ApresentacaoSugestao
+            sessaoId={sessaoId}
+            sugestaoId={recente.sugestao_id}
+            sugestao={recente.sugestao}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+          />
+        )}
+        <div className="mt-2 flex justify-end">
+          <Botao
+            variante="fantasma"
+            tamanho="compacto"
+            onClick={() => setDispensadas((atual) => ({ ...atual, [recente.sugestao_id]: true }))}
+          >
+            Dispensar
+          </Botao>
+        </div>
+      </div>
+
+      {anteriores.length > 0 && (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-legenda font-medium text-tinta-fraca">
+            {anteriores.length === 1 ? "1 sugestão anterior" : `${anteriores.length} sugestões anteriores`}
+          </summary>
+          <ul className="mt-2 flex max-h-48 flex-col gap-2 overflow-y-auto pr-1">
+            {anteriores.map((s) => (
+              <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
                 <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[s.gatilho]}</p>
                 {!s.visivel || !s.sugestao ? (
                   <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-                    A IA analisou este momento, mas a confiança ficou abaixo do mínimo configurado — nada é mostrado
-                    para não guiar com um palpite fraco.
+                    Confiança abaixo do mínimo configurado — nada mostrado.
                   </p>
                 ) : (
                   <ApresentacaoSugestao
@@ -576,35 +595,11 @@ function SugestoesDoCiclo({
                     irPara={irPara}
                   />
                 )}
-                <div className="mt-2 flex justify-end">
-                  <Botao
-                    variante="fantasma"
-                    tamanho="compacto"
-                    onClick={() => setDispensadas((atual) => ({ ...atual, [s.sugestao_id]: true }))}
-                  >
-                    Dispensar
-                  </Botao>
-                </div>
-              </div>
-            ) : (
-              // O card fechado é o "aviso discreto": um botão sóbrio, sem
-              // cor de alarme, sem badge pulsante — a Dra. Elaine decide
-              // quando (e se) quer abrir.
-              <Botao
-                type="button"
-                variante="secundario"
-                tamanho="compacto"
-                largo
-                className="justify-between"
-                onClick={() => setAbertas((atual) => ({ ...atual, [s.sugestao_id]: true }))}
-              >
-                <span>{ROTULO_GATILHO[s.gatilho]}</span>
-                <span className="text-tinta-fraca">Ver sugestão</span>
-              </Botao>
-            )}
-          </li>
-        ))}
-      </ul>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </Quadro>
   );
 }
@@ -710,9 +705,6 @@ function SugestaoIA({
     <Quadro rotulo="Pergunte agora" como="article" className="sm:col-span-2">
       <div className="flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-tinta-suave">
-            A IA só roda quando você pede. Ela lê o bloco atual, o briefing e o que foi dito — nunca aparece sozinha.
-          </p>
           <Botao
             type="button"
             variante="primario"
@@ -730,7 +722,7 @@ function SugestaoIA({
 
         {pedindo && (
           <p role="status" aria-live="polite" className="text-sm text-tinta-suave">
-            Pensando… (até 8 segundos)
+            Pensando…
           </p>
         )}
 
@@ -740,8 +732,7 @@ function SugestaoIA({
 
         {!pedindo && !erro && resposta && !resposta.visivel && (
           <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-            Sem sugestão confiável agora. A IA analisou, mas a confiança ficou abaixo do mínimo configurado — nada é
-            mostrado para não guiar com um palpite fraco.
+            Confiança abaixo do mínimo configurado — nada mostrado.
           </p>
         )}
 
@@ -1126,18 +1117,13 @@ function PainelBot({ sessaoId }: { sessaoId: string }) {
 
   const codigoErro = erro instanceof ErroSessao ? erro.codigo : undefined;
 
-  // Estado NORMAL: bot não configurado hoje (default) — não é erro.
+  // Estado NORMAL: bot não configurado hoje (default) — não é erro. Sem
+  // clique nenhum a advogada não usa este quadro (ele nasce assim que a
+  // tela abre, não é resposta a uma ação dela) — então não ocupa espaço
+  // permanente na grade; vira `null` (regra do Marcio, 14/09: quadro
+  // vazio na sessão inteira não merece lugar fixo).
   if (codigoErro === "audio_ao_vivo_desligado" || codigoErro === "provedor_audio_nao_configurado") {
-    return (
-      <Quadro rotulo="Bot na sala">
-        <EstadoVazio
-          compacto
-          ilustracao="pasta"
-          titulo="Bot na sala não configurado"
-          descricao="Falta a chave do provedor de transcrição no servidor (RECALL_API_KEY e COPILOTO_WEBHOOK_SECRET, em Admin → Integrações). Enquanto isso o copiloto funciona normalmente — o que muda é só quem escreve a transcrição: sem o bot, a fala é digitada aqui."
-        />
-      </Quadro>
-    );
+    return null;
   }
 
   // Estado NORMAL: idempotência — já existe bot pedido para esta sessão.
@@ -1154,11 +1140,6 @@ function PainelBot({ sessaoId }: { sessaoId: string }) {
   return (
     <Quadro rotulo="Bot na sala">
       <div className="flex flex-col gap-2.5">
-        <p className="text-sm text-tinta-suave">
-          Um bot entra na sala como participante visível, grava e transcreve ao vivo para o copiloto — nunca sozinho,
-          só quando você pedir.
-        </p>
-
         <Botao type="button" variante="primario" tamanho="compacto" carregando={pedindo} onClick={() => void pedir()} className="self-start">
           Pedir bot na sala
         </Botao>
@@ -1276,7 +1257,7 @@ function CopilotoDesligado() {
     <EstadoVazio
       ilustracao="pasta"
       titulo="Copiloto desligado"
-      descricao="O copiloto ao vivo está desligado por configuração (copiloto_sessao.ativo = false em Admin). A sessão segue normalmente pelo roteiro — ninguém precisa dele ligado para conduzir. Quem liga é a equipe técnica, em Admin."
+      descricao="Desligado por configuração em Admin. A sessão segue normalmente pelo roteiro."
     />
   );
 }
@@ -1410,7 +1391,7 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
     return (
       <Quadro rotulo="Transcrição ao vivo">
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          Sessão encerrada — a transcrição já foi consolidada. Não é possível registrar novos trechos aqui.
+          Sessão encerrada — transcrição consolidada, sem novos trechos.
         </p>
       </Quadro>
     );

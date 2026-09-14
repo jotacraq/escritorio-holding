@@ -449,7 +449,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Sem sugestão confiável agora"));
+    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
     // nunca renderiza qualquer parte de uma sugestão, mesmo que o campo exista
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).not.toContain("Próxima pergunta");
@@ -462,7 +462,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Sem sugestão confiável agora"));
+    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
     expect(container.textContent).not.toContain("Quem mais participa das decisões financeiras");
   });
 
@@ -722,7 +722,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.3, visivel: false, sugestao: null };
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
-    await waitFor(() => expect(container.textContent).toContain("Sem sugestão confiável agora"));
+    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
     await semViolacoes(container);
   });
 
@@ -885,7 +885,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it("sugestão nova do ciclo automático NÃO abre sozinha — só o aviso discreto aparece", async () => {
+  it("sugestão nova do ciclo automático aparece ABERTA, sem nenhum clique (correção do Marcio, 14/09)", async () => {
     estado.pollingRespostas = [
       respostaPolling({
         sugestoes_novas: [
@@ -904,20 +904,16 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
       }),
     ];
-    const { container, getByRole, queryByRole } = await abrirComPolling();
+    const { container, queryByRole } = await abrirComPolling();
 
-    expect(container.textContent).toContain("1 sugestão nova");
-    // O conteúdo da sugestão (texto da próxima pergunta) NÃO está na tela —
-    // só o aviso fechado, nunca o card aberto sozinho.
-    expect(container.textContent).not.toContain("Quem mais participa das decisões financeiras");
-    expect(queryByRole("blockquote" as never)).toBeNull();
-
-    // Só abre no clique explícito.
-    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    // Aparece direto, sem clique nenhum — é a resposta, não um link para a
+    // resposta. B71 continua valendo (nada pisca, nada anima), mas mostrar
+    // conteúdo não é roubar atenção; esconder é que obriga a interagir.
     expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
+    expect(queryByRole("button", { name: /ver sugestão/i })).toBeNull();
   });
 
-  it("chegar uma 2ª sugestão não fecha nem mexe na 1ª já aberta", async () => {
+  it("sugestão mais recente substitui a anterior NO MESMO LUGAR; a anterior vai para o histórico recolhido", async () => {
     const sugestao1 = {
       sugestao_id: "sug-a",
       ordem_evento: 1,
@@ -941,19 +937,35 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     estado.pollingRespostas = [
       respostaPolling({ sugestoes_novas: [sugestao1], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
     ];
-    const { container, getByRole } = await abrirComPolling();
+    const { container, getByText } = await abrirComPolling();
 
-    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    // 1ª chega e já aparece aberta, sem clique.
     expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
 
-    // 2ª sugestão chega no próximo ciclo, fechada — a 1ª continua aberta como estava.
+    // 2ª sugestão chega no próximo ciclo — substitui a 1ª no lugar visível
+    // (mesmo card, sem clique); a 1ª não desaparece, vai para o histórico
+    // recolhido (correção do Marcio, 14/09: "a mais recente, nunca" fica
+    // escondida; anteriores podem).
     estado.pollingRespostaPadrao = respostaPolling({ sugestoes_novas: [sugestao2], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } });
     await vi.advanceTimersByTimeAsync(3000);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(container.textContent).toContain("Quem mais participa das decisões financeiras"); // 1ª segue aberta
-    expect(container.textContent).toContain("2 sugestões novas");
-    expect(container.textContent).not.toContain("Segunda observação distinta."); // 2ª chegou fechada
+    expect(container.textContent).toContain("Segunda observação distinta."); // 2ª (mais recente) visível, sem clique
+
+    // 1ª não é mais a exibida no lugar principal — mora dentro do <details>
+    // FECHADO do histórico. `textContent` de um <details> fechado ainda
+    // inclui o conteúdo (é assim que o DOM funciona); a prova de "não está
+    // visível" é o atributo `open`, não a ausência no textContent.
+    const historico = container.querySelector("details");
+    expect(historico).toBeTruthy();
+    expect(historico?.hasAttribute("open")).toBe(false);
+    expect(historico?.textContent).toContain("Quem mais participa das decisões financeiras");
+    expect(container.textContent).toContain("1 sugestão anterior");
+
+    // Abrir o histórico (clique no <summary>, comportamento nativo do
+    // <details>) continua deixando a 1ª acessível — não some de vez.
+    fireEvent.click(getByText("1 sugestão anterior"));
+    expect(historico?.hasAttribute("open")).toBe(true);
   });
 
   it("sessao_ja_encerrada (clique duplo em Encerrar) não vira erro visível — trata como sucesso", async () => {
@@ -965,7 +977,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
     await vi.advanceTimersByTimeAsync(0);
 
-    await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+    await vi.waitFor(() => expect(container.textContent).toContain("Copiloto encerrado"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -989,7 +1001,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     await semViolacoes(container);
   });
 
-  it("axe limpo: aviso discreto de sugestão nova (fechado)", async () => {
+  it("axe limpo: sugestão nova do ciclo, gatilho virada_bloco", async () => {
     estado.pollingRespostas = [
       respostaPolling({
         sugestoes_novas: [
@@ -1004,7 +1016,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     await semViolacoes(container);
   });
 
-  it("axe limpo: card de sugestão do ciclo aberto", async () => {
+  it("axe limpo: card de sugestão do ciclo, visível sem clique", async () => {
     estado.pollingRespostas = [
       respostaPolling({
         sugestoes_novas: [
@@ -1014,8 +1026,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
       }),
     ];
-    const { container, getByRole } = await abrirComPolling();
-    fireEvent.click(getByRole("button", { name: /ver sugestão/i }));
+    const { container } = await abrirComPolling();
     vi.useRealTimers();
     await semViolacoes(container);
   });
@@ -1026,7 +1037,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     await vi.advanceTimersByTimeAsync(0);
     fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
     await vi.advanceTimersByTimeAsync(0);
-    await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+    await vi.waitFor(() => expect(container.textContent).toContain("Copiloto encerrado"));
     vi.useRealTimers();
     await semViolacoes(container);
   });
@@ -1098,10 +1109,9 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       ];
       const { container } = await abrirComPolling();
 
-      expect(container.textContent).toContain("automaticamente por ter passado do tempo máximo configurado");
-      expect(container.textContent).toContain("não é falha");
-      // A mensagem de encerramento MANUAL não aparece — são estados distintos.
-      expect(container.textContent).not.toContain("O copiloto foi encerrado para esta sessão.");
+      expect(container.textContent).toContain("Copiloto encerrado por tempo máximo");
+      // A mensagem de encerramento MANUAL (sem "por tempo máximo") não aparece — são estados distintos.
+      expect(container.textContent).not.toContain("Copiloto encerrado — transcrição consolidada, sem novas sugestões.");
       // Não é tratado como falha — sem role=alert de erro.
       expect(container.querySelector('[role="alert"]')).toBeNull();
     });
@@ -1191,7 +1201,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 
       expect(container.textContent).toContain("Copiloto sem conexão desde");
       // O segundo período — "não perdeu a sessão, só o assistente".
-      expect(container.textContent).toContain("A sessão segue normalmente pelo roteiro");
+      expect(container.textContent).toContain("A sessão segue pelo roteiro");
       // É aviso, não alarme jurídico: `role=status`, nunca `role=alert`.
       const aviso = Array.from(container.querySelectorAll('[role="status"]')).find((el) => el.textContent?.includes("sem conexão"));
       expect(aviso).toBeTruthy();
@@ -1254,7 +1264,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await avancarUmTick();
 
       expect(container.textContent).toContain("Copiloto desligado");
-      expect(container.textContent).toContain("copiloto_sessao.ativo = false em Admin");
+      expect(container.textContent).toContain("Desligado por configuração em Admin");
       // Todo o resto da tela (SIMs, blocos, registro manual) some — é o
       // MESMO comportamento de quando a leitura inicial já vem desligada.
       expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
@@ -1331,12 +1341,11 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await vi.advanceTimersByTimeAsync(0);
       fireEvent.click(getByRole("button", { name: /^encerrar$/i }));
       await vi.advanceTimersByTimeAsync(0);
-      await vi.waitFor(() => expect(container.textContent).toContain("O copiloto foi encerrado para esta sessão"));
+      await vi.waitFor(() => expect(container.textContent).toContain("Copiloto encerrado"));
 
       expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
       expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
-      expect(container.textContent).toContain("Sessão encerrada — a transcrição já foi consolidada");
-      expect(container.textContent).toContain("Não é possível registrar novos trechos aqui");
+      expect(container.textContent).toContain("Sessão encerrada — transcrição consolidada, sem novos trechos.");
     });
 
     it("estado_copiloto='encerrado' DO SERVIDOR (sobrevive a F5): esconde o formulário mesmo numa abertura fresca da tela", async () => {
@@ -1348,7 +1357,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 
       expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
       expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
-      expect(container.textContent).toContain("Sessão encerrada — a transcrição já foi consolidada");
+      expect(container.textContent).toContain("Sessão encerrada — transcrição consolidada");
     });
 
     it("sessão em andamento (estado_copiloto='ativo', sem sessaoEncerrada local): formulário continua disponível", async () => {
@@ -1451,19 +1460,19 @@ describe("PainelCopiloto — Fatia 4, bot na sala", () => {
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
+    // Correção do Marcio (14/09): quadro que passa a sessão inteira vazio
+    // não ocupa espaço fixo — some por completo (`null`), em vez de mostrar
+    // um card "não configurado" permanente que ela nunca usa.
+    await waitFor(() => expect(container.textContent).not.toContain("Bot na sala"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    // O texto novo (14/09) diz O QUE FAZER em vez de citar bloqueio: nomeia as
-    // envs que faltam e garante que o copiloto segue funcionando sem o bot.
-    expect(container.textContent).toContain("o copiloto funciona normalmente");
   });
 
-  it("provedor_audio_nao_configurado: mesmo estado explícito de 'não configurado'", async () => {
+  it("provedor_audio_nao_configurado: mesmo estado explícito — o quadro some", async () => {
     estado.erroPedirBot = new ErroSessao("Sem provedor.", 409, "provedor_audio_nao_configurado");
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
+    await waitFor(() => expect(container.textContent).not.toContain("Bot na sala"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -1531,11 +1540,11 @@ describe("PainelCopiloto — Fatia 4, bot na sala", () => {
     await semViolacoes(container);
   });
 
-  it("axe limpo: bot não configurado (estado explícito)", async () => {
+  it("axe limpo: bot não configurado — quadro ausente, sem violação no resto da tela", async () => {
     estado.erroPedirBot = new ErroSessao("Desligado.", 409, "audio_ao_vivo_desligado");
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
+    await waitFor(() => expect(container.textContent).not.toContain("Bot na sala"));
     await semViolacoes(container);
   });
 });
