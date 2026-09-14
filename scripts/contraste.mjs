@@ -121,7 +121,13 @@ const PARES = [
   { nome: "tinta-fraca / papel-fundo", a: "tinta-fraca", b: "papel-fundo", tipo: "texto" },
   { nome: "tinta-fraca / papel", a: "tinta-fraca", b: "papel", tipo: "texto" },
   { nome: "tinta-fraca / papel-elevado", a: "tinta-fraca", b: "papel-elevado", tipo: "texto" },
-  { nome: "tinta-fraca / linha", a: "tinta-fraca", b: "linha", tipo: "texto" },
+  /* `tinta-fraca / linha` NÃO entra: `--linha` nunca é superfície de leitura.
+     Medidos os 14 usos de `bg-linha` em 14/09/2026 — todos são divisória de
+     1px (`w-px`), trilha de barra de progresso (`rounded-full h-2`) ou fundo
+     de `:active` momentâneo. Nenhum recebe texto. Media 6,49 (claro) / 6,33
+     (escuro) e reprovava um par que não existe na tela — alarme que toca
+     sempre é alarme ignorado. Se algum dia `bg-linha` receber texto, o par
+     volta para cá. */
 
   // Marca — latão como texto/borda (nunca como fundo de CTA aqui). O pior
   // caso real medido é contra `--latao-fraco` (chip de marca sobre o próprio
