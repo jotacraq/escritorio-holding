@@ -418,7 +418,7 @@ const MENSAGENS_RECUSA: Record<string, { titulo: string; descricao: string; pode
   },
   copiloto_ao_vivo_bloqueado: {
     titulo: "Copiloto ao vivo bloqueado",
-    descricao: "Falta decisão jurídica ativa ou consentimento do titular para esta sessão. Não é algo que se resolve tentando de novo.",
+    descricao: "O copiloto de IA está bloqueado por configuração no servidor. Não é algo que se resolve tentando de novo — fale com a equipe técnica.",
     podeTentarDeNovo: false,
   },
   recusa_ia: {
@@ -492,9 +492,9 @@ function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
   if (!ciclo || ciclo.resultado !== "bloqueado_pelo_gate") return null;
   const motivo =
     ciclo.motivo_bloqueio === "sem_decisao_juridica"
-      ? "Não há decisão jurídica ativa autorizando o copiloto ao vivo para esta sessão."
+      ? "O copiloto de IA está bloqueado por configuração no servidor."
       : ciclo.motivo_bloqueio === "sem_consentimento_titular"
-        ? "O consentimento do titular para o copiloto ao vivo não está mais ativo (foi revogado ou nunca foi dado)."
+        ? "O copiloto de IA está bloqueado por configuração no servidor para esta sessão."
         : "A trava jurídica do copiloto está fechada para esta sessão.";
   return (
     <p role="alert" className="rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm text-tinta">
@@ -982,7 +982,7 @@ const MENSAGENS_RECUSA_BOT: Record<string, { titulo: string; descricao: string; 
   copiloto_ao_vivo_bloqueado: {
     titulo: "Copiloto ao vivo bloqueado",
     descricao:
-      "Falta decisão jurídica ativa ou consentimento do titular para esta sessão. O bot não pode entrar na sala enquanto isto não for resolvido.",
+      "O pedido do bot está bloqueado por configuração no servidor. Fale com a equipe técnica.",
     podeTentarDeNovo: false,
   },
   servico_indisponivel: {
@@ -1038,7 +1038,7 @@ function mensagemSalaInvalida(detalhes: unknown): { titulo: string; descricao: s
  *    tela — mostra que o bot já foi pedido, sem convidar a "tentar de novo".
  *  - `audio_ao_vivo_desligado` / `provedor_audio_nao_configurado`: o ESTADO
  *    NORMAL hoje (defaults `audio_ao_vivo=false`, `provedor_audio='nenhum'`
- *    — B75, aguardando decisão da Dra. Elaine). Mesmo padrão do
+ *    — a chave do provedor não está no servidor). Mesmo padrão do
  *    `CopilotoDesligado`: sóbrio, sem alarme, dizendo o que falta e quem
  *    decide — nunca um botão convidando a insistir numa ação que não vai
  *    funcionar até a configuração mudar.
@@ -1078,8 +1078,8 @@ function PainelBot({ sessaoId }: { sessaoId: string }) {
         <EstadoVazio
           compacto
           ilustracao="pasta"
-          titulo="Bot na sala ainda não configurado"
-          descricao="Esta funcionalidade está desligada por configuração — é o estado normal hoje, aguardando decisão da Dra. Elaine sobre o subprocessador (B75). O copiloto continua funcionando no modo digitado, sem o bot."
+          titulo="Bot na sala não configurado"
+          descricao="Falta a chave do provedor de transcrição no servidor (RECALL_API_KEY e COPILOTO_WEBHOOK_SECRET, em Admin → Integrações). Enquanto isso o copiloto funciona normalmente — o que muda é só quem escreve a transcrição: sem o bot, a fala é digitada aqui."
         />
       </Cartao>
     );

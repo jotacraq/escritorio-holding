@@ -875,7 +875,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 
     expect(container.querySelector('[role="alert"]')).toBeTruthy();
     expect(container.textContent).toContain("Copiloto de IA parado nesta sessão");
-    expect(container.textContent).toContain("consentimento do titular");
+    expect(container.textContent).toContain("bloqueado por configuração no servidor");
   });
 
   it("silêncio normal (resultado=null) NÃO mostra nenhum aviso de bloqueio", async () => {
@@ -1451,9 +1451,11 @@ describe("PainelCopiloto — Fatia 4, bot na sala", () => {
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.textContent).toContain("estado normal hoje");
+    // O texto novo (14/09) diz O QUE FAZER em vez de citar bloqueio: nomeia as
+    // envs que faltam e garante que o copiloto segue funcionando sem o bot.
+    expect(container.textContent).toContain("o copiloto funciona normalmente");
   });
 
   it("provedor_audio_nao_configurado: mesmo estado explícito de 'não configurado'", async () => {
@@ -1461,7 +1463,7 @@ describe("PainelCopiloto — Fatia 4, bot na sala", () => {
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -1533,7 +1535,7 @@ describe("PainelCopiloto — Fatia 4, bot na sala", () => {
     estado.erroPedirBot = new ErroSessao("Desligado.", 409, "audio_ao_vivo_desligado");
     const { getByRole, container } = await abrir();
     fireEvent.click(getByRole("button", { name: /pedir bot na sala/i }));
-    await waitFor(() => expect(container.textContent).toContain("Bot na sala ainda não configurado"));
+    await waitFor(() => expect(container.textContent).toContain("Bot na sala não configurado"));
     await semViolacoes(container);
   });
 });
