@@ -67,6 +67,14 @@ export function LinhaAgendamento({
   const { notificar } = useToast();
   const [remarcando, setRemarcando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  /* 15/09/2026 — "Realizada" passou a confirmar, pelo mesmo motivo que
+   * "Cancelar" sempre confirmou: o efeito é IRREVERSÍVEL PELA UI. Ao sair de
+   * `agendado`/`confirmado`, a linha perde o botão "Conduzir" (ver o `{ativo
+   * && …}` abaixo) e some das DUAS views do painel — nem `vw_sessoes_do_dia`
+   * nem `vw_sessoes_em_aberto` (0104) trazem status `realizado`. Não existe
+   * caminho de volta na tela: só por SQL. E os dois botões ficam lado a lado,
+   * então o clique errado é a 4 px do certo. */
+  const [confirmandoRealizada, setConfirmandoRealizada] = useState(false);
   const [ocupado, setOcupado] = useState<null | "realizado" | "nao_compareceu" | "cancelado" | "presenca">(null);
 
   const ativo = agendamento.status === "agendado" || agendamento.status === "confirmado";
@@ -186,7 +194,13 @@ export function LinhaAgendamento({
                 Confirmar presença
               </Botao>
             )}
-            <Botao variante="secundario" tamanho="compacto" carregando={ocupado === "realizado"} disabled={ocupado !== null && ocupado !== "realizado"} onClick={() => mudarStatus("realizado")}>
+            <Botao
+              variante="secundario"
+              tamanho="compacto"
+              carregando={ocupado === "realizado"}
+              disabled={ocupado !== null && ocupado !== "realizado"}
+              onClick={() => setConfirmandoRealizada(true)}
+            >
               Realizada
             </Botao>
             <details className="relative">
@@ -241,6 +255,20 @@ export function LinhaAgendamento({
         confirmando={ocupado === "cancelado"}
         aoConfirmar={() => mudarStatus("cancelado")}
         aoCancelar={() => setCancelando(false)}
+      />
+
+      {/* O efeito por extenso, nunca "tem certeza?" (regra do `ConfirmarAcao`).
+       * Quem lê precisa entender que perde o atalho de conduzir — é a parte
+       * que surpreende, e a que não tem volta pela tela. */}
+      <ConfirmarAcao
+        aberto={confirmandoRealizada}
+        titulo="Marcar esta sessão como realizada?"
+        efeito={`A sessão de ${formatarDataHora(agendamento.inicio_em)}${agendamento.pessoa_nome ? ` com ${agendamento.pessoa_nome}` : ""} sai da agenda ativa e do painel do dia, e esta linha perde o botão “Conduzir”. Se ainda falta conduzir, conduza primeiro — depois disso só a equipe técnica reverte.`}
+        rotuloConfirmar="Marcar como realizada"
+        rotuloCancelar="Ainda não"
+        confirmando={ocupado === "realizado"}
+        aoConfirmar={() => mudarStatus("realizado")}
+        aoCancelar={() => setConfirmandoRealizada(false)}
       />
     </li>
   );

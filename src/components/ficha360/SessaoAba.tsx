@@ -129,8 +129,36 @@ export function SessaoAba({ jornadaId, ficha, aoAtualizar }: { jornadaId: string
             )}
             {etapaVisivel === "confirmacao" && <SessaoPresenca agendamento={proximo} aoAtualizar={aoAtualizar} />}
             {etapaVisivel === "sala" && <SessaoSala sessao={extras.sessao} temAgendamentoAtivo={proximo !== null} aoAtualizar={aoAtualizar} />}
-            {etapaVisivel === "presenca" && <BlocoPresenca jornadaId={jornadaId} sessao={sessao} />}
+            {etapaVisivel === "presenca" && <BlocoPresenca sessao={sessao} />}
           </div>
+
+          {/* 15/09/2026 — "Conduzir sessão" saiu de dentro do passo 4 e virou
+            * rodapé do cartão, sempre visível quando há sessão marcada.
+            *
+            * A INVERSÃO que isto corrige: `feitos.presenca = Boolean(realizada_em)`
+            * (linha ~80) e o passo aceso é o primeiro NÃO concluído — ou seja, o
+            * passo "Presença", que continha o único botão de conduzir da Ficha,
+            * só acendia sozinho DEPOIS de a sessão já ter sido realizada. No
+            * momento em que a advogada precisa conduzir, ele estava escondido
+            * atrás de um clique deliberado no stepper.
+            *
+            * O stepper continua intacto: `etapaAtual` segue sendo o passo REAL
+            * (o aviso logo acima sobre `ui/Passos` derivar "feito" por índice
+            * continua valendo — nada aqui mexe nisso). Só o BOTÃO saiu de
+            * dentro dele.
+            *
+            * `proximo !== null` é a condição honesta: sem agendamento não há
+            * sessão marcada, e `/conduzir` cairia no estado "sem-sessão". */}
+          {proximo !== null && (
+            <div className="nao-imprimir border-t border-linha pt-4">
+              <Link
+                href={`/sessoes/${jornadaId}/conduzir`}
+                className="inline-flex min-h-11 items-center justify-center rounded-pilula border border-transparent bg-[color:var(--latao-cta)] px-4 py-2 text-sm font-medium text-[color:var(--latao-cta-texto)] shadow-[0_3px_0_0_var(--latao-cta-forte)] transition-colors hover:bg-[color:var(--latao-cta-forte)] hover:shadow-none"
+              >
+                Conduzir sessão
+              </Link>
+            </div>
+          )}
         </div>
       </Cartao>
 
@@ -240,7 +268,7 @@ function BlocoHorario({
   );
 }
 
-function BlocoPresenca({ jornadaId, sessao }: { jornadaId: string; sessao: Ficha360["sessao"] }) {
+function BlocoPresenca({ sessao }: { sessao: Ficha360["sessao"] }) {
   const resultado = sessao?.resultado ? ROTULOS_RESULTADO[sessao.resultado] : null;
 
   return (
@@ -258,14 +286,11 @@ function BlocoPresenca({ jornadaId, sessao }: { jornadaId: string; sessao: Ficha
         </div>
       )}
 
-      <div className="nao-imprimir">
-        <Link
-          href={`/sessoes/${jornadaId}/conduzir`}
-          className="inline-flex min-h-11 items-center justify-center rounded-pilula border border-transparent bg-[color:var(--latao-cta)] px-4 py-2 text-sm font-medium text-[color:var(--latao-cta-texto)] shadow-[0_3px_0_0_var(--latao-cta-forte)] transition-colors hover:bg-[color:var(--latao-cta-forte)] hover:shadow-none"
-        >
-          Conduzir sessão
-        </Link>
-      </div>
+      {/* 15/09/2026 — o botão "Conduzir sessão" que morava AQUI subiu para o
+        * rodapé do cartão (ver comentário longo lá em cima). Não é duplicado
+        * nem removido: é o mesmo botão, num lugar que não depende de este
+        * passo estar aceso. Este bloco volta a ser só o registro do que
+        * aconteceu na sessão — que é o que o passo "Presença" significa. */}
     </div>
   );
 }
