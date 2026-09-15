@@ -54,6 +54,23 @@ describe("executarIaCopiloto — timeout de 8s (nunca o IA_TIMEOUT_MS global de 
     await expect(promessa).resolves.toEqual({ situacao: "timeout" });
   });
 
+  it("🔴 Fase 11: estourou 8s → passa um AbortSignal ABORTADO para executarComAuditoria (a chamada real é interrompida, não só ignorada)", async () => {
+    vi.useFakeTimers();
+    let signalCapturado: AbortSignal | undefined;
+    executarComAuditoriaMock.mockImplementation((_admin: unknown, params: { signal?: AbortSignal }) => {
+      signalCapturado = params.signal;
+      return new Promise(() => {}); // nunca resolve — simula provedor lento
+    });
+
+    const promessa = executarIaCopiloto(clienteFalso(), { jornadaId: "j1", contexto: contextoVazio });
+    expect(signalCapturado?.aborted).toBe(false); // ainda não estourou
+
+    await vi.advanceTimersByTimeAsync(TIMEOUT_COPILOTO_MS + 1);
+    await promessa;
+
+    expect(signalCapturado?.aborted).toBe(true); // Fase 11: o abort de verdade aconteceu
+  });
+
   it("respondeu ANTES dos 8s → situacao 'ok', com a saída da IA", async () => {
     executarComAuditoriaMock.mockResolvedValue({
       execucaoId: "exec-1",
@@ -64,6 +81,25 @@ describe("executarIaCopiloto — timeout de 8s (nunca o IA_TIMEOUT_MS global de 
 
     const resultado = await executarIaCopiloto(clienteFalso(), { jornadaId: "j1", contexto: contextoVazio });
     expect(resultado).toMatchObject({ situacao: "ok", execucaoId: "exec-1" });
+  });
+
+  it("🔴🔴 abortarNoTimeout=false (warm-up): estourou 8s → RETORNA 'timeout' mas NÃO passa signal nenhum para executarComAuditoria — a chamada real segue em voo para escrever o cache", async () => {
+    vi.useFakeTimers();
+    let paramsCapturados: { signal?: AbortSignal } | undefined;
+    executarComAuditoriaMock.mockImplementation((_admin: unknown, params: { signal?: AbortSignal }) => {
+      paramsCapturados = params;
+      return new Promise(() => {}); // nunca resolve — simula provedor lento
+    });
+
+    const promessa = executarIaCopiloto(clienteFalso(), {
+      jornadaId: "j1",
+      contexto: contextoVazio,
+      abortarNoTimeout: false,
+    });
+    await vi.advanceTimersByTimeAsync(TIMEOUT_COPILOTO_MS + 1);
+
+    await expect(promessa).resolves.toEqual({ situacao: "timeout" });
+    expect(paramsCapturados?.signal).toBeUndefined(); // NUNCA propaga signal — o voo não pode ser abortado
   });
 
   it("prompt inativo (0094 ativo=false) vira 'indisponivel', NUNCA 'timeout'", async () => {

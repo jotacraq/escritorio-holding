@@ -173,6 +173,7 @@ describe("avaliarGatilho — camada de leitura", () => {
     const r = await avaliarGatilho(cliente({ ciclo: { data: null, error: null }, segmento: { data: null, error: null } }), {
       sessaoId: "s1",
       blocoAtualIndice: 0,
+      intervaloSegundos: 45,
       agoraMs: AGORA,
     });
     expect(r).toEqual({ dispara: false, gatilho: null });
@@ -181,7 +182,7 @@ describe("avaliarGatilho — camada de leitura", () => {
   it("nenhum ciclo anterior, HÁ segmento existente → dispara por intervalo (1ª avaliação)", async () => {
     const r = await avaliarGatilho(
       cliente({ ciclo: { data: null, error: null }, segmento: { data: { ordem: 1 }, error: null } }),
-      { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA },
+      { sessaoId: "s1", blocoAtualIndice: 0, intervaloSegundos: 45, agoraMs: AGORA },
     );
     expect(r).toEqual({ dispara: true, gatilho: "intervalo" });
   });
@@ -189,7 +190,7 @@ describe("avaliarGatilho — camada de leitura", () => {
   it("falha de leitura NUNCA dispara — mesmo princípio do gate/orçamento", async () => {
     const r = await avaliarGatilho(
       cliente({ ciclo: { data: null, error: { code: "08006", message: "conexão perdida" } }, segmento: { data: null, error: null } }),
-      { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA },
+      { sessaoId: "s1", blocoAtualIndice: 0, intervaloSegundos: 45, agoraMs: AGORA },
     );
     expect(r).toEqual({ dispara: false, gatilho: null });
   });

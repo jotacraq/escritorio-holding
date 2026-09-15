@@ -121,8 +121,27 @@ describe("dispararWarmupCopiloto — ordem e efeito de cada trava", () => {
     const resultado = await dispararWarmupCopiloto(admin, PARAMS);
 
     expect(montarContextoMock).toHaveBeenCalledWith(admin, "sessao-1", 0);
-    expect(executarIaMock).toHaveBeenCalledWith(admin, { jornadaId: "jornada-1", contexto: contextoFalso });
+    expect(executarIaMock).toHaveBeenCalledWith(admin, {
+      jornadaId: "jornada-1",
+      contexto: contextoFalso,
+      abortarNoTimeout: false,
+    });
     expect(resultado).toBeUndefined(); // nunca devolve a sugestão — a rota não tem como expor por engano
+  });
+
+  it("🔴🔴 O WARM-UP NÃO ABORTA (Fase 11): chama executarIaCopiloto com abortarNoTimeout=false — sem isso o cache do provedor nunca é escrito (warmup.ts:145-151), e o sintoma só aparece semanas depois", async () => {
+    warmupAtivoMock.mockResolvedValue(true);
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 0, noDia: 0, motivo: null });
+    montarContextoMock.mockResolvedValue({});
+    executarIaMock.mockResolvedValue({ situacao: "timeout" });
+    const admin = adminComClaim({ count: 1 });
+
+    await dispararWarmupCopiloto(admin, PARAMS);
+
+    expect(executarIaMock).toHaveBeenCalledTimes(1);
+    const paramsPassados = executarIaMock.mock.calls[0]?.[1] as { abortarNoTimeout?: boolean };
+    expect(paramsPassados.abortarNoTimeout).toBe(false);
   });
 
   it("IA estoura timeout: mesmo tratamento de sucesso — descarta, não lança, não registra erro", async () => {

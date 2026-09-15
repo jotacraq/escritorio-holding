@@ -203,14 +203,19 @@ function paraInfoCiclo(resultado: ResultadoCiclo): InfoCicloCopiloto {
  * sugestões já existentes mesmo se a avaliação do ciclo falhar nesta
  * chamada específica (a próxima, 3s depois, tenta de novo).
  *
- * NOTA DE ORDEM: `buscarSugestoesNovas` roda EM PARALELO com o ciclo (não
- * depois) — se o gatilho disparar e gravar uma sugestão NESTA MESMA chamada,
- * `sugestoes_novas` desta resposta ainda não a inclui (`ciclo.resultado`
- * será `"sugestao_gravada"`, mas a linha some do array). A tela vê a
- * sugestão no PRÓXIMO polling, 3s depois — decisão deliberada: esperar o
- * INSERT terminar para então reler adicionaria latência real (até ~8s, o
- * timeout da IA) à resposta de TODA chamada, contra 3s de atraso percebido
- * em UMA chamada específica quando o gatilho bate (§2.3: 3s é imperceptível).
+ * 🔴 CORREÇÃO (Fase 11 — "eliminar o double-hop de polling"): o comentário
+ * anterior aqui afirmava que esperar o ciclo terminar para então incluir a
+ * sugestão gravada "adicionaria latência real (até ~8s) à resposta de TODA
+ * chamada" — isso está ERRADO e provável de checar: `executarCicloCopiloto`
+ * já é `await`ado ABAIXO, no mesmo `try`, MESMO ANTES desta correção. A
+ * resposta HTTP já esperava o ciclo inteiro (incl. o timeout de 8s quando o
+ * gatilho dispara) — os 8s já eram pagos por toda chamada onde o gatilho
+ * dispara; só a EXIBIÇÃO da sugestão é que ficava represada até o tick
+ * seguinte (+3s), sem motivo. `ResultadoCiclo.sugestao_gravada` já traz
+ * `ordemEvento`/`criadoEm` (ciclo.ts) — usados abaixo para montar a
+ * `SugestaoCopilotoPolling` desta MESMA chamada, ZERO query extra. O cursor
+ * (`proximo_cursor_sugestao`) avança junto: sem isso, a mesma sugestão
+ * voltaria duplicada no tick seguinte (o front concatena sem deduplicar).
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -239,10 +244,36 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     ]);
 
     let ciclo: InfoCicloCopiloto = { avaliado: false, resultado: null, motivo_bloqueio: null };
+    // Mutáveis: o ciclo pode acrescentar a sugestão gravada NESTA chamada e
+    // avançar o cursor — ver Tarefa 7 (comentário de topo desta função).
+    let sugestoesNovas = sugestoes.itens;
+    let proximoCursorSugestao = sugestoes.proximoCursor;
     try {
       const admin = criarClienteAdmin();
       const resultado = await executarCicloCopiloto(supabase, admin, { sessaoId, blocoAtualIndice: bloco });
       ciclo = paraInfoCiclo(resultado);
+
+      if (resultado.situacao === "sugestao_gravada" && resultado.ordemEvento > proximoCursorSugestao) {
+        // `> proximoCursorSugestao` (não só "!== já presente"): dedup pelo
+        // MESMO critério de cursor que `buscarSugestoesNovas` usa — se por
+        // qualquer motivo a query paralela já tivesse pego esta linha (ex.:
+        // corrida rara entre o SELECT e o INSERT), o cursor já estaria à
+        // frente e este bloco não duplicaria a entrada.
+        sugestoesNovas = [
+          ...sugestoesNovas,
+          {
+            sugestao_id: resultado.sugestaoId,
+            ordem_evento: resultado.ordemEvento,
+            gatilho: resultado.gatilho,
+            confianca_geral: resultado.confiancaGeral,
+            visivel: resultado.visivel,
+            sugestao: resultado.sugestao,
+            desfecho: null, // sugestão recém-gravada nesta chamada — nunca teve tempo de ganhar desfecho
+            criado_em: resultado.criadoEm,
+          },
+        ];
+        proximoCursorSugestao = resultado.ordemEvento;
+      }
     } catch (erroCiclo) {
       // O CICLO NUNCA DERRUBA O POLLING (comentário de topo) — registra e
       // segue com o que já tinha antes de tentar o ciclo.
@@ -253,8 +284,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ...estado,
       segmentos_novos: segmentos.itens,
       proximo_cursor_segmento: segmentos.proximoCursor,
-      sugestoes_novas: sugestoes.itens,
-      proximo_cursor_sugestao: sugestoes.proximoCursor,
+      sugestoes_novas: sugestoesNovas,
+      proximo_cursor_sugestao: proximoCursorSugestao,
       ciclo,
       polling,
     };

@@ -63,7 +63,7 @@ const EFFORT_PARA_OPENROUTER: Record<EffortIa, "low" | "medium" | "high"> = {
   high: "high",
   xhigh: "high",
   max: "high",
-};
+};
 
 export function openrouterConfigurado(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
@@ -100,8 +100,23 @@ interface MensagemChat {
   content: unknown;
 }
 
-async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeSchema: string, jsonSchema: Record<string, unknown>, effort: EffortIa, maxTokens: number): Promise<RespostaOpenRouter> {
+async function chamarOpenRouter(
+  mensagens: MensagemChat[],
+  modelo: string,
+  nomeSchema: string,
+  jsonSchema: Record<string, unknown>,
+  effort: EffortIa,
+  maxTokens: number,
+  signalExterno?: AbortSignal,
+): Promise<RespostaOpenRouter> {
   const iniciadoEm = Date.now();
+  // Combina o timeout PRÓPRIO deste adaptador (300s, TIMEOUT_MS) com o signal
+  // externo opcional (Fase 11: `executar-ia.ts` do copiloto, 8s) via
+  // `AbortSignal.any` — sem `signalExterno`, comportamento idêntico a antes
+  // (só o timeout interno). Node v24 tem `AbortSignal.any` nativo.
+  const signalCombinado = signalExterno
+    ? AbortSignal.any([signalExterno, AbortSignal.timeout(TIMEOUT_MS)])
+    : AbortSignal.timeout(TIMEOUT_MS);
   const resposta = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
@@ -121,13 +136,21 @@ async function chamarOpenRouter(mensagens: MensagemChat[], modelo: string, nomeS
       },
       provider: { order: ["anthropic"], allow_fallbacks: false, require_parameters: true },
     }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: signalCombinado,
   }).catch((erroRede: unknown) => {
     // AbortSignal.timeout lanca TimeoutError — que sem tratamento vira uma
     // mensagem generica de rede e esconde a causa. Nomeia o que aconteceu.
     const decorrido = Math.round((Date.now() - iniciadoEm) / 1000);
     const nome = erroRede instanceof Error ? erroRede.name : "";
     if (nome === "TimeoutError" || nome === "AbortError") {
+      // 🔴 Fase 11: distinguir o ABORT LOCAL (chamador externo, ex.: timeout
+      // de 8s do copiloto) do TIMEOUT DESTE PROVEDOR (300s) — se não
+      // distinguisse, `execucoes_ia` gravaria "openrouter_timeout" para uma
+      // chamada que na verdade levou só 8s, mentindo a causa na telemetria
+      // (o achado que esta tarefa existe para evitar).
+      if (signalExterno?.aborted) {
+        throw new Error(`abortado_pelo_chamador: sinal externo disparou após ${decorrido}s`);
+      }
       throw new Error(
         `openrouter_timeout: sem resposta em ${decorrido}s (teto IA_TIMEOUT_MS=${Math.round(TIMEOUT_MS / 1000)}s)`,
       );
@@ -243,6 +266,7 @@ export const provedorOpenRouter: ProvedorIa = {
       jsonSchema,
       pedido.effort,
       pedido.maxTokens,
+      pedido.signal,
     );
     let choice = corpo.choices?.[0];
     let usouReprompt = false;
@@ -280,7 +304,15 @@ export const provedorOpenRouter: ProvedorIa = {
             `Corrija e responda de novo, só com o JSON válido. Erros:\n\n${mensagemErro}`,
         },
       );
-      corpo = await chamarOpenRouter(mensagens, pedido.modelo, pedido.nomeSchema, jsonSchema, pedido.effort, pedido.maxTokens);
+      corpo = await chamarOpenRouter(
+        mensagens,
+        pedido.modelo,
+        pedido.nomeSchema,
+        jsonSchema,
+        pedido.effort,
+        pedido.maxTokens,
+        pedido.signal,
+      );
       choice = corpo.choices?.[0];
       usouReprompt = true;
 

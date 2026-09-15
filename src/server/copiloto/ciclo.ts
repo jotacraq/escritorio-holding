@@ -70,10 +70,33 @@ export type ResultadoCiclo =
   | { situacao: "timeout" }
   | { situacao: "indisponivel"; motivo: string }
   | { situacao: "conteudo_recusado" }
-  | { situacao: "sugestao_gravada"; sugestaoId: string; gatilho: TipoGatilhoCopiloto; visivel: boolean; sugestao: SugestaoCopiloto | null };
+  | {
+      situacao: "sugestao_gravada";
+      sugestaoId: string;
+      /** `bigint identity` de `copiloto_sugestoes` (0091, §2.2: "uuid não
+       * ordena") — Fase 11: propagado aqui para a rota de polling montar a
+       * sugestão da PRÓPRIA chamada, sem esperar o tick seguinte
+       * (`buscarSugestoesNovas` filtra por este cursor). */
+      ordemEvento: number;
+      criadoEm: string;
+      gatilho: TipoGatilhoCopiloto;
+      visivel: boolean;
+      sugestao: SugestaoCopiloto | null;
+      /** Confiança REAL sempre presente, mesmo quando `visivel=false` (aí
+       * `sugestao` é `null` mas a confiança que causou a não-exibição
+       * continua conhecida) — mesmo contrato de `copiloto_sugestoes.confianca`
+       * (coluna sempre gravada) que `buscarSugestoesNovas` já lê na rota de
+       * polling (Fase 11: usado para montar a entrada sem esperar o tick
+       * seguinte, sem inventar `0` para uma sugestão não visível). */
+      confiancaGeral: number;
+    };
 
 const CHAVE_INTERVALO_SEGUNDOS = "copiloto_sessao.intervalo_segundos";
-const PADRAO_INTERVALO_SEGUNDOS = 45;
+// 20s desde 15/09/2026 (migration 0102) — era 45s. Baixado JUNTO com
+// `teto_ia_sessao` (30→90, orcamento.ts): a 20s o gatilho de intervalo exige
+// fala nova e o Deepgram entrega ~1 segmento a cada 4s, então o TETO passa a
+// ser a trava real da sessão, não mais o intervalo (ver comentário da 0102).
+const PADRAO_INTERVALO_SEGUNDOS = 20;
 const CHAVE_CONFIANCA_MINIMA = "copiloto_sessao.confianca_minima";
 const PADRAO_CONFIANCA_MINIMA = 0.6;
 const CHAVE_DURACAO_MAXIMA_MINUTOS = "copiloto_sessao.duracao_maxima_minutos";
@@ -170,7 +193,19 @@ export async function executarCicloCopiloto(
 
   // DURAÇÃO MÁXIMA (§4.4) — ANTES de avaliar gatilho: sessão esquecida
   // aberta encerra aqui e o ciclo para, sem gastar mais nenhuma consulta.
-  const duracaoMaximaMinutos = await lerConfiguracaoInt(admin, CHAVE_DURACAO_MAXIMA_MINUTOS, PADRAO_DURACAO_MAXIMA_MINUTOS);
+  //
+  // As duas leituras abaixo (`duracaoMaximaMinutos`/`intervaloSegundos`) são
+  // da MESMA tabela (`configuracoes`) e NENHUMA depende do resultado da
+  // outra — Fase 11: paralelizadas com `Promise.all` (eram sequenciais).
+  // `intervaloSegundos` só é USADO depois de `encerrarSePassouDoTempo`
+  // decidir (a leitura antecipada não muda a ORDEM DE EFEITO: encerrar por
+  // duração ainda acontece antes de avaliar o gatilho, só a leitura do valor
+  // em si que deixou de esperar a leitura anterior terminar).
+  const [duracaoMaximaMinutos, intervaloSegundos] = await Promise.all([
+    lerConfiguracaoInt(admin, CHAVE_DURACAO_MAXIMA_MINUTOS, PADRAO_DURACAO_MAXIMA_MINUTOS),
+    lerConfiguracaoInt(supabase, CHAVE_INTERVALO_SEGUNDOS, PADRAO_INTERVALO_SEGUNDOS),
+  ]);
+
   const encerradaAgora = await encerrarSePassouDoTempo(supabase, admin, {
     sessaoId: params.sessaoId,
     jornadaId: sessao.jornada_id,
@@ -182,8 +217,6 @@ export async function executarCicloCopiloto(
   if (encerradaAgora) {
     return { situacao: "sessao_encerrada_por_duracao_maxima" };
   }
-
-  const intervaloSegundos = await lerConfiguracaoInt(supabase, CHAVE_INTERVALO_SEGUNDOS, PADRAO_INTERVALO_SEGUNDOS);
 
   const decisao = await avaliarGatilho(supabase, {
     sessaoId: params.sessaoId,
@@ -212,19 +245,29 @@ export async function executarCicloCopiloto(
   // abaixo (gate/orçamento/timeout) NÃO desfaz a claim — a claim é sobre a
   // TENTATIVA, não sobre o resultado (comentário de topo da 0096).
 
-  // GATE JURÍDICO — A CADA CICLO (é o ponto §6.2.2 desta fatia: revogação no
-  // meio da sessão cala o PRÓXIMO ciclo, não só o próximo INSERT).
+  // GATE JURÍDICO — A CADA CICLO, SEMPRE SOZINHO E PRIMEIRO (é o ponto
+  // §6.2.2 desta fatia: revogação no meio da sessão cala o PRÓXIMO ciclo, não
+  // só o próximo INSERT). 🔴 NUNCA paralelizar com `montarContextoCopiloto`:
+  // ela LÊ a transcrição do cliente (`contexto.ts:291-305`) — montar
+  // contexto antes de saber se o gate liberou seria ler dado sob trava
+  // jurídica antes da trava. É sigilo profissional, não performance.
   const gate = await conferirGateCopiloto(admin, { sessaoId: params.sessaoId, pessoaId });
   if (!gate.liberado) {
     return { situacao: "bloqueado_pelo_gate", motivo: gate.motivo ?? "falha_ao_conferir_gate" };
   }
 
-  const orcamento = await conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs });
+  // Orçamento + contexto NÃO dependem um do outro — Fase 11: paralelizados
+  // com `Promise.all` (eram sequenciais). Custo aceito: se o orçamento
+  // estourar, o contexto foi montado à toa (no máximo 1× por sessão — o
+  // orçamento raramente estoura no MEIO de uma sessão, e mesmo quando
+  // estoura o desperdício é 1 leitura extra, não 1 chamada de IA).
+  const [orcamento, contexto] = await Promise.all([
+    conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs }),
+    montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice) as Promise<ContextoCopiloto>,
+  ]);
   if (!orcamento.dentro) {
     return { situacao: "orcamento_estourado", motivo: orcamento.motivo ?? "falha_ao_contar_orcamento" };
   }
-
-  const contexto: ContextoCopiloto = await montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice);
 
   const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto });
 
@@ -250,16 +293,22 @@ export async function executarCicloCopiloto(
         confianca: validado.sugestao.confianca_geral,
         execucao_ia_id: execucao.execucaoId,
       })
-      .select("id")
-      .single<{ id: string }>();
+      // `ordem_evento`/`criado_em` a mais que antes (Fase 11, Tarefa 7 —
+      // "eliminar o double-hop de polling"): ZERO query extra, é o MESMO
+      // INSERT, só devolvendo 2 colunas a mais que já existiam na linha.
+      .select("id, ordem_evento, criado_em")
+      .single<{ id: string; ordem_evento: number; criado_em: string }>();
     if (erroInsercao) throw erroInsercao;
 
     return {
       situacao: "sugestao_gravada",
       sugestaoId: gravado.id,
+      ordemEvento: gravado.ordem_evento,
+      criadoEm: gravado.criado_em,
       gatilho: decisao.gatilho,
       visivel,
       sugestao: visivel ? validado.sugestao : null,
+      confiancaGeral: validado.sugestao.confianca_geral,
     };
   } catch (erro) {
     // Backstop (trigger 0093) recusou apesar do gate ter liberado — não

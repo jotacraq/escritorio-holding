@@ -42,6 +42,15 @@ export const provedorAnthropic: ProvedorIa = {
 
   async executar<T>(pedido: PedidoIa<T>): Promise<RespostaIa<T>> {
     const client = obterCliente();
+    // 🔴 Fase 11: `pedido.signal` NÃO é propagado neste caminho. O SDK aceita
+    // `{ signal }` como 2º argumento de `.stream()`, mas este é o caminho de
+    // REVERSÃO DE INCIDENTE (rollback sem deploy, comentário de topo do
+    // arquivo) — acionado sob pressão, quando o OpenRouter já está falhando.
+    // Não é o caminho de produção do copiloto hoje (`IA_PROVEDOR` teria que
+    // estar setado para `anthropic` em produção, o que não é o caso). Fica
+    // documentado como lacuna conhecida, não implementado nesta rodada — se
+    // este caminho virar produção do copiloto, propagar `pedido.signal` como
+    // `{ signal: pedido.signal }` em `.stream()` primeiro.
     const stream = client.messages.stream({
       model: pedido.modelo,
       max_tokens: pedido.maxTokens,

@@ -46,7 +46,7 @@ const COM_PROMPT: Resultado = { data: [{ id: "prompt-1" }], error: null };
 const INICIO = "2026-09-11T13:00:00.000Z";
 
 describe("conferirOrcamentoCopiloto", () => {
-  it("passa quando as duas contas estão abaixo do teto (padrão: 30/sessão, 150/dia)", async () => {
+  it("passa quando as duas contas estão abaixo do teto (padrão desde 15/09/2026, migration 0102: 90/sessão, 450/dia)", async () => {
     const r = await conferirOrcamentoCopiloto(cliente([COM_PROMPT, { count: 5, error: null }, { count: 20, error: null }]), {
       jornadaId: "j1",
       inicioSessaoIso: INICIO,
@@ -55,7 +55,7 @@ describe("conferirOrcamentoCopiloto", () => {
   });
 
   it("barra no teto da SESSÃO", async () => {
-    const r = await conferirOrcamentoCopiloto(cliente([COM_PROMPT, { count: 30, error: null }, { count: 20, error: null }]), {
+    const r = await conferirOrcamentoCopiloto(cliente([COM_PROMPT, { count: 90, error: null }, { count: 20, error: null }]), {
       jornadaId: "j1",
       inicioSessaoIso: INICIO,
     });
@@ -63,7 +63,7 @@ describe("conferirOrcamentoCopiloto", () => {
   });
 
   it("barra no teto do DIA (mesmo com a sessão dentro do próprio teto)", async () => {
-    const r = await conferirOrcamentoCopiloto(cliente([COM_PROMPT, { count: 5, error: null }, { count: 150, error: null }]), {
+    const r = await conferirOrcamentoCopiloto(cliente([COM_PROMPT, { count: 5, error: null }, { count: 450, error: null }]), {
       jornadaId: "j1",
       inicioSessaoIso: INICIO,
     });

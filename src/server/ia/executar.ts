@@ -91,6 +91,14 @@ export interface ParamsExecutarComAuditoria<T> {
    * não podem ser alcançáveis pela API pública).
    */
   isentoCooldown?: boolean;
+  /**
+   * Opcional — 100% ADITIVO (Fase 11: abre esta fronteira para
+   * `src/server/copiloto/executar-ia.ts` abortar de verdade a chamada em voo
+   * depois do timeout de 8s, em vez de deixá-la rodar até 300s à toa).
+   * Repassado sem alteração a `provedor.executar()` (`PedidoIa.signal`).
+   * Nenhum chamador existente passa este campo.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ResultadoExecucaoAuditada<T> {
@@ -119,6 +127,7 @@ export async function executarComAuditoria<T>(
     effortOverride,
     variante,
     isentoCooldown,
+    signal,
   } = params;
 
   let consultaPrompt = supabaseAdmin
@@ -194,6 +203,7 @@ export async function executarComAuditoria<T>(
       nomeSchema,
       maxTokens,
       effort,
+      signal,
     });
 
     const latenciaMs = Date.now() - inicio;
