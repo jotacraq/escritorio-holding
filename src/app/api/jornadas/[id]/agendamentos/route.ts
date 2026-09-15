@@ -6,18 +6,27 @@ import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirInterno } from "@/server/auth";
 import { erroConflito, erroNaoEncontrado, erroValidacao, registrarErro, respostaErro } from "@/server/erros";
+import { CHAVE_DURACAO_PADRAO_MINUTOS, lerConfiguracaoInt } from "@/server/agenda/config";
 import type { AgendamentoSessao, SessaoViabilidade } from "@/types/banco";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
+/**
+ * `fim_em` é opcional (15/09/2026, "Iniciar sessão agora"): o fluxo normal de
+ * agendar sempre manda os dois, calculados pela tela a partir da duração
+ * escolhida (`FormularioAgendamento`). Já a sessão imediata só sabe o
+ * `inicio_em` (agora) — quem decide a duração é o SERVIDOR, lendo
+ * `agenda.duracao_padrao_minutos` (BLOQUEIO B12, o mesmo caminho de
+ * `POST /api/disponibilidades`), nunca uma constante duplicada no navegador.
+ */
 const CorpoSchema = z
   .object({
     inicio_em: z.string().datetime({ offset: true }),
-    fim_em: z.string().datetime({ offset: true }),
+    fim_em: z.string().datetime({ offset: true }).optional(),
     advogada_id: z.string().uuid().optional(),
     observacoes: z.string().trim().max(1000).optional(),
   })
-  .refine((v) => new Date(v.fim_em) > new Date(v.inicio_em), {
+  .refine((v) => !v.fim_em || new Date(v.fim_em) > new Date(v.inicio_em), {
     message: "`fim_em` precisa ser depois de `inicio_em`.",
     path: ["fim_em"],
   });
@@ -55,6 +64,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     let sessao = sessaoExistente;
 
+    // Mesma leitura de `POST /api/disponibilidades` — `padrao` só cobre chave
+    // ausente/falha pontual, nunca mascara um valor real diferente do padrão.
+    const fimEm = corpo.fim_em ?? new Date(new Date(corpo.inicio_em).getTime() + (await lerConfiguracaoInt(supabase, CHAVE_DURACAO_PADRAO_MINUTOS, 60)) * 60_000).toISOString();
+
     if (!sessao) {
       const { data: novaSessao, error: erroCriarSessao } = await supabase
         .from("sessoes_viabilidade")
@@ -73,7 +86,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .insert({
         sessao_id: (sessao as SessaoViabilidade).id,
         inicio_em: corpo.inicio_em,
-        fim_em: corpo.fim_em,
+        fim_em: fimEm,
         advogada_id: corpo.advogada_id ?? null,
         observacoes: corpo.observacoes ?? null,
         status: "agendado",

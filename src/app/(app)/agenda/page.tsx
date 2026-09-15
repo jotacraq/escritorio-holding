@@ -6,6 +6,7 @@ import { ListaSessoes } from "@/components/agenda/ListaSessoes";
 import { PainelDisponibilidade } from "@/components/agenda/PainelDisponibilidade";
 import { PainelBloqueios } from "@/components/agenda/PainelBloqueios";
 import { LinkBotao } from "@/components/ui/LinkBotao";
+import { IniciarSessaoAgora } from "@/components/agenda/IniciarSessaoAgora";
 
 /**
  * Agenda. Fase 6, decisão 5 do João: "onde é que a gente define quais dias a
@@ -14,6 +15,16 @@ import { LinkBotao } from "@/components/ui/LinkBotao";
  * "Horários livres" virou **"Disponibilidade da equipe"** e ganhou entrada
  * direta em três lugares: a aba, uma ação no cabeçalho da Agenda e a paleta
  * de comandos (Ctrl+K). O deep-link `#disponibilidade` já funcionava.
+ *
+ * 15/09/2026 — par "Iniciar sessão agora" / "Marcar sessão", à moda do Google
+ * Meet ("Nova reunião" ao lado de "Agendar"). Fica aqui, não em Hoje: esta
+ * já é a tela com o padrão de ação primária + secundária no cabeçalho
+ * ("Marcar sessão" era o único CTA), e é o destino natural de quem pensa
+ * "preciso marcar/começar uma sessão" — Hoje é fila de trabalho reativa a
+ * dado existente (cada bloco espelha algo que já aconteceu), não o lugar de
+ * abrir um formulário de criação. "Iniciar sessão agora" assume o lugar de
+ * CTA que "Marcar sessão" tinha; "Marcar sessão" recua para secundário —
+ * mesmo destino de sempre (`/clientes`).
  */
 export default function PaginaAgenda() {
   const abas: DefinicaoAba[] = [
@@ -50,11 +61,12 @@ export default function PaginaAgenda() {
           // leva para a lista — é o mesmo caminho que o estado vazio já dizia
           // em palavras, agora como botão.
           <>
-            {/* No celular esta ação vive na `BarraAcaoMobile` da aba Sessões
-                (zona do polegar). Repetir aqui poria DOIS "Marcar sessão"
-                laranja na mesma dobra — para quem lê devagar, dois botões
-                iguais são duas perguntas, não uma resposta. */}
-            <LinkBotao href="/clientes" variante="cta" className="max-md:hidden">
+            {/* No celular "Marcar sessão" vive na `BarraAcaoMobile` da aba
+                Sessões (zona do polegar) — mantido `max-md:hidden` para não
+                repetir. "Iniciar sessão agora" é a ação do dia a dia (não tem
+                par no celular ainda) e por isso fica visível em toda largura. */}
+            <IniciarSessaoAgora />
+            <LinkBotao href="/clientes" variante="secundario" className="max-md:hidden">
               Marcar sessão
             </LinkBotao>
             <LinkBotao href="/agenda#disponibilidade" variante="secundario">

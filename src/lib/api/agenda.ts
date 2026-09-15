@@ -27,7 +27,12 @@ export function listarProximosAgendamentos(params: { de?: string; ate?: string }
   return chamarOpcional<{ itens: Agendamento[] }>(`/api/agendamentos${paraQueryString(params)}`);
 }
 
-export function criarAgendamento(jornadaId: string, payload: { inicio_em: string; fim_em: string; advogada_id?: string }) {
+/**
+ * `fim_em` é opcional: sem ele, o servidor calcula com `agenda.duracao_padrao_minutos`
+ * (mesma leitura de `POST /api/disponibilidades`) — é o caminho de "Iniciar sessão
+ * agora" (`IniciarSessaoAgora.tsx`), que só sabe o instante de início.
+ */
+export function criarAgendamento(jornadaId: string, payload: { inicio_em: string; fim_em?: string; advogada_id?: string }) {
   return chamar<{ agendamento: Agendamento }>(`/api/jornadas/${jornadaId}/agendamentos`, { method: "POST", body: JSON.stringify(payload) });
 }
 

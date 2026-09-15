@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { Botao } from "@/components/ui/Botao";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
+import { IniciarSessaoAgora } from "@/components/agenda/IniciarSessaoAgora";
 import { EsqueletoCartao, EsqueletoLista } from "@/components/ui/Esqueleto";
 import { EstadoErro } from "@/components/ui/Estado";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
@@ -194,6 +195,16 @@ export function PainelDia() {
         titulo={comMaiusculaInicial(FORMATADOR_DATA_TITULO.format(new Date()))}
         acoes={
           <>
+            {/* 15/09/2026 — "Iniciar sessão agora" também aqui, não só na
+             * Agenda. Esta é a tela que a Dra. Elaine abre primeiro; deixar o
+             * atalho só na Agenda custaria o clique de navegação que o pedido
+             * do Marcio ("deixa intuitivo pra iniciar uma sessão imediata")
+             * existe para eliminar. É a MESMA instância do componente
+             * (autocontido, sem props) — nada é duplicado: corrigir o fluxo
+             * num lugar corrige nos dois. As ações auxiliares que já moravam
+             * aqui ("Como funciona", "Atualizar") continuam, depois dela: o
+             * verbo de trabalho vem primeiro, a manutenção da tela depois. */}
+            <IniciarSessaoAgora />
             <Botao variante="fantasma" icone={ICONE_AJUDA} onClick={() => setTourAberto(true)}>
               Como funciona
             </Botao>
