@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RoteiroDefinicao } from "@/types/roteiro";
 import type { ContextoCopiloto } from "@/types/copiloto";
 import { erroNaoEncontrado } from "@/server/erros";
+import { lerConfiguracaoBool } from "@/server/ia/configuracao";
+import { normalizarNome, normalizarParticipantesBrutos, type ParticipanteRegistrado } from "@/server/copiloto/participantes";
 
 /**
  * Montador do contexto que vai para a IA do copiloto — Fase 10, Fatia 2
@@ -11,11 +13,22 @@ import { erroNaoEncontrado } from "@/server/erros";
  * duplicar a query.
  *
  * FRONTEIRA DE PII (§7 do plano): este módulo é o "um lugar só" onde o nome
- * do falante vira papel (`advogada`/`cliente`/`acompanhante_N`) e onde os
+ * do falante vira papel (`advogada`/`decisor_N`/`acompanhante_N`) e onde os
  * NOMES dos decisores do briefing NUNCA entram — só a contagem. Patrimônio,
  * CPF, endereço e dado de IR não são consultados aqui: não há import de
  * `cenarios`, `croqui_calculos` nem `documentos` neste arquivo, por
  * construção (não por checagem em runtime).
+ *
+ * 🔴 PAPÉIS DE FALA (15/09/2026) — CORREÇÃO de cegueira medida em produção:
+ * 128 segmentos com o nome PRÓPRIO gravado certo (`"João CSM"`) chegavam à
+ * IA como `"participante:"`, porque o `PAPEIS_CONHECIDOS` antigo só conhecia
+ * `"advogada"`/`"cliente"` — nunca casava com nome próprio. O papel agora é
+ * RESOLVIDO NA ESCRITA (`server/copiloto/participantes.ts::resolverPapelNoJoin`,
+ * chamado por `entrada-bot.ts` no `join`) e gravado em
+ * `sessoes_copiloto.participantes[].papel` — este módulo só CONSOME o mapa
+ * pronto (`rotuloFalante`), nunca decide papel sozinho. Isso preserva a
+ * fronteira de PII: o NOME nunca sai desta função, só o papel estável já
+ * resolvido alhures.
  *
  * Bloco E (resumo acumulado) fica FORA desta função nesta entrega: mora em
  * `sessoes_copiloto.resumo_acumulado` (0091), e a Fatia 2 só LÊ o que já está
@@ -180,7 +193,13 @@ export async function montarContextoCopiloto(
   };
 
   // --- D · janela deslizante de transcrição, literal, ~90s ------------------
-  const janelaD = await buscarJanelaTranscricao(supabase, sessaoId);
+  // `mapaDePapeis` vem do MESMO `sessoes_copiloto.participantes` já lido no
+  // select principal (linha ~72) — ZERO query nova (aceite explícito desta
+  // fatia). `papeisDeFalaEstaoAtivos` é o único fetch extra: 1 leitura de
+  // `configuracoes`, mesmo padrão de `copilotoEstaAtivo`/`audioAoVivoEstaAtivo`.
+  const papeisAtivos = await papeisDeFalaEstaoAtivos(supabase);
+  const mapaDePapeis = papeisAtivos ? montarMapaDePapeis(data.sessoes_copiloto?.participantes) : null;
+  const janelaD = await buscarJanelaTranscricao(supabase, sessaoId, mapaDePapeis);
 
   // --- E · resumo estruturado acumulado (lido como está; ninguém reescreve
   // aqui nesta fatia — ver comentário de topo) ------------------------------
@@ -268,9 +287,46 @@ function normalizarParticipantes(bruto: unknown): string[] {
   return presentes;
 }
 
+/** `copiloto_sessao.papeis_de_fala` (migration 0103, 15/09/2026) — MESMO
+ * interruptor que `entrada-bot.ts` confere antes de gravar `papel`. Lido de
+ * novo aqui (na LEITURA) porque desligar o interruptor no MEIO de uma sessão
+ * já em andamento precisa voltar ao comportamento antigo IMEDIATAMENTE — se
+ * este módulo confiasse só no que foi gravado na escrita, desligar a chave
+ * não desligaria nada até a próxima entrada/saída de participante. Falha de
+ * leitura cai em `false` — mesma regra dura de todo interruptor do copiloto. */
+const CHAVE_PAPEIS_DE_FALA = "copiloto_sessao.papeis_de_fala";
+
+async function papeisDeFalaEstaoAtivos(supabase: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(supabase, CHAVE_PAPEIS_DE_FALA, true);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mapa `nome normalizado → papel` a partir de `sessoes_copiloto.participantes`
+ * — ZERO query nova (o jsonb já veio no select principal desta função). Só
+ * entra quem tem `nome` E `papel` resolvidos (`resolverPapelNoJoin` nunca
+ * atribui `decisor_N` a quem só tem `id`, ver `participantes.ts`) — entrada
+ * sem papel (sessão em andamento de antes desta fatia, ou interruptor
+ * desligado no momento do join) simplesmente não entra no mapa, e
+ * `rotuloFalante` cai no fallback de sempre. Quando duas entradas históricas
+ * da MESMA pessoa (join/leave/join) têm nomes com grafia levemente diferente
+ * mas mesmo `id`, todas caem na MESMA chave normalizada aqui — o mapa não
+ * perde a herança de papel que `aplicarEventoParticipante` já garantiu. */
+function montarMapaDePapeis(bruto: unknown): Map<string, string> {
+  const lista: ParticipanteRegistrado[] = normalizarParticipantesBrutos(bruto);
+  const mapa = new Map<string, string>();
+  for (const p of lista) {
+    if (p.nome && p.papel) mapa.set(normalizarNome(p.nome), p.papel);
+  }
+  return mapa;
+}
+
 /**
  * Bloco D — últimos ~90s de fala, com o NOME do falante trocado por PAPEL
- * (advogada/cliente/acompanhante_N) antes de sair desta função — é o "um
+ * (advogada/decisor_N/acompanhante_N) antes de sair desta função — é o "um
  * lugar só" que o §7 do plano exige. Teto de linhas (`MAX_SEGMENTOS_JANELA`)
  * é defensivo: em ritmo humano de fala, 90s não gera tantos segmentos, mas a
  * query nunca fica sem `limit`.
@@ -288,7 +344,11 @@ function normalizarParticipantes(bruto: unknown): string[] {
  * é o que esta função faz. `explain (analyze)` A MEDIR em
  * `scripts/verificacao-0092-0093.sql` §9.
  */
-async function buscarJanelaTranscricao(supabase: SupabaseClient, sessaoId: string): Promise<string[]> {
+async function buscarJanelaTranscricao(
+  supabase: SupabaseClient,
+  sessaoId: string,
+  mapaDePapeis: Map<string, string> | null,
+): Promise<string[]> {
   const desde = new Date(Date.now() - JANELA_TRANSCRICAO_SEGUNDOS * 1000).toISOString();
 
   const { data, error } = await supabase
@@ -301,16 +361,40 @@ async function buscarJanelaTranscricao(supabase: SupabaseClient, sessaoId: strin
     .returns<SegmentoJanela[]>();
   if (error) throw error;
 
-  return (data ?? []).map((s) => `${rotuloFalante(s.falante)}: ${s.texto}`);
+  return (data ?? []).map((s) => `${rotuloFalante(s.falante, mapaDePapeis)}: ${s.texto}`);
 }
 
+/** Rótulos que o caminho MANUAL já usa há mais tempo (`RegistroManual`
+ * deixa a advogada digitar "advogada"/"cliente" à mão) — mantido como
+ * fallback quando `bruto` não casa com o mapa de papéis (§ decisão
+ * 15/09/2026: "mantenha PAPEIS_CONHECIDOS como fallback para o caminho
+ * MANUAL, e isso já funciona"). NUNCA reaproveitado como fonte primária —
+ * o mapa (nome do PROVEDOR → papel resolvido na escrita) é sempre
+ * consultado primeiro. */
 const PAPEIS_CONHECIDOS = new Set(["advogada", "cliente"]);
 
-/** Nome próprio de falante NUNCA sai desta função — vira papel genérico
- * (§7 do plano). Rótulo desconhecido (ainda não existe convenção do provedor
- * de bot, Fatia 4) cai em "participante" — nunca o texto bruto do provedor. */
-function rotuloFalante(bruto: string | null): string {
+/**
+ * Nome próprio de falante NUNCA sai desta função — vira papel genérico (§7
+ * do plano). Ordem de resolução (15/09/2026, papéis de fala):
+ *   1. `mapaDePapeis` (nome normalizado → papel já resolvido na ESCRITA por
+ *      `resolverPapelNoJoin`, `entrada-bot.ts`) — é a fonte de verdade
+ *      quando o interruptor `copiloto_sessao.papeis_de_fala` está ligado.
+ *   2. `PAPEIS_CONHECIDOS` — caminho MANUAL (`bruto` já É o papel literal
+ *      digitado pela advogada, "advogada"/"cliente"), preservado tal como
+ *      era antes desta fatia.
+ *   3. `"participante"` — fallback final: sessão em andamento de antes desta
+ *      fatia (participante sem `papel` gravado), interruptor desligado, ou
+ *      rótulo que não casa com nenhum dos dois caminhos acima. Degradação
+ *      graciosa, comportamento IDÊNTICO ao de antes desta correção — nenhuma
+ *      migration de dados. */
+function rotuloFalante(bruto: string | null, mapaDePapeis: Map<string, string> | null): string {
   if (!bruto) return "participante";
+
+  if (mapaDePapeis) {
+    const papel = mapaDePapeis.get(normalizarNome(bruto));
+    if (papel) return papel;
+  }
+
   const normalizado = bruto.trim().toLowerCase();
   return PAPEIS_CONHECIDOS.has(normalizado) ? normalizado : "participante";
 }

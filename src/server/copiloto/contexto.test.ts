@@ -46,6 +46,13 @@ interface MontarSupabaseOpts {
   roteirosVersoesEmbed: { definicao: unknown } | null;
   roteiroAtivoResultado?: { data: unknown; error: unknown };
   roteiroAtivoSpy?: ReturnType<typeof vi.fn>;
+  /** `sessoes_copiloto.participantes` embutido no select principal — jsonb cru. */
+  participantes?: unknown;
+  /** Segmentos brutos da janela D (`falante` já é o NOME do provedor, nunca papel). */
+  segmentos?: Array<{ falante: string | null; texto: string; criado_em: string }>;
+  /** `configuracoes['copiloto_sessao.papeis_de_fala']` — ausente cai no default `true`
+   * (mesmo comportamento de produção: nasce ligado). */
+  papeisDeFalaValor?: { data: unknown; error: unknown };
 }
 
 function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
@@ -56,7 +63,7 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
     sims: {},
     jornadas: { pessoa_id: "pessoa-1" },
     roteiros_versoes: opts.roteirosVersoesEmbed,
-    sessoes_copiloto: null,
+    sessoes_copiloto: { participantes: opts.participantes ?? [], resumo_acumulado: {} },
   };
 
   const from = vi.fn((tabela: string) => {
@@ -71,7 +78,10 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
       return consultaEncadeavel({ data: null, error: null });
     }
     if (tabela === "sessoes_copiloto_segmentos") {
-      return consultaEncadeavel({ data: [], error: null });
+      return consultaEncadeavel({ data: opts.segmentos ?? [], error: null });
+    }
+    if (tabela === "configuracoes") {
+      return consultaEncadeavel(opts.papeisDeFalaValor ?? { data: null, error: null });
     }
     throw new Error(`tabela não mockada: ${tabela}`);
   });
@@ -156,6 +166,7 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
       }
       if (tabela === "briefings") return consultaEncadeavel({ data: null, error: null });
       if (tabela === "sessoes_copiloto_segmentos") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "configuracoes") return consultaEncadeavel({ data: null, error: null });
       throw new Error(`tabela não mockada: ${tabela}`);
     });
     const supabase = { from } as unknown as SupabaseClient;
@@ -163,5 +174,103 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
     const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.roteiro_fonte).toBe("ativo_fallback");
+  });
+});
+
+describe("montarContextoCopiloto — 🔴 fronteira de PII (§7 do plano, teste mais importante desta fatia)", () => {
+  it("🔴 nenhum NOME PRÓPRIO de participantes aparece em nenhuma string do ContextoCopiloto serializado", async () => {
+    const NOMES_PROIBIDOS = ["João CSM", "Cláudia", "Rodrigo", "Terezinha", "Cleison", "Fulano de Tal"];
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [
+        { id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: "advogada" },
+        { id: "p2", nome: "Cláudia", entrou_em: "10:01", saiu_em: null, papel: "decisor_1" },
+        { id: "p3", nome: "Rodrigo", entrou_em: "10:02", saiu_em: null, papel: "decisor_2" },
+        { id: "p4", nome: "Fulano de Tal", entrou_em: "10:03", saiu_em: null, papel: "acompanhante_1" },
+      ],
+      segmentos: [
+        { falante: "João CSM", texto: "Vamos começar a sessão.", criado_em: new Date().toISOString() },
+        { falante: "Cláudia", texto: "Temos um imóvel e uma empresa.", criado_em: new Date().toISOString() },
+        { falante: "Rodrigo", texto: "Concordo com ela.", criado_em: new Date().toISOString() },
+        { falante: "Fulano de Tal", texto: "Posso perguntar uma coisa?", criado_em: new Date().toISOString() },
+        { falante: "Terezinha", texto: "Fala antiga sem papel resolvido (sessão de antes da fatia).", criado_em: new Date().toISOString() },
+      ],
+    });
+
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const serializado = JSON.stringify(contexto);
+
+    for (const nome of NOMES_PROIBIDOS) {
+      expect(serializado).not.toContain(nome);
+    }
+    // Prova positiva de que o papel SUBSTITUIU o nome (não é um teste vazio).
+    expect(contexto.janela_transcricao.some((l) => l.startsWith("advogada:"))).toBe(true);
+    expect(contexto.janela_transcricao.some((l) => l.startsWith("decisor_1:"))).toBe(true);
+    expect(contexto.janela_transcricao.some((l) => l.startsWith("decisor_2:"))).toBe(true);
+    expect(contexto.janela_transcricao.some((l) => l.startsWith("acompanhante_1:"))).toBe(true);
+  });
+});
+
+describe("montarContextoCopiloto — resolução de papel (15/09/2026, correção de cegueira)", () => {
+  it("🔴 nome próprio com papel resolvido vira o PAPEL na janela de transcrição, nunca 'participante' genérico", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: "advogada" }],
+      segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.janela_transcricao).toEqual(["advogada: fala real"]);
+  });
+
+  it("participante sem papel resolvido (sessão em andamento de antes desta fatia) cai no fallback 'participante' — degradação graciosa", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: null }],
+      segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.janela_transcricao).toEqual(["participante: fala real"]);
+  });
+
+  it("interruptor 'copiloto_sessao.papeis_de_fala' DESLIGADO: ignora o mapa mesmo com papel gravado — volta ao 'participante' genérico", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: "advogada" }],
+      segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
+      papeisDeFalaValor: { data: { valor: false }, error: null },
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.janela_transcricao).toEqual(["participante: fala real"]);
+  });
+
+  it("caminho MANUAL preservado: falante já É o papel literal ('advogada'/'cliente') digitado pela advogada", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [], // sem participantes do bot — modo digitado
+      segmentos: [
+        { falante: "advogada", texto: "pergunta manual", criado_em: new Date().toISOString() },
+        { falante: "cliente", texto: "resposta manual", criado_em: new Date().toISOString() },
+      ],
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.janela_transcricao).toEqual(["advogada: pergunta manual", "cliente: resposta manual"]);
+  });
+
+  it("ZERO query nova: sessoes_viabilidade/roteiros_versoes/briefings/sessoes_copiloto_segmentos/configuracoes — nenhuma tabela extra", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: "advogada" }],
+    });
+    await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const tabelasChamadas = (supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(new Set(tabelasChamadas)).toEqual(
+      new Set(["sessoes_viabilidade", "briefings", "configuracoes", "sessoes_copiloto_segmentos"]),
+    );
   });
 });

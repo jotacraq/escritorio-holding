@@ -80,8 +80,14 @@ function escolherBriefingAtual(briefings: BriefingParaDecisores[] | undefined): 
 }
 
 /** Nomes de `processo_decisorio.decisores` do briefing atual — `[]` quando
- * não há briefing ou o campo está ausente (nunca lança). */
-function extrairDecisoresEsperados(briefingAtual: BriefingParaDecisores | null): string[] {
+ * não há briefing ou o campo está ausente (nunca lança).
+ *
+ * EXPORTADA (15/09/2026, papéis de fala): `entrada-bot.ts::registrarEventoParticipante`
+ * reusa esta função (com `escolherBriefingAtual`) para resolver `decisor_N`
+ * no momento do join — mesma leitura de briefing, nenhuma duplicação. Ver o
+ * comentário `🔴 REMOVIDO` em `participantes.ts` (fim do arquivo): a versão
+ * duplicada que existia ali foi removida de propósito; esta é a ÚNICA. */
+export function extrairDecisoresEsperados(briefingAtual: BriefingParaDecisores | null): string[] {
   const decisores = briefingAtual?.conteudo?.processo_decisorio?.decisores;
   return Array.isArray(decisores) ? decisores.filter((d): d is string => typeof d === "string" && d.trim().length > 0) : [];
 }

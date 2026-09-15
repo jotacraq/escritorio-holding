@@ -124,6 +124,23 @@ const CorpoBaseSchema = z.object({
   data: z.object({ bot: z.object({ id: z.string().trim().min(1).max(200) }) }).passthrough(),
 });
 
+/**
+ * 🔴 CORREÇÃO (15/09/2026, medido em produção: 10 `join` + 5 `leave`
+ * recebidos, 15 com `payload_participant_event_fora_do_formato_esperado` —
+ * ZERO sessão com `sessoes_copiloto.participantes` preenchido). O formato
+ * REAL do Recall para `timestamp` é um OBJETO `{absolute, relative}`
+ * (copiado de `webhooks_eventos.bruto`, sessão de 14/09) — o schema antigo só
+ * aceitava string/número, então o Zod rejeitava o payload INTEIRO e o evento
+ * morria em `payload_invalido`, sem nunca chegar a `aplicarEventoParticipante`.
+ * Aceita as 3 formas: objeto (extraímos `absolute`), string, número — ver o
+ * handler em `processarEvento` (mais abaixo) para a extração.
+ */
+const TimestampEventoSchema = z.union([
+  z.object({ absolute: z.string().trim().min(1).optional(), relative: z.number().optional() }),
+  z.string(),
+  z.number(),
+]);
+
 const TranscriptDataSchema = z.object({
   event: z.literal("transcript.data"),
   data: z.object({
@@ -138,22 +155,61 @@ const TranscriptDataSchema = z.object({
   }),
 });
 
+/**
+ * 🔴 CORREÇÃO (15/09/2026, mesma causa-raiz do timestamp acima — payload real
+ * copiado de produção). O envelope REAL do Recall para `participant_events.*`
+ * é MAIS PROFUNDO do que o schema antigo assumia: `data.data` é um objeto
+ * `{data: null, action, timestamp, participant}` — o `participant` vem com
+ * `id` NUMÉRICO (`100`), `is_host` (`true`) e `name`. O schema antigo (a)
+ * exigia `name` (Zod descarta o payload inteiro se faltar — nunca aconteceu
+ * na sonda porque o `name` real está presente, mas era um contrato mais
+ * rígido do que o necessário), (b) não declarava `id` nem `is_host`, então o
+ * Zod os DESCARTAVA em silêncio mesmo quando presentes.
+ *
+ * `id` e `is_host` agora são declarados e usados pela Fatia 3 (papéis de
+ * fala, `entrada-bot.ts`/`participantes.ts`): `is_host` decide o papel
+ * "advogada"; `id` é a chave PREFERIDA para herdar papel entre join/leave/join
+ * (mais estável que nome, que pode vir com variação de grafia entre eventos).
+ *
+ * `name` passa a ser OPCIONAL — alinhado com `TranscriptDataSchema.participant`
+ * (que já era opcional) e com a regra de negócio: se vier só `id` sem `name`,
+ * o evento AINDA é útil (conta presença), mas essa pessoa nunca pode virar
+ * `decisor_N` (não há nome para casar com o briefing) — cai em acompanhante.
+ * Sem `name` E sem `id`, o evento não tem como identificar ninguém: é
+ * ignorado (200, sem efeito) — ver `processarEvento`.
+ */
 const ParticipantEventSchema = z.object({
   event: z.union([z.literal("participant_events.join"), z.literal("participant_events.leave")]),
   data: z.object({
     bot: z.object({ id: z.string().trim().min(1).max(200) }),
     data: z.object({
-      participant: z.object({ name: z.string().trim().max(300) }),
-      timestamp: z.union([z.string(), z.number()]).optional(),
+      participant: z.object({
+        id: z.union([z.string(), z.number()]).optional(),
+        name: z.string().trim().max(300).optional(),
+        is_host: z.boolean().optional(),
+      }),
+      timestamp: TimestampEventoSchema.optional(),
     }),
   }),
 });
 
-/** Id de evento determinístico para a linha do livro-razão — a Recall não
- * documentou (nesta sonda) um id de evento nativo por chamada de webhook.
- * Hash do conteúdo relevante: reentrega EXATA do mesmo payload cai no mesmo
- * id (idempotente); um evento realmente novo (texto/participante diferente,
- * ou timestamp diferente) gera outro id, nunca é descartado por engano. */
+/**
+ * Id de evento determinístico para a linha do livro-razão. Hash do conteúdo
+ * relevante: reentrega EXATA do mesmo payload cai no mesmo id (idempotente);
+ * um evento realmente novo (texto/participante diferente, ou timestamp
+ * diferente) gera outro id, nunca é descartado por engano.
+ *
+ * 🔴 MEDIDO em 15/09/2026 (não mais suposição): `data.participant_events.id`
+ * do envelope NÃO É um id de evento individual — é o id do STREAM/ARTEFATO de
+ * eventos de participante daquela gravação (mesma natureza de `recording.id`
+ * e `realtime_endpoint.id`, que também se repetem). Conferido contra 15
+ * eventos reais em `webhooks_eventos`: o MESMO `participant_events.id`
+ * apareceu em `join` de 3 pessoas diferentes e em `leave` da mesma gravação.
+ * Usá-lo como `evento_externo_id` faria `reservarEventoWebhook` tratar o 2º,
+ * 3º e 4º participante como REENTREGA do 1º e descartá-los em silêncio —
+ * trocaria um bug visível (payload rejeitado, com erro) por um invisível
+ * (evento engolido). Por isso o hash do corpo continua sendo a chave —
+ * decisão reavaliada e reafirmada nesta correção, não uma lacuna aberta. */
 function idEventoDeterministico(botId: string, tipo: string, corpoTexto: string): string {
   const hash = crypto.createHash("sha256").update(corpoTexto, "utf8").digest("hex").slice(0, 32);
   return `${botId}:${tipo}:${hash}`;
@@ -368,17 +424,37 @@ async function processarEvento(
     if (!parse.success) {
       return { erroParaAuditoria: "payload_participant_event_fora_do_formato_esperado", corpoExtra: { payload_invalido: true } };
     }
+
+    // 🔴 CORREÇÃO (15/09/2026) — `timestamp` agora chega como OBJETO
+    // `{absolute, relative}` na maioria dos eventos reais (ver o comentário
+    // de `TimestampEventoSchema`). SÓ usamos `absolute` quando presente —
+    // NUNCA inventamos data a partir de `relative` sozinho (é relativo ao
+    // INÍCIO DA GRAVAÇÃO, não uma data de calendário; calcular uma data a
+    // partir dele exigiria saber o instante em que a gravação começou, que
+    // este módulo não tem). Sem `absolute`, cai no fallback já existente
+    // (`new Date().toISOString()` — hora de PROCESSAMENTO do webhook, não do
+    // evento em si, mas é o mesmo comportamento de antes desta correção).
     const quando = (() => {
       const ts = parse.data.data.data.timestamp;
       if (typeof ts === "string") return ts;
       if (typeof ts === "number") return new Date(ts).toISOString();
+      if (ts && typeof ts === "object" && typeof ts.absolute === "string") return ts.absolute;
       return new Date().toISOString();
     })();
+
+    const participante = parse.data.data.data.participant;
+    // 🔴 CORREÇÃO (15/09/2026) — sem `name` E sem `id` não há como identificar
+    // ninguém: ignora o evento (200, sem efeito), nunca inventa um nome.
+    if (participante.name === undefined && participante.id === undefined) {
+      return { erroParaAuditoria: "participant_event_sem_identificacao", corpoExtra: { sem_identificacao: true } };
+    }
 
     const resultado = await registrarEventoParticipante(admin, {
       botId,
       tipo: tipo === "participant_events.join" ? "join" : "leave",
-      nomeParticipante: parse.data.data.data.participant.name,
+      nomeParticipante: participante.name ?? null,
+      idParticipante: participante.id !== undefined ? String(participante.id) : null,
+      isHost: participante.is_host ?? false,
       quando,
     });
 
