@@ -209,6 +209,8 @@ export interface IndicadorEdicaoLinha {
 export interface RespostaPainel {
   gerado_em: string;
   sessoes_do_dia: SessaoDoDiaLinha[];
+  /** 15/09 (0104) — sessão do passado, mesmas colunas de `sessoes_do_dia`. */
+  sessoes_em_aberto: SessaoDoDiaLinha[];
   pendencias_preparo: PendenciaPreparoLinha[];
   pagos_sem_contato: PagoSemContatoLinha[];
   pendencias_sistema: PendenciaSistemaLinha[];

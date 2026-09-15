@@ -21,6 +21,8 @@ import type { RespostaPainel } from "@/types/agenda";
  */
 export const FONTE_DO_BLOCO = {
   sessoes_hoje: { campo: "sessoes_do_dia", view: "vw_sessoes_do_dia" },
+  // 15/09 (0104) — sessão do passado ainda sem desfecho, mesma forma de linha.
+  sessoes_em_aberto: { campo: "sessoes_em_aberto", view: "vw_sessoes_em_aberto" },
   preparo: { campo: "pendencias_preparo", view: "vw_pendencias_preparo" },
   pagos_sem_contato: { campo: "pagos_sem_contato", view: "vw_pagos_sem_contato" },
   sistema: { campo: "pendencias_sistema", view: "vw_pendencias_sistema" },

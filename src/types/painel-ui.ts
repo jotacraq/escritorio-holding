@@ -140,6 +140,8 @@ export type IndicadorEdicao = z.infer<typeof IndicadorEdicaoSchema>;
 export const RespostaPainelSchema = z.object({
   gerado_em: z.string().optional(),
   sessoes_do_dia: z.array(SessaoDoDiaSchema).optional(),
+  /** 15/09 (0104) — mesma forma de `sessoes_do_dia`, sessão cujo dia já passou. */
+  sessoes_em_aberto: z.array(SessaoDoDiaSchema).optional(),
   pendencias_preparo: z.array(PendenciaPreparoSchema).optional(),
   pagos_sem_contato: z.array(PagoSemContatoSchema).optional(),
   pendencias_sistema: z.array(PendenciaSistemaSchema).optional(),
@@ -179,6 +181,7 @@ export interface ProvaDeVidaEsteira {
 
 export type ChaveBlocoPainel =
   | "sessoes_do_dia"
+  | "sessoes_em_aberto"
   | "pendencias_preparo"
   | "pagos_sem_contato"
   | "pendencias_sistema"
@@ -217,6 +220,8 @@ function validarBloco<T>(
 export interface PainelDiaNormalizado {
   geradoEm: string | null;
   sessoesDoDia: EstadoBloco<SessaoDoDia>;
+  /** 15/09 (0104) — sessão cujo dia passou sem virar realizada/no-show/remarcada. */
+  sessoesEmAberto: EstadoBloco<SessaoDoDia>;
   pendenciasPreparo: EstadoBloco<PendenciaPreparo>;
   pagosSemContato: EstadoBloco<PagoSemContato>;
   pendenciasSistema: EstadoBloco<PendenciaSistema>;
@@ -236,6 +241,7 @@ export function normalizarPainel(bruto: unknown): PainelDiaNormalizado {
   return {
     geradoEm: typeof geradoEmBruto === "string" ? geradoEmBruto : null,
     sessoesDoDia: validarBloco(objeto.sessoes_do_dia, SessaoDoDiaSchema),
+    sessoesEmAberto: validarBloco(objeto.sessoes_em_aberto, SessaoDoDiaSchema),
     pendenciasPreparo: validarBloco(objeto.pendencias_preparo, PendenciaPreparoSchema),
     pagosSemContato: validarBloco(objeto.pagos_sem_contato, PagoSemContatoSchema),
     pendenciasSistema: validarBloco(objeto.pendencias_sistema, PendenciaSistemaSchema),
