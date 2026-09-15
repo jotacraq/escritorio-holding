@@ -256,10 +256,51 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
        * fora da primeira dobra (ver mais abaixo). `items-start` em toda a
        * grade: cada bloco tem a altura do próprio conteúdo, nunca estica
        * para casar com o vizinho mais alto — densidade real, sem espaço
-       * morto. `xl`/`2xl`: a partir de tela larga (monitor de 2560px, navbar
-       * recolhida, ~2500px úteis) a coluna de vigilância ganha largura fixa
-       * e o mosaico usa o resto — 2 colunas continuariam desperdiçando a
-       * metade da tela que motivou este redesenho.
+       * morto.
+       *
+       * Decisão do dono (15/09, 1ª rodada): breakpoint alinhado com a grade
+       * B (mais abaixo) em `lg` (1024px), não mais `xl` (1280px) — entre
+       * 1024 e 1279px a tela tinha uma seção em 2 colunas e outra em 1.
+       *
+       * Decisão do dono (15/09, 2ª rodada, medição aceita): mesmo com o
+       * teto do `<blockquote>` (Tarefa 1) e a quebra em `lg` (Tarefa 2), os
+       * 4 SIMs empilhados numa coluna de 260px somam ~692px — não cabem em
+       * 900px de viewport junto com cabeçalho, faixa do roteiro e
+       * vigilância (medido, ver Diário). Solução: abaixo de `xl` (1280px)
+       * o `PainelSims` DEIXA a coluna lateral e vira uma FAIXA de largura
+       * cheia, ACIMA do mosaico do `PainelCopiloto` — os 4 SIMs dividem
+       * espaço horizontal em vez de empilhar, e os botões de ação param de
+       * quebrar para linha própria (ver `PainelSims.tsx`).
+       *
+       * Decisão do dono (15/09, 3ª rodada, achado aceito): `xl` é
+       * INCLUSIVO (min-width: 1280px) — então as duas larguras que o dono
+       * pediu para medir (1280×800, 1440×900) caíam no modo COLUNA, não na
+       * faixa, e continuavam em ~692px sem caber. Corte movido de `xl`
+       * para `2xl` (1536px): agora 1280×800 e 1440×900 usam a faixa
+       * (medido: ~436px, cabe), e só monitor grande (o caso de uso
+       * declarado — "monitorar no segundo monitor", comentário acima) usa
+       * a coluna lateral. `2xl` escolhido em vez de um valor customizado
+       * (ex. 1441px) para não criar escala de breakpoint fora do padrão do
+       * projeto — o mesmo motivo que fez `PainelCopiloto.tsx` adotar
+       * `2xl:grid-cols-4` na grade de apoio (outro agente, mesma decisão).
+       *
+       * Implementado com UMA `<div>` `grid` e `grid-template-areas`
+       * nomeadas (`copiloto`/`vigilancia`/`sims`) em vez de duas grades
+       * concorrentes: é a MESMA instância de cada componente mudando de
+       * área por breakpoint — nunca duas instâncias com uma escondida. Isso
+       * evita o problema do requisito do dono: duplicar `PainelSims` no DOM
+       * quebraria o axe (conteúdo repetido para leitor de tela) e o teste
+       * de `offsetParent`. A ordem de leitura (vigilância → SIMs → mosaico)
+       * é a mesma em qualquer largura — só a GEOMETRIA muda, nunca a ordem
+       * das áreas no `grid-template-areas`.
+       *
+       * A coluna lateral nasce em 300px (não mais 260px→300px em dois
+       * estágios `xl`/`2xl`): como a transição faixa→coluna e o alargamento
+       * da coluna aconteciam em breakpoints DIFERENTES antes (`xl`/`2xl`),
+       * ao herdar o único corte em `2xl` as duas regras concorreriam pela
+       * mesma propriedade (`grid-template-columns`) no mesmo breakpoint —
+       * absorvidas em uma só: a coluna já nasce na largura final quando
+       * aparece.
        */}
       {/* Sem o wrapper `Quadro` de propósito aqui: um rótulo "ROTEIRO" em
        * caixa alta acima somaria uma linha inteira a uma faixa que já diz
@@ -271,20 +312,36 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
         <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} compacta />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-2 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="flex flex-col gap-2 xl:order-1">
-          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
+      <div
+        className="grid grid-cols-1 items-start gap-2 [grid-template-areas:'vigilancia'_'sims'_'copiloto'] 2xl:grid-cols-[minmax(0,1fr)_300px] 2xl:[grid-template-areas:'copiloto_vigilancia'_'copiloto_sims']"
+      >
+        {/*
+         * Ordem no DOM = ordem visual abaixo de `2xl` (vigilância → sims →
+         * copiloto), para não descasar da ordem de leitura por teclado/
+         * leitor de tela: `grid-template-areas` só reordena a GEOMETRIA, a
+         * navegação sequencial (Tab, leitor de tela linha a linha) sempre
+         * segue a ordem do DOM. Em `2xl`+ a área "copiloto" ocupa as duas
+         * linhas da coluna esquerda — a inversão visual ali é aceitável
+         * porque em `2xl`+ a tela é larga o bastante para vigilância/SIMs
+         * ficarem sempre visíveis ao lado, sem precisar rolar até o
+         * copiloto primeiro (o motivo original do redesenho, ver comentário
+         * acima).
+         */}
+        <div className="flex flex-col gap-2 [grid-area:vigilancia]">
+          <PainelVigilanciaAoVivo sessao={estado.ficha.sessao!} indiceAtual={indice} totalBlocos={total} />
         </div>
 
-        <div className="flex flex-col gap-2 xl:order-2">
-          <PainelVigilanciaAoVivo sessao={estado.ficha.sessao!} indiceAtual={indice} totalBlocos={total} />
-
+        <div className="[grid-area:sims]">
           <PainelSims
             roteiro={estado.roteiro}
             sessaoId={sessaoId}
             estado={estado.sims}
             aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
           />
+        </div>
+
+        <div className="flex flex-col gap-2 [grid-area:copiloto]">
+          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
         </div>
       </div>
 

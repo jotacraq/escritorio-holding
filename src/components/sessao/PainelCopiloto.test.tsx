@@ -12,6 +12,7 @@ import type {
   RespostaSegmentos,
   RespostaSugestaoCopiloto,
   SugestaoCopiloto,
+  SugestaoCopilotoPolling,
 } from "@/types/copiloto";
 import { ErroSessao } from "@/components/sessao/api";
 
@@ -192,7 +193,7 @@ function respostaPolling(overrides: Partial<EstadoCopilotoComPolling> = {}): Est
   };
 }
 
-const { PainelCopiloto, ApresentacaoComparacaoDecisores } = await import("./PainelCopiloto");
+const { PainelCopiloto, ApresentacaoComparacaoDecisores, ultimoNaoNulo } = await import("./PainelCopiloto");
 
 const ESTADO_BASE: EstadoCopiloto = {
   sessao_id: "s1",
@@ -338,6 +339,12 @@ describe("PainelCopiloto", () => {
   it("não tem violação de acessibilidade", async () => {
     const { container } = await abrir();
     await semViolacoes(container);
+  });
+
+  it("decisão de 15/09: quadros 'Você acertou'/'Você errou' foram removidos (dado nunca existiu, alarme falso permanente)", async () => {
+    const { container } = await abrir();
+    expect(container.textContent).not.toMatch(/você acertou/i);
+    expect(container.textContent).not.toMatch(/você errou/i);
   });
 });
 
@@ -988,6 +995,125 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     expect(historico?.hasAttribute("open")).toBe(true);
   });
 
+  /**
+   * Achado de 15/09 (painel de vigilância, geometria constante): os quadros
+   * 5 (Insight comercial), 6 (Pode pular pra) e a observação crítica do
+   * quadro 2 (Alerta) liam sempre `sugestoesCiclo[length - 1]` — se a
+   * sugestão nova não trazia aquele campo, o valor que já estava na tela
+   * era apagado sozinho no meio da reunião. `ultimoNaoNulo` corrige isso
+   * mantendo o último valor real; o carimbo de hora garante que a tela não
+   * finja que um valor antigo é novo.
+   */
+  describe("achado de 15/09: sugestão nova sem campo não apaga o valor anterior (persistência)", () => {
+    it("sugestão nova sem insight (tipo='fato') NÃO apaga o insight anterior (tipo='inferencia')", async () => {
+      const comInsight = {
+        sugestao_id: "sug-insight-1",
+        ordem_evento: 1,
+        gatilho: "intervalo" as const,
+        confianca_geral: 0.8,
+        visivel: true,
+        sugestao: SUGESTAO_COMPLETA, // observacao.tipo === "inferencia"
+        desfecho: null,
+        criado_em: new Date().toISOString(),
+      };
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [comInsight], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+      expect(container.textContent).toContain("A cliente pode estar adiando a decisão");
+
+      const sugestaoFato: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [],
+        observacao: { tipo: "fato", texto: "Texto de fato, não é insight.", evidencia: null, confianca: 0.9 },
+        desvio_sugerido: null,
+        confianca_geral: 0.9,
+        campos_evidencia_nao_conferida: [],
+      };
+      const semInsight = { ...comInsight, sugestao_id: "sug-insight-2", ordem_evento: 2, sugestao: sugestaoFato };
+      estado.pollingRespostaPadrao = respostaPolling({ sugestoes_novas: [semInsight], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } });
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // O insight da 1ª sugestão continua na tela — não foi apagado pela 2ª,
+      // que não tinha observação do tipo "inferencia".
+      expect(container.textContent).toContain("A cliente pode estar adiando a decisão");
+      expect(container.textContent).toContain("Insight comercial");
+    });
+
+    it("espelho para desvio_sugerido: sugestão nova sem desvio NÃO apaga o desvio anterior — e não contradiz o rodapé", async () => {
+      const comDesvio = {
+        sugestao_id: "sug-desvio-1",
+        ordem_evento: 1,
+        gatilho: "intervalo" as const,
+        confianca_geral: 0.8,
+        visivel: true,
+        sugestao: SUGESTAO_COMPLETA, // tem desvio_sugerido para bloco b2
+        desfecho: null,
+        criado_em: new Date().toISOString(),
+      };
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [comDesvio], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling({ blocosRoteiro: BLOCOS_ROTEIRO });
+      expect(container.textContent).toContain("A radiografia patrimonial não depende do decisor ausente.");
+
+      const sugestaoSemDesvio: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.5,
+        campos_evidencia_nao_conferida: [],
+      };
+      const semDesvio = { ...comDesvio, sugestao_id: "sug-desvio-2", ordem_evento: 2, sugestao: sugestaoSemDesvio };
+      estado.pollingRespostaPadrao = respostaPolling({ sugestoes_novas: [semDesvio], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } });
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // O desvio continua visível no quadro 6...
+      expect(container.textContent).toContain("A radiografia patrimonial não depende do decisor ausente.");
+      // ...e o rodapé (Histórico do coach) NÃO contradiz dizendo "seguir o
+      // roteiro na ordem" — os dois lugares mostram o MESMO dado.
+      expect(container.textContent).not.toContain("Seguir o roteiro na ordem.");
+    });
+
+    it("carimbo de hora aparece quando o valor exibido vem de uma sugestão que não é a mais recente", async () => {
+      const comInsight = {
+        sugestao_id: "sug-carimbo-1",
+        ordem_evento: 1,
+        gatilho: "intervalo" as const,
+        confianca_geral: 0.8,
+        visivel: true,
+        sugestao: SUGESTAO_COMPLETA,
+        desfecho: null,
+        criado_em: "2026-09-15T10:00:00.000Z",
+      };
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [comInsight], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+      // Enquanto é a mais recente: sem carimbo (seria ruído redundante).
+      expect(container.textContent).not.toContain("Registrado às");
+
+      const sugestaoFato: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [],
+        observacao: { tipo: "fato", texto: "Segunda sugestão, sem insight.", evidencia: null, confianca: 0.9 },
+        desvio_sugerido: null,
+        confianca_geral: 0.9,
+        campos_evidencia_nao_conferida: [],
+      };
+      const semInsight = { ...comInsight, sugestao_id: "sug-carimbo-2", ordem_evento: 2, sugestao: sugestaoFato, criado_em: "2026-09-15T10:05:00.000Z" };
+      estado.pollingRespostaPadrao = respostaPolling({ sugestoes_novas: [semInsight], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } });
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Agora o insight exibido NÃO é o da sugestão mais recente — carimbo aparece.
+      expect(container.textContent).toContain("Registrado às");
+    });
+  });
+
   it("sessao_ja_encerrada (clique duplo em Encerrar) não vira erro visível — trata como sucesso", async () => {
     estado.erroEncerrar = new ErroSessao("Esta sessão do copiloto já está encerrada.", 409, "sessao_ja_encerrada");
     const { container, getByRole } = await abrirComPolling();
@@ -1395,6 +1521,51 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await semViolacoes(container);
     });
   });
+
+  /**
+   * Achado do coordenador (15/09): decisores ausentes saiu de `QuadroAlerta`
+   * — a informação de decisores passou a morar NUM LUGAR SÓ, o card completo
+   * renderizado na célula do quadro 7 (`QuadroDecisores`/
+   * `ApresentacaoComparacaoDecisores`). Este bloco prova que a frase "não
+   * entrou na sala" aparece EXATAMENTE UMA VEZ na tela quando há dado, e que
+   * a célula nunca desaparece quando não há (webhook do Recall descartando
+   * eventos de participante hoje — `polling.comparacaoDecisores` sempre
+   * `null` em produção até a Fatia 3 do backend corrigir).
+   */
+  describe("quadro 7 (decisores): fonte única, geometria constante", () => {
+    it("com comparacao_decisores preenchido: a frase 'não entrou na sala' aparece EXATAMENTE UMA VEZ na tela inteira", async () => {
+      const comparacao: ComparacaoDecisoresPresentes = {
+        decisores_esperados: ["Terezinha", "Cleison"],
+        participantes_presentes: ["Terezinha"],
+        presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+        ausentes: ["Cleison"],
+        ambiguos: [],
+      };
+      estado.pollingRespostas = [respostaPolling({ comparacao_decisores: comparacao })];
+      const { container } = await abrirComPolling();
+
+      const ocorrencias = (container.textContent?.match(/Não entrou na sala/gi) ?? []).length;
+      expect(ocorrencias).toBe(1);
+      expect(container.textContent).toContain("Cleison");
+    });
+
+    it("com comparacao_decisores === null (caso normal hoje, achado do coordenador): mostra estado vazio honesto, célula não desaparece", async () => {
+      estado.pollingRespostaPadrao = respostaPolling({ comparacao_decisores: null });
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("Decisores esperados x presentes");
+      expect(container.textContent).toContain("Nenhum decisor esperado registrado ainda");
+      // Nunca inventa "ausente"/"presente" sem dado real.
+      expect(container.textContent).not.toContain("Não entrou na sala");
+    });
+
+    it("axe limpo: quadro 7 com comparacao_decisores null (estado vazio)", async () => {
+      estado.pollingRespostaPadrao = respostaPolling({ comparacao_decisores: null });
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+  });
 });
 
 /**
@@ -1681,3 +1852,66 @@ describe("ApresentacaoComparacaoDecisores — fato participantes x decisores, se
     await semViolacoes(container);
   });
 });
+
+/**
+ * `ultimoNaoNulo` — função pura (achado de 15/09, obrigatória para os
+ * quadros 5, 6 e a observação do quadro 2 não apagarem dado sozinhos).
+ */
+describe("ultimoNaoNulo — função pura", () => {
+  const base = {
+    ordem_evento: 0,
+    gatilho: "intervalo" as const,
+    confianca_geral: 0.8,
+    sugestao: null,
+    desfecho: null,
+    criado_em: new Date().toISOString(),
+  };
+
+  it("devolve o valor mais recente quando existe e é visível", () => {
+    const sugestoes: SugestaoCopilotoPolling[] = [
+      { ...base, sugestao_id: "a", visivel: true, criado_em: "2026-09-15T10:00:00.000Z" },
+      { ...base, sugestao_id: "b", visivel: true, criado_em: "2026-09-15T10:05:00.000Z" },
+    ];
+    const resultado = ultimoNaoNulo(sugestoes, (s) => (s.sugestao_id === "b" ? "valor-b" : null));
+    expect(resultado).toEqual({ valor: "valor-b", sugestaoId: "b", criadoEm: "2026-09-15T10:05:00.000Z" });
+  });
+
+  it("percorre de trás para frente e devolve o PRIMEIRO não-nulo encontrado (o mais recente com dado)", () => {
+    const sugestoes: SugestaoCopilotoPolling[] = [
+      { ...base, sugestao_id: "a", visivel: true },
+      { ...base, sugestao_id: "b", visivel: true },
+      { ...base, sugestao_id: "c", visivel: true },
+    ];
+    // Só "a" e "c" têm valor — deve devolver "c" (o mais recente com dado), não "a".
+    const resultado = ultimoNaoNulo(sugestoes, (s) => (s.sugestao_id === "a" || s.sugestao_id === "c" ? s.sugestao_id : null));
+    expect(resultado?.sugestaoId).toBe("c");
+  });
+
+  it("ignora sugestão com visivel:false mesmo que ela tenha o dado — regra de confiança nunca é contornada", () => {
+    const sugestoes: SugestaoCopilotoPolling[] = [
+      { ...base, sugestao_id: "a", visivel: true, criado_em: "2026-09-15T10:00:00.000Z" },
+      { ...base, sugestao_id: "b", visivel: false, criado_em: "2026-09-15T10:05:00.000Z" }, // mais recente, mas invisível
+    ];
+    const resultado = ultimoNaoNulo(sugestoes, () => "valor-qualquer");
+    // Deveria pegar "a" (visível), nunca "b" (abaixo da confiança mínima).
+    expect(resultado?.sugestaoId).toBe("a");
+  });
+
+  it("lista vazia ou nenhum valor encontrado: devolve null", () => {
+    expect(ultimoNaoNulo([], () => "x")).toBeNull();
+    const sugestoes: SugestaoCopilotoPolling[] = [{ ...base, sugestao_id: "a", visivel: true }];
+    expect(ultimoNaoNulo(sugestoes, () => null)).toBeNull();
+  });
+});
+
+/**
+ * Achado do coordenador (15/09): decisores ausentes saiu de `QuadroAlerta` —
+ * a informação de decisores passou a morar NUM LUGAR SÓ, o card completo
+ * renderizado na célula do quadro 7. Ver o bloco correspondente dentro de
+ * "PainelCopiloto — Fatia 3" (precisa de `abrirComPolling`/`respostaPolling`,
+ * locais àquele describe) — prova que a frase "não entrou na sala" aparece
+ * EXATAMENTE UMA VEZ na tela quando há dado, e que a célula nunca
+ * desaparece quando não há (webhook do Recall descartando eventos de
+ * participante hoje — `polling.comparacaoDecisores` sempre `null` em
+ * produção até a Fatia 3 do backend corrigir).
+ */
