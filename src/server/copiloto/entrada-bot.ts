@@ -229,9 +229,26 @@ async function buscarDecisoresEsperadosDaSessao(admin: SupabaseClient, sessaoId:
 /**
  * `participant_events.join`/`.leave` → `sessoes_copiloto.participantes`
  * (jsonb, 0091). `aplicarEventoParticipante` (participantes.ts) é PURA —
- * este módulo faz a leitura-aplica-grava, com o mesmo cuidado de
- * `ativarSessaoCopiloto` (segmentos/route.ts): erro de leitura/escrita
- * PROPAGA (nunca upsert cego silencioso).
+ * este módulo decide o merge em memória, mas a GRAVAÇÃO passa pela RPC
+ * `registrar_participantes_copiloto` (0105), nunca por um `update` direto.
+ *
+ * 🔴 CORREÇÃO (auditoria pós-entrega, 15/09/2026 — "corrida no registro de
+ * participantes"). Antes desta correção, a escrita era ler → aplicar em
+ * memória → `update` incondicional: SEM trava entre a leitura e a escrita.
+ * O webhook da Recall entrega eventos em RAJADA (medido: 10 joins + 5 leaves
+ * numa sessão de teste, vários no mesmo segundo) — dois eventos concorrentes
+ * na mesma sessão liam o MESMO array, cada um aplicava seu evento, e o 2º
+ * `update` sobrescrevia o 1º por inteiro (participante perdido).
+ *
+ * A correção é COMPARE-AND-SWAP sob `select ... for update` dentro da RPC
+ * (0105, mesmo padrão de `app.resolve_link_escrita`, 0077): o merge continua
+ * INTEIRO em TypeScript (`aplicarEventoParticipante`/`resolverPapelNoJoin`,
+ * já puras e testadas — não duplicadas em PL/pgSQL); a RPC só tranca a linha,
+ * confere se `participantes` ainda é igual ao que este módulo leu e, se não
+ * for (outro evento escreveu no meio do caminho), devolve o estado ATUAL sem
+ * gravar. `aplicado=false` refaz o merge sobre esse estado novo e tenta de
+ * novo — mesmo formato de retentativa que `registrarSegmentoDoBot`, acima
+ * neste arquivo, já usa para colisão de `ordem`.
  *
  * 🔴 PAPÉIS DE FALA (15/09/2026) — resolvidos aqui, na ESCRITA, só no `join`
  * (decisão de arquitetura: o papel tem de ser ESTÁVEL na sessão inteira,
@@ -241,8 +258,21 @@ async function buscarDecisoresEsperadosDaSessao(admin: SupabaseClient, sessaoId:
  * chamado para decidir o papel de quem NUNCA apareceu nesta sessão — e só
  * quando o interruptor está ligado (senão passa `papel: undefined`, e
  * `aplicarEventoParticipante` grava `null`, comportamento de antes da fatia).
+ * Resolvido FORA do lock, contra a leitura desta tentativa: papel depende de
+ * `configuracoes`/briefing (dados estáveis por sessão), não do array de
+ * participantes disputado pela corrida — recalculá-lo a cada retentativa do
+ * CAS (que só devolve o array atualizado, não reconsulta briefing) manteria
+ * a MESMA decisão de papel que a tentativa anterior já tinha tomado para
+ * este evento, sem gasto extra de query.
  */
 export type ResultadoEventoParticipante = { situacao: "gravado" } | { situacao: "sessao_nao_encontrada" };
+
+interface RespostaCasParticipantes {
+  aplicado: boolean;
+  participantes: unknown;
+}
+
+const MAX_TENTATIVAS_PARTICIPANTES = 5;
 
 export async function registrarEventoParticipante(
   admin: SupabaseClient,
@@ -259,8 +289,10 @@ export async function registrarEventoParticipante(
     .maybeSingle<{ participantes: unknown }>();
   if (erroLeitura) throw erroLeitura;
 
-  const participantesAtuais = (existente?.participantes ?? []) as unknown;
+  let participantesEsperados = (existente?.participantes ?? []) as unknown;
 
+  // Papel resolvido UMA vez, contra a 1ª leitura — ver o comentário de topo
+  // sobre por que não precisa ser recalculado a cada retentativa do CAS.
   let papelParaJoin: ReturnType<typeof resolverPapelNoJoin> | undefined;
   if (params.tipo === "join" && (await papeisDeFalaEstaoAtivos(admin))) {
     const decisoresEsperados = await buscarDecisoresEsperadosDaSessao(admin, sessaoId);
@@ -268,22 +300,39 @@ export async function registrarEventoParticipante(
       nome: params.nomeParticipante,
       isHost: params.isHost,
       decisoresEsperados,
-      participantesAtuais: normalizarParticipantesBrutos(participantesAtuais),
+      participantesAtuais: normalizarParticipantesBrutos(participantesEsperados),
     });
   }
 
-  const novaLista = aplicarEventoParticipante(participantesAtuais, {
-    tipo: params.tipo,
-    nome: params.nomeParticipante,
-    id: params.idParticipante,
-    quando: params.quando,
-    papel: papelParaJoin,
-  });
+  for (let tentativa = 0; tentativa < MAX_TENTATIVAS_PARTICIPANTES; tentativa++) {
+    const novaLista = aplicarEventoParticipante(participantesEsperados, {
+      tipo: params.tipo,
+      nome: params.nomeParticipante,
+      id: params.idParticipante,
+      quando: params.quando,
+      papel: papelParaJoin,
+    });
 
-  const { error: erroEscrita } = await admin.from("sessoes_copiloto").update({ participantes: novaLista }).eq("sessao_id", sessaoId);
-  if (erroEscrita) throw erroEscrita;
+    // `returns table` — mesmo padrão de `casar_pessoa_por_telefone`
+    // (porteiro.ts): `data` chega como ARRAY, nunca `.single()`.
+    const { data, error: erroCas } = await admin.rpc("registrar_participantes_copiloto", {
+      p_sessao_id: sessaoId,
+      p_participantes_esperados: participantesEsperados,
+      p_participantes_novos: novaLista,
+    });
+    if (erroCas) throw erroCas;
+    if (!Array.isArray(data) || data.length === 0) throw new Error("falha_ao_persistir_participante_cas_sem_resposta");
+    const resultadoCas = data[0] as RespostaCasParticipantes;
 
-  return { situacao: "gravado" };
+    if (resultadoCas.aplicado) return { situacao: "gravado" };
+
+    // CAS perdeu: outro evento concorrente escreveu entre a leitura e agora.
+    // Reaplica ESTE mesmo evento sobre o estado que a RPC acabou de devolver
+    // e tenta de novo — nunca perde o evento, nunca sobrescreve o do outro.
+    participantesEsperados = resultadoCas.participantes;
+  }
+
+  throw new Error("falha_ao_persistir_participante_apos_retentativas");
 }
 
 /**

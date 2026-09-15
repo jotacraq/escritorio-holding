@@ -68,28 +68,27 @@ function clienteFalso(respostas: {
   /** `sessoes_viabilidade` — embed `jornadas(briefings(conteudo, atual))`, usado só quando
    * papéis de fala estão ativos e o evento é `join`. */
   briefingLookup?: Resultado;
-  /** Espião do `update(...)` sobre `sessoes_copiloto` — chamado com o corpo exato do UPDATE
-   * (`{ participantes: [...] }`), para os testes de papel conferirem o que foi GRAVADO. */
-  onUpdateSessoesCopiloto?: (valores: unknown) => void;
+  /** RPC `registrar_participantes_copiloto` (0105, CAS) — FILA de respostas, uma por
+   * tentativa (o CAS pode perder e retentar). Cada item é `{ aplicado, participantes }`;
+   * default: sucesso na 1ª tentativa, devolvendo o que foi enviado como `p_participantes_novos`. */
+  filaCasParticipantes?: Array<{ aplicado: boolean; participantes: unknown }>;
+  /** Espião da RPC `registrar_participantes_copiloto` — chamado com os argumentos exatos
+   * (`p_participantes_novos` é o array MERGEADO, o que os testes de papel conferem). */
+  onRpcParticipantes?: (args: { p_sessao_id: string; p_participantes_esperados: unknown; p_participantes_novos: unknown }) => void;
 }): SupabaseClient {
   let chamadasSessoesCopiloto = 0;
   const estadoFilaInsert = { indice: 0 };
+  const estadoFilaCas = { indice: 0 };
   const from = vi.fn((tabela: string) => {
     if (tabela === "sessoes_copiloto") {
       chamadasSessoesCopiloto += 1;
       // 1ª consulta em qualquer efeito é sempre `resolverSessaoPorBotId`
-      // (select sessao_id); a 2ª (leitura de `participantes`) é seguida,
-      // no caminho de `registrarEventoParticipante`, do `update(...)` final
-      // — mesmo builder cobre as duas formas de uso.
+      // (select sessao_id); a 2ª (leitura de `participantes`) é a ÚNICA —
+      // a escrita agora é `.rpc(...)`, não mais `.from("sessoes_copiloto").update(...)`.
       if (chamadasSessoesCopiloto === 1) {
         return consultaFalsaFixa(respostas.sessaoLookup ?? { data: null, error: null });
       }
-      const builder = consultaFalsaFixa(respostas.participantesLookup ?? { data: null, error: null }) as Record<string, unknown>;
-      builder.update = (valores: unknown) => {
-        respostas.onUpdateSessoesCopiloto?.(valores);
-        return { eq: async () => ({ error: null }) };
-      };
-      return builder;
+      return consultaFalsaFixa(respostas.participantesLookup ?? { data: null, error: null });
     }
     if (tabela === "sessoes_copiloto_segmentos") {
       return tabelaSegmentosFalsa(
@@ -106,7 +105,15 @@ function clienteFalso(respostas: {
     }
     throw new Error(`tabela inesperada no mock: ${tabela}`);
   });
-  return { from } as unknown as SupabaseClient;
+  const rpc = vi.fn((nome: string, args: Record<string, unknown>) => {
+    if (nome !== "registrar_participantes_copiloto") throw new Error(`rpc inesperada no mock: ${nome}`);
+    respostas.onRpcParticipantes?.(args as { p_sessao_id: string; p_participantes_esperados: unknown; p_participantes_novos: unknown });
+    const fila = respostas.filaCasParticipantes ?? [{ aplicado: true, participantes: args.p_participantes_novos }];
+    const resultado = fila[estadoFilaCas.indice] ?? fila[fila.length - 1]!;
+    estadoFilaCas.indice += 1;
+    return Promise.resolve({ data: [resultado], error: null });
+  });
+  return { from, rpc } as unknown as SupabaseClient;
 }
 
 describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
@@ -327,6 +334,9 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
         if (tabela === "configuracoes") configSpy();
         throw new Error(`tabela inesperada no leave: ${tabela}`);
       }),
+      rpc: vi.fn((nome: string, args: Record<string, unknown>) =>
+        Promise.resolve({ data: [{ aplicado: true, participantes: args.p_participantes_novos }], error: null }),
+      ),
     } as unknown as SupabaseClient;
 
     const resultado = await registrarEventoParticipante(admin, {
@@ -349,8 +359,8 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
         participantesLookup: { data: { participantes: [] }, error: null },
         // configuracoes ausente → cai no default `true` (papéis de fala nasce ligado).
         briefingLookup: { data: { jornadas: { briefings: [] } }, error: null },
-        onUpdateSessoesCopiloto: (valores) => {
-          capturado = valores;
+        onRpcParticipantes: (args) => {
+          capturado = { participantes: args.p_participantes_novos };
         },
       });
 
@@ -373,8 +383,8 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
         sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
         participantesLookup: { data: { participantes: [] }, error: null },
         configPapeisDeFala: { data: { valor: false }, error: null },
-        onUpdateSessoesCopiloto: (valores) => {
-          capturado = valores;
+        onRpcParticipantes: (args) => {
+          capturado = { participantes: args.p_participantes_novos };
         },
       });
 
@@ -399,8 +409,8 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
           data: { jornadas: { briefings: [{ atual: true, conteudo: { processo_decisorio: { decisores: ["Terezinha", "Cleison"] } } }] } },
           error: null,
         },
-        onUpdateSessoesCopiloto: (valores) => {
-          capturado = valores;
+        onRpcParticipantes: (args) => {
+          capturado = { participantes: args.p_participantes_novos };
         },
       });
 
@@ -414,6 +424,69 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
       });
       const participantesGravados = (capturado as { participantes: Array<{ papel: string | null }> }).participantes;
       expect(participantesGravados[0]!.papel).toBe("decisor_2");
+    });
+  });
+
+  // 🔴 Correção da corrida (auditoria pós-entrega, 15/09/2026): o webhook da
+  // Recall entrega join/leave em rajada — dois eventos concorrentes na MESMA
+  // sessão não podem mais fazer um sobrescrever o outro. Estes testes provam
+  // o CAS (0105): 1ª tentativa PERDE (outro evento escreveu no meio do
+  // caminho), a função reaplica o MESMO evento sobre o estado devolvido pela
+  // RPC e tenta de novo — nunca perde o evento, nunca lança em corrida normal.
+  describe("🔴 CAS (0105) — corrida no registro de participantes", () => {
+    it("1ª tentativa perde (aplicado=false, outro evento concorrente escreveu antes): retenta e grava sobre o estado novo", async () => {
+      const participantesAposConcorrente = [{ id: "p-outro", nome: "Cleison", entrou_em: "09:59", saiu_em: null, papel: null }];
+      let ultimaChamada: unknown = null;
+      const admin = clienteFalso({
+        sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+        participantesLookup: { data: { participantes: [] }, error: null },
+        configPapeisDeFala: { data: { valor: false }, error: null },
+        filaCasParticipantes: [
+          { aplicado: false, participantes: participantesAposConcorrente }, // 1ª tentativa: CAS perdeu
+          { aplicado: true, participantes: null }, // 2ª tentativa: sucesso (participantes real não importa aqui)
+        ],
+        onRpcParticipantes: (args) => {
+          ultimaChamada = args;
+        },
+      });
+
+      const resultado = await registrarEventoParticipante(admin, {
+        botId: "bot_valido",
+        tipo: "join",
+        nomeParticipante: "Terezinha",
+        idParticipante: "p-terezinha",
+        isHost: false,
+        quando: "10:00:00Z",
+      });
+
+      expect(resultado).toEqual({ situacao: "gravado" });
+      // A 2ª tentativa reaplicou o evento por CIMA do estado que a RPC devolveu
+      // na 1ª — Terezinha (evento novo) E Cleison (já gravado pelo concorrente)
+      // sobrevivem os dois no array final, nenhum foi perdido.
+      const argsSegundaChamada = ultimaChamada as { p_participantes_esperados: unknown; p_participantes_novos: Array<{ nome: string }> };
+      expect(argsSegundaChamada.p_participantes_esperados).toEqual(participantesAposConcorrente);
+      expect(argsSegundaChamada.p_participantes_novos.map((p) => p.nome).sort()).toEqual(["Cleison", "Terezinha"]);
+    });
+
+    it("CAS perde em TODAS as tentativas: LANÇA, nunca finge sucesso nem descarta o evento em silêncio", async () => {
+      const semprePerde = new Array(10).fill({ aplicado: false, participantes: [] });
+      const admin = clienteFalso({
+        sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+        participantesLookup: { data: { participantes: [] }, error: null },
+        configPapeisDeFala: { data: { valor: false }, error: null },
+        filaCasParticipantes: semprePerde,
+      });
+
+      await expect(
+        registrarEventoParticipante(admin, {
+          botId: "bot_valido",
+          tipo: "join",
+          nomeParticipante: "Terezinha",
+          idParticipante: null,
+          isHost: false,
+          quando: "10:00:00Z",
+        }),
+      ).rejects.toThrow("falha_ao_persistir_participante_apos_retentativas");
     });
   });
 });
