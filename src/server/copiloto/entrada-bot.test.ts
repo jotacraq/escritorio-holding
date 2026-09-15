@@ -61,6 +61,16 @@ function clienteFalso(respostas: {
   participantesLookup?: Resultado;
   ultimoOrdem?: Resultado;
   filaInsertSegmento?: Resultado[];
+  /** `configuracoes` — leitura de `copiloto_sessao.papeis_de_fala`. Ausente = comportamento
+   * padrão de `lerConfiguracaoBool` (chave não encontrada → cai no default `true` passado
+   * pelo chamador, ver `entrada-bot.ts::papeisDeFalaEstaoAtivos`). */
+  configPapeisDeFala?: Resultado;
+  /** `sessoes_viabilidade` — embed `jornadas(briefings(conteudo, atual))`, usado só quando
+   * papéis de fala estão ativos e o evento é `join`. */
+  briefingLookup?: Resultado;
+  /** Espião do `update(...)` sobre `sessoes_copiloto` — chamado com o corpo exato do UPDATE
+   * (`{ participantes: [...] }`), para os testes de papel conferirem o que foi GRAVADO. */
+  onUpdateSessoesCopiloto?: (valores: unknown) => void;
 }): SupabaseClient {
   let chamadasSessoesCopiloto = 0;
   const estadoFilaInsert = { indice: 0 };
@@ -68,12 +78,18 @@ function clienteFalso(respostas: {
     if (tabela === "sessoes_copiloto") {
       chamadasSessoesCopiloto += 1;
       // 1ª consulta em qualquer efeito é sempre `resolverSessaoPorBotId`
-      // (select sessao_id); a 2ª (só no caminho de participantes) é a
-      // leitura de `participantes`.
+      // (select sessao_id); a 2ª (leitura de `participantes`) é seguida,
+      // no caminho de `registrarEventoParticipante`, do `update(...)` final
+      // — mesmo builder cobre as duas formas de uso.
       if (chamadasSessoesCopiloto === 1) {
         return consultaFalsaFixa(respostas.sessaoLookup ?? { data: null, error: null });
       }
-      return consultaFalsaFixa(respostas.participantesLookup ?? { data: null, error: null });
+      const builder = consultaFalsaFixa(respostas.participantesLookup ?? { data: null, error: null }) as Record<string, unknown>;
+      builder.update = (valores: unknown) => {
+        respostas.onUpdateSessoesCopiloto?.(valores);
+        return { eq: async () => ({ error: null }) };
+      };
+      return builder;
     }
     if (tabela === "sessoes_copiloto_segmentos") {
       return tabelaSegmentosFalsa(
@@ -81,6 +97,12 @@ function clienteFalso(respostas: {
         respostas.filaInsertSegmento ?? [{ data: { id: "seg-1" }, error: null }],
         estadoFilaInsert,
       );
+    }
+    if (tabela === "configuracoes") {
+      return consultaFalsaFixa(respostas.configPapeisDeFala ?? { data: null, error: null });
+    }
+    if (tabela === "sessoes_viabilidade") {
+      return consultaFalsaFixa(respostas.briefingLookup ?? { data: null, error: null });
     }
     throw new Error(`tabela inesperada no mock: ${tabela}`);
   });
@@ -266,22 +288,132 @@ describe("registrarEventoParticipante — vínculo pelo botId", () => {
       botId: "bot_orfao",
       tipo: "join",
       nomeParticipante: "Terezinha",
+      idParticipante: null,
+      isHost: false,
       quando: "2026-09-11T10:00:00Z",
     });
     expect(resultado).toEqual({ situacao: "sessao_nao_encontrada" });
   });
 
-  it("join com sessão vinculada grava participantes", async () => {
+  it("join com sessão vinculada grava participantes (papéis de fala desligados — nasce papel null)", async () => {
     const admin = clienteFalso({
       sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
       participantesLookup: { data: { participantes: [] }, error: null },
+      configPapeisDeFala: { data: { valor: false }, error: null },
     });
     const resultado = await registrarEventoParticipante(admin, {
       botId: "bot_valido",
       tipo: "join",
       nomeParticipante: "Terezinha",
+      idParticipante: null,
+      isHost: false,
       quando: "2026-09-11T10:00:00Z",
     });
     expect(resultado).toEqual({ situacao: "gravado" });
+  });
+
+  it("leave nunca consulta configuracoes/briefing — papel só é resolvido no join", async () => {
+    const configSpy = vi.fn();
+    const admin = {
+      from: vi.fn((tabela: string) => {
+        if (tabela === "sessoes_copiloto") {
+          const chamada = (admin.from as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[0] === "sessoes_copiloto").length;
+          if (chamada === 1) return consultaFalsaFixa({ data: { sessao_id: "sessao-real", transcricao_id: null }, error: null });
+          return consultaFalsaFixa({
+            data: { participantes: [{ id: null, nome: "Terezinha", entrou_em: "10:00", saiu_em: null, papel: null }] },
+            error: null,
+          });
+        }
+        if (tabela === "configuracoes") configSpy();
+        throw new Error(`tabela inesperada no leave: ${tabela}`);
+      }),
+    } as unknown as SupabaseClient;
+
+    const resultado = await registrarEventoParticipante(admin, {
+      botId: "bot_valido",
+      tipo: "leave",
+      nomeParticipante: "Terezinha",
+      idParticipante: null,
+      isHost: false,
+      quando: "10:05",
+    });
+    expect(resultado).toEqual({ situacao: "gravado" });
+    expect(configSpy).not.toHaveBeenCalled();
+  });
+
+  describe("🔴 papéis de fala (15/09/2026) — resolvidos no join quando o interruptor está ligado", () => {
+    it("host vira 'advogada' quando o interruptor está ligado (default true)", async () => {
+      let capturado: unknown = null;
+      const admin = clienteFalso({
+        sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+        participantesLookup: { data: { participantes: [] }, error: null },
+        // configuracoes ausente → cai no default `true` (papéis de fala nasce ligado).
+        briefingLookup: { data: { jornadas: { briefings: [] } }, error: null },
+        onUpdateSessoesCopiloto: (valores) => {
+          capturado = valores;
+        },
+      });
+
+      const resultado = await registrarEventoParticipante(admin, {
+        botId: "bot_valido",
+        tipo: "join",
+        nomeParticipante: "Dra. Elaine",
+        idParticipante: "p1",
+        isHost: true,
+        quando: "10:00",
+      });
+      expect(resultado).toEqual({ situacao: "gravado" });
+      const participantesGravados = (capturado as { participantes: Array<{ papel: string | null }> }).participantes;
+      expect(participantesGravados[0]!.papel).toBe("advogada");
+    });
+
+    it("interruptor desligado: join grava papel null mesmo sendo host", async () => {
+      let capturado: unknown = null;
+      const admin = clienteFalso({
+        sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+        participantesLookup: { data: { participantes: [] }, error: null },
+        configPapeisDeFala: { data: { valor: false }, error: null },
+        onUpdateSessoesCopiloto: (valores) => {
+          capturado = valores;
+        },
+      });
+
+      await registrarEventoParticipante(admin, {
+        botId: "bot_valido",
+        tipo: "join",
+        nomeParticipante: "Dra. Elaine",
+        idParticipante: "p1",
+        isHost: true,
+        quando: "10:00",
+      });
+      const participantesGravados = (capturado as { participantes: Array<{ papel: string | null }> }).participantes;
+      expect(participantesGravados[0]!.papel).toBeNull();
+    });
+
+    it("decisor do briefing casa e recebe decisor_N pela ordem do briefing", async () => {
+      let capturado: unknown = null;
+      const admin = clienteFalso({
+        sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null }, error: null },
+        participantesLookup: { data: { participantes: [] }, error: null },
+        briefingLookup: {
+          data: { jornadas: { briefings: [{ atual: true, conteudo: { processo_decisorio: { decisores: ["Terezinha", "Cleison"] } } }] } },
+          error: null,
+        },
+        onUpdateSessoesCopiloto: (valores) => {
+          capturado = valores;
+        },
+      });
+
+      await registrarEventoParticipante(admin, {
+        botId: "bot_valido",
+        tipo: "join",
+        nomeParticipante: "Cleison",
+        idParticipante: "p2",
+        isHost: false,
+        quando: "10:00",
+      });
+      const participantesGravados = (capturado as { participantes: Array<{ papel: string | null }> }).participantes;
+      expect(participantesGravados[0]!.papel).toBe("decisor_2");
+    });
   });
 });

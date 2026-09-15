@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ErroSessao,
   buscarEstadoCopiloto,
@@ -62,8 +62,10 @@ const IconeAlerta = () => iconeSvg("M8 1.5 15 14.5H1L8 1.5Zm0 4.6v3.6M8 12.1h.01
 const IconeBloco = () => iconeSvg("M2.5 4.5h11M2.5 8h11M2.5 11.5h7");
 const IconeContexto = () => iconeSvg("M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8Zm0 3.2v3.4l2.4 1.4");
 const IconeInsight = () => iconeSvg("M8 1.5l1.1 3.1 3.1 1.1-3.1 1.1L8 9.9 6.9 6.7 3.8 5.6l3.1-1.1L8 1.5ZM12.5 10.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6.6-1.7Z");
-const IconeAcerto = () => iconeSvg("M3 8.5l3.2 3.2L13 4.5");
-const IconeErro = () => iconeSvg("M4 4l8 8M12 4l-8 8");
+// `IconeAcerto`/`IconeErro` removidos em 15/09 — sem chamador desde que
+// `QuadroVoceAcertouOuErrou` passou a retornar `null` (ver comentário da
+// função: dois cards de "7." duplicado, sempre vazios, um deles com alarme
+// falso permanente em `tom="vermelho"`).
 const IconeHistorico = () => iconeSvg("M8 4.2V8l2.6 1.6M14.2 8A6.2 6.2 0 1 1 8 1.8c2.4 0 4.5 1.3 5.5 3.3M13.5 2v2.8h-2.8");
 
 function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
@@ -85,6 +87,22 @@ function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
  * `ConfigPollingCopiloto`). */
 const POLLING_MS_EM_FOCO_INICIAL = 3000;
 const POLLING_MS_SEM_FOCO_INICIAL = 10000;
+
+/**
+ * `tabIndex` de todo container com `role="region"` + `overflow-y/x-auto`
+ * deste arquivo (WCAG 2.1.1 — sem foco por teclado, quem navega só pelo
+ * teclado não consegue rolar o conteúdo; axe: `scrollable-region-focusable`).
+ *
+ * Não é `tabIndex={0}` LITERAL de propósito: `jsx-a11y/no-noninteractive-tabindex`
+ * lê o valor por `getLiteralPropValue` e — com `role="region"` (não-`widget`
+ * na `aria-query`, logo nunca "interativo" para a regra) — reporta erro em
+ * QUALQUER `<div role="region" tabIndex={0}>` estático, mesmo sendo
+ * exatamente o padrão que a própria WCAG pede. Uma constante nomeada (valor
+ * não-literal do ponto de vista do linter) sai desse falso positivo sem
+ * mudar o comportamento em runtime — é sempre `0`. Mesma lacuna já existe
+ * em `PainelSims.tsx:324` (fora do escopo desta entrega).
+ */
+const TAB_INDEX_ROLAVEL = 0;
 
 /** A partir de quantas falhas CONSECUTIVAS o polling vira aviso visível
  * (achado do Fable: falha silenciosa faz a tela parecer "sala calma" quando
@@ -383,8 +401,18 @@ export function PainelCopiloto({
        * por mudança de estado real, nunca por timer). O aviso de roteiro não
        * oficial JÁ está no cabeçalho da sessão (C12) — repeti-lo aqui era
        * texto que não muda o que a Dra. Elaine faz nos próximos 10s
-       * (correção do Marcio, 14/09): removido.  */}
-      {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
+       * (correção do Marcio, 14/09): removido.
+       *
+       * Decisão de 15/09: `AvisoPollingFalhando` entra/sai do fluxo normal
+       * na 3ª falha consecutiva de rede, empurrando tudo abaixo em ~60px —
+       * contradiz a promessa deste próprio comentário ("nada desloca o que
+       * já está embaixo"). `min-h-[3.25rem]` reserva o espaço sempre; o
+       * aviso aparece DENTRO dele quando existe. Não usa `position:sticky`
+       * — tapar o quadro 1 (a pergunta ao vivo) seria pior que o reflow que
+       * está sendo corrigido. */}
+      <div className="min-h-[3.25rem]">
+        {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
+      </div>
 
       {encerradaPorDuracaoMaxima && (
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
@@ -411,13 +439,22 @@ export function PainelCopiloto({
        * propriamente dito" e ficam em destaque, 2 colunas até `xl` e lado a
        * lado com espaço de sobra a partir de `xl` (monitor largo tem 2500px
        * úteis — 2 colunas generosas leem melhor que 4 estreitas para texto
-       * corrido). Quadros 3-7 são leitura de apoio, cada um recolhe para uma
-       * linha fina quando vazio (`Quadro recolhido`, ver comentário de cada
-       * função) — o resultado é uma segunda fileira baixa, não um segundo
-       * mosaico do mesmo peso visual do primeiro. `items-start`: cada quadro
-       * tem a altura do próprio conteúdo, nunca estica para casar com o
-       * vizinho mais alto. */}
-      <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
+       * corrido). Quadros 3-7 são leitura de apoio.
+       *
+       * Decisão de 15/09 (achado do dono do produto: "as divs quebram quando
+       * o dado dinâmico chega"): durante a sessão esta tela é painel de
+       * VIGILÂNCIA — a GEOMETRIA é constante, só o CONTEÚDO dentro dela muda
+       * a cada tick de polling (3s). `items-start` fazia cada quadro assumir
+       * a altura do próprio conteúdo, célula a célula — quando o polling
+       * trazia ou apagava um campo, aquela célula mudava de altura sozinha e
+       * empurrava o resto da grade (reflow). `items-stretch` faz todo quadro
+       * da linha casar com o mais alto da própria linha; o piso de cada
+       * quadro individual vem do `min-h` que cada função de quadro já
+       * declara no próprio `<Quadro className="min-h-...">` — a combinação
+       * dos dois é o que trava a geometria. `Quadro recolhido` (linha fina
+       * vs. card cheio) TAMBÉM saiu por ser outra fonte da mesma classe de
+       * bug — ver comentário de cada função de quadro 3-6. */}
+      <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2">
         <PainelPerguntaAgora
           sessaoId={sessaoId}
           indiceAtual={indiceAtual}
@@ -426,11 +463,7 @@ export function PainelCopiloto({
           irPara={irPara}
         />
 
-        <QuadroAlerta
-          pendentes={estado.sims_pendentes}
-          comparacaoDecisores={sessaoEncerrada ? null : polling.comparacaoDecisores}
-          sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
-        />
+        <QuadroAlerta pendentes={estado.sims_pendentes} sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} />
       </div>
 
       {/* Transcrição ao vivo (pedido do Marcio, 14/09 — largura cheia): sobe
@@ -442,7 +475,14 @@ export function PainelCopiloto({
        * de depois do Histórico do coach para logo depois do quadro 2. */}
       <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
 
-      <div className="grid grid-cols-1 items-start gap-1.5 lg:grid-cols-2 2xl:grid-cols-3">
+      {/* Decisão de 15/09: `items-start` → `items-stretch` (mesmo motivo da
+       * grade de destaque, ver comentário acima). `2xl:grid-cols-3` → `-4`:
+       * com os antigos quadros 7/7 removidos (bug de numeração duplicada,
+       * ambos sempre vazios — ver comentário de `QuadroVoceAcertouOuErrou`)
+       * e a célula preenchida por `ApresentacaoComparacaoDecisores`, restam
+       * 4 quadros — 3 colunas deixaria uma célula órfã sozinha na 2ª linha
+       * em tela larga; 4 fecha a linha (2×2 em `lg`, 4×1 em `2xl`). */}
+      <div className="grid grid-cols-1 items-stretch gap-1.5 lg:grid-cols-2 2xl:grid-cols-4">
         <QuadroBlocoAtual blocoAtualId={estado.bloco_atual_id} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} />
 
         <QuadroOQueAconteceu falta={estado.falta_no_bloco} />
@@ -451,8 +491,18 @@ export function PainelCopiloto({
 
         <QuadroPodePularPra sessaoId={sessaoId} sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
 
-        <QuadroVoceAcertouOuErrou acertou />
-        <QuadroVoceAcertouOuErrou acertou={false} />
+        {/* Decisão do dono do produto (15/09): a informação de decisores
+         * mora NUM LUGAR SÓ — este card completo, na célula que os antigos
+         * quadros 7/7 (sempre vazios, nunca implementados) liberaram.
+         * `numero={7}` fecha a numeração do mosaico sem buraco nem
+         * duplicata. `QuadroDecisores` (abaixo) SEMPRE ocupa a célula —
+         * geometria constante — mesmo achado do coordenador (15/09): o
+         * webhook do Recall hoje descarta 100% dos eventos de participante
+         * por divergência de schema (`timestamp` string|number vs.
+         * `{absolute,relative}`), então `polling.comparacaoDecisores` é
+         * SEMPRE `null` em produção até a correção do backend (Fatia 3,
+         * fora deste componente) — a célula não pode sumir por causa disso. */}
+        <QuadroDecisores comparacao={sessaoEncerrada ? null : polling.comparacaoDecisores} />
       </div>
 
       {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
@@ -664,26 +714,33 @@ function SugestoesDoCiclo({
           <summary className="cursor-pointer text-legenda font-medium text-tinta-fraca">
             {anteriores.length === 1 ? "1 sugestão anterior" : `${anteriores.length} sugestões anteriores`}
           </summary>
-          <ul className="mt-2 flex max-h-48 flex-col gap-2 overflow-y-auto pr-1">
-            {anteriores.map((s) => (
-              <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
-                <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[s.gatilho]}</p>
-                {!s.visivel || !s.sugestao ? (
-                  <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-                    Confiança abaixo do mínimo configurado — nada mostrado.
-                  </p>
-                ) : (
-                  <ApresentacaoSugestao
-                    sessaoId={sessaoId}
-                    sugestaoId={s.sugestao_id}
-                    sugestao={s.sugestao}
-                    blocosRoteiro={blocosRoteiro}
-                    irPara={irPara}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+          {/* `role="region"`/`tabIndex` moram no `<div>` WRAPPER, não na
+           * `<ul>` — colocá-los direto na lista sobrescreve o role nativo
+           * dela (`list`), deixando os `<li>` filhos órfãos para o axe
+           * (`listitem: <li> elements must be contained in a <ul> or <ol>`)
+           * e violando `aria-allowed-role` (`<ul>` não aceita `role="region"`). */}
+          <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Sugestões anteriores" className="mt-2 max-h-48 overflow-y-auto pr-1">
+            <ul className="flex flex-col gap-2">
+              {anteriores.map((s) => (
+                <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
+                  <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[s.gatilho]}</p>
+                  {!s.visivel || !s.sugestao ? (
+                    <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                      Confiança abaixo do mínimo configurado — nada mostrado.
+                    </p>
+                  ) : (
+                    <ApresentacaoSugestao
+                      sessaoId={sessaoId}
+                      sugestaoId={s.sugestao_id}
+                      sugestao={s.sugestao}
+                      blocosRoteiro={blocosRoteiro}
+                      irPara={irPara}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         </details>
       )}
     </div>
@@ -789,7 +846,20 @@ function PainelPerguntaAgora({
 
   return (
     <Quadro rotulo="Próximo movimento — fale agora" numero={1} icone={<IconeAcao />} como="article">
-      <div className="flex flex-col gap-3">
+      {/* Decisão de 15/09 (painel de vigilância, geometria constante): este
+       * quadro não tinha teto nenhum — com sugestão completa (pergunta +
+       * "falta no bloco" + desvio + observação) passava de 400px de altura,
+       * ao lado do quadro Alerta com ~90px, e o `min-h` sozinho não bastava
+       * (ele trava o PISO, não o TETO). `max-h-[26rem] overflow-y-auto`
+       * trava o teto e rola por dentro — o mosaico não estica quando a
+       * sugestão vem completa. `tabIndex={0}` no container rolável é exigido
+       * pelo axe (`scrollable-region-focusable`) — mesmo padrão já usado nos
+       * outros dois containers roláveis do arquivo (histórico de sugestões
+       * anteriores, linha 688; lista de trechos de transcrição, linha 1876).
+       * `role="region"` + `aria-label`: sem papel nem nome o Tab para num
+       * destino anônimo (mesmo padrão de `LeitorCaso.tsx`/`PainelSims.tsx`,
+       * exigido por `jsx-a11y/no-noninteractive-tabindex`). */}
+      <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Próximo movimento" className="flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1">
         {temSugestaoCiclo && (
           <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
         )}
@@ -925,6 +995,29 @@ const TOM_TIPO: Record<TipoObservacaoCopiloto, "verde" | "azul" | "ambar" | "lat
  * nunca só um número solto (regra da casa: tipo + confiança, sempre). */
 function SeloConfianca({ confianca }: { confianca: number }) {
   return <Selo tom="neutro">confiança {Math.round(confianca * 100)}%</Selo>;
+}
+
+/**
+ * Carimbo de hora do achado de 15/09 (obrigatório junto de `ultimoNaoNulo`):
+ * sem ele, "persistir o último valor não-nulo" trocaria "o dado some" por
+ * "o dado mente sobre quando é" — pior, pela regra da casa ("nada de dado
+ * inventado na tela"). Só aparece quando o valor exibido NÃO veio da
+ * sugestão mais recente do ciclo (`sugestaoIdAtual !== sugestaoIdMaisRecente`)
+ * — se o valor É o mais novo, mostrar a hora seria ruído redundante.
+ * Reusa `formatarHora` de `@/lib/formatar` (não escreve formatador próprio).
+ */
+function CarimboHoraSeAntigo({
+  criadoEm,
+  sugestaoId,
+  sugestoesCiclo,
+}: {
+  criadoEm: string;
+  sugestaoId: string;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+}) {
+  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
+  if (!maisRecente || maisRecente.sugestao_id === sugestaoId) return null;
+  return <p className="text-legenda text-tinta-fraca">Registrado às {formatarHora(criadoEm)}</p>;
 }
 
 /** `evidencia` é citação literal do que o cliente disse — apresentada como
@@ -1358,13 +1451,28 @@ function MensagemRecusaBot({
  * Nome de pessoa real é texto puro (`{variável}` do JSX já escapa — React
  * nunca interpreta HTML de string; nenhum `dangerouslySetInnerHTML` aqui,
  * de propósito — nome de participante vem de fora e é entrada não confiável).
+ *
+ * Decisão de 15/09 (dono do produto): passou a ser renderizado no mosaico,
+ * na célula que os antigos quadros 7/7 liberaram — a informação de
+ * decisores mora NUM LUGAR SÓ. `numero`/`icone` são opcionais para não
+ * quebrar quem já chamava este componente fora do mosaico numerado (só o
+ * call-site do mosaico passa `numero={7}`); sem eles, o `<Quadro>` continua
+ * sem número, como antes.
  */
-export function ApresentacaoComparacaoDecisores({ comparacao }: { comparacao: ComparacaoDecisoresPresentes }) {
+export function ApresentacaoComparacaoDecisores({
+  comparacao,
+  numero,
+  icone,
+}: {
+  comparacao: ComparacaoDecisoresPresentes;
+  numero?: number;
+  icone?: ReactNode;
+}) {
   const { decisores_esperados, participantes_presentes, ausentes, ambiguos } = comparacao;
   if (decisores_esperados.length === 0) return null;
 
   return (
-    <Quadro rotulo="Decisores esperados x presentes">
+    <Quadro rotulo="Decisores esperados x presentes" numero={numero} icone={icone} como="article" className="min-h-[7rem]">
       <div className="flex flex-col gap-2 text-sm text-tinta">
         <p>
           O briefing esperava {decisores_esperados.length === 1 ? "1 decisor" : `${decisores_esperados.length} decisores`}:{" "}
@@ -1386,6 +1494,31 @@ export function ApresentacaoComparacaoDecisores({ comparacao }: { comparacao: Co
           </div>
         )}
       </div>
+    </Quadro>
+  );
+}
+
+/**
+ * Quadro 7 do mosaico — wrapper que SEMPRE ocupa a célula da grade de apoio,
+ * geometria constante (achado do coordenador, 15/09: `ApresentacaoComparacaoDecisores`
+ * sozinho retorna `null` sem `decisores_esperados`, e hoje o webhook do
+ * Recall descarta 100% dos eventos de participante por um bug de schema —
+ * `polling.comparacaoDecisores` é SEMPRE `null` em produção até a correção
+ * do backend, Fatia 3, fora deste componente). Sem este wrapper, a célula
+ * sumiria da grade toda vez que o polling rodasse, e `2xl:grid-cols-4`
+ * ficaria com uma célula a menos exatamente na tela mais comum hoje.
+ *
+ * `null`/sem decisores esperados: mesmo stub honesto dos quadros 3/5/6
+ * ("nada a mostrar ainda", nunca dado inventado) — nunca esconde a célula.
+ */
+function QuadroDecisores({ comparacao }: { comparacao: ComparacaoDecisoresPresentes | null }) {
+  const temDado = Boolean(comparacao && comparacao.decisores_esperados.length > 0);
+  if (temDado && comparacao) {
+    return <ApresentacaoComparacaoDecisores comparacao={comparacao} numero={7} icone={<IconeAlerta />} />;
+  }
+  return (
+    <Quadro rotulo="Decisores esperados x presentes" numero={7} icone={<IconeAlerta />} como="article" className="min-h-[7rem]">
+      <p className="text-sm text-tinta-suave">Nenhum decisor esperado registrado ainda nesta sessão.</p>
     </Quadro>
   );
 }
@@ -1418,8 +1551,14 @@ function CopilotoDesligado() {
  */
 function QuadroOQueAconteceu({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
   const nada = falta.campos.length === 0 && falta.observar.length === 0;
+  // Decisão de 15/09 (painel de vigilância, geometria constante): `recolhido`
+  // fazia este quadro pular entre a linha fina (~40px) e o card cheio a cada
+  // vez que o polling trazia ou tirava dado do bloco atual — exatamente o
+  // reflow que quebrava o mosaico. `nada` continua existindo (o `? :` logo
+  // abaixo ainda decide o TEXTO), só a prop que mudava a ALTURA do quadro
+  // saiu. O piso de altura fica por conta de `min-h-[7rem]` no `className`.
   return (
-    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article" recolhido={nada}>
+    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article" className="min-h-[7rem]">
       {nada ? (
         <p className="text-sm text-tinta-suave">Nada específico registrado ainda neste bloco.</p>
       ) : (
@@ -1455,35 +1594,42 @@ function QuadroOQueAconteceu({ falta }: { falta: { campos: { id: string; rotulo:
 }
 
 /**
- * Quadro 2 "ALERTA" do mock: junta os 3 sinais de risco que já existem no
- * payload, sem IA e sem inventar um 4º — SIMs pendentes (POP 05, mesma
- * contagem/rótulo de sempre, testado em `PainelCopiloto.test.tsx`),
+ * Quadro 2 "ALERTA" do mock: junta os sinais de risco que já existem no
+ * payload, sem IA e sem inventar um novo — SIMs pendentes (POP 05, mesma
+ * contagem/rótulo de sempre, testado em `PainelCopiloto.test.tsx`) e
  * observação de alta confiança do ciclo automático quando `tipo` é
- * `recomendacao`/`hipotese`, e decisores esperados que não entraram na sala
- * (`comparacao_decisores.ausentes`, Fatia 4/§5). Cada fonte aparece só
- * quando tem dado — o quadro nunca fica com um título de alerta e nada
- * embaixo (isso seria alarme falso, o oposto do que "ALERTA" promete).
+ * `recomendacao`/`hipotese`. Cada fonte aparece só quando tem dado — o
+ * quadro nunca fica com um título de alerta e nada embaixo (isso seria
+ * alarme falso, o oposto do que "ALERTA" promete).
+ *
+ * Decisão de 15/09 (o dono do produto, sobre a renderização de
+ * `ApresentacaoComparacaoDecisores` no quadro 7): decisores ausentes saiu
+ * daqui — a informação de decisores mora NUM LUGAR SÓ, o card completo que
+ * ocupa a célula liberada pelos antigos quadros 7/7. Antes desta decisão a
+ * frase "Não entrou na sala: X" podia aparecer aqui E no quadro 7 ao mesmo
+ * tempo, duplicada. `comparacaoDecisores` deixou de ser prop deste
+ * componente (ver call-site na grade de destaque).
  */
 function QuadroAlerta({
   pendentes,
-  comparacaoDecisores,
   sugestoesCiclo,
 }: {
   pendentes: { sim: string; rotulo: string }[];
-  comparacaoDecisores: ComparacaoDecisoresPresentes | null;
   sugestoesCiclo: SugestaoCopilotoPolling[];
 }) {
   const registrados = 4 - pendentes.length;
 
-  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
-  const observacaoCritica =
-    maisRecente?.visivel && maisRecente.sugestao?.observacao && (maisRecente.sugestao.observacao.tipo === "recomendacao" || maisRecente.sugestao.observacao.tipo === "hipotese")
-      ? maisRecente.sugestao.observacao
-      : null;
+  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — a
+  // observação crítica (recomendação/hipótese) sumia do quadro Alerta
+  // toda vez que o ciclo trouxesse uma sugestão nova sem ela, mesmo que o
+  // risco continuasse valendo. `ultimoNaoNulo` mantém a última observação
+  // crítica real.
+  const achado = ultimoNaoNulo(sugestoesCiclo, (s) =>
+    s.sugestao?.observacao && (s.sugestao.observacao.tipo === "recomendacao" || s.sugestao.observacao.tipo === "hipotese") ? s.sugestao.observacao : null,
+  );
+  const observacaoCritica = achado?.valor ?? null;
 
-  const decisoresAusentes = comparacaoDecisores?.ausentes ?? [];
-
-  const semNadaAlem = pendentes.length === 0 && !observacaoCritica && decisoresAusentes.length === 0;
+  const semNadaAlem = pendentes.length === 0 && !observacaoCritica;
 
   return (
     <Quadro
@@ -1492,6 +1638,7 @@ function QuadroAlerta({
       icone={<IconeAlerta />}
       tom="vermelho"
       como="article"
+      className="min-h-[9rem]"
       acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4 SIMs</Selo>}
     >
       <div className="flex flex-col gap-2.5">
@@ -1505,20 +1652,18 @@ function QuadroAlerta({
           </ul>
         )}
 
-        {decisoresAusentes.length > 0 && (
-          <p className="text-sm text-tinta">
-            <span className="font-bold">{decisoresAusentes.length === 1 ? "Não entrou na sala: " : "Não entraram na sala: "}</span>
-            {decisoresAusentes.join(", ")}
-          </p>
-        )}
-
-        {observacaoCritica && (
+        {observacaoCritica && achado && (
           <div className="flex flex-col gap-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <Selo tom={TOM_TIPO[observacaoCritica.tipo]}>{ROTULO_TIPO[observacaoCritica.tipo]}</Selo>
               <SeloConfianca confianca={observacaoCritica.confianca} />
             </div>
             <p className="text-sm text-tinta">{observacaoCritica.texto}</p>
+            {/* Tarefa 7 aplicada também aqui (não só quadros 5/6): esta
+             * observação sofre exatamente a mesma persistência de
+             * `ultimoNaoNulo` — sem o carimbo, um alerta antigo pareceria
+             * novo. */}
+            <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
           </div>
         )}
 
@@ -1548,8 +1693,11 @@ function QuadroBlocoAtual({
   const total = blocosRoteiro?.length ?? 0;
   const titulo = blocosRoteiro?.[indiceAtual]?.titulo;
 
+  // Decisão de 15/09: `recolhido` ligado a `!blocoAtualId` fazia este quadro
+  // mudar de geometria conforme o roteiro carregava — piso fixo por
+  // `min-h-[7rem]`, texto do stub inalterado.
   return (
-    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article" recolhido={!blocoAtualId}>
+    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article" className="min-h-[7rem]">
       {!blocoAtualId ? (
         <p className="text-sm text-tinta-suave">Sem roteiro ativo — não há bloco atual para conduzir.</p>
       ) : (
@@ -1574,18 +1722,27 @@ function QuadroBlocoAtual({
  * leitura, não convite a ação imediata.
  */
 function QuadroInsightComercial({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
-  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
-  const insight = maisRecente?.visivel && maisRecente.sugestao?.observacao?.tipo === "inferencia" ? maisRecente.sugestao.observacao : null;
+  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — se o ciclo
+  // automático trouxesse uma sugestão nova SEM observação `inferencia` (ex.:
+  // um `fato` ou nenhuma observação), o insight que já estava na tela
+  // desaparecia sozinho no meio da reunião, mesmo sem nada ter mudado de
+  // verdade. `ultimoNaoNulo` percorre de trás para frente e mantém o último
+  // insight real, ignorando sugestões `visivel:false` (regra de confiança).
+  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => (s.sugestao?.observacao?.tipo === "inferencia" ? s.sugestao.observacao : null));
 
+  // Decisão de 15/09: `recolhido` ligado a `!insight` fazia este quadro subir
+  // e descer de altura a cada tick de polling que trazia ou apagava o
+  // insight mais recente — geometria constante agora, piso por `min-h-[7rem]`.
   return (
-    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article" recolhido={!insight}>
-      {!insight ? (
+    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article" className="min-h-[7rem]">
+      {!achado ? (
         <p className="text-sm text-tinta-suave">Nenhum insight comercial ainda nesta sessão.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
-          <SeloConfianca confianca={insight.confianca} />
-          <p className="text-sm text-tinta">{insight.texto}</p>
-          {insight.evidencia && <Evidencia texto={insight.evidencia} />}
+          <SeloConfianca confianca={achado.valor.confianca} />
+          <p className="text-sm text-tinta">{achado.valor.texto}</p>
+          {achado.valor.evidencia && <Evidencia texto={achado.valor.evidencia} />}
+          <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
         </div>
       )}
     </Quadro>
@@ -1609,15 +1766,24 @@ function QuadroPodePularPra({
   blocosRoteiro?: { id: string; titulo?: string }[];
   irPara?: (indice: number) => void;
 }) {
-  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
-  const desvio = maisRecente?.visivel ? maisRecente.sugestao?.desvio_sugerido : null;
+  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — uma
+  // sugestão nova sem `desvio_sugerido` apagava o desvio que já estava na
+  // tela. `ultimoNaoNulo` mantém o último desvio real; `achado.sugestaoId`
+  // é o vínculo correto para a telemetria de desfecho de `DesvioSugerido`
+  // (precisa ser da sugestão QUE TEM o desvio, não da mais recente).
+  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
 
+  // Decisão de 15/09: mesma correção de geometria constante — `recolhido`
+  // ligado a `!desvio` saiu, piso por `min-h-[7rem]`.
   return (
-    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article" recolhido={!desvio}>
-      {!desvio ? (
+    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article" className="min-h-[7rem]">
+      {!achado ? (
         <p className="text-sm text-tinta-suave">Nenhum desvio sugerido agora — siga o roteiro na ordem.</p>
       ) : (
-        <DesvioSugerido sessaoId={sessaoId} sugestaoId={maisRecente.sugestao_id} desvio={desvio} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        <div className="flex flex-col gap-1">
+          <DesvioSugerido sessaoId={sessaoId} sugestaoId={achado.sugestaoId} desvio={achado.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+          <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+        </div>
       )}
     </Quadro>
   );
@@ -1630,22 +1796,25 @@ function QuadroPodePularPra({
  * guarda `desfecho` de CADA sugestão — aceita/ignorada/expirada — mas isso
  * é telemetria de UMA sugestão específica, não um veredito "ela acertou/
  * errou aqui"). Regra da casa: campo novo nasce vazio e a tela mostra
- * vazio — nunca dado plausível. Ver nota de entrega para o que o backend
- * precisaria produzir para isto deixar de ser um estado vazio honesto.
+ * vazio — nunca dado plausível.
+ *
+ * Decisão de 15/09 (mesmo padrão de `PainelBot`, estado NORMAL sem card
+ * permanente): os DOIS quadros eram instanciados com `numero={7}` FIXO,
+ * renderizando "7." duas vezes no mosaico — bug de numeração duplicada.
+ * Além disso os dois estavam SEMPRE vazios (nenhum chamador tem como
+ * preencher `acertou`) e o quadro "Você errou" usava `tom="vermelho"`,
+ * um alarme falso permanente numa tela que a advogada olha ao vivo. Em vez
+ * de dois cards recolhidos e mudos, o componente passa a retornar `null` —
+ * a célula que ele ocupava no mosaico foi para `ApresentacaoComparacaoDecisores`
+ * (ver call-site na grade de apoio), que É dado real hoje. Mantido aqui,
+ * sem chamador, documentando por que não existe: se um dia o backend
+ * produzir esse veredito, este é o lugar certo para religar o quadro.
  */
-function QuadroVoceAcertouOuErrou({ acertou }: { acertou: boolean }) {
-  return (
-    <Quadro
-      rotulo={acertou ? "Você acertou" : "Você errou"}
-      numero={7}
-      icone={acertou ? <IconeAcerto /> : <IconeErro />}
-      tom={acertou ? undefined : "vermelho"}
-      como="article"
-      recolhido
-    >
-      <p className="text-sm text-tinta-suave">Nada a apontar ainda — este dado não existe hoje no sistema.</p>
-    </Quadro>
-  );
+// Mantida sem chamador de propósito (ver comentário acima): é onde religar
+// o quadro quando o backend produzir o veredito de acerto/erro.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function QuadroVoceAcertouOuErrou(): null {
+  return null;
 }
 
 /**
@@ -1673,8 +1842,13 @@ function HistoricoCoach({
     .map((bloco, indice) => ({ id: bloco.id, titulo: bloco.titulo ?? "—", indice }))
     .filter((bloco) => bloco.indice <= indiceAtual && !indicesNaoPercorridos.has(bloco.indice));
 
-  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
-  const desvio = maisRecente?.visivel ? maisRecente.sugestao?.desvio_sugerido : null;
+  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — mesmo campo
+  // (`desvio_sugerido`) do quadro 6 (`QuadroPodePularPra`), lido de forma
+  // INDEPENDENTE. Sem `ultimoNaoNulo` aqui também, o quadro 6 podia mostrar
+  // um desvio (persistido) enquanto o rodapé dizia "Seguir o roteiro na
+  // ordem" (recém apagado) — contradição na MESMA tela sobre o MESMO dado.
+  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
+  const desvio = achado?.valor ?? null;
   const indiceAlvo = desvio ? (blocosRoteiro?.findIndex((b) => b.id === desvio.bloco_id) ?? -1) : -1;
 
   return (
@@ -1683,19 +1857,35 @@ function HistoricoCoach({
         {percorridos.length === 0 ? (
           <p className="text-sm text-tinta-suave">Nenhum bloco percorrido ainda.</p>
         ) : (
-          <ol className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 overflow-x-auto pb-1">
-            {percorridos.map((bloco) => (
-              <li key={bloco.id} className="flex items-center gap-1.5">
-                <Selo tom={bloco.indice === indiceAtual ? "latao" : "neutro"}>P{String(bloco.indice).padStart(2, "0")}</Selo>
-                <span className="text-sm text-tinta-suave">{bloco.titulo}</span>
-              </li>
-            ))}
-          </ol>
+          // Decisão de 15/09: `flex-wrap` + `overflow-x-auto` no mesmo
+          // elemento se anulavam — com `flex-wrap` nunca sobra conteúdo
+          // horizontal para rolar, então a trilha quebrava em várias linhas
+          // e crescia sem teto conforme a sessão avançava (mais um bloco
+          // percorrido = mais uma linha = reflow do mosaico inteiro).
+          // `flex-nowrap` + `overflow-x-auto` dá UMA linha rolável
+          // horizontalmente, altura fixa; `shrink-0` no `<li>` impede os
+          // itens de espremer uns aos outros para caber; `tabIndex`/
+          // `role="region"`/`aria-label` no `<div>` WRAPPER (nunca na
+          // própria `<ol>` — sobrescreveria o role nativo `list` dela,
+          // deixando os `<li>` órfãos para o axe e violando
+          // `aria-allowed-role`), exigidos por axe/eslint
+          // (`scrollable-region-focusable`/`no-noninteractive-tabindex`,
+          // mesmo padrão dos outros containers roláveis do arquivo).
+          <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Blocos já percorridos" className="flex-1 overflow-x-auto pb-1">
+            <ol className="flex flex-nowrap items-center gap-x-3 gap-y-1.5">
+              {percorridos.map((bloco) => (
+                <li key={bloco.id} className="flex shrink-0 items-center gap-1.5">
+                  <Selo tom={bloco.indice === indiceAtual ? "latao" : "neutro"}>P{String(bloco.indice).padStart(2, "0")}</Selo>
+                  <span className="max-w-[12rem] truncate text-sm text-tinta-suave">{bloco.titulo}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
 
         <div className="flex shrink-0 flex-col items-start gap-1.5 border-t border-dashed border-linha pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
           <p className="text-rotulo font-medium uppercase text-tinta-fraca">Próximo passo</p>
-          {!desvio ? (
+          {!desvio || !achado ? (
             <p className="text-sm text-tinta-suave">Seguir o roteiro na ordem.</p>
           ) : (
             <>
@@ -1705,6 +1895,7 @@ function HistoricoCoach({
                   Ir para
                 </Botao>
               )}
+              <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
             </>
           )}
         </div>
@@ -1826,25 +2017,66 @@ function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessa
             // sessão de 40min pode ter dezenas de trechos; é o quadro que
             // rola, nunca a página (pedido do Marcio: "não quero ficar
             // escrolando pra baixo... pra entender o dinamismo da sessão").
-            <ul className="flex max-h-32 flex-col gap-2 overflow-y-auto pr-1">
-              {segmentos
-                .slice()
-                .reverse()
-                .map((segmento) => (
-                  <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
-                    <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
-                      <span>{formatarDataHora(segmento.criado_em)}</span>
-                      {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
-                    </p>
-                    <p>{segmento.texto}</p>
-                  </li>
-                ))}
-            </ul>
+            // `role="region"`/`tabIndex` no `<div>` WRAPPER, não na `<ul>`
+            // (mesma correção dos outros containers roláveis do arquivo:
+            // colocar direto na lista sobrescreve o role nativo `list` e
+            // deixa os `<li>` órfãos para o axe).
+            <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Trechos já registrados" className="max-h-32 overflow-y-auto pr-1">
+              <ul className="flex flex-col gap-2">
+                {segmentos
+                  .slice()
+                  .reverse()
+                  .map((segmento) => (
+                    <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
+                      <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
+                        <span>{formatarDataHora(segmento.criado_em)}</span>
+                        {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
+                      </p>
+                      <p>{segmento.texto}</p>
+                    </li>
+                  ))}
+              </ul>
+            </div>
           )}
         </div>
       </div>
     </Quadro>
   );
+}
+
+/**
+ * Persiste o último valor NÃO-NULO de um campo do ciclo automático — achado
+ * de 15/09 (painel de vigilância): os quadros 5, 6 e a observação do quadro
+ * 2 liam sempre `sugestoesCiclo[sugestoesCiclo.length - 1]`; se a sugestão
+ * mais recente não trazia aquele campo (ex.: o ciclo mandou uma observação
+ * do tipo `fato`, sem `desvio_sugerido`), o valor que já estava na tela era
+ * APAGADO no meio da reunião, mesmo sem nenhuma mudança real — dado que
+ * "some sozinho" é tão ruim quanto dado inventado (regra da casa).
+ *
+ * Percorre de trás para frente e devolve o primeiro onde `extrair` encontra
+ * algo — junto com QUAL sugestão originou o valor (`sugestaoId`, usado pela
+ * telemetria de desfecho do quadro 6) e QUANDO (`criadoEm`, usado pelo
+ * carimbo de hora da tarefa 7, para não fingir que um valor antigo é novo).
+ *
+ * ⚠️ Só considera `s.visivel === true`: uma sugestão abaixo da confiança
+ * mínima é GRAVADA pelo servidor, mas ele decidiu escondê-la
+ * (`route.ts:133`) — mostrar o valor dela aqui contrariaria a régua de
+ * confiança por um caminho lateral, mesmo que a sugestão mais recente
+ * visível seja mais antiga.
+ *
+ * Função pura, sem dependência de React — testável isoladamente.
+ */
+export function ultimoNaoNulo<T>(
+  sugestoes: SugestaoCopilotoPolling[],
+  extrair: (s: SugestaoCopilotoPolling) => T | null | undefined,
+): { valor: T; sugestaoId: string; criadoEm: string } | null {
+  for (let i = sugestoes.length - 1; i >= 0; i -= 1) {
+    const s = sugestoes[i];
+    if (!s.visivel) continue;
+    const valor = extrair(s);
+    if (valor != null) return { valor, sugestaoId: s.sugestao_id, criadoEm: s.criado_em };
+  }
+  return null;
 }
 
 /** Acrescenta o segmento recém-criado à resposta cacheada por `useRecurso`,

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { aplicarEventoParticipante } from "./participantes";
+import { lerConfiguracaoBool } from "@/server/ia/configuracao";
+import { aplicarEventoParticipante, resolverPapelNoJoin, normalizarParticipantesBrutos } from "./participantes";
+import { extrairDecisoresEsperados } from "./estado";
 
 /**
  * O EFEITO de cada evento do webhook do Recall.ai — Fase 10, Fatia 4b
@@ -180,18 +182,71 @@ export async function registrarSegmentoDoBot(
   throw new Error("falha_ao_persistir_segmento_bot_apos_retentativas");
 }
 
+/** `copiloto_sessao.papeis_de_fala` (migration 0103) — interruptor de
+ * reversão da Fatia de papéis de fala (15/09/2026). `false` faz o JOIN gravar
+ * `papel: null` (mesmo efeito de antes desta fatia — `contexto.ts::rotuloFalante`
+ * cai no fallback `"participante"` genérico). Nasce `true` (é correção de
+ * cegueira: `PAPEIS_CONHECIDOS` nunca casava com nome próprio, então a IA
+ * nunca distinguia ninguém na sala — não é um risco NOVO sendo ligado, é uma
+ * lacuna sendo fechada). MESMA regra dura dos outros interruptores do
+ * copiloto: falha de leitura NUNCA liga sozinha — cai em `false`. */
+const CHAVE_PAPEIS_DE_FALA = "copiloto_sessao.papeis_de_fala";
+
+async function papeisDeFalaEstaoAtivos(admin: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(admin, CHAVE_PAPEIS_DE_FALA, true);
+  } catch {
+    return false;
+  }
+}
+
+interface BriefingAtualParaDecisores {
+  briefings: Array<{ conteudo: { processo_decisorio?: { decisores?: string[] } }; atual: boolean }>;
+}
+
+/** Decisores esperados do briefing ATUAL da sessão — mesma forma de leitura
+ * de `montarEstadoCopiloto` (embed `sessoes_viabilidade → jornadas →
+ * briefings`), aqui isolada porque este módulo só tem `sessaoId` (não o
+ * `jornada_id` direto — `sessoes_copiloto.sessao_id` referencia
+ * `sessoes_viabilidade`, não `jornadas`). `[]` em qualquer ausência/erro
+ * (nunca lança, nunca impede o registro do participante — decisor_N vira
+ * indisponível, mas o join/leave em si sempre grava). */
+async function buscarDecisoresEsperadosDaSessao(admin: SupabaseClient, sessaoId: string): Promise<string[]> {
+  try {
+    const { data, error } = await admin
+      .from("sessoes_viabilidade")
+      .select("jornadas(briefings(conteudo, atual))")
+      .eq("id", sessaoId)
+      .maybeSingle<{ jornadas: BriefingAtualParaDecisores | null }>();
+    if (error || !data?.jornadas) return [];
+    const briefingAtual = data.jornadas.briefings.find((b) => b.atual === true) ?? null;
+    return extrairDecisoresEsperados(briefingAtual);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * `participant_events.join`/`.leave` → `sessoes_copiloto.participantes`
  * (jsonb, 0091). `aplicarEventoParticipante` (participantes.ts) é PURA —
  * este módulo faz a leitura-aplica-grava, com o mesmo cuidado de
  * `ativarSessaoCopiloto` (segmentos/route.ts): erro de leitura/escrita
  * PROPAGA (nunca upsert cego silencioso).
+ *
+ * 🔴 PAPÉIS DE FALA (15/09/2026) — resolvidos aqui, na ESCRITA, só no `join`
+ * (decisão de arquitetura: o papel tem de ser ESTÁVEL na sessão inteira,
+ * nunca recalculado na leitura — ver o comentário de topo de
+ * `participantes.ts`). `aplicarEventoParticipante` já herda o papel de
+ * qualquer entrada anterior da mesma pessoa; `resolverPapelNoJoin` só é
+ * chamado para decidir o papel de quem NUNCA apareceu nesta sessão — e só
+ * quando o interruptor está ligado (senão passa `papel: undefined`, e
+ * `aplicarEventoParticipante` grava `null`, comportamento de antes da fatia).
  */
 export type ResultadoEventoParticipante = { situacao: "gravado" } | { situacao: "sessao_nao_encontrada" };
 
 export async function registrarEventoParticipante(
   admin: SupabaseClient,
-  params: { botId: string; tipo: "join" | "leave"; nomeParticipante: string; quando: string },
+  params: { botId: string; tipo: "join" | "leave"; nomeParticipante: string | null; idParticipante: string | null; isHost: boolean; quando: string },
 ): Promise<ResultadoEventoParticipante> {
   const sessao = await resolverSessaoPorBotId(admin, params.botId);
   if (!sessao) return { situacao: "sessao_nao_encontrada" };
@@ -204,10 +259,25 @@ export async function registrarEventoParticipante(
     .maybeSingle<{ participantes: unknown }>();
   if (erroLeitura) throw erroLeitura;
 
-  const novaLista = aplicarEventoParticipante(existente?.participantes ?? [], {
+  const participantesAtuais = (existente?.participantes ?? []) as unknown;
+
+  let papelParaJoin: ReturnType<typeof resolverPapelNoJoin> | undefined;
+  if (params.tipo === "join" && (await papeisDeFalaEstaoAtivos(admin))) {
+    const decisoresEsperados = await buscarDecisoresEsperadosDaSessao(admin, sessaoId);
+    papelParaJoin = resolverPapelNoJoin({
+      nome: params.nomeParticipante,
+      isHost: params.isHost,
+      decisoresEsperados,
+      participantesAtuais: normalizarParticipantesBrutos(participantesAtuais),
+    });
+  }
+
+  const novaLista = aplicarEventoParticipante(participantesAtuais, {
     tipo: params.tipo,
     nome: params.nomeParticipante,
+    id: params.idParticipante,
     quando: params.quando,
+    papel: papelParaJoin,
   });
 
   const { error: erroEscrita } = await admin.from("sessoes_copiloto").update({ participantes: novaLista }).eq("sessao_id", sessaoId);

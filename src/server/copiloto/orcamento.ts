@@ -19,8 +19,14 @@ import { lerConfiguracaoInt } from "@/server/ia/configuracao";
 export const CHAVE_PROMPT_COPILOTO = "copiloto_sessao";
 const CHAVE_TETO_IA_SESSAO = "copiloto_sessao.teto_ia_sessao";
 const CHAVE_TETO_IA_DIA = "copiloto_sessao.teto_ia_dia";
-const PADRAO_TETO_IA_SESSAO = 30;
-const PADRAO_TETO_IA_DIA = 150;
+// 90/450 desde 15/09/2026 (migration 0102) — eram 30/150. Subidos JUNTO com a
+// queda do intervalo (45s→20s, ciclo.ts): a 20s, 30 chamadas cobriam só ~10
+// min de fala densa, insuficiente para uma sessão inteira. 90 cobre ~30 min
+// (90×20s=1.800s), custando ~US$0,585/sessão (medido: US$0,0065/chamada em
+// produção) — ruído perto do custo de uma Sessão de Viabilidade. 450 = teto
+// diário na mesma proporção 5:1 que já existia (150/30).
+const PADRAO_TETO_IA_SESSAO = 90;
+const PADRAO_TETO_IA_DIA = 450;
 
 export interface OrcamentoCopiloto {
   dentro: boolean;

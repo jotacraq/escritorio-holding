@@ -5,10 +5,18 @@ import { registrarErro } from "@/server/erros";
  * Os TRÊS gatilhos do ciclo automático (Fase 10, Fatia 3,
  * docs/ARQUITETURA-FASE-10.md §4.3) — "o primeiro que ocorrer":
  *
- *   1. **tempo + fala nova**: ≥ `intervalo_segundos` (45) desde a última
- *      execução E ≥1 segmento novo desde então.
+ *   1. **tempo + fala nova**: ≥ `intervalo_segundos` (config `configuracoes`,
+ *      20s desde 15/09/2026 — migration 0102) desde a última execução E ≥1
+ *      segmento novo desde então. `intervaloSegundos` é OBRIGATÓRIO nos
+ *      params de `avaliarGatilho` (Fase 11: a constante local que existia
+ *      como fallback foi removida — quem chama sem passar o valor do banco
+ *      não compila, em vez de herdar 45s em silêncio).
  *   2. **virada de bloco**: a advogada avança/volta no roteiro — com PISO de
- *      15s anti-martelada (trocar de bloco 3x em 10s não dispara 3 ciclos).
+ *      `PISO_VIRADA_BLOCO_SEGUNDOS` (8s desde 15/09/2026, era 15s) anti-
+ *      martelada (trocar de bloco 3x em 3s não dispara 3 ciclos). Baixado
+ *      junto com o intervalo (45→20s): a 15s o piso ficaria a apenas 5s do
+ *      intervalo e o gatilho 2 perderia o sentido de "evento que dispara MAIS
+ *      CEDO que o intervalo" (linha abaixo) — 8s mantém a folga proporcional.
  *   3. **sob demanda**: o botão da Fatia 2 — não passa por este módulo; ele
  *      já ignora o intervalo por natureza (`POST .../sugestao` não usa
  *      `copiloto_ciclos`, é fora do escopo desta claim).
@@ -25,8 +33,7 @@ import { registrarErro } from "@/server/erros";
  * então, e qual bloco a última claim viu.
  */
 
-const INTERVALO_PADRAO_SEGUNDOS = 45;
-const PISO_VIRADA_BLOCO_SEGUNDOS = 15;
+const PISO_VIRADA_BLOCO_SEGUNDOS = 8;
 
 export type TipoGatilhoCopiloto = "intervalo" | "virada_bloco" | "sob_demanda";
 
@@ -105,10 +112,10 @@ export function decidirGatilho(estado: EstadoParaGatilho): DecisaoGatilho {
  */
 export async function avaliarGatilho(
   supabase: SupabaseClient,
-  params: { sessaoId: string; blocoAtualIndice: number; intervaloSegundos?: number; agoraMs?: number },
+  params: { sessaoId: string; blocoAtualIndice: number; intervaloSegundos: number; agoraMs?: number },
 ): Promise<DecisaoGatilho> {
   const agoraMs = params.agoraMs ?? Date.now();
-  const intervaloSegundos = params.intervaloSegundos ?? INTERVALO_PADRAO_SEGUNDOS;
+  const { intervaloSegundos } = params;
 
   try {
     const { data: ultimoCiclo, error: erroCiclo } = await supabase

@@ -20,6 +20,15 @@ export interface PedidoIa<T> {
   nomeSchema: string;
   maxTokens: number;
   effort: EffortIa;
+  /**
+   * Opcional — 100% ADITIVO (Fase 11, `src/server/copiloto/executar-ia.ts`).
+   * Quando presente, o adaptador combina este sinal com o timeout interno dele
+   * (`AbortSignal.any`, openrouter.ts) — abortar de verdade a chamada em voo,
+   * em vez de só ignorar a resposta tardia. Nenhum chamador existente
+   * (briefing, croqui, material, ordenar-horarios) passa este campo — o
+   * comportamento deles é idêntico a antes.
+   */
+  signal?: AbortSignal;
 }
 
 export interface RespostaIa<T> {

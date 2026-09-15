@@ -231,4 +231,166 @@ describe("POST /api/webhooks/copiloto/transcricao — roteamento participant_eve
       expect.objectContaining({ botId: "bot_123", tipo: "leave", nomeParticipante: "Terezinha" }),
     );
   });
+
+  // 🔴 CORREÇÃO (15/09/2026) — payload REAL copiado de `webhooks_eventos.bruto`,
+  // sessão de 14/09/2026 em produção. Antes desta correção, `timestamp` como
+  // OBJETO derrubava o Zod inteiro: 10 join + 5 leave recebidos, 15 com
+  // `payload_participant_event_fora_do_formato_esperado`, ZERO sessão com
+  // `participantes` preenchido. Este é o teste que faltava.
+  const PAYLOAD_REAL_JOIN = {
+    event: "participant_events.join",
+    data: {
+      bot: {
+        id: "7e47e544-36fa-4f0e-aee8-6a737e3204ad",
+        metadata: { origem: "validacao_2", sessao_id: "755d87d7-0000-0000-0000-000000000000" },
+      },
+      data: {
+        data: null,
+        action: "join",
+        timestamp: { absolute: "2026-09-14T13:35:02.998220Z", relative: 0.004220018163323402 },
+        participant: {
+          id: 100,
+          name: "João CSM",
+          is_host: true,
+          platform: "desktop",
+          extra_data: { google_meet: { static_participant_id: "xQEPR8rhYr8kXThoPndZqndR9d4a9M_0ZbRVvgV3NRA=" } },
+        },
+      },
+      recording: { id: "rec-1", metadata: {} },
+      realtime_endpoint: { id: "rt-1", metadata: {} },
+      participant_events: { id: "5893bf01-b7cb-4851-b723-8155c0e7d7a6", metadata: {} },
+    },
+  };
+
+  it("🔴 payload REAL de produção (timestamp OBJETO, participant.id numérico, is_host, metadata.sessao_id no corpo) é aceito e resolve a sessão SÓ pelo bot.id", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-real-1", reentrega: false });
+    registrarEventoParticipanteMock.mockResolvedValue({ situacao: "gravado" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const resposta = await POST(montarRequisicao(PAYLOAD_REAL_JOIN));
+
+    expect(resposta.status).toBe(200);
+    const json = await resposta.json();
+    expect(json.payload_invalido).toBeUndefined(); // antes desta correção, isto vinha `true`
+    expect(registrarEventoParticipanteMock).toHaveBeenCalledWith(
+      supabaseAdminMock,
+      expect.objectContaining({
+        botId: "7e47e544-36fa-4f0e-aee8-6a737e3204ad", // NUNCA metadata.sessao_id do corpo
+        tipo: "join",
+        nomeParticipante: "João CSM",
+        idParticipante: "100",
+        isHost: true,
+        quando: "2026-09-14T13:35:02.998220Z", // extraído de timestamp.absolute
+      }),
+    );
+  });
+
+  it("🔴 payload REAL de leave (mesmo formato de timestamp/participant)", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-real-2", reentrega: false });
+    registrarEventoParticipanteMock.mockResolvedValue({ situacao: "gravado" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const payloadLeave = {
+      ...PAYLOAD_REAL_JOIN,
+      event: "participant_events.leave",
+      data: {
+        ...PAYLOAD_REAL_JOIN.data,
+        data: {
+          ...PAYLOAD_REAL_JOIN.data.data,
+          action: "leave",
+          timestamp: { absolute: "2026-09-14T13:40:00.000000Z", relative: 297.2 },
+        },
+      },
+    };
+
+    const resposta = await POST(montarRequisicao(payloadLeave));
+
+    expect(resposta.status).toBe(200);
+    expect(registrarEventoParticipanteMock).toHaveBeenCalledWith(
+      supabaseAdminMock,
+      expect.objectContaining({ tipo: "leave", quando: "2026-09-14T13:40:00.000000Z" }),
+    );
+  });
+
+  it("timestamp objeto SÓ com 'relative' (sem 'absolute'): cai no fallback new Date().toISOString(), NUNCA inventa data a partir de 'relative'", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-relative", reentrega: false });
+    registrarEventoParticipanteMock.mockResolvedValue({ situacao: "gravado" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const antes = Date.now();
+    const resposta = await POST(
+      montarRequisicao({
+        event: "participant_events.join",
+        data: { bot: { id: "bot_123" }, data: { participant: { name: "Terezinha" }, timestamp: { relative: 12.5 } } },
+      }),
+    );
+    const depois = Date.now();
+
+    expect(resposta.status).toBe(200);
+    const chamada = registrarEventoParticipanteMock.mock.calls.at(-1)![1] as { quando: string };
+    const quandoMs = new Date(chamada.quando).getTime();
+    expect(quandoMs).toBeGreaterThanOrEqual(antes);
+    expect(quandoMs).toBeLessThanOrEqual(depois);
+  });
+
+  it("payload LEGADO (timestamp string/número, sem id/is_host) continua funcionando", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-legado", reentrega: false });
+    registrarEventoParticipanteMock.mockResolvedValue({ situacao: "gravado" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const resposta = await POST(
+      montarRequisicao({
+        event: "participant_events.join",
+        data: { bot: { id: "bot_123" }, data: { participant: { name: "Terezinha" }, timestamp: 1_757_600_000 } },
+      }),
+    );
+
+    expect(resposta.status).toBe(200);
+    expect(registrarEventoParticipanteMock).toHaveBeenCalledWith(
+      supabaseAdminMock,
+      expect.objectContaining({ nomeParticipante: "Terezinha", idParticipante: null, isHost: false }),
+    );
+  });
+
+  it("name AUSENTE com id PRESENTE: registra o evento (não vira acompanhante decisor — a regra fica em resolverPapelNoJoin)", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-so-id", reentrega: false });
+    registrarEventoParticipanteMock.mockResolvedValue({ situacao: "gravado" });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const resposta = await POST(
+      montarRequisicao({
+        event: "participant_events.join",
+        data: { bot: { id: "bot_123" }, data: { participant: { id: 42 }, timestamp: "2026-09-15T10:00:00Z" } },
+      }),
+    );
+
+    expect(resposta.status).toBe(200);
+    expect(registrarEventoParticipanteMock).toHaveBeenCalledWith(
+      supabaseAdminMock,
+      expect.objectContaining({ nomeParticipante: null, idParticipante: "42" }),
+    );
+  });
+
+  it("🔴 name AUSENTE e id AUSENTE: evento ignorado (200, sem efeito), NUNCA inventa identificação", async () => {
+    process.env.COPILOTO_WEBHOOK_SECRET = SEGREDO;
+    reservarEventoWebhookMock.mockResolvedValue({ tipo: "processar", id: "evt-sem-nada", reentrega: false });
+    supabaseAdminMock.from.mockReturnValue({ update: () => ({ eq: async () => ({ error: null }) }) });
+
+    const resposta = await POST(
+      montarRequisicao({
+        event: "participant_events.join",
+        data: { bot: { id: "bot_123" }, data: { participant: {}, timestamp: "2026-09-15T10:00:00Z" } },
+      }),
+    );
+
+    expect(resposta.status).toBe(200);
+    const json = await resposta.json();
+    expect(json.sem_identificacao).toBe(true);
+    expect(registrarEventoParticipanteMock).not.toHaveBeenCalled();
+  });
 });

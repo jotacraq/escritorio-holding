@@ -204,6 +204,71 @@ describe("GET /api/sessoes/[id]/copiloto — polling coalescido (Fatia 3)", () =
     expect(corpo.polling).toEqual({ em_foco_ms: 3000, sem_foco_ms: 10_000 });
   });
 
+  it("🔴 Fase 11 — Tarefa 7: sugestão gravada NESTA MESMA chamada já aparece em sugestoes_novas, sem esperar o tick seguinte", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenario({ copilotoAtivo: true, sugestoesNovas: [] }); // buscarSugestoesNovas não viu nada ainda
+    executarCicloCopilotoMock.mockResolvedValue({
+      situacao: "sugestao_gravada",
+      sugestaoId: "sugestao-nova-1",
+      ordemEvento: 9,
+      criadoEm: "2026-09-15T14:00:09.000Z",
+      gatilho: "intervalo",
+      visivel: true,
+      sugestao: { proxima_pergunta: "Quem decide?", falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8 },
+      confiancaGeral: 0.8,
+    });
+
+    const resposta = await GET(requisicao("?desde_sugestao=5"), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(corpo.sugestoes_novas).toHaveLength(1);
+    expect(corpo.sugestoes_novas[0]).toMatchObject({
+      sugestao_id: "sugestao-nova-1",
+      ordem_evento: 9,
+      visivel: true,
+      confianca_geral: 0.8,
+    });
+    // 🔴 o cursor precisa avançar JUNTO — senão o tick seguinte (desde_sugestao=9)
+    // não existe e a mesma linha volta duplicada (o front concatena sem deduplicar).
+    expect(corpo.proximo_cursor_sugestao).toBe(9);
+  });
+
+  it("🔴 Fase 11 — Tarefa 7: sem duplicata — se buscarSugestoesNovas JÁ trouxe a linha que o ciclo acabou de gravar (corrida rara), o cursor bloqueia a re-inclusão", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    // A query paralela já pegou ordem_evento=9 (ex.: corrida entre SELECT e INSERT).
+    montarCenario({
+      copilotoAtivo: true,
+      sugestoesNovas: [
+        {
+          id: "sugestao-nova-1",
+          ordem_evento: 9,
+          gatilho: "intervalo",
+          conteudo: { proxima_pergunta: "Quem decide?", falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8 },
+          confianca: 0.8,
+          desfecho: null,
+          criado_em: "2026-09-15T14:00:09.000Z",
+        },
+      ],
+    });
+    executarCicloCopilotoMock.mockResolvedValue({
+      situacao: "sugestao_gravada",
+      sugestaoId: "sugestao-nova-1",
+      ordemEvento: 9,
+      criadoEm: "2026-09-15T14:00:09.000Z",
+      gatilho: "intervalo",
+      visivel: true,
+      sugestao: { proxima_pergunta: "Quem decide?", falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8 },
+      confiancaGeral: 0.8,
+    });
+
+    const resposta = await GET(requisicao("?desde_sugestao=5"), PARAMS);
+    const corpo = await resposta.json();
+
+    // Exatamente 1 entrada — nunca 2 (o cursor já estava em 9, `9 > 9` é falso).
+    expect(corpo.sugestoes_novas).toHaveLength(1);
+    expect(corpo.proximo_cursor_sugestao).toBe(9);
+  });
+
   it("payload inclui os cursores incrementais e o estado determinístico (contrato da Fatia 1 preservado)", async () => {
     exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
     montarCenario({ copilotoAtivo: true });

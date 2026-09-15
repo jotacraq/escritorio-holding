@@ -73,7 +73,8 @@ interface Resultado {
 function clientes(opts: { sessao?: Resultado; claim?: Resultado; insercaoSugestao?: Resultado }) {
   const sessaoResultado = opts.sessao ?? { data: SESSAO_ATIVA, error: null };
   const claimResultado = opts.claim ?? { data: { sessao_id: "s1" }, error: null };
-  const insercaoResultado = opts.insercaoSugestao ?? { data: { id: "sugestao-1" }, error: null };
+  const insercaoResultado =
+    opts.insercaoSugestao ?? { data: { id: "sugestao-1", ordem_evento: 7, criado_em: "2026-09-11T14:00:05.000Z" }, error: null };
 
   class ConsultaSessao implements PromiseLike<Resultado> {
     select() { return this; }
@@ -220,12 +221,17 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: false, naSessao: 30, noDia: 10, motivo: "teto_ia_sessao" });
+    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
     const { supabase, admin } = clientes({});
 
     const r = await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
 
     expect(r).toEqual({ situacao: "orcamento_estourado", motivo: "teto_ia_sessao" });
-    expect(montarContextoMock).not.toHaveBeenCalled();
+    // Fase 11 (Tarefa 6): orçamento + contexto rodam em PARALELO (Promise.all)
+    // — `montarContextoCopiloto` É chamada mesmo quando o orçamento estoura
+    // (custo aceito: no máximo 1 leitura extra à toa por sessão, documentado
+    // em ciclo.ts). O que NUNCA acontece é a chamada de IA — essa sim é
+    // sempre depois da checagem de orçamento.
     expect(executarIaMock).not.toHaveBeenCalled();
   });
 
@@ -259,7 +265,15 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
 
     const r = await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
 
-    expect(r).toMatchObject({ situacao: "sugestao_gravada", sugestaoId: "sugestao-1", gatilho: "virada_bloco", visivel: true });
+    expect(r).toMatchObject({
+      situacao: "sugestao_gravada",
+      sugestaoId: "sugestao-1",
+      ordemEvento: 7,
+      criadoEm: "2026-09-11T14:00:05.000Z",
+      gatilho: "virada_bloco",
+      visivel: true,
+      confiancaGeral: 0.8,
+    });
   });
 
   it("caminho feliz, mas confiança abaixo do mínimo → sugestao_gravada com visivel:false e sugestao:null na resposta (a linha AINDA é gravada)", async () => {
@@ -279,7 +293,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
 
     const r = await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
 
-    expect(r).toMatchObject({ situacao: "sugestao_gravada", visivel: false, sugestao: null });
+    expect(r).toMatchObject({ situacao: "sugestao_gravada", visivel: false, sugestao: null, confiancaGeral: 0.2 });
   });
 
   it("saída recusada pelo validador (termo proibido) → conteudo_recusado, NADA gravado em copiloto_sugestoes", async () => {

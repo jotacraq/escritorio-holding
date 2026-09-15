@@ -140,7 +140,16 @@ export async function dispararWarmupCopiloto(
     if (!orcamento.dentro) return; // teto estourado — nunca fura para aquecer cache
 
     const contexto = await montarContextoCopiloto(admin, params.sessaoId, 0);
-    const execucao = await executarIaCopiloto(admin, { jornadaId: params.jornadaId, contexto });
+    // 🔴 abortarNoTimeout: false — Fase 11 abriu `executar-ia.ts` para abortar
+    // de verdade a chamada em voo depois de 8s (economiza tokens/orçamento no
+    // caminho REAL do ciclo automático), mas o warm-up é o ÚNICO caminho que
+    // NÃO PODE herdar isso: o cache do provedor só é escrito se o voo
+    // terminar (comentário de topo deste arquivo, §145-151 do original) —
+    // abortar aqui mataria a otimização inteira desta migration 0101, e o
+    // sintoma ("a 1ª sugestão da sessão voltou a sumir") apareceria semanas
+    // depois sem ninguém ligar as duas coisas. Teste obrigatório em
+    // warmup.test.ts prova que este `false` nunca é removido por engano.
+    const execucao = await executarIaCopiloto(admin, { jornadaId: params.jornadaId, contexto, abortarNoTimeout: false });
 
     // Resultado SEMPRE descartado — o único efeito que importa (o cache do
     // provedor) já aconteceu no momento em que `executarIaCopiloto` retornou

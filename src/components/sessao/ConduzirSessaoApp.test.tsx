@@ -164,3 +164,25 @@ describe("ConduzirSessaoApp — o copiloto continua montado com o copiloto desli
     expect(container.textContent).toContain("Copiloto desligado");
   });
 });
+
+/**
+ * Faixa horizontal abaixo de `xl` (pedido do dono, 15/09, 2ª rodada): a
+ * grade da primeira dobra usa UMA `<div>` `grid` com `grid-template-areas`
+ * nomeadas — o `PainelSims` muda de área (faixa cheia abaixo de `xl`,
+ * coluna lateral em `xl`+) só por CSS, nunca por uma segunda instância
+ * escondida. Este teste é a guarda estrutural contra o risco citado no
+ * pedido: "corrigi num lugar e esqueci o outro" se alguém duplicasse o
+ * componente para resolver os dois breakpoints.
+ */
+describe("ConduzirSessaoApp — PainelSims não duplica no DOM entre os dois layouts (15/09, 2ª rodada)", () => {
+  it('o quadro "SIMs" aparece exatamente uma vez, não duas instâncias (faixa + coluna)', async () => {
+    const { container } = await abrir();
+    // `PainelSims` é real aqui (só `PainelCopiloto` é mockado) — o rótulo
+    // "SIMs" do `Quadro` que o envolve só existe se o componente for
+    // montado. `heading`/rótulo com esse texto exato identifica o Quadro.
+    const ocorrencias = Array.from(container.querySelectorAll("*")).filter(
+      (el) => el.children.length === 0 && el.textContent?.trim() === "SIMs",
+    );
+    expect(ocorrencias).toHaveLength(1);
+  });
+});
