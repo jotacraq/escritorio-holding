@@ -12,7 +12,7 @@ Nome e método vêm do documento institucional da própria advogada — [[02 - M
 
 | | |
 |---|---|
-| **Produção** | `escritorio.grupoparticipa.app.br`, Hostinger Node.js App, deploy automático por push no remote `infra` (`origin` = backup; empurrar nos dois). Versão publicada em `/versao.txt`. |
+| **Produção** | `escritorio.grupoparticipa.app.br`, Hostinger Node.js App. 🔴 **O DEPLOY NÃO É AUTOMÁTICO** (corrigido em 15/09/2026): o remote `infra` que esta linha citava não existe mais no repositório — só `origin`, e push nele **não publica nada**. Exige build manual na Hostinger. Medido em 15/09: `/versao.txt` estava em `8fce0e6` (Fase 7, de 06/09), **47 commits atrás** — Fases 8, 9, 10 e 11 nunca subiram. Conferir `/versao.txt` **depois de publicar**, não depois de empurrar. |
 | **Banco** | Supabase `fcfsnqqaphtamhrpuyoh` (sa-east-1), migrations até **0082** aplicadas e provadas (`scripts/verificacao-*.sql`). RLS em toda tabela; links públicos só por RPC (0072). |
 | **Dados** | A pessoa do próprio João (`origem_dado='exemplo'`, `scripts/seed-exemplo-completo.ts`) + 4 famílias fictícias de demonstração (`scripts/seed-demo.ts`, `--limpar` desfaz). As 70 transcrições de clientes vivem só no banco (sigilo). **Nenhum cliente real passou pelo sistema ainda.** |
 | **Fases fechadas** | MVP · 2 · 3 (IA via OpenRouter) · 4 (esteira automatizada, design system) · 5 (Motor do Croqui) · 6 (3 sessões, menu de 5, Ficha em uma tela). Todas com trava do Fable aprovada. |
