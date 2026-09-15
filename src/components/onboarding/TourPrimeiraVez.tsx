@@ -36,7 +36,7 @@ const PASSOS: PassoTour[] = [
     icone: <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4A1.5 1.5 0 0 1 10 3.5v4A1.5 1.5 0 0 1 8.5 9h-4A1.5 1.5 0 0 1 3 7.5v-4Zm9 0A1.5 1.5 0 0 1 13.5 2h2A1.5 1.5 0 0 1 17 3.5v4A1.5 1.5 0 0 1 15.5 9h-2A1.5 1.5 0 0 1 12 7.5v-4ZM3 12.5A1.5 1.5 0 0 1 4.5 11h2A1.5 1.5 0 0 1 8 12.5v4A1.5 1.5 0 0 1 6.5 18h-2A1.5 1.5 0 0 1 3 16.5v-4Zm9-1A1.5 1.5 0 0 1 13.5 10h4a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a1.5 1.5 0 0 1-1.5-1.5v-4Z" />,
     texto: (
       <>
-        <p>Comece o dia por aqui. A aba “O dia” mostra, em ordem de urgência, o que precisa de você: as sessões marcadas, quem pagou e ainda não recebeu contato, e o que travou.</p>
+        <p>Comece o dia por aqui. A aba “O dia” mostra, em ordem de urgência, o que precisa de você: as sessões marcadas, quem pagou e ainda não recebeu contato, e o que travou. Na linha da sessão, o botão “Conduzir” leva direto ao roteiro — sem passar pela ficha.</p>
         <p>A aba “Números” mostra as fases do processo por turma do seminário: quantas pessoas fizeram a sessão, contrataram o croqui e a holding.</p>
       </>
     ),

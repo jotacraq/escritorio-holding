@@ -29,6 +29,11 @@ import type { PapelEquipe } from "@/types/banco";
  */
 export const CHAVES_BLOCO_PAINEL = [
   "sessoes_hoje",
+  // 15/09 — sessão agendada/confirmada cujo dia passou e nunca foi marcada
+  // como realizada (`vw_sessoes_em_aberto`, 0104). Mesma visibilidade de
+  // `sessoes_hoje` na matriz abaixo: quem conduz a sessão de hoje é quem
+  // precisa saber da que ficou para trás.
+  "sessoes_em_aberto",
   "preparo",
   "croquis",
   "documentos",
@@ -52,6 +57,7 @@ export const BLOCOS_DE_SISTEMA: ReadonlySet<ChaveBlocoPainel> = new Set(["sistem
 export const BLOCOS_POR_PAPEL: Record<PapelEquipe, ChaveBlocoPainel[]> = {
   admin: [
     "sessoes_hoje",
+    "sessoes_em_aberto",
     "preparo",
     "croquis",
     "documentos",
@@ -62,9 +68,9 @@ export const BLOCOS_POR_PAPEL: Record<PapelEquipe, ChaveBlocoPainel[]> = {
     "parametros_divergentes",
     "sistema",
   ],
-  advogada: ["sessoes_hoje", "preparo", "croquis", "documentos", "execucao", "numeros"],
-  relacionamento: ["sessoes_hoje", "preparo", "documentos", "pagos_sem_contato", "travado"],
-  assistente: ["sessoes_hoje", "preparo", "documentos", "execucao", "pagos_sem_contato"],
+  advogada: ["sessoes_hoje", "sessoes_em_aberto", "preparo", "croquis", "documentos", "execucao", "numeros"],
+  relacionamento: ["sessoes_hoje", "sessoes_em_aberto", "preparo", "documentos", "pagos_sem_contato", "travado"],
+  assistente: ["sessoes_hoje", "sessoes_em_aberto", "preparo", "documentos", "execucao", "pagos_sem_contato"],
 };
 
 export function blocosDoPapel(papel: PapelEquipe | null | undefined): ChaveBlocoPainel[] {

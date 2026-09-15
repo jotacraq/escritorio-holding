@@ -270,8 +270,28 @@ export function derivarProximoPasso(sinais: Sinais, agora: number = Date.now()):
   return passo("sem_informacao", "Sem informação", "ninguem", "quando_der", null, "Sem informação suficiente sobre esta jornada.");
 }
 
-/** Link para a Ficha 360 na aba do passo (ou a raiz da Pasta quando não há aba). */
+/**
+ * Link para o passo. Quase sempre a Ficha 360 na aba certa (`#hash`) — mas
+ * quando o passo É "conduzir a sessão" (linha 210: sessão marcada, tudo
+ * pronto, dono `advogada`), a Ficha só repetiria a gaveta de onde a Dra.
+ * Elaine ainda precisa de mais 2 cliques até a sala. O caminho direto é
+ * `/sessoes/[jornadaId]/conduzir` — a mesma rota que `LinhaAgendamento.tsx`
+ * e `SessaoAba.tsx` já usam.
+ *
+ * CORREÇÃO 15/09 (achado do mapeamento): antes deste ajuste, `chave:"sessao"`
+ * SEMPRE apontava para `#sessao` — inclusive quando o texto já dizia
+ * "Conduzir a sessão". O chip "próximo passo" (Painel, Esteira, Ficha) e a
+ * `BarraAcaoMobile` (via `TrilhoDaFicha`) herdam a correção de graça, porque
+ * todos os 4 passam por esta função. Não bastava trocar só `SessoesHoje.tsx`.
+ *
+ * O caso "Agendar a sessão" (dono `equipe`, sessão ainda sem horário) NÃO
+ * entra aqui: `/conduzir` sem agendamento não tem o que conduzir — continua
+ * abrindo a gaveta de agendamento pelo hash de sempre.
+ */
 export function hrefDoPasso(jornadaId: string, proximo: ProximoPasso): string {
+  if (proximo.chave === "sessao" && proximo.dono === "advogada") {
+    return `/sessoes/${jornadaId}/conduzir`;
+  }
   return `/jornadas/${jornadaId}${proximo.rota ?? ""}`;
 }
 

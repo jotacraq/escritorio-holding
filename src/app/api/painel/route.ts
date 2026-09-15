@@ -94,6 +94,9 @@ export async function GET(request: NextRequest) {
         case "sessoes_do_dia":
           resposta.sessoes_do_dia = data as SessaoDoDiaLinha[];
           break;
+        case "sessoes_em_aberto":
+          resposta.sessoes_em_aberto = data as SessaoDoDiaLinha[];
+          break;
         case "pendencias_preparo":
           resposta.pendencias_preparo = data as PendenciaPreparoLinha[];
           break;

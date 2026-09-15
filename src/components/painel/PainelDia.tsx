@@ -288,6 +288,19 @@ function ConteudoDoDia({
       if (estado.situacao !== "ok") return "falha";
       return estado.itens.length === 0 ? "vazio" : "trabalho";
     }
+    /**
+     * "Sessões de hoje" combina DUAS fontes (`sessoesDoDia` + `sessoesEmAberto`,
+     * 0104). `situacaoDe` sozinha olharia só `sessoesDoDia`: um dia sem sessão
+     * marcada mas com sessão em aberto viraria "vazio" — cairia na faixa "Sem
+     * pendência" (`tranquilos`) e escondia de novo o problema que a Tarefa 2
+     * existe para resolver. Vazio só quando as DUAS vierem vazias; falha se
+     * qualquer uma visível falhar (falha parcial não pode fingir "tudo ok").
+     */
+    function situacaoDeSessoes(visivel: boolean, hoje: EstadoBloco<unknown>, emAberto: EstadoBloco<unknown>): BlocoDoDia["situacao"] {
+      if (!visivel) return "oculto";
+      if (hoje.situacao !== "ok" || emAberto.situacao !== "ok") return "falha";
+      return hoje.itens.length === 0 && emAberto.itens.length === 0 ? "vazio" : "trabalho";
+    }
     function situacaoDaFonte<T>(visivel: boolean, fonte: Fonte<T>): BlocoDoDia["situacao"] {
       if (!visivel || fonte.situacao === "ausente") return "oculto";
       if (fonte.situacao !== "ok") return "falha";
@@ -326,11 +339,14 @@ function ConteudoDoDia({
       {
         id: "sessoes-hoje",
         titulo: "Sessões de hoje",
-        dica: "As próximas 48 horas: horário, presença, preparo e sala.",
+        dica: "As próximas 48 horas: horário, presença, preparo e sala. Sessão marcada para um dia que já passou e sem desfecho entra em “Em aberto”, dentro deste mesmo bloco.",
         ordem: 4,
-        agora: sessoes.some((s) => new Date(s.inicio_em) < amanha),
-        situacao: situacaoDe(ve("sessoes_hoje"), dados.sessoesDoDia),
-        render: () => <SessoesHoje estado={dados.sessoesDoDia} aoTentarDeNovo={atualizar} />,
+        // Sessão em aberto (dia passado, sem desfecho) NUNCA é "esta semana" —
+        // já atrasou. `dados.sessoesEmAberto` some do bloco 4 só quando o bloco
+        // inteiro está oculto (`ve`) ou indisponível — nunca quando vazio.
+        agora: sessoes.some((s) => new Date(s.inicio_em) < amanha) || itensDe(dados.sessoesEmAberto).length > 0,
+        situacao: situacaoDeSessoes(ve("sessoes_hoje") && ve("sessoes_em_aberto"), dados.sessoesDoDia, dados.sessoesEmAberto),
+        render: () => <SessoesHoje estado={dados.sessoesDoDia} emAberto={dados.sessoesEmAberto} aoTentarDeNovo={atualizar} />,
       },
       {
         id: "preparo-pendente",
@@ -387,6 +403,19 @@ function ConteudoDoDia({
         : { id: "r-prazos", rotulo: "Vence hoje ou venceu", valor: vencendo, motivoVazio: "não carregou", href: "#prazos", urgente: true },
       ve("sessoes_hoje")
         ? { id: "r-sessoes", rotulo: "Sessões em 48 h", valor: sessoes ? sessoes.length : null, motivoVazio: "não carregou", href: "#sessoes-hoje" }
+        : null,
+      // 15/09 (0104) — contagem separada de "Sessões em 48h": são conceitos
+      // diferentes (janela futura × atraso sem desfecho) e um número só
+      // misturando os dois mentiria sobre qual dos dois cresceu.
+      ve("sessoes_em_aberto")
+        ? {
+            id: "r-sessoes-em-aberto",
+            rotulo: "Sessões em aberto",
+            valor: dados.sessoesEmAberto.situacao === "ok" ? dados.sessoesEmAberto.itens.length : null,
+            motivoVazio: "não carregou",
+            href: "#sessoes-hoje",
+            urgente: dados.sessoesEmAberto.situacao === "ok" && dados.sessoesEmAberto.itens.length > 0,
+          }
         : null,
       ve("sessoes_hoje")
         ? {
