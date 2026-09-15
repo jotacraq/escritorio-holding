@@ -61,11 +61,12 @@ export default function PaginaAgenda() {
           // leva para a lista — é o mesmo caminho que o estado vazio já dizia
           // em palavras, agora como botão.
           <>
-            {/* No celular "Marcar sessão" vive na `BarraAcaoMobile` da aba
-                Sessões (zona do polegar) — mantido `max-md:hidden` para não
-                repetir. "Iniciar sessão agora" é a ação do dia a dia (não tem
-                par no celular ainda) e por isso fica visível em toda largura. */}
-            <IniciarSessaoAgora />
+            {/* Correção de 15/09: "Iniciar sessão agora" e "Marcar sessão"
+                agora TÊM par no celular — a `BarraAcaoMobile` da aba Sessões
+                (`ListaSessoes.tsx`) passou a oferecer os dois na zona do
+                polegar. Os dois botões do cabeçalho ficam `max-md:hidden`
+                para não duplicar o mesmo par visível logo abaixo. */}
+            <IniciarSessaoAgora className="max-md:hidden" />
             <LinkBotao href="/clientes" variante="secundario" className="max-md:hidden">
               Marcar sessão
             </LinkBotao>

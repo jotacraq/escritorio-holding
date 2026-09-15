@@ -48,7 +48,7 @@ function jornadaParaOpcao(j: JornadaKanban): { id: string; rotulo: string; descr
   return { id: j.id, rotulo: j.nome, descricao: detalhe || j.origem };
 }
 
-export function IniciarSessaoAgora() {
+export function IniciarSessaoAgora({ className }: { className?: string } = {}) {
   const router = useRouter();
   const { notificar } = useToast();
   const [aberta, setAberta] = useState(false);
@@ -165,7 +165,7 @@ export function IniciarSessaoAgora() {
 
   return (
     <>
-      <Botao variante="primario" onClick={abrir}>
+      <Botao variante="primario" onClick={abrir} className={className}>
         Iniciar sessão agora
       </Botao>
 

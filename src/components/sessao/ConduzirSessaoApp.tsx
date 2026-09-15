@@ -210,12 +210,17 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
           titulo={semRoteiro ? "Nenhum roteiro ativo para Sessão de Viabilidade" : "Nenhuma Sessão de Viabilidade registrada para esta jornada"}
           descricao={
             semRoteiro
-              ? "Não existe versão ativa do roteiro da Sessão de Viabilidade. A tela não improvisa o script — o Admin ainda não tem aba de roteiros; a versão é ativada pela equipe técnica (roteiros_versoes, chave sessao_viabilidade)."
+              ? // Correção de 15/09: o texto antigo dizia que o Admin não tinha
+                // aba de roteiros e mandava a equipe técnica mexer direto no
+                // banco — isso deixou de ser verdade na Fase 7 r3, quando
+                // "Formulário e roteiros" (aba `formularios`) ganhou o botão
+                // "Ativar esta" (`RoteirosSecao.tsx`, BLOQUEIO B15).
+                "Não existe versão ativa do roteiro da Sessão de Viabilidade. A tela não improvisa o script — ative uma versão em Admin → Formulário e roteiros."
               : "Sem uma sessão criada não há o que conduzir aqui — nada é improvisado. Registre a sessão na ficha da jornada."
           }
           acao={
-            <Link href={semRoteiro ? "/admin#prompts" : `/jornadas/${jornadaId}`}>
-              <Botao variante="primario">{semRoteiro ? "Abrir Admin → Método" : "Abrir ficha da jornada"}</Botao>
+            <Link href={semRoteiro ? "/admin#formularios" : `/jornadas/${jornadaId}`}>
+              <Botao variante="primario">{semRoteiro ? "Abrir Admin → Formulário e roteiros" : "Abrir ficha da jornada"}</Botao>
             </Link>
           }
         />

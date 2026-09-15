@@ -8,6 +8,7 @@ import { EstadoErro, EstadoIndisponivel, EstadoVazio } from "@/components/ui/Est
 import { Kpi } from "@/components/ui/Kpi";
 import { LinkBotao } from "@/components/ui/LinkBotao";
 import { BarraAcaoMobile } from "@/components/ui/BarraAcaoMobile";
+import { IniciarSessaoAgora } from "./IniciarSessaoAgora";
 import type { AgendamentoAgenda } from "@/types/agenda";
 import { listarAgendamentos } from "./api-agendamentos";
 import { LinhaAgendamento } from "./LinhaAgendamento";
@@ -143,19 +144,34 @@ export function ListaSessoes() {
         </Cartao>
       )}
 
-      {/* Fase 8 §C3 M5: no celular o cabeçalho da página sai da tela ao rolar
-          a lista, e com ele o botão "Marcar sessão". A barra devolve a ação ao
-          polegar e diz, em uma linha, o que a lista está mostrando. */}
+      {/*
+       * Fase 8 §C3 M5: no celular o cabeçalho da página sai da tela ao rolar
+       * a lista, e com ele o botão "Marcar sessão". A barra devolve a ação ao
+       * polegar e diz, em uma linha, o que a lista está mostrando.
+       *
+       * Correção de 15/09: "Iniciar sessão agora" (`PainelDia.tsx`, a mesma
+       * instância autocontida) ficava fora da barra — no celular a advogada
+       * não tinha o atalho que já existe no desktop. Um verbo por cartão
+       * continua valendo (`LinhaAgendamento.tsx:176-181`): os dois cabem
+       * porque não competem — "Iniciar agora" é o verbo do momento (a mesma
+       * hierarquia do desktop em `PainelDia.tsx`, onde ele vem antes de
+       * "Como funciona"/"Atualizar"), "Marcar sessão" recua para `secundaria`,
+       * o prop que `BarraAcaoMobile` já reserva para a ação de apoio. Nenhum
+       * dos dois perde o alvo de 44px.
+       */}
       <BarraAcaoMobile
+        secundaria={
+          <LinkBotao href="/clientes" variante="secundario" tamanho="normal" aria-label="Marcar sessão">
+            Marcar
+          </LinkBotao>
+        }
         contexto={
           resumo.proximos.length === 0
             ? "Nenhuma sessão nos próximos 7 dias"
             : `${resumo.proximos.length} ${resumo.proximos.length === 1 ? "sessão" : "sessões"} nos próximos 7 dias`
         }
       >
-        <LinkBotao href="/clientes" variante="cta" tamanho="normal" className="w-full">
-          Marcar sessão
-        </LinkBotao>
+        <IniciarSessaoAgora className="w-full" />
       </BarraAcaoMobile>
     </div>
   );
