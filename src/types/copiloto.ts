@@ -70,6 +70,17 @@ export interface EstadoCopiloto {
    * (a rota não cria a linha sozinha: quem cria é o primeiro POST de
    * segmento manual, ou a Fatia 4 ao pedir o bot). */
   estado_copiloto: "aguardando" | "ativo" | "encerrado" | "erro";
+  /** Fase 12, Fatia A. `?:` pelo mesmo motivo de `SugestaoCopiloto.bloco_em_curso`
+   * — contrato novo por composição, sem quebrar literais de teste do front.
+   * `'manual'` = a última escrita em `bloco_atual_id` veio de
+   * `POST .../copiloto/bloco` (correção da advogada); `'ia'` = veio do
+   * `bloco_em_curso` da IA (só possível com `bloco_automatico=true`, ainda
+   * desligado nesta fatia); ausente/`null` = `bloco_atual_id` nunca foi
+   * escrito (sessão nova, ou de antes desta fatia). */
+  bloco_atual_origem?: "ia" | "manual" | null;
+  /** Fase 12, Fatia A — carimbo da última escrita em `bloco_atual_id`,
+   * `?:` pelo mesmo motivo acima. */
+  bloco_atual_em?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +178,23 @@ export interface ContextoCopiloto {
   /** Ids de todos os blocos do roteiro ativo — é contra ISTO que o servidor
    * confere `bloco_id` na validação pós-Zod (nunca contra a lista da IA). */
   roteiro_ativo_blocos_ids: string[];
+  /** Fase 12, Fatia 1 — `(id, titulo, objetivo)` de TODOS os blocos do
+   * roteiro ativo, SEM `falas` nem `proibido` (mesmo raciocínio de peso do
+   * `bloco_atual` acima: só o essencial para a IA reconhecer QUAL bloco a
+   * conversa está tocando, nunca o roteiro verbatim). É o que sustenta
+   * `bloco_inferido` na saída — sem isto a IA não teria como reconhecer um
+   * bloco que não seja o atual (ela só recebia o corpo do bloco corrente até
+   * esta fatia). */
+  roteiro_ativo_blocos: BlocoResumoRoteiro[];
+}
+
+/** Recorte `(id, titulo, objetivo)` de um bloco do roteiro — usado só para a
+ * IA reconhecer o roteiro INTEIRO sem o peso de `falas`/`proibido`/`campos`/
+ * `observar` de cada bloco (Fase 12, Fatia 1). */
+export interface BlocoResumoRoteiro {
+  id: string;
+  titulo: string;
+  objetivo: string | null;
 }
 
 export type TipoObservacaoCopiloto = "fato" | "hipotese" | "inferencia" | "recomendacao";
@@ -192,6 +220,17 @@ export interface SugestaoCopiloto {
    * anulado; esta lista é só para telemetria/tela mostrar "não conferida"
    * em vez de simplesmente sumir sem explicação (§4.3 do plano). */
   campos_evidencia_nao_conferida: string[];
+  /** Fase 12, Fatia 1 — em que bloco a IA entende que a conversa está agora
+   * (defeito-raiz: antes só a tela sabia). `?:` (não `| null` obrigatório)
+   * pelo MESMO motivo de `EstadoCopilotoComPolling.expurgo_segmentos_em`:
+   * contrato novo por composição sobre um tipo que
+   * `PainelCopiloto.test.tsx` já literaliza — tornar obrigatório quebraria
+   * testes do front sem ganho de segurança (campo ausente e `null`
+   * significam a mesma coisa: "a IA não identificou o bloco nesta rodada").
+   * `null`/ausente é o valor honesto quando a fala dos últimos ~90s não
+   * permite identificar com segurança — NUNCA "o bloco anterior por
+   * inércia" (regra do prompt, 0106). */
+  bloco_inferido?: { bloco_id: string; confianca: number; evidencia: string } | null;
 }
 
 /** Resposta de sucesso de `POST /api/sessoes/[id]/copiloto/sugestao`. */
@@ -411,6 +450,16 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
    * ("não sei que foi expurgado"). Quando o `frontend-engineer` consumir
    * este campo, `undefined` e `null` devem ser tratados de forma idêntica. */
   expurgo_segmentos_em?: string | null;
+  /** Fase 12, Fatia 1 (correção de escopo do arquiteto — ver comentário de
+   * topo do bloco "FASE 12" mais abaixo neste arquivo). O bloco atual já
+   * resolvido pelo SERVIDOR (fixação manual recente vence; senão, a última
+   * inferência da IA gravada em `copiloto_sugestoes.bloco_id`; senão,
+   * indisponível) — substitui a dependência de `bloco_atual_id` (herdado de
+   * `EstadoCopiloto`, que continua existindo por compatibilidade e reflete
+   * o MESMO valor quando `bloco_id` não é nulo). `?:` pelo mesmo motivo do
+   * campo acima: contrato novo por composição, sem quebrar literais de
+   * teste do front. */
+  bloco_atual_resolvido?: BlocoAtualResolvido;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,3 +612,60 @@ export type CodigoRecusaBotCopiloto =
    * banco entre criar o bot e persistir o vínculo); "tente de novo" é a
    * ação certa — um novo `POST` pede outro bot do zero. */
   | "falha_ao_persistir_vinculo_bot";
+
+// ---------------------------------------------------------------------------
+// FASE 12, FATIA 1 — correção do defeito-raiz "o servidor não tem 'onde a
+// advogada está agora', só a tela tem" (comentário antigo de `estado.ts`,
+// agora falso: o servidor INFERE o bloco a partir da fala real). ESCOPO
+// REDUZIDO de propósito pelo arquiteto na 2ª rodada desta fatia: NENHUMA
+// tabela nova, NENHUMA coluna nova — `copiloto_sugestoes.bloco_id` (0091) JÁ
+// EXISTE e é onde a inferência grava (a coluna nasceu em 0091 pensada para
+// "desvio sugerido"; esta fatia REINTERPRETA o mesmo campo como "bloco onde
+// a IA entende que a conversa está", sem quebrar o significado de
+// `desvio_sugerido.bloco_id`, que é OUTRO conceito — ver `schema.ts` para a
+// distinção). `0106` é só DML: 1 chave de configuração
+// (`copiloto_sessao.inferencia_bloco_ativa`) + o prompt v1 atualizado com a
+// regra nova. Sobe LIGADO (pedido do dono) — é correção de cegueira medida,
+// não risco novo: a tela continua podendo fixar manualmente por `?bloco=`,
+// que passa a valer como PRECEDÊNCIA temporária sobre a inferência, nunca é
+// removido (reversão sem deploy: `?bloco=` sempre funciona; a chave
+// `inferencia_bloco_ativa=false` desliga só a inferência automática).
+// Contrato entre BACK e FRONT: o `frontend-engineer` importa daqui, não
+// redefine.
+// ---------------------------------------------------------------------------
+
+/**
+ * O bloco atual já resolvido pelo SERVIDOR — o que `montarEstadoCopiloto`
+ * devolve depois de aplicar a precedência entre a fixação manual (`?bloco=`
+ * recente) e a última inferência da IA gravada em
+ * `copiloto_sugestoes.bloco_id`.
+ *
+ * `origem: "indisponivel"` é um valor de PRIMEIRA CLASSE, nunca um índice 0
+ * disfarçado: nem a fixação manual nem a inferência resolveram um bloco
+ * ainda (sessão nova, inferência desligada e nenhum `?bloco=` recente) — a
+ * tela deve mostrar "aguardando" ou equivalente, NUNCA "Parte 1" como se
+ * fosse um fato (CLAUDE.md: "nada de dado inventado na tela").
+ */
+export interface BlocoAtualResolvido {
+  /** Id do bloco no roteiro ativo. `null` = nem fixação nem inferência
+   * resolveram um bloco ainda. */
+  bloco_id: string | null;
+  /** Índice do bloco na lista de blocos do roteiro ativo. `null` quando
+   * `bloco_id` é `null` — nunca 0 por default. */
+  indice: number | null;
+  /** Título do bloco, como está no roteiro ativo AGORA — nunca inventado;
+   * `null` junto com `bloco_id: null`, ou se o `bloco_id` resolvido não casa
+   * mais com nenhum bloco do roteiro ativo (ex.: o roteiro ativo trocou no
+   * meio da sessão). */
+  titulo: string | null;
+  origem: "inferido" | "fixado_manualmente" | "indisponivel";
+  /** 0 a 1 quando `origem === "inferido"`; `null` nos outros dois casos. */
+  confianca: number | null;
+  /** Instante da decisão que resolveu este bloco — `criado_em` da sugestão
+   * mais recente com `bloco_id` não nulo, para `"inferido"`; o instante da
+   * fixação, para `"fixado_manualmente"`; `null` para `"indisponivel"`. */
+  decidido_em: string | null;
+  /** Só preenchido quando `origem === "fixado_manualmente"` — quando a
+   * fixação deixa de valer e a inferência volta a decidir sozinha. */
+  fixacao_expira_em: string | null;
+}
