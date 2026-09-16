@@ -258,16 +258,36 @@ async function resolverBlocoAtual(
 
   const inferenciaAtiva = await lerConfiguracaoBool(supabase, CHAVE_INFERENCIA_BLOCO_ATIVA, true);
   if (inferenciaAtiva) {
+    // 🔴 CORRIGIDO (achado do Fable, Fase 12 Fatia 1 — defeito 1, DUAS
+    // rodadas): a 1ª correção trocou `bloco_id is not null` por
+    // `conteudo->'bloco_inferido' is not null` — mas `->` (sem `>`) devolve
+    // o objeto jsonb inteiro, e quando `validar.ts` grava o "não sei" honesto
+    // como `{"bloco_inferido": null}` (JSON null, não coluna ausente), esse
+    // `->` devolve jsonb `null`, que em SQL **não é** `NULL`
+    // (`'{"bloco_inferido": null}'::jsonb -> 'bloco_inferido' is not null` →
+    // `true`, medido em produção). O filtro passava exatamente na resposta
+    // honesta "não infiro nada" — a linha era promovida a `origem:"inferido"`
+    // com `blocoInferidoId` nulo, e a inferência anterior real (a última que
+    // valia) era descartada a cada ciclo em que a IA respondesse "não sei".
+    // A correção usa `->>` (extrai como texto): sobre jsonb `null` o Postgres
+    // devolve SQL NULL de verdade, então `not(...).is(null)` exclui tanto a
+    // chave ausente (linha histórica, anterior à 0106, ou fallback antigo)
+    // quanto o JSON null explícito — só passa quem tem `bloco_id` de fato.
+    //
+    // `confianca` também deixa de vir da coluna `copiloto_sugestoes.confianca`
+    // (que é `confianca_geral` — a confiança da sugestão INTEIRA, não da
+    // inferência de bloco) — lida agora de dentro do jsonb, o número certo.
     const { data: ultimaInferida, error } = await supabase
       .from("copiloto_sugestoes")
-      .select("bloco_id, confianca, criado_em")
+      .select("bloco_id, conteudo, criado_em")
       .eq("sessao_id", sessaoId)
-      .not("bloco_id", "is", null)
+      .not("conteudo->bloco_inferido->>bloco_id", "is", null)
       .order("ordem_evento", { ascending: false })
       .limit(1)
-      .maybeSingle<{ bloco_id: string; confianca: number | null; criado_em: string }>();
-    if (!error && ultimaInferida && ultimaInferida.bloco_id) {
-      const indiceInferido = blocos.findIndex((b) => b.id === ultimaInferida.bloco_id);
+      .maybeSingle<{ bloco_id: string | null; conteudo: { bloco_inferido?: { bloco_id: string; confianca: number } | null } | null; criado_em: string }>();
+    const blocoInferidoId = ultimaInferida?.conteudo?.bloco_inferido?.bloco_id ?? null;
+    if (!error && ultimaInferida && blocoInferidoId) {
+      const indiceInferido = blocos.findIndex((b) => b.id === blocoInferidoId);
       // `bloco_id` gravado que não casa mais com o roteiro ativo (ex.: o
       // roteiro ativo trocou no meio da sessão) → tratado como indisponível,
       // nunca um título inventado.
@@ -278,7 +298,7 @@ async function resolverBlocoAtual(
           indice: indiceInferido,
           titulo: bloco.titulo,
           origem: "inferido",
-          confianca: ultimaInferida.confianca,
+          confianca: ultimaInferida.conteudo?.bloco_inferido?.confianca ?? null,
           decidido_em: ultimaInferida.criado_em,
           fixacao_expira_em: null,
         };

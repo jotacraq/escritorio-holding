@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
+import type { SugestaoCopiloto } from "@/types/copiloto";
 
 /**
  * Expurgo de `sessoes_copiloto_segmentos` por idade — Fase 10, Fatia 5
@@ -52,6 +53,17 @@ import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuraca
  *     tempos", Fase 7/0080).
  *   - `transcricoes` (a consolidada) NUNCA é tocada por este módulo — é
  *     permanente, por desenho (§6.1 do plano).
+ *   - 🔴 `copiloto_sugestoes.conteudo` das sessões cujo expurgo de segmentos
+ *     é CONCLUÍDO nesta passagem: os campos `evidencia` (citação literal da
+ *     fala do cliente, em `proxima_pergunta`/`falta_no_bloco[]`/
+ *     `observacao`/`bloco_inferido`) são REDIGIDOS (ver
+ *     `redigirEvidenciasConteudo`/`redigirSugestoesDaSessao`) — achado do
+ *     `security-pentester`, Fase 12 Fatia 1: sem isto, a citação sobrevivia
+ *     INDEFINIDAMENTE ao insumo que a originou (`copiloto_sugestoes` só tem
+ *     `on delete cascade` de `sessoes_viabilidade`, nunca apagada por
+ *     rotina). A LINHA inteira nunca é apagada (é histórico de decisão da
+ *     IA, auditável) — só a citação, no mesmo instante em que a fala bruta
+ *     correspondente sai de `sessoes_copiloto_segmentos`.
  */
 
 const LOTE_SEGMENTOS = 1000; // teto por passada — ~5-6 sessões inteiras (~180 seg/sessão, §2.1 do plano)
@@ -73,6 +85,20 @@ export interface ResultadoExpurgoCopiloto {
    * normal (a imensa maioria das passagens); `> 0` sinaliza que existiu
    * corrida (webhook tardio) nesta passagem — preservado, nunca perdido. */
   sessoesComSegmentosRetidos: number;
+  /** 🔴 Achado do Fable (otimização, defeito 3 — "falha de redação fica
+   * muda"): sessão carimbada (expurgo de segmentos concluído) cuja REDAÇÃO
+   * da citação literal em `copiloto_sugestoes.conteudo` falhou
+   * (`redigirSugestoesDaSessao`). `0` no caminho normal; `> 0` sinaliza que
+   * existe evidência literal ainda gravada além do prazo de retenção — a
+   * sessão já saiu do pool (`buscarSessoesElegiveis`), então nenhuma
+   * passagem futura tenta de novo sozinha; investigação manual necessária. */
+  sessoesComFalhaDeRedacao: number;
+  /** 🔴 Achado do Fable (otimização) — nº de sessões cuja redação bateu o
+   * teto de `LOTE_SUGESTOES_REDACAO` (200) nesta passada: sinal de
+   * SUB-PROCESSAMENTO (sobrou sugestão daquela sessão não avaliada). Hoje
+   * inalcançável com `teto_ia_sessao=90` — garantia frágil, sinalizada aqui
+   * para não depender de ninguém lembrar de checar o teto do produto. */
+  sessoesComRedacaoParcial: number;
   /** `expurgo_desligado` = `copiloto_sessao.expurgo_ativo` != true (default e estado seguro).
    * `sem_retencao_configurada` = a chave do prazo não é um inteiro positivo válido. */
   pulada?: "expurgo_desligado" | "sem_retencao_configurada";
@@ -343,6 +369,22 @@ interface ResultadoCarimbo {
    * nunca apagado) — a anomalia visível DE VERDADE (achado (i) do Fable):
    * exposta no resultado do cron, não só em SQL direto. */
   concluidasComRetidos: number;
+  /** 🔴 Achado do Fable (otimização, defeito 3 — "falha de redação fica
+   * muda"): sessão que foi carimbada (expurgo de segmentos concluído) mas
+   * `redigirSugestoesDaSessao` FALHOU para ela — a evidência literal segue
+   * gravada em `copiloto_sugestoes.conteudo` além do prazo, sem que nenhuma
+   * passagem futura tente de novo sozinha (a sessão já saiu do pool de
+   * `buscarSessoesElegiveis`, carimbada). Antes desta correção o único
+   * rastro era `registrarErro` (log), invisível no resultado do cron —
+   * mesma classe de "alerta que ninguém vê" já corrigida para
+   * `sessoesComSegmentosRetidos`. */
+  concluidasComFalhaDeRedacao: number;
+  /** 🔴 Achado do Fable (otimização) — `LOTE_SUGESTOES_REDACAO` (200) bateu
+   * o teto para pelo menos 1 sessão: sinal de SUB-PROCESSAMENTO (sobrou
+   * sugestão não avaliada nesta passada) — hoje inalcançável com
+   * `teto_ia_sessao=90`, mas é garantia frágil que pode deixar de valer sem
+   * aviso se o teto do produto subir. */
+  concluidasComLoteCheio: number;
 }
 
 async function carimbarSessoesSemPendencia(
@@ -355,6 +397,8 @@ async function carimbarSessoesSemPendencia(
 ): Promise<ResultadoCarimbo> {
   let concluidas = 0;
   let concluidasComRetidos = 0;
+  let concluidasComFalhaDeRedacao = 0;
+  let concluidasComLoteCheio = 0;
 
   for (const sessaoId of candidatas) {
     // CORRECAO (achado (b) do 5o caminho via coordenador - "squatter
@@ -385,7 +429,16 @@ async function carimbarSessoesSemPendencia(
         const motivo = sessoesEsvaziadas.has(sessaoId)
           ? "concluido; esvaziada em passagem anterior (carimbo pendente resolvido agora)"
           : motivoPadrao;
-        if (await carimbar(admin, sessaoId, motivo)) concluidas++;
+        if (await carimbar(admin, sessaoId, motivo)) {
+          concluidas++;
+          // 🔴 Achado do pentester: expurgo de segmentos concluído para esta
+          // sessão → a citação literal em `copiloto_sugestoes.conteudo`
+          // (que sobrevivia indefinidamente ao insumo que a originou) sai
+          // JUNTO, não numa passagem futura hipotética.
+          const resultadoRedacao = await redigirSugestoesDaSessao(admin, sessaoId);
+          if (!resultadoRedacao.ok) concluidasComFalhaDeRedacao++;
+          if (resultadoRedacao.loteCheio) concluidasComLoteCheio++;
+        }
         continue;
       }
 
@@ -422,6 +475,13 @@ async function carimbarSessoesSemPendencia(
       if (await carimbar(admin, sessaoId, motivo)) {
         concluidas++;
         concluidasComRetidos++;
+        // Mesmo raciocínio do outro ramo: expurgo desta sessão concluído
+        // (mesmo com segmento retido pelo backstop, o motivo de retenção é
+        // sobre o SEGMENTO — a evidência já citada em `copiloto_sugestoes`
+        // não precisa do segmento vivo para ser redigida).
+        const resultadoRedacao = await redigirSugestoesDaSessao(admin, sessaoId);
+        if (!resultadoRedacao.ok) concluidasComFalhaDeRedacao++;
+        if (resultadoRedacao.loteCheio) concluidasComLoteCheio++;
       }
     } catch (erro) {
       // CORRECAO (achado (b) do 5o caminho via coordenador). Erro nesta
@@ -436,7 +496,7 @@ async function carimbarSessoesSemPendencia(
     }
   }
 
-  return { concluidas, concluidasComRetidos };
+  return { concluidas, concluidasComRetidos, concluidasComFalhaDeRedacao, concluidasComLoteCheio };
 }
 
 /**
@@ -487,6 +547,168 @@ async function carimbar(admin: SupabaseClient, sessaoId: string, motivo: string)
 }
 
 /**
+ * 🔴 REDAÇÃO DE EVIDÊNCIA em `copiloto_sugestoes.conteudo` — achado do
+ * `security-pentester` na Fase 12, Fatia 1 (`bloco_inferido.evidencia`
+ * gravando citação literal da fala do cliente sem retenção). Confirmado ao
+ * investigar: a classe do problema é ANTERIOR a esta fatia —
+ * `proxima_pergunta.evidencia`, `falta_no_bloco[].evidencia` e
+ * `observacao.evidencia` já gravam citação literal desde a Fase 10, Fatia 2
+ * (`validar.ts`), e nenhuma delas expirava. Esta correção cobre os QUATRO
+ * campos, não só o novo — redigir só `bloco_inferido` teria corrigido a
+ * ocorrência relatada sem corrigir a classe (lição do vault, CNHF).
+ *
+ * MESMO PADRÃO de `ligacao-ia/expurgo.ts` (zera o conteúdo sensível, mantém
+ * o resto do registro auditável — nunca DELETE da linha inteira):
+ * `bloco_id`/`confianca`/`motivo`/`item`/`texto`/`tipo`/`campos_evidencia_
+ * nao_conferida` sobrevivem intactos, só a CITAÇÃO LITERAL (`evidencia`) é
+ * removida. É o que dá para a Ficha continuar mostrando "a IA sugeriu
+ * perguntar sobre X, com confiança 0,8" depois do expurgo — só sem a frase
+ * textual do cliente, que é o dado que teria que ter expirado junto com
+ * `sessoes_copiloto_segmentos`.
+ *
+ * `bloco_inferido.evidencia` vira `""` (string vazia), não `null` — o
+ * contrato (`SugestaoCopiloto.bloco_inferido`, `types/copiloto.ts:233`)
+ * declara `evidencia: string` OBRIGATÓRIA quando o objeto existe (só o
+ * objeto INTEIRO é nulável, o campo dentro dele não). Ampliar o contrato
+ * para `string | null` está fora do escopo desta correção (tocaria
+ * `validar.ts` e possivelmente telas); `""` é o valor honesto dentro do tipo
+ * atual — a tela já tem que tratar `bloco_inferido` ausente/nulo como "sem
+ * inferência", e uma evidência vazia não é uma citação, então nunca deveria
+ * renderizar como blockquote (mesmo raciocínio de string vazia em
+ * `PISO_COMPRIMENTO_EVIDENCIA`, que já rejeitaria isso na validação).
+ *
+ * Pura — nenhum I/O aqui, só o mapeamento do jsonb.
+ */
+export function redigirEvidenciasConteudo(conteudo: SugestaoCopiloto): SugestaoCopiloto {
+  return {
+    ...conteudo,
+    proxima_pergunta: conteudo.proxima_pergunta ? { ...conteudo.proxima_pergunta, evidencia: null } : null,
+    falta_no_bloco: conteudo.falta_no_bloco.map((item) => ({ ...item, evidencia: null })),
+    observacao: conteudo.observacao ? { ...conteudo.observacao, evidencia: null } : null,
+    bloco_inferido: conteudo.bloco_inferido ? { ...conteudo.bloco_inferido, evidencia: "" } : conteudo.bloco_inferido,
+  };
+}
+
+/** `true` quando `conteudo` tem PELO MENOS uma evidência não redigida ainda
+ * — usado para pular, sem escrever, sugestão já redigida numa passagem
+ * anterior (idempotência, mesmo raciocínio de `carimbar`). `bloco_inferido`
+ * é `string` obrigatória no contrato (nunca `null`), por isso o marcador de
+ * "já redigido" ali é string vazia, não `null` (ver `redigirEvidenciasConteudo`). */
+function temEvidenciaNaoRedigida(conteudo: SugestaoCopiloto): boolean {
+  if (conteudo.proxima_pergunta?.evidencia) return true;
+  if (conteudo.falta_no_bloco.some((item) => item.evidencia)) return true;
+  if (conteudo.observacao?.evidencia) return true;
+  if (conteudo.bloco_inferido?.evidencia) return true;
+  return false;
+}
+
+// 🔴 CORRIGIDO (achado do Fable, otimização — "N+1 e teto sem repaginação").
+// `teto_ia_sessao` (orcamento.ts/0102) é 90 hoje — uma sessão nunca gera mais
+// de 90 sugestões, então 200 é folga real (~2,2×), não um teto que já bate
+// no limite. Ainda assim é uma garantia FRÁGIL (o teto do PRODUTO pode subir
+// sem ninguém lembrar de olhar este número): `loteCheio` devolvido por
+// `redigirSugestoesDaSessao` SINALIZA quando o teto encher de verdade — o
+// chamador (`carimbarSessoesSemPendencia`) propaga isso para
+// `sessoesComRedacaoParcial` no resultado do cron, para o operador enxergar
+// sub-processamento em vez de a sessão ficar carimbada com sugestões desta
+// faixa nunca redigidas (o carimbo de `sessoes_copiloto` não espera a
+// redação terminar — é ato SEPARADO, ver `carimbarSessoesSemPendencia`).
+const LOTE_SUGESTOES_REDACAO = 200;
+
+/**
+ * Redige `copiloto_sugestoes.conteudo` de UMA sessão cujo expurgo de
+ * segmentos ACABOU DE SER CONCLUÍDO nesta passagem (chamada só a partir de
+ * `carimbar`, nunca solta) — nunca lança: erro aqui é registrado, devolvido
+ * ao chamador (achado do Fable: "sessão que falha fica carimbada, sai do
+ * pool, e ninguém descobre" — ver `sessoesComFalhaDeRedacao` em
+ * `ResultadoExpurgoCopiloto`) e a sessão segue carimbada normalmente (o
+ * carimbo de `sessoes_copiloto` já commitou; uma falha na redação NÃO deve
+ * reverter isso nem travar o laço — mesmo isolamento por sessão que
+ * `carimbarSessoesSemPendencia` já aplica). A PRÓXIMA passagem do cron não
+ * tenta de novo por conta própria (a sessão já está carimbada, fora do pool
+ * de `buscarSessoesElegiveis`) — por isso o resultado TEM de ser visível no
+ * resultado do cron, não só em log.
+ *
+ * ⚠️ FILTRO NO BANCO por `conteudo` jsonb (pedido do Fable) FICOU DE FORA
+ * desta correção: os 4 campos de evidência têm formatos diferentes dentro
+ * do jsonb (3 escalares aninhados sob chaves distintas + 1 array de até 4
+ * itens, `falta_no_bloco[].evidencia`) e nenhum operador simples do
+ * PostgREST expressa "algum item do array tem esta chave truthy" sem uma
+ * função SQL nova — e este agente não tem acesso ao banco de produção para
+ * provar a sintaxe de um filtro `.or()` em jsonb aninhado antes de aplicar
+ * (regra da casa: sem `explain (analyze)` medido, não sobe). Arriscar um
+ * filtro não testado teria trocado "traz 90 linhas à toa" por "quebra em
+ * produção com erro de sintaxe do PostgREST, capturado no catch como falha
+ * de redação". Seleciona ANTES de escrever, com TETO
+ * (`LOTE_SUGESTOES_REDACAO`, sem filtro de conteúdo) — decide em JS com
+ * `temEvidenciaNaoRedigida`, mesmo padrão de antes desta correção.
+ *
+ * 🔴 CORRIGIDO — DUAS voltas (achado do Fable):
+ *   1ª volta (N+1): o `UPDATE` por linha dentro de um `for` (até
+ *      `LOTE_SUGESTOES_REDACAO` idas ao banco por sessão) virou um `upsert`
+ *      só, `{ id, conteudo }` por linha com `onConflict: "id"` — inspirado em
+ *      `radar/pedir.ts::upsert(linhas, { onConflict: ... })`.
+ *   2ª volta (o `upsert` da 1ª volta falhava em TODA execução): `upsert` é
+ *      `INSERT ... ON CONFLICT DO UPDATE` — o Postgres valida NOT NULL da
+ *      linha PROPOSTA antes de resolver o conflito, mesmo quando a linha
+ *      já existe. `copiloto_sugestoes` (0091) tem `sessao_id`/`gatilho`/
+ *      `conteudo`/`criado_em` NOT NULL sem default (exceto `criado_em`); um
+ *      payload `{ id, conteudo }` sempre disparava `23502` em `sessao_id`
+ *      (medido no schema real). Pior: o caminho de INSERT do upsert também
+ *      passa pelo `before insert` `trg_copiloto_exige_decisao_sugestoes`
+ *      (0093) — sessão elegível para expurgo (consentimento revogado ou
+ *      janela vencida) faria o trigger levantar em vez de gravar. Diferente
+ *      de `radar/pedir.ts`, que envia a linha COMPLETA (todas as colunas
+ *      obrigatórias) — não é o mesmo caso, upsert parcial nunca é seguro
+ *      aqui. Voltou a ser `UPDATE` por linha (`.update({conteudo}).eq("id",
+ *      ...)`): o N+1 é real, mas fica atrás de `expurgo_ativo=false` (cron,
+ *      não caminho quente) e sob o MESMO teto de sempre
+ *      (`LOTE_SUGESTOES_REDACAO`, ~90/sessão) — grave, porém correto, é
+ *      preferível a rápido e quebrado em 100% das chamadas.
+ */
+async function redigirSugestoesDaSessao(
+  admin: SupabaseClient,
+  sessaoId: string,
+): Promise<{ ok: boolean; loteCheio: boolean }> {
+  try {
+    const { data, error } = await admin
+      .from("copiloto_sugestoes")
+      .select("id, conteudo")
+      .eq("sessao_id", sessaoId)
+      .limit(LOTE_SUGESTOES_REDACAO)
+      .returns<{ id: string; conteudo: SugestaoCopiloto }[]>();
+    if (error) throw error;
+
+    const linhas = data ?? [];
+    const loteCheio = linhas.length === LOTE_SUGESTOES_REDACAO;
+    const paraRedigir = linhas
+      .filter((linha) => temEvidenciaNaoRedigida(linha.conteudo))
+      .map((linha) => ({ id: linha.id, conteudo: redigirEvidenciasConteudo(linha.conteudo) }));
+
+    if (paraRedigir.length === 0) return { ok: true, loteCheio }; // idempotente: nada a fazer, não escreve à toa
+
+    // UPDATE por linha (não upsert — ver comentário acima): só a coluna
+    // `conteudo`, `.eq("id", ...)` mira SEMPRE uma linha já existente, nunca
+    // passa pelo caminho de INSERT do trigger.
+    for (const linha of paraRedigir) {
+      const { error: erroUpdate } = await admin
+        .from("copiloto_sugestoes")
+        .update({ conteudo: linha.conteudo })
+        .eq("id", linha.id);
+      if (erroUpdate) throw erroUpdate;
+    }
+    return { ok: true, loteCheio };
+  } catch (erro) {
+    // Isolamento: falha na redação de UMA sessão nunca aborta o carimbo (já
+    // commitado) nem a redação das OUTRAS sessões da mesma passagem — mesmo
+    // raciocínio de `carimbarSessoesSemPendencia`. `ok:false` propagado ao
+    // chamador para virar `sessoesComFalhaDeRedacao` no resultado do cron.
+    registrarErro("copiloto/expurgo.redigirSugestoesDaSessao", erro, { sessao_id: sessaoId });
+    return { ok: false, loteCheio: false };
+  }
+}
+
+/**
  * Etapa chamada pelo cron (`POST /api/cron/regua`, via `server/regua/
  * externas.ts::etapaExpurgoCopiloto`) — MESMO padrão de isolamento de
  * `etapaExpurgoLigacoesIa`: nunca lança, sempre devolve um resultado, uma
@@ -495,12 +717,26 @@ async function carimbar(admin: SupabaseClient, sessaoId: string, motivo: string)
 export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Promise<ResultadoExpurgoCopiloto> {
   const expurgoAtivo = await lerConfiguracaoBool(admin, CHAVE_EXPURGO_ATIVO, false);
   if (!expurgoAtivo) {
-    return { segmentosRemovidos: 0, sessoesConcluidas: 0, sessoesComSegmentosRetidos: 0, pulada: "expurgo_desligado" };
+    return {
+      segmentosRemovidos: 0,
+      sessoesConcluidas: 0,
+      sessoesComSegmentosRetidos: 0,
+      sessoesComFalhaDeRedacao: 0,
+      sessoesComRedacaoParcial: 0,
+      pulada: "expurgo_desligado",
+    };
   }
 
   const retencaoDias = await lerConfiguracaoInt(admin, CHAVE_RETENCAO_DIAS_SEGMENTOS, PADRAO_RETENCAO_DIAS);
   if (!Number.isFinite(retencaoDias) || retencaoDias <= 0) {
-    return { segmentosRemovidos: 0, sessoesConcluidas: 0, sessoesComSegmentosRetidos: 0, pulada: "sem_retencao_configurada" };
+    return {
+      segmentosRemovidos: 0,
+      sessoesConcluidas: 0,
+      sessoesComSegmentosRetidos: 0,
+      sessoesComFalhaDeRedacao: 0,
+      sessoesComRedacaoParcial: 0,
+      pulada: "sem_retencao_configurada",
+    };
   }
 
   const limiteIso = new Date(Date.now() - retencaoDias * 86_400_000).toISOString();
@@ -508,7 +744,14 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
   try {
     const sessoesElegiveis = await buscarSessoesElegiveis(admin);
     if (sessoesElegiveis.size === 0) {
-      return { segmentosRemovidos: 0, sessoesConcluidas: 0, sessoesComSegmentosRetidos: 0, retencaoDias };
+      return {
+        segmentosRemovidos: 0,
+        sessoesConcluidas: 0,
+        sessoesComSegmentosRetidos: 0,
+        sessoesComFalhaDeRedacao: 0,
+        sessoesComRedacaoParcial: 0,
+        retencaoDias,
+      };
     }
 
     const { removidos, encheuLote, sessoesAfetadas, sessoesComVencidoNaoApagavel } = await removerSegmentosVencidos(
@@ -550,22 +793,43 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
     // ao banco.
     const candidatasAoCarimbo = new Set([...sessoesAfetadas, ...sessoesComVencidoNaoApagavel, ...sessoesEsvaziadas]);
     const motivo = `retencao_dias_segmentos vencida (${retencaoDias} dias)`;
-    const { concluidas: sessoesConcluidas, concluidasComRetidos: sessoesComSegmentosRetidos } =
-      await carimbarSessoesSemPendencia(admin, candidatasAoCarimbo, sessoesEsvaziadas, sessoesElegiveis, limiteIso, motivo);
+    const {
+      concluidas: sessoesConcluidas,
+      concluidasComRetidos: sessoesComSegmentosRetidos,
+      concluidasComFalhaDeRedacao: sessoesComFalhaDeRedacao,
+      concluidasComLoteCheio: sessoesComRedacaoParcial,
+    } = await carimbarSessoesSemPendencia(admin, candidatasAoCarimbo, sessoesEsvaziadas, sessoesElegiveis, limiteIso, motivo);
 
-    return { segmentosRemovidos: removidos, sessoesConcluidas, sessoesComSegmentosRetidos, retencaoDias, restaLote: encheuLote };
+    return {
+      segmentosRemovidos: removidos,
+      sessoesConcluidas,
+      sessoesComSegmentosRetidos,
+      sessoesComFalhaDeRedacao,
+      sessoesComRedacaoParcial,
+      retencaoDias,
+      restaLote: encheuLote,
+    };
   } catch (erro) {
     const pg = erro as ErroPostgrest;
     if (pg.code === "42703") {
       // Migration 0098 não aplicada ainda (coluna ausente) — nunca apaga às
       // cegas, mesmo padrão de `coluna_ausente` em `ligacao-ia/expurgo.ts`.
-      return { segmentosRemovidos: 0, sessoesConcluidas: 0, sessoesComSegmentosRetidos: 0, erro: "coluna_ausente" };
+      return {
+        segmentosRemovidos: 0,
+        sessoesConcluidas: 0,
+        sessoesComSegmentosRetidos: 0,
+        sessoesComFalhaDeRedacao: 0,
+        sessoesComRedacaoParcial: 0,
+        erro: "coluna_ausente",
+      };
     }
     registrarErro("copiloto/expurgo.etapaExpurgoSegmentosCopiloto", erro, { retencao_dias: retencaoDias });
     return {
       segmentosRemovidos: 0,
       sessoesConcluidas: 0,
       sessoesComSegmentosRetidos: 0,
+      sessoesComFalhaDeRedacao: 0,
+      sessoesComRedacaoParcial: 0,
       erro: erro instanceof Error ? erro.message.slice(0, 300) : String(erro).slice(0, 300),
     };
   }

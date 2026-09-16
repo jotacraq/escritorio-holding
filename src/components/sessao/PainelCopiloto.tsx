@@ -1,24 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import {
   ErroSessao,
   buscarEstadoCopiloto,
-  buscarPollingCopiloto,
   encerrarCopiloto,
-  listarSegmentosCopiloto,
-  pedirBotCopiloto,
   pedirSugestaoCopiloto,
   registrarDesfechoSugestaoCopiloto,
-  registrarSegmentoManual,
 } from "@/components/sessao/api";
 import type {
-  ComparacaoDecisoresPresentes,
   DesfechoCopiloto,
-  DetalhesSalaInvalidaBot,
   InfoCicloCopiloto,
   RespostaSugestaoCopiloto,
-  SegmentoCopiloto,
   SugestaoCopiloto,
   SugestaoCopilotoPolling,
   TipoObservacaoCopiloto,
@@ -29,64 +22,51 @@ import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { EstadoCarregando, EstadoErro, EstadoVazio } from "@/components/ui/Estado";
-import { Campo, AreaTexto } from "@/components/ui/Campo";
-import { formatarDataHora, formatarHora } from "@/lib/formatar";
-
-/** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
- * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
- * falha de leitura ou valor de outro tipo caem sempre em `false`, mesmo
- * padrão de `lerConfigAgente` da Fase 9). Por isso este estado NÃO é borda
- * rara: aparece em qualquer ambiente onde a migration 0091/config não
- * rodou — inclusive em desenvolvimento — e é tratado como estado normal da
- * tela, nunca como exceção. Testar só por `codigo`, nunca por `status`
- * sozinho (409 é usado para outras coisas na casa) nem pela string da
- * mensagem (muda). */
-const CODIGO_COPILOTO_DESLIGADO = "copiloto_desligado";
+import { formatarHora } from "@/lib/formatar";
+import { ehCopilotoDesligado, usePollingCopiloto } from "@/components/sessao/copiloto/usePollingCopiloto";
+import { ultimoNaoNulo } from "@/components/sessao/copiloto/ultimoNaoNulo";
+import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
+import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
 
 // ---------------------------------------------------------------------------
-// Ícones do mosaico (16×16, `aria-hidden`, `stroke="currentColor"` — herdam a
-// cor do texto do rótulo, nunca cor fixa própria). Reforço visual do TIPO de
-// cada quadro numerado (pedido do Marcio, 14/09: mock pixel a pixel) — nunca
-// o único sinal: o rótulo em maiúsculas ao lado já diz a mesma coisa por
-// extenso, e `Quadro` nunca depende só da borda colorida para comunicar tipo.
-// Sem `lucide-react` (armadilha conhecida: quebra build no Windows ao
-// importar do barrel) — mesmo padrão inline já usado em `Selo.tsx`/`Estado.tsx`.
+// Fase 12, Fatia B — "a tela vira leitura" (pedido do Marcio: a tela ao vivo
+// tem que ser SIMPLES; detalhe/placar vão para o resumo da sessão, fora
+// daqui). Réguas aplicadas neste arquivo:
+//
+//  1. Se não muda a PRÓXIMA FRASE que a advogada vai dizer nos próximos 30
+//     segundos, não fica na tela ao vivo.
+//  2. Um único foco visual por vez — só o bloco "Fale agora" tem peso;
+//     "Cuidado" e "O cliente disse" são apoio, nunca competem com ele.
+//  3. Jargão traduzido: "SIMs pendentes" → a pendência por extenso; "falta no
+//     bloco" → "Ainda não perguntou:"; "insight comercial"/"bloco atual"/
+//     "confiança 0,72"/"gatilho: intervalo" saem da tela ao vivo (viram
+//     telemetria ou material do resumo da sessão, nunca leitura ao vivo).
+//
+// Passo 1 (extração, sem mudar comportamento): `usePollingCopiloto`,
+// `ultimoNaoNulo`, `adicionarSegmento`, `mensagemRecusa`/`MENSAGENS_RECUSA`,
+// `PainelBot`+`MensagemRecusaBot`, `ApresentacaoComparacaoDecisores` e
+// `RegistroManual` foram extraídos para `src/components/sessao/copiloto/`.
+// Os testes correspondentes migraram junto (ver `copiloto/*.test.ts(x)`).
+// `ultimoNaoNulo` é reexportado abaixo porque `PainelCopiloto.test.tsx`
+// importa a função pura direto deste arquivo.
+//
+// O que SAI da tela ao vivo nesta fatia (call-site removido; componente
+// preservado para o resumo da sessão/Ficha 360 religar depois — nada é
+// apagado, exceto `QuadroVoceAcertouOuErrou`, que já era `return null`,
+// código morto):
+//  - `QuadroBlocoAtual` ("Bloco atual", "Parte X de Y", número) — a posição
+//    no roteiro passa a viver só na linha fina do topo de
+//    `ConduzirSessaoApp.tsx`, sem número de "confiança".
+//  - `QuadroDecisores`/`ApresentacaoComparacaoDecisores` como card cheio —
+//    vira frase de uma linha na mesma linha fina do topo
+//    (`resumoAusentesLinhaFina`, em `copiloto/ApresentacaoComparacaoDecisores.tsx`).
+//  - `QuadroInsightComercial`, `QuadroPodePularPra` (como card próprio) e
+//    `HistoricoCoach` — acerto/histórico é PLACAR: não muda a próxima frase
+//    ao vivo, vai para o resumo da sessão.
+//  - `PainelBot`/`MensagemRecusaBot` — pedir o bot é OPERAÇÃO, não CONDUÇÃO;
+//    sobe para o cabeçalho de `ConduzirSessaoApp.tsx`. O erro `sala_invalida`
+//    continua reportado — agora pela linha fina do topo, não perdido.
 // ---------------------------------------------------------------------------
-const iconeSvg = (path: string) => (
-  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <path d={path} />
-  </svg>
-);
-const IconeAcao = () => iconeSvg("M8 1.5 3 9h4.5L7 14.5 13 7H8.5L8 1.5Z");
-const IconeAlerta = () => iconeSvg("M8 1.5 15 14.5H1L8 1.5Zm0 4.6v3.6M8 12.1h.01");
-const IconeBloco = () => iconeSvg("M2.5 4.5h11M2.5 8h11M2.5 11.5h7");
-const IconeContexto = () => iconeSvg("M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8Zm0 3.2v3.4l2.4 1.4");
-const IconeInsight = () => iconeSvg("M8 1.5l1.1 3.1 3.1 1.1-3.1 1.1L8 9.9 6.9 6.7 3.8 5.6l3.1-1.1L8 1.5ZM12.5 10.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6.6-1.7Z");
-// `IconeAcerto`/`IconeErro` removidos em 15/09 — sem chamador desde que
-// `QuadroVoceAcertouOuErrou` passou a retornar `null` (ver comentário da
-// função: dois cards de "7." duplicado, sempre vazios, um deles com alarme
-// falso permanente em `tom="vermelho"`).
-const IconeHistorico = () => iconeSvg("M8 4.2V8l2.6 1.6M14.2 8A6.2 6.2 0 1 1 8 1.8c2.4 0 4.5 1.3 5.5 3.3M13.5 2v2.8h-2.8");
-
-function ehCopilotoDesligado(erro: unknown): erro is ErroSessao {
-  return erro instanceof ErroSessao && erro.codigo === CODIGO_COPILOTO_DESLIGADO;
-}
-
-// ---------------------------------------------------------------------------
-// Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.1, §4.3, §6.1, §8, B71) — o ciclo
-// automático deixa de esperar o botão e passa a rodar sozinho; a tela busca
-// novidade por polling. `usePollingCopiloto` é o ÚNICO lugar que sabe de
-// timer, cursor e foco da aba — o resto do componente só lê o resultado.
-// ---------------------------------------------------------------------------
-
-/** Ponto de partida do PRIMEIRO tick, antes de qualquer resposta do
- * servidor existir (§4.1) — mesmo default que `copiloto_sessao.polling_ms`
- * grava na 0091. A partir da primeira resposta, `resposta.polling` manda:
- * mudar a chave no banco agora muda esta tela, sem deploy (era a divergência
- * registrada na entrega anterior — corrigida pelo contrato novo do backend,
- * `ConfigPollingCopiloto`). */
-const POLLING_MS_EM_FOCO_INICIAL = 3000;
-const POLLING_MS_SEM_FOCO_INICIAL = 10000;
 
 /**
  * `tabIndex` de todo container com `role="region"` + `overflow-y/x-auto`
@@ -99,8 +79,7 @@ const POLLING_MS_SEM_FOCO_INICIAL = 10000;
  * QUALQUER `<div role="region" tabIndex={0}>` estático, mesmo sendo
  * exatamente o padrão que a própria WCAG pede. Uma constante nomeada (valor
  * não-literal do ponto de vista do linter) sai desse falso positivo sem
- * mudar o comportamento em runtime — é sempre `0`. Mesma lacuna já existe
- * em `PainelSims.tsx:324` (fora do escopo desta entrega).
+ * mudar o comportamento em runtime — é sempre `0`.
  */
 const TAB_INDEX_ROLAVEL = 0;
 
@@ -112,225 +91,10 @@ const TAB_INDEX_ROLAVEL = 0;
  * ser a explicação mais provável. */
 const LIMIAR_FALHAS_PARA_AVISO = 3;
 
-interface EstadoPollingCopiloto {
-  /** Todas as sugestões novas já vistas pelo polling desde que a tela abriu,
-   * na ordem de chegada — é a lista que `SugestoesDoCiclo` renderiza. Nunca
-   * é limpa por reabrir a lista: só cresce (ou é substituída ao trocar de
-   * sessão), porque "sugestão que a advogada ainda não abriu" precisa
-   * continuar visível até ela mesma dispensar. */
-  sugestoes: SugestaoCopilotoPolling[];
-  ciclo: InfoCicloCopiloto | null;
-  encerrado: boolean;
-  erro: unknown;
-  /** Falhas seguidas desde o último sucesso — zera a cada resposta boa. É a
-   * base do aviso persistente (iii do achado do Fable): só vira visível a
-   * partir de `LIMIAR_FALHAS_PARA_AVISO`, nunca na 1ª nem na 2ª. */
-  falhasConsecutivas: number;
-  /** Quando a SEQUÊNCIA atual de falhas começou (a 1ª falha, não a mais
-   * recente) — é o "desde HH:MM" do aviso; recalculado do zero a cada
-   * sucesso, para não mostrar um horário de uma falha antiga já superada. */
-  falhandoDesde: Date | null;
-  /** `true` quando a última falha foi `copiloto_desligado` (409) — kill-switch
-   * virado em Admin NO MEIO da sessão. Distinto de falha transiente: aqui o
-   * polling PARA (nunca reagenda), a tela cai no `CopilotoDesligado` já
-   * existente, e não faz sentido metralhar o servidor de 409 em loop até o
-   * fim da sessão (achado ii do Fable). */
-  desligadoPeloKillSwitch: boolean;
-  /** Snapshot mais recente de `EstadoCopilotoComPolling.comparacao_decisores`
-   * (Fatia 4/§5) — alimenta o quadro 2 "ALERTA" do mosaico (mock do Marcio,
-   * 14/09). Diferente de `sugestoes`, este campo NÃO acumula: cada resposta
-   * do servidor já é o fato mais atual (quem está na sala agora), então o
-   * valor é sempre SUBSTITUÍDO, nunca concatenado. `null` do servidor
-   * também substitui — se a sala esvaziar, o alerta deve sumir, não travar
-   * no último snapshot com gente que já saiu. */
-  comparacaoDecisores: ComparacaoDecisoresPresentes | null;
-}
-
 /**
- * Faz o `GET /api/sessoes/[id]/copiloto` de 3 em 3 segundos (10 em 10 sem
- * foco), com cursor incremental — nunca refaz a lista inteira (§2.2/§4.1).
- * Para de todo quando `sessaoEncerrada=true` (a sessão foi encerrada por
- * este painel ou já chegou encerrada de outro lugar) — polling que continua
- * depois do fim é bug de custo e de bateria, não recurso.
- *
- * Uma requisição de cada vez: se uma chamada demorar mais que o intervalo,
- * a próxima só é agendada depois que a anterior terminar (nunca empilha).
- * Timer sempre limpo no unmount e ao trocar de sessão/encerrar.
- */
-function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerrada: boolean) {
-  const ESTADO_INICIAL: EstadoPollingCopiloto = {
-    sugestoes: [],
-    ciclo: null,
-    encerrado: false,
-    erro: null,
-    falhasConsecutivas: 0,
-    falhandoDesde: null,
-    desligadoPeloKillSwitch: false,
-    comparacaoDecisores: null,
-  };
-  const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
-  const cursorSegmentoRef = useRef(0);
-  const cursorSugestaoRef = useRef(0);
-  const indiceAtualRef = useRef(indiceAtual);
-  indiceAtualRef.current = indiceAtual;
-  // O intervalo que o SERVIDOR mandou na última resposta (`resposta.polling`)
-  // — começa no valor default antes da 1ª resposta existir, e é sobrescrito
-  // a cada ciclo. Fica numa ref (não em `useState`) de propósito: mudar só
-  // o número que o PRÓXIMO `setTimeout` vai usar não deve disparar
-  // re-render nem recriar o efeito do zero — é o "reajusta no tick
-  // seguinte, sem recriar o ciclo nem perder cursor" pedido no aceite.
-  const intervaloRef = useRef({ emFocoMs: POLLING_MS_EM_FOCO_INICIAL, semFocoMs: POLLING_MS_SEM_FOCO_INICIAL });
-
-  useEffect(() => {
-    // Sessão nova: cursores voltam ao início, histórico de sugestões limpa,
-    // e o intervalo volta ao ponto de partida — a config da sessão anterior
-    // não deve vazar para a próxima até a 1ª resposta desta chegar.
-    cursorSegmentoRef.current = 0;
-    cursorSugestaoRef.current = 0;
-    intervaloRef.current = { emFocoMs: POLLING_MS_EM_FOCO_INICIAL, semFocoMs: POLLING_MS_SEM_FOCO_INICIAL };
-    setEstado(ESTADO_INICIAL);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessaoId]);
-
-  useEffect(() => {
-    if (sessaoEncerrada) return; // encerrado por fora (manual, 409 sessao_ja_encerrada, ou por duração máxima) — não inicia polling novo
-    let vivo = true;
-    // `number`, explícito: é sempre `window.setTimeout`/`window.clearTimeout`
-    // (nunca o `setTimeout` global do Node, que devolveria `Timeout`).
-    let timerId: number | null = null;
-
-    async function ciclo() {
-      let encerradoNestaResposta = false;
-      let paraDeVezPorKillSwitch = false;
-      try {
-        const resposta = await buscarPollingCopiloto(sessaoId, {
-          bloco: indiceAtualRef.current,
-          desdeSegmento: cursorSegmentoRef.current,
-          desdeSugestao: cursorSugestaoRef.current,
-        });
-        if (!vivo) return;
-        cursorSegmentoRef.current = resposta.proximo_cursor_segmento;
-        cursorSugestaoRef.current = resposta.proximo_cursor_sugestao;
-        // Reajusta o intervalo para o PRÓXIMO tick — nunca o tick que acabou
-        // de rodar. Fail-safe já é do servidor (contrato: sempre preenchido
-        // e válido), mas um `> 0` aqui é defesa em profundidade contra um
-        // valor absurdo travar o polling num loop apertado.
-        if (resposta.polling && resposta.polling.em_foco_ms > 0 && resposta.polling.sem_foco_ms > 0) {
-          intervaloRef.current = { emFocoMs: resposta.polling.em_foco_ms, semFocoMs: resposta.polling.sem_foco_ms };
-        }
-        // O SERVIDOR encerrou a sessão sozinha por ter passado da duração
-        // máxima (§4.4) — mesmo efeito do encerramento manual: para daqui
-        // pra frente, sem reagendar. Decidido AQUI, dentro do próprio ciclo
-        // — não delegado a um re-render do componente pai passar
-        // `sessaoEncerrada=true` de volta, o que teria um atraso de um
-        // ciclo de render e deixaria pelo menos mais um tick escapar.
-        encerradoNestaResposta = resposta.ciclo.resultado === "sessao_encerrada_por_duracao_maxima";
-        setEstado((atual) => ({
-          // A maioria das respostas vem vazia (§4.1: "não faça o estado
-          // piscar a cada resposta vazia") — só acrescenta se houver algo
-          // novo; `ciclo` sempre é atualizado (é como a tela sabe que "um
-          // ciclo rodou", mesmo em silêncio normal).
-          sugestoes: resposta.sugestoes_novas.length > 0 ? [...atual.sugestoes, ...resposta.sugestoes_novas] : atual.sugestoes,
-          ciclo: resposta.ciclo,
-          encerrado: encerradoNestaResposta,
-          erro: null,
-          // Sucesso zera a sequência de falhas — é o "some sozinho quando o
-          // polling volta" do achado do Fable (i): a próxima falha, se
-          // houver, começa a contar do zero, com um novo "desde HH:MM".
-          falhasConsecutivas: 0,
-          falhandoDesde: null,
-          desligadoPeloKillSwitch: false,
-          // Substitui sempre (nunca acumula) — é o fato mais atual de quem
-          // está na sala agora, não um histórico de quem já esteve.
-          comparacaoDecisores: resposta.comparacao_decisores,
-        }));
-      } catch (e) {
-        if (!vivo) return;
-        // (ii) `copiloto_desligado`: alguém virou o kill-switch em Admin NO
-        // MEIO da sessão. Isto é FIM DE POLLING, não uma falha entre outras
-        // — sem o corte aqui, cada tick seguinte bateria 409 de novo, para
-        // sempre, até a sessão acabar (achado do Fable: "loop infinito de
-        // 409 a cada 3 segundos"). A tela cai no `CopilotoDesligado` já
-        // existente da Fatia 1 — não inventa um segundo texto para o mesmo
-        // estado.
-        paraDeVezPorKillSwitch = ehCopilotoDesligado(e);
-        setEstado((atual) => ({
-          ...atual,
-          erro: e,
-          desligadoPeloKillSwitch: paraDeVezPorKillSwitch,
-          // (iii) 1-2 falhas seguidas continuam mudas — só a CONTAGEM sobe;
-          // é o componente quem decide, comparando com o limiar, se vira
-          // aviso visível. `falhandoDesde` marca a 1ª falha da sequência
-          // atual, não é sobrescrito a cada nova falha da mesma sequência.
-          falhasConsecutivas: paraDeVezPorKillSwitch ? atual.falhasConsecutivas : atual.falhasConsecutivas + 1,
-          falhandoDesde: paraDeVezPorKillSwitch ? atual.falhandoDesde : (atual.falhandoDesde ?? new Date()),
-        }));
-      } finally {
-        if (vivo && !encerradoNestaResposta && !paraDeVezPorKillSwitch) timerId = window.setTimeout(agendar, intervaloAtual());
-      }
-    }
-
-    function intervaloAtual() {
-      const { emFocoMs, semFocoMs } = intervaloRef.current;
-      return document.visibilityState === "hidden" ? semFocoMs : emFocoMs;
-    }
-
-    function agendar() {
-      void ciclo();
-    }
-
-    timerId = window.setTimeout(agendar, intervaloAtual());
-
-    return () => {
-      vivo = false;
-      if (timerId !== null) window.clearTimeout(timerId);
-    };
-    // `indiceAtual` de propósito fora das deps: o polling não deve reiniciar
-    // o timer a cada troca de bloco (perderia o ritmo dos 3s); o valor mais
-    // recente já chega pela ref a cada ciclo (lido dentro do closure acima).
-  }, [sessaoId, sessaoEncerrada]);
-
-  return estado;
-}
-
-/**
- * Copiloto ao vivo — Fatia 1 + Fatia 2 (docs/ARQUITETURA-FASE-10.md §8). A
- * Fatia 1 é o estado determinístico puro, ZERO IA: o que falta no bloco,
- * SIMs pendentes, blocos não percorridos — vem pronto de
- * `GET /api/sessoes/[id]/copiloto`, é o servidor quem deriva, não esta tela
- * (para a Fatia 3, polling automático, reusar o mesmo payload sem trocar de
- * contrato — §2.4/C9).
- *
- * A Fatia 2 acrescenta o botão **"Me ajuda agora"**: a IA só roda sob
- * demanda, nunca sozinha (B71 — "nada pisca, nada toca, nada abre
- * sozinho"). Contrato em `@/types/copiloto` (`RespostaSugestaoCopiloto`,
- * `SugestaoCopiloto`). `visivel:false` é SUCESSO com confiança insuficiente
- * — a tela mostra um aviso sóbrio, nunca a sugestão. Cada código de recusa
- * (`copiloto_ia_nao_ativada`, `teto_ia_copiloto_atingido`,
- * `timeout_copiloto`, `copiloto_ao_vivo_bloqueado`, `recusa_ia`,
- * `saida_invalida`, `conteudo_proibido`) tem mensagem própria — nunca um
- * "tente novamente" genérico. Implementado em `SugestaoIA`/
- * `ApresentacaoSugestao` mais abaixo.
- *
- * **Desfecho (§5 do plano).** "Ir para lá" grava `desfecho='aceita'`,
- * "Ignorar" grava `desfecho='ignorada'` via
- * `POST .../sugestoes/[sugestaoId]/desfecho` — é o dado que, daqui a 20
- * sessões, dirá se o copiloto acerta. A gravação é TELEMETRIA, não a ação:
- * dispara em paralelo (`registrarDesfechoSemBloquear`), nunca bloqueia a
- * navegação/dispensa, nunca mostra erro — inclusive `desfecho_ja_registrado`
- * (409, duplo clique) é silencioso por design. Ciclo automático e polling
- * continuam fora daqui — isso é Fatia 3.
- *
- * C10: este painel só existe dentro da aba "Copiloto" da coluna direita —
- * quem monta as abas é `ConduzirSessaoApp.tsx`, com Briefing como default.
- * A aba **continua montada** mesmo com o copiloto desligado (decisão do
- * veredito do Fable): esconder a aba inteira deixaria a Dra. Elaine sem
- * saber se o recurso não existe ou está desligado por configuração.
- *
- * C12: o roteiro ativo (v4) nunca foi carimbado como oficial pela Dra. Elaine
- * (B15) — o aviso mora só no cabeçalho da sessão. Removido daqui em 14/09
- * (correção do Marcio): repetir era texto que não muda o que ela faz na
- * hora, e a tela precisava enxugar, não duplicar.
+ * Copiloto ao vivo — Fase 12, Fatia B: 2 blocos permanentes ("Fale agora",
+ * único com peso visual) + 2 condicionais ("Cuidado" só com risco; "O
+ * cliente disse" é permanente mas discreto, rodapé de altura fixa).
  *
  * **Kill-switch (`copiloto_sessao.ativo=false`).** É estado, não falha: cai
  * no `EstadoVazio` explicando o desligamento, nunca no `EstadoErro` com
@@ -343,6 +107,9 @@ export function PainelCopiloto({
   indiceAtual,
   blocosRoteiro,
   irPara,
+  polling: pollingProp,
+  sessaoEncerrada: sessaoEncerradaProp,
+  aoEncerrar: aoEncerrarProp,
 }: {
   sessaoId: string;
   indiceAtual: number;
@@ -350,14 +117,28 @@ export function PainelCopiloto({
    * é contra esta lista (não contra o payload do GET, que só traz os "não
    * percorridos") que o desvio sugerido resolve `bloco_id` em índice real
    * para navegar. Opcional: sem ela, a sugestão de desvio aparece só como
-   * informação, sem o botão "Ir para lá". `titulo` (opcional) alimenta o
-   * quadro 3 "BLOCO ATUAL" do mosaico (mock do Marcio) — sem ele o quadro
-   * mostra só a posição numérica, nunca um título inventado. */
+   * informação, sem o botão "Ir para lá". */
   blocosRoteiro?: { id: string; titulo?: string }[];
-  /** `ConduzirSessaoApp.tsx` — a mesma função que as setas do teclado chamam
-   * (B70/§5 camada 3). Se ausente, o botão "Ir para" do desvio sugerido não
+  /** `ConduzirSessaoApp.tsx` — a mesma função que o `<select>` "Corrigir
+   * parte" chama. Se ausente, o botão "Ir para" do desvio sugerido não
    * aparece — nunca navega sozinho e nunca falha silenciosamente. */
   irPara?: (indice: number) => void;
+  /**
+   * Correção do achado do Fable (16/09, "um só poller"): `ConduzirSessaoApp`
+   * eleva `usePollingCopiloto` e passa a MESMA instância aqui, para não
+   * existirem 2 timers/2 requisições a cada tick. Opcional só para o teste
+   * unitário deste componente (`PainelCopiloto.test.tsx`, que monta o painel
+   * sozinho) continuar funcionando sem precisar de um `ConduzirSessaoApp` —
+   * sem a prop, o componente volta a instanciar o próprio hook, como antes.
+   */
+  polling?: ReturnType<typeof usePollingCopiloto>;
+  /** Idem — quando o pai já sabe que a sessão encerrou (manual ou por
+   * duração máxima), evita este componente derivar a mesma coisa de novo. */
+  sessaoEncerrada?: boolean;
+  /** Chamado quando o clique em "Encerrar copiloto desta sessão" confirma —
+   * sem prop, o componente guarda esse estado sozinho (fallback do teste
+   * unitário). */
+  aoEncerrar?: () => void;
 }) {
   const buscarEstado = useCallback(() => buscarEstadoCopiloto(sessaoId, indiceAtual), [sessaoId, indiceAtual]);
   const { dados: estado, carregando, erro, recarregar } = useRecurso(buscarEstado, [sessaoId, indiceAtual]);
@@ -371,11 +152,21 @@ export function PainelCopiloto({
   // (`ciclo.resultado === "sessao_encerrada_por_duracao_maxima"`, calculado
   // logo abaixo): os dois param o timer da mesma forma, mas a MENSAGEM na
   // tela é diferente — a advogada precisa saber QUAL dos dois aconteceu.
-  const [encerradaManualmente, setEncerradaManualmente] = useState(false);
+  //
+  // Só instancia o hook (fallback) quando NENHUM `polling` vier por prop —
+  // `pollingProp` já é a fonte única quando `ConduzirSessaoApp` está no ar.
+  const [encerradaManualmenteLocal, setEncerradaManualmenteLocal] = useState(false);
   const podePollar = Boolean(estado) && !ehCopilotoDesligado(erro);
-  const polling = usePollingCopiloto(sessaoId, indiceAtual, encerradaManualmente || !podePollar);
+  const pollingLocal = usePollingCopiloto(sessaoId, indiceAtual, Boolean(pollingProp) || encerradaManualmenteLocal || !podePollar);
+  const polling = pollingProp ?? pollingLocal;
   const encerradaPorDuracaoMaxima = polling.ciclo?.resultado === "sessao_encerrada_por_duracao_maxima";
-  const sessaoEncerrada = encerradaManualmente || encerradaPorDuracaoMaxima;
+  // Com `sessaoEncerradaProp` (pai no comando), "encerrada manualmente" para
+  // fins de MENSAGEM é "encerrada mas não por duração máxima" — o pai não
+  // distingue as duas causas na prop, só o resultado final; sem a prop
+  // (fallback do teste unitário), o estado local já carrega a distinção.
+  const encerradaManualmente = sessaoEncerradaProp !== undefined ? sessaoEncerradaProp && !encerradaPorDuracaoMaxima : encerradaManualmenteLocal;
+  const sessaoEncerrada = sessaoEncerradaProp ?? (encerradaManualmenteLocal || encerradaPorDuracaoMaxima);
+  const aoEncerrar = aoEncerrarProp ?? (() => setEncerradaManualmenteLocal(true));
 
   if (carregando && !estado) return <EstadoCarregando rotulo="Carregando o copiloto…" />;
 
@@ -393,23 +184,20 @@ export function PainelCopiloto({
   // do hook (nunca reagenda depois de detectar isto).
   if (polling.desligadoPeloKillSwitch) return <CopilotoDesligado />;
 
+  const sugestoesCiclo = sessaoEncerrada ? [] : polling.sugestoes;
+
   return (
     <div className="flex flex-col gap-2">
       {/* Avisos de topo — estado transitório, nunca um "quadro" de conteúdo
-       * permanente. Empilhados, full-width, acima da grade (B71: nada disto
-       * pisca nem desloca o que já está embaixo — cada um só aparece/some
-       * por mudança de estado real, nunca por timer). O aviso de roteiro não
-       * oficial JÁ está no cabeçalho da sessão (C12) — repeti-lo aqui era
-       * texto que não muda o que a Dra. Elaine faz nos próximos 10s
-       * (correção do Marcio, 14/09): removido.
+       * permanente. Empilhados, full-width, acima dos 3 blocos (B71: nada
+       * disto pisca nem desloca o que já está embaixo — cada um só
+       * aparece/some por mudança de estado real, nunca por timer).
        *
-       * Decisão de 15/09: `AvisoPollingFalhando` entra/sai do fluxo normal
-       * na 3ª falha consecutiva de rede, empurrando tudo abaixo em ~60px —
-       * contradiz a promessa deste próprio comentário ("nada desloca o que
-       * já está embaixo"). `min-h-[3.25rem]` reserva o espaço sempre; o
-       * aviso aparece DENTRO dele quando existe. Não usa `position:sticky`
-       * — tapar o quadro 1 (a pergunta ao vivo) seria pior que o reflow que
-       * está sendo corrigido. */}
+       * Decisão de 15/09 (mantida): `AvisoPollingFalhando` entra/sai do
+       * fluxo normal na 3ª falha consecutiva de rede — `min-h-[3.25rem]`
+       * reserva o espaço sempre; o aviso aparece DENTRO dele quando existe.
+       * Não usa `position:sticky` — tapar o bloco "Fale agora" seria pior
+       * que o reflow que está sendo corrigido. */}
       <div className="min-h-[3.25rem]">
         {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
       </div>
@@ -428,162 +216,34 @@ export function PainelCopiloto({
 
       {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
 
-      {/* Mosaico de 7 quadros NUMERADOS (mock do Marcio, 14/09, pixel a pixel
-       * — "faz IDÊNTICO A TELA DO JULIANO"): a hierarquia é por POSIÇÃO e por
-       * NÚMERO visível, nunca só decoração. Ordem de leitura = ordem do DOM
-       * (mobile lê 1→7 em coluna única, sem precisar reordenar por CSS) — a
-       * ordem/numeração NÃO muda nesta rodada (14/09, largura cheia).
-       *
-       * Duas fileiras, separadas pelo peso real do conteúdo (não pela
-       * numeração): quadros 1+2 (Sugestão/Alerta) são "o copiloto
-       * propriamente dito" e ficam em destaque, 2 colunas até `xl` e lado a
-       * lado com espaço de sobra a partir de `xl` (monitor largo tem 2500px
-       * úteis — 2 colunas generosas leem melhor que 4 estreitas para texto
-       * corrido). Quadros 3-7 são leitura de apoio.
-       *
-       * Decisão de 15/09 (achado do dono do produto: "as divs quebram quando
-       * o dado dinâmico chega"): durante a sessão esta tela é painel de
-       * VIGILÂNCIA — a GEOMETRIA é constante, só o CONTEÚDO dentro dela muda
-       * a cada tick de polling (3s). `items-start` fazia cada quadro assumir
-       * a altura do próprio conteúdo, célula a célula — quando o polling
-       * trazia ou apagava um campo, aquela célula mudava de altura sozinha e
-       * empurrava o resto da grade (reflow). `items-stretch` faz todo quadro
-       * da linha casar com o mais alto da própria linha; o piso de cada
-       * quadro individual vem do `min-h` que cada função de quadro já
-       * declara no próprio `<Quadro className="min-h-...">` — a combinação
-       * dos dois é o que trava a geometria. `Quadro recolhido` (linha fina
-       * vs. card cheio) TAMBÉM saiu por ser outra fonte da mesma classe de
-       * bug — ver comentário de cada função de quadro 3-6. */}
-      <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-2">
-        <PainelPerguntaAgora
-          sessaoId={sessaoId}
-          indiceAtual={indiceAtual}
-          sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
-          blocosRoteiro={blocosRoteiro}
-          irPara={irPara}
-        />
+      {/* BLOCO 1 — "Fale agora". Único com peso visual: é a próxima frase
+       * dela. Nunca clicável por inteiro (a lição do "link de 11px" e do
+       * "card inteiro clicável muda o contrato do link") — só os botões
+       * "Me ajuda agora"/"Ir para lá"/"Ignorar"/"Dispensar", que já eram
+       * alvos de 44px próprios, continuam clicáveis. */}
+      <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
 
-        <QuadroAlerta pendentes={estado.sims_pendentes} sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} />
-      </div>
-
-      {/* Transcrição ao vivo (pedido do Marcio, 14/09 — largura cheia): sobe
-       * para logo abaixo de Sugestão+Alerta, dentro da promessa de primeira
-       * dobra — é leitura contínua durante a fala do cliente, junto com o
-       * registro do trecho, não conteúdo de apoio consultado depois. Não é
-       * um dos 7 quadros numerados (posição/ordem/numeração deles não muda);
-       * só a posição RELATIVA da Transcrição dentro deste componente subiu,
-       * de depois do Histórico do coach para logo depois do quadro 2. */}
-      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
-
-      {/* Decisão de 15/09: `items-start` → `items-stretch` (mesmo motivo da
-       * grade de destaque, ver comentário acima). `2xl:grid-cols-3` → `-4`:
-       * com os antigos quadros 7/7 removidos (bug de numeração duplicada,
-       * ambos sempre vazios — ver comentário de `QuadroVoceAcertouOuErrou`)
-       * e a célula preenchida por `ApresentacaoComparacaoDecisores`, restam
-       * 4 quadros — 3 colunas deixaria uma célula órfã sozinha na 2ª linha
-       * em tela larga; 4 fecha a linha (2×2 em `lg`, 4×1 em `2xl`). */}
-      <div className="grid grid-cols-1 items-stretch gap-1.5 lg:grid-cols-2 2xl:grid-cols-4">
-        <QuadroBlocoAtual blocoAtualId={estado.bloco_atual_id} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} />
-
-        <QuadroOQueAconteceu falta={estado.falta_no_bloco} />
-
-        <QuadroInsightComercial sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} />
-
-        <QuadroPodePularPra sessaoId={sessaoId} sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-
-        {/* Decisão do dono do produto (15/09): a informação de decisores
-         * mora NUM LUGAR SÓ — este card completo, na célula que os antigos
-         * quadros 7/7 (sempre vazios, nunca implementados) liberaram.
-         * `numero={7}` fecha a numeração do mosaico sem buraco nem
-         * duplicata. `QuadroDecisores` (abaixo) SEMPRE ocupa a célula —
-         * geometria constante — mesmo achado do coordenador (15/09): o
-         * webhook do Recall hoje descarta 100% dos eventos de participante
-         * por divergência de schema (`timestamp` string|number vs.
-         * `{absolute,relative}`), então `polling.comparacaoDecisores` é
-         * SEMPRE `null` em produção até a correção do backend (Fatia 3,
-         * fora deste componente) — a célula não pode sumir por causa disso. */}
-        <QuadroDecisores comparacao={sessaoEncerrada ? null : polling.comparacaoDecisores} />
-      </div>
-
-      {!sessaoEncerrada && <PainelBot sessaoId={sessaoId} />}
-
-      <HistoricoCoach
-        blocosNaoPercorridos={estado.blocos_nao_percorridos}
-        indiceAtual={indiceAtual}
-        sugestoesCiclo={sessaoEncerrada ? [] : polling.sugestoes}
+      {/* BLOCO 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
+       * (nunca um card vazio dizendo "nada"). Funde os 3 antigos quadros que
+       * eram jargão/risco: Alerta (SIMs pendentes) + O que aconteceu (falta
+       * no bloco) + Pode pular pra (desvio sugerido). */}
+      <BlocoCuidado
+        pendentes={estado.sims_pendentes}
+        falta={estado.falta_no_bloco}
+        sugestoesCiclo={sugestoesCiclo}
+        sessaoId={sessaoId}
         blocosRoteiro={blocosRoteiro}
         irPara={irPara}
       />
 
-      {/* Achado do Fable (Fatia 5): dois sinais DISTINTOS de "encerrado", os
-       * dois precisavam bloquear o registro manual — comentário e trava
-       * continuam válidos, só o componente `RegistroManual` em si subiu de
-       * posição (ver logo após o quadro 2, acima) — `sessaoEncerrada` é o
-       * estado LOCAL desta aba (encerramento manual/por duração máxima
-       * nesta mesma sessão de navegador); `estado.estado_copiloto` vem do
-       * SERVIDOR e sobrevive a F5 (payload da Fatia 1, sempre presente).
-       * Sem o segundo, recarregar a página depois de encerrar reabriria o
-       * campo — texto digitado ali não entra mais em `transcricoes`
-       * (re-encerrar é 409 `sessao_ja_encerrada`, não reconsolida) e o
-       * expurgo da Fatia 5 o apaga aos 7 dias. Esta tela é CONVENIENCIA —
-       * impede o erro; a trava de verdade é do backend (409 no POST, mais
-       * o backstop do DELETE por `criado_em <= encerrado_em`). */}
-      {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={() => setEncerradaManualmente(true)} />}
+      {/* BLOCO 3 — "O cliente disse" (rodapé, altura fixa). Recuperar a
+       * última fala registrada muda a próxima frase dela — passa na régua
+       * dos 30 segundos, mesmo sendo apoio, não foco. */}
+      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
+
+      {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />}
     </div>
   );
-}
-
-/** Rótulo humano de cada código de recusa (§ contrato). Cada código tem causa
- * distinta — nunca um "tente novamente" genérico: `timeout_copiloto` convida
- * a tentar de novo, `teto_ia_copiloto_atingido` diz explicitamente que não
- * adianta insistir hoje, `copiloto_ia_nao_ativada` aponta para Admin. */
-const MENSAGENS_RECUSA: Record<string, { titulo: string; descricao: string; podeTentarDeNovo: boolean }> = {
-  copiloto_ia_nao_ativada: {
-    titulo: "Copiloto de IA ainda não ativado",
-    descricao: "O prompt do copiloto está desligado por configuração. A equipe técnica liga isso em Admin — a sessão segue normalmente pelo roteiro.",
-    podeTentarDeNovo: false,
-  },
-  teto_ia_copiloto_atingido: {
-    titulo: "Limite de sugestões de hoje atingido",
-    descricao: "Esta sessão (ou o dia) já usou o orçamento de chamadas de IA do copiloto. Não adianta tentar de novo agora — o roteiro determinístico continua disponível.",
-    podeTentarDeNovo: false,
-  },
-  timeout_copiloto: {
-    titulo: "A sugestão não chegou a tempo",
-    descricao: "A IA não respondeu em 8 segundos. Pode tentar de novo.",
-    podeTentarDeNovo: true,
-  },
-  copiloto_ao_vivo_bloqueado: {
-    titulo: "Copiloto ao vivo bloqueado",
-    descricao: "O copiloto de IA está bloqueado por configuração no servidor. Não é algo que se resolve tentando de novo — fale com a equipe técnica.",
-    podeTentarDeNovo: false,
-  },
-  recusa_ia: {
-    titulo: "A IA recusou responder desta vez",
-    descricao: "Pode tentar de novo — às vezes é um caso isolado.",
-    podeTentarDeNovo: true,
-  },
-  saida_invalida: {
-    titulo: "A resposta da IA não pôde ser validada",
-    descricao: "Pode tentar de novo.",
-    podeTentarDeNovo: true,
-  },
-  conteudo_proibido: {
-    titulo: "A sugestão foi descartada",
-    descricao: "O conteúdo continha algo que o copiloto nunca deve mostrar (ex.: valor em reais). Nada foi exibido.",
-    podeTentarDeNovo: false,
-  },
-};
-
-function mensagemRecusa(erro: unknown): { titulo: string; descricao: string; podeTentarDeNovo: boolean } {
-  if (erro instanceof ErroSessao && erro.codigo && MENSAGENS_RECUSA[erro.codigo]) {
-    return MENSAGENS_RECUSA[erro.codigo];
-  }
-  return {
-    titulo: "Não foi possível pedir a sugestão",
-    descricao: erro instanceof ErroSessao ? erro.message : "Erro inesperado. Tente de novo em instantes.",
-    podeTentarDeNovo: true,
-  };
 }
 
 /**
@@ -595,10 +255,7 @@ function mensagemRecusa(erro: unknown): { titulo: string; descricao: string; pod
  * A frase tem DOIS avisos, de propósito: "sem conexão" (o quê) e "a sessão
  * segue normalmente pelo roteiro" (o que NÃO aconteceu) — sem o segundo
  * período a advogada pode entender que perdeu a sessão inteira, quando só
- * perdeu o assistente. Mesmo princípio do B74 ("a tela mostra o estado
- * real"), aplicado ao canal que alimenta `GateBloqueado`/`SugestoesDoCiclo`:
- * elas ficariam mudas por falta de dado novo, não por silêncio da sala, e
- * sem este aviso a tela inteira mentiria por omissão.
+ * perdeu o assistente.
  *
  * `role="status"` (não `alert`): é informação sobre a INFRAESTRUTURA, não
  * um bloqueio jurídico — `GateBloqueado` usa `alert` porque aquilo é uma
@@ -642,25 +299,62 @@ function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
 }
 
 /**
- * Correção do Marcio (14/09) sobre o próprio B71: durante a sessão ela não
- * clica em nada — se precisa de clique, a informação não existe. A sugestão
- * MAIS RECENTE aparece aberta, por inteiro, sem nenhuma ação da Dra. Elaine;
- * é a resposta, não um link para a resposta. O que o B71 continua protegendo
- * é diferente disso: nada pisca, nada anima, nada rouba foco — a sugestão
- * nova substitui a anterior NO MESMO LUGAR (mesmo card, mesma posição), sem
- * salto de scroll nem troca de aba. Histórico (sugestões anteriores à mais
- * recente) fica compacto — recolhido de conteúdo (evitar 6+ cards de texto
- * duplicando a mesma altura da tela), NUNCA recolhido de existência: o
- * `<summary>` já mostra a contagem, e abrir não é condição para a Dra.
- * Elaine saber que há histórico.
+ * BLOCO 1 — "Fale agora" (renomeado de "Próximo movimento — fale agora"
+ * → "Pergunte agora" → "Fale agora", decisão final: imperativo curto).
+ * Fusão do antigo `PainelPerguntaAgora`: a pergunta pode vir do ciclo
+ * automático (`polling`, sem clique) ou do clique em "Me ajuda agora" — é
+ * UMA coisa na tela, nunca duas concorrendo por atenção.
  *
- * Correção do Marcio (14/09, rodada de layout): este bloco deixou de abrir
- * o próprio `Quadro` — mora agora DENTRO do quadro único "Pergunte agora"
- * (ver `PainelPerguntaAgora` abaixo). Dois quadros com pergunta (um do
- * clique manual, outro do ciclo automático) eram exatamente o "duas fontes
- * concorrentes" que fez a pergunta real de 0,80 de confiança passar batido
- * no print que ele mandou: ela estava no quadro errado, recolhida por baixo
- * do resumo explicativo do quadro certo.
+ * Prioridade de exibição, de cima para baixo:
+ *  1. Sugestão mais recente do ciclo automático, se existir.
+ *  2. Ação manual "Me ajuda agora" + a resposta do último clique.
+ *  3. Sem nenhuma das duas: uma linha curta dizendo que está aguardando.
+ */
+function BlocoFaleAgora({
+  sessaoId,
+  indiceAtual,
+  sugestoesCiclo,
+  blocosRoteiro,
+  irPara,
+}: {
+  sessaoId: string;
+  indiceAtual: number;
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+  blocosRoteiro?: { id: string; titulo?: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  const temSugestaoCiclo = sugestoesCiclo.length > 0;
+
+  return (
+    <Quadro rotulo="Fale agora" icone={<IconeAcao />} como="article">
+      {/* `max-h`/`overflow-y-auto` trava o teto e rola por dentro — o bloco
+       * não estica quando a sugestão vem completa (geometria constante,
+       * achado de 15/09). `tabIndex={0}` exigido pelo axe
+       * (`scrollable-region-focusable`). */}
+      <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Fale agora" className="flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1">
+        {temSugestaoCiclo && (
+          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        )}
+
+        <div className={temSugestaoCiclo ? "border-t border-dashed border-linha pt-3" : undefined}>
+          <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} temSugestaoCiclo={temSugestaoCiclo} />
+        </div>
+      </div>
+    </Quadro>
+  );
+}
+
+const IconeAcao = () => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 1.5 3 9h4.5L7 14.5 13 7H8.5L8 1.5Z" />
+  </svg>
+);
+
+/**
+ * Histórico compacto das sugestões do ciclo — a MAIS RECENTE aparece aberta,
+ * por inteiro, sem clique (B71: "nada pisca, nada toca, nada abre
+ * sozinho"). Anteriores ficam recolhidas de CONTEÚDO (nunca de existência):
+ * o `<summary>` já mostra a contagem.
  */
 function SugestoesDoCiclo({
   sessaoId,
@@ -684,7 +378,6 @@ function SugestoesDoCiclo({
   return (
     <div className="flex flex-col gap-2">
       <div className="rounded-controle border border-linha p-2.5">
-        <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[recente.gatilho]}</p>
         {!recente.visivel || !recente.sugestao ? (
           <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
             Confiança abaixo do mínimo configurado — nada mostrado.
@@ -723,7 +416,6 @@ function SugestoesDoCiclo({
             <ul className="flex flex-col gap-2">
               {anteriores.map((s) => (
                 <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
-                  <p className="mb-1.5 text-legenda font-medium uppercase text-tinta-fraca">{ROTULO_GATILHO[s.gatilho]}</p>
                   {!s.visivel || !s.sugestao ? (
                     <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
                       Confiança abaixo do mínimo configurado — nada mostrado.
@@ -746,12 +438,6 @@ function SugestoesDoCiclo({
     </div>
   );
 }
-
-const ROTULO_GATILHO: Record<SugestaoCopilotoPolling["gatilho"], string> = {
-  intervalo: "Sugestão automática",
-  virada_bloco: "Sugestão ao mudar de parte",
-  sob_demanda: "Sugestão pedida",
-};
 
 /**
  * Encerrar a sessão do copiloto (Fatia 3, §6.1, B71 "camada 1 de
@@ -809,79 +495,10 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
 }
 
 /**
- * Quadro único "Pergunte agora" (correção do Marcio, 14/09, rodada de
- * layout): a pergunta que a Dra. Elaine precisa achar em meio segundo pode
- * vir de DUAS fontes — o ciclo automático (`polling`, sem clique nenhum) ou
- * o clique explícito em "Me ajuda agora" — mas ela é UMA coisa na tela, não
- * duas concorrendo por atenção em quadros separados. Antes desta correção
- * existiam dois quadros ("Pergunte agora" e "Sugestão"); uma sugestão de
- * 0,80 de confiança gerada pelo ciclo automático morava só no segundo, e
- * ficou fora do quadro que o nome dizia ser "a pergunta agora" — exatamente
- * o que o Marcio relatou não ter visto.
- *
- * Prioridade de exibição, de cima para baixo dentro do MESMO quadro:
- *  1. Sugestão mais recente do ciclo automático, se existir (nunca precisa
- *     de clique — é o normal da Fatia 3 rodando sozinha).
- *  2. Ação manual "Me ajuda agora" + a resposta do último clique, sempre
- *     disponível como complemento (a advogada pode pedir de novo a
- *     qualquer momento, mesmo com sugestão automática já visível).
- *  3. Sem nenhuma das duas ainda: uma linha curta dizendo que está
- *     aguardando — nunca um parágrafo explicando como o recurso funciona
- *     (isso é `aria-describedby` do botão, não conteúdo do quadro).
- */
-function PainelPerguntaAgora({
-  sessaoId,
-  indiceAtual,
-  sugestoesCiclo,
-  blocosRoteiro,
-  irPara,
-}: {
-  sessaoId: string;
-  indiceAtual: number;
-  sugestoesCiclo: SugestaoCopilotoPolling[];
-  blocosRoteiro?: { id: string; titulo?: string }[];
-  irPara?: (indice: number) => void;
-}) {
-  const temSugestaoCiclo = sugestoesCiclo.length > 0;
-
-  return (
-    <Quadro rotulo="Próximo movimento — fale agora" numero={1} icone={<IconeAcao />} como="article">
-      {/* Decisão de 15/09 (painel de vigilância, geometria constante): este
-       * quadro não tinha teto nenhum — com sugestão completa (pergunta +
-       * "falta no bloco" + desvio + observação) passava de 400px de altura,
-       * ao lado do quadro Alerta com ~90px, e o `min-h` sozinho não bastava
-       * (ele trava o PISO, não o TETO). `max-h-[26rem] overflow-y-auto`
-       * trava o teto e rola por dentro — o mosaico não estica quando a
-       * sugestão vem completa. `tabIndex={0}` no container rolável é exigido
-       * pelo axe (`scrollable-region-focusable`) — mesmo padrão já usado nos
-       * outros dois containers roláveis do arquivo (histórico de sugestões
-       * anteriores, linha 688; lista de trechos de transcrição, linha 1876).
-       * `role="region"` + `aria-label`: sem papel nem nome o Tab para num
-       * destino anônimo (mesmo padrão de `LeitorCaso.tsx`/`PainelSims.tsx`,
-       * exigido por `jsx-a11y/no-noninteractive-tabindex`). */}
-      <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Próximo movimento" className="flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1">
-        {temSugestaoCiclo && (
-          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-        )}
-
-        <div className={temSugestaoCiclo ? "border-t border-dashed border-linha pt-3" : undefined}>
-          <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} temSugestaoCiclo={temSugestaoCiclo} />
-        </div>
-      </div>
-    </Quadro>
-  );
-}
-
-/**
- * O botão "Me ajuda agora" e a apresentação da sugestão (Fase 10, Fatia 2).
- * B71: nada pisca, nada toca, nada abre sozinho — a sugestão só existe na
- * tela depois do clique explícito da Dra. Elaine, e fica onde apareceu até
- * ela pedir outra ou trocar de bloco/sessão (não há timer nem auto-refresh).
- *
- * Deixou de abrir o próprio `Quadro` — mora dentro de `PainelPerguntaAgora`.
- * `temSugestaoCiclo` só muda o texto do estado ocioso: com sugestão
- * automática já visível acima, "aguardando pergunta" seria falso (já existe
- * uma); sem nenhuma das duas, a linha diz que ainda não há nada.
+ * O botão "Me ajuda agora" e a apresentação da sugestão. B71: nada pisca,
+ * nada toca, nada abre sozinho — a sugestão só existe na tela depois do
+ * clique explícito da Dra. Elaine, e fica onde apareceu até ela pedir outra
+ * ou trocar de bloco/sessão (não há timer nem auto-refresh).
  */
 function SugestaoIA({
   sessaoId,
@@ -1002,9 +619,7 @@ function SeloConfianca({ confianca }: { confianca: number }) {
  * sem ele, "persistir o último valor não-nulo" trocaria "o dado some" por
  * "o dado mente sobre quando é" — pior, pela regra da casa ("nada de dado
  * inventado na tela"). Só aparece quando o valor exibido NÃO veio da
- * sugestão mais recente do ciclo (`sugestaoIdAtual !== sugestaoIdMaisRecente`)
- * — se o valor É o mais novo, mostrar a hora seria ruído redundante.
- * Reusa `formatarHora` de `@/lib/formatar` (não escreve formatador próprio).
+ * sugestão mais recente do ciclo. Reusa `formatarHora` de `@/lib/formatar`.
  */
 function CarimboHoraSeAntigo({
   criadoEm,
@@ -1021,11 +636,7 @@ function CarimboHoraSeAntigo({
 }
 
 /** `evidencia` é citação literal do que o cliente disse — apresentada como
- * citação, visivelmente distinta da conclusão da IA. `rotulo` (opcional)
- * nomeia a citação quando ela aparece perto de outras coisas que também têm
- * aspas — pedido do Marcio (11/09): "pergunta", "motivo" e "evidência" são
- * três NATUREZAS diferentes, não três parágrafos parecidos; o rótulo é o que
- * deixa isso óbvio batendo o olho, sem precisar ler a frase inteira. */
+ * citação, visivelmente distinta da conclusão da IA. */
 function Evidencia({ texto, rotulo }: { texto: string; rotulo?: string }) {
   return (
     <blockquote className="border-l-2 border-linha-forte pl-2.5 text-sm italic text-tinta-suave">
@@ -1039,19 +650,12 @@ function Evidencia({ texto, rotulo }: { texto: string; rotulo?: string }) {
  * Todo campo de `SugestaoCopiloto` pode vir nulo — nulo é nulo, some, nunca
  * vira texto plausível. Cada bloco abaixo só renderiza se o dado existir.
  *
- * Hierarquia (pedido do Marcio, 11/09 — "muito sorrateira... precisa ser mais
- * objetivo"): a `proxima_pergunta.texto` é o ÚNICO elemento que a advogada
- * precisa achar em meio segundo, no meio da fala do cliente — é o herói,
- * card próprio com `realce="latao"` (cor de marca, não de alarme) e o
- * MESMO degrau tipográfico (`text-titulo`/`sm:text-display`) que
- * `BlocoRoteiro.tsx` usa para o título do bloco atual: o padrão já existe
- * na tela de sessão para "a coisa que se lê de relance". `motivo` e
- * `evidencia` moram dentro do MESMO card, mas menores e com rótulo próprio
- * — nunca like um 2º e 3º parágrafo do mesmo tamanho (era exatamente o
- * "ficou tudo junto" que o Marcio apontou). Todo o resto (falta no bloco,
- * desvio, observação) é apoio, abaixo, cada um com seu próprio peso — a
- * observação por último e mais discreta, porque é risco a considerar, não
- * ação a tomar.
+ * Hierarquia: a `proxima_pergunta.texto` é o ÚNICO elemento que a advogada
+ * precisa achar em meio segundo — é o herói, card próprio com o mesmo degrau
+ * tipográfico que `BlocoRoteiro.tsx` usa para o título do bloco atual.
+ * `motivo` e `evidencia` moram dentro do MESMO card, menores. "Ainda não
+ * perguntou:" (tradução de "falta no bloco", jargão da casa) é apoio,
+ * abaixo — verbo, não substantivo abstrato. Desvio e observação por último.
  */
 function ApresentacaoSugestao({
   sessaoId,
@@ -1103,13 +707,9 @@ function ApresentacaoSugestao({
 
       {sugestao.falta_no_bloco.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-rotulo font-medium uppercase text-tinta-fraca">A IA notou que falta</p>
-          {/* Chips (pedido do Marcio, 11/09): o prompt v2 já entrega o item
-              curto (3-6 palavras) — cabe em etiqueta, lê mais rápido que
-              lista vertical e não compete em altura com a pergunta acima.
-              A evidência de cada item, quando existe, continua como citação
-              logo abaixo do grupo de chips (não dentro do chip — citação não
-              cabe em pílula sem quebrar o formato). */}
+          {/* Tradução do jargão (tabela obrigatória): "A IA notou que falta"
+           * → "Ainda não perguntou:" — verbo, não substantivo abstrato. */}
+          <p className="text-rotulo font-medium uppercase text-tinta-fraca">Ainda não perguntou:</p>
           <ul className="flex flex-wrap gap-1.5">
             {sugestao.falta_no_bloco.map((item, i) => (
               <li key={i}>
@@ -1163,8 +763,8 @@ function registrarDesfechoSemBloquear(sessaoId: string, sugestaoId: string, desf
  * `desvio_sugerido` é sugestão com botão, nunca ação executada (B70/B71). Se
  * a advogada clicar, quem navega é `irPara()` — a mesma função das setas do
  * teclado em `ConduzirSessaoApp.tsx`. "Ignorar" sempre ao lado. Cada clique
- * também grava o desfecho (§5 do plano) — telemetria disparada em paralelo,
- * nunca atrasando nem condicionando a navegação/dispensa.
+ * também grava o desfecho — telemetria disparada em paralelo, nunca
+ * atrasando nem condicionando a navegação/dispensa.
  */
 function DesvioSugerido({
   sessaoId,
@@ -1226,271 +826,115 @@ function DesvioSugerido({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fatia 4 (docs/ARQUITETURA-FASE-10.md §4.2, §4.2.1, §4.2.2, §5, §6.2.2, §8,
-// §12) — o bot na sala (Recall.ai). `PainelBot` pede o bot via
-// `POST .../copiloto/bot`; `ApresentacaoComparacaoDecisores` mostra o fato
-// participantes x decisores (camada 1 do §5, ZERO IA) quando o chamador
-// tiver o dado — hoje NENHUMA rota de leitura devolve
-// `ComparacaoDecisoresPresentes` (só `POST .../bot` foi entregue nesta
-// rodada; `compararComDecisores` em `server/copiloto/participantes.ts`
-// ainda não tem chamador HTTP). O componente é escrito pronto para reuso
-// assim que essa rota existir — sem inventar uma chamada de rede que não
-// existe (regra da casa: campo novo nasce vazio, a tela mostra vazio,
-// nunca dado plausível).
-// ---------------------------------------------------------------------------
-
-/** Rótulo humano de cada código de recusa do bot (route.ts, comentário de
- * topo — mesma ordem das travas). Três categorias distintas de propósito:
- *  - ESTADO NORMAL, sem alarme (`bot_ja_pedido`, `audio_ao_vivo_desligado`,
- *    `provedor_audio_nao_configurado`) — tratados fora desta tabela, como
- *    `EstadoVazio`/`role=status`, nunca como `role=alert` vermelho;
- *  - erro transiente, pode tentar de novo (`falha_provedor_bot`,
- *    `servico_indisponivel`);
- *  - erro do LINK da sala (`sala_invalida`) — mensagem própria com o
- *    `sub_codigo`, montada em `mensagemSalaInvalida()`, não nesta tabela. */
-const MENSAGENS_RECUSA_BOT: Record<string, { titulo: string; descricao: string; podeTentarDeNovo: boolean }> = {
-  sessao_nao_encontrada: {
-    titulo: "Sessão não encontrada",
-    descricao: "Não foi possível localizar esta Sessão de Viabilidade.",
-    podeTentarDeNovo: false,
-  },
-  sem_link_sala: {
-    titulo: "Sem link de sala cadastrado",
-    descricao: "Cole o link da reunião na Ficha antes de pedir o bot.",
-    podeTentarDeNovo: false,
-  },
-  copiloto_ao_vivo_bloqueado: {
-    titulo: "Copiloto ao vivo bloqueado",
-    descricao:
-      "O pedido do bot está bloqueado por configuração no servidor. Fale com a equipe técnica.",
-    podeTentarDeNovo: false,
-  },
-  servico_indisponivel: {
-    titulo: "O bot não está configurado no servidor",
-    descricao: "Falta configuração técnica (chave do provedor ou segredo do webhook). A equipe técnica resolve isso em Admin → Integrações.",
-    podeTentarDeNovo: false,
-  },
-  falha_provedor_bot: {
-    titulo: "O provedor do bot não respondeu como esperado",
-    descricao: "Pode tentar de novo — às vezes é um caso isolado.",
-    podeTentarDeNovo: true,
-  },
-  retencao_infinita_detectada: {
-    titulo: "O bot foi encerrado por segurança",
-    descricao:
-      "O fornecedor devolveu retenção indefinida do áudio, apesar do pedido explícito de prazo limitado — nenhum segmento foi gravado. Avise a equipe técnica antes de tentar de novo.",
-    podeTentarDeNovo: false,
-  },
-};
-
-/** O `sub_codigo` é o detalhe que mais importa (§4.2.2): `meeting_not_found`
- * é link de sala errado, o defeito mais provável em produção (falha em
- * ~200ms na sonda do Recall, zero consumo). A advogada resolve em 10
- * segundos conferindo o link — "erro ao iniciar o bot" genérico faria ela
- * chamar suporte à toa. `sub_codigo` desconhecido é mostrado CRU (nunca
- * engolido): o backend não mapeia todos os códigos do fornecedor. */
-function mensagemSalaInvalida(detalhes: unknown): { titulo: string; descricao: string } {
-  const d = (detalhes ?? {}) as Partial<DetalhesSalaInvalidaBot>;
-  if (d.sub_codigo === "meeting_not_found") {
-    return {
-      titulo: "Não encontrei uma reunião nesse link",
-      descricao: "Confira o link da sala na Ficha da jornada — é o motivo mais comum deste aviso. Depois de corrigir, peça o bot de novo.",
-    };
-  }
-  if (d.sub_codigo) {
-    return {
-      titulo: "Não foi possível entrar na sala",
-      descricao: `O provedor recusou com o código "${d.sub_codigo}". Confira o link da sala na Ficha; se persistir, informe a equipe técnica com este código.`,
-    };
-  }
-  return {
-    titulo: "Não foi possível entrar na sala",
-    descricao: "O link pode estar errado ou a reunião não existe. Confira o link da sala na Ficha da jornada.",
-  };
-}
-
 /**
- * Pedir o bot na sala (Fatia 4, B70/B71 aplicados ao áudio: a advogada pede,
- * nunca é automático). Três estados de recusa tratados como ESTADO, não
- * erro de alarme — `role=status`, nunca vermelho:
+ * BLOCO 2 — "Cuidado" (condicional). Fusão dos 3 antigos quadros de
+ * jargão/risco:
+ *  - `QuadroAlerta` (SIMs pendentes) → "Falta pedir a autorização de
+ *    gravação" e demais pendências, por extenso;
+ *  - `QuadroOQueAconteceu` (falta no bloco do estado determinístico) →
+ *    "Ainda não perguntou:" no bloco atual;
+ *  - `QuadroPodePularPra` (desvio sugerido) → continua com "Ir para lá"/
+ *    "Ignorar", agora dentro do mesmo bloco de risco.
  *
- *  - `bot_ja_pedido`: idempotência, caso normal de clique duplo/reabrir a
- *    tela — mostra que o bot já foi pedido, sem convidar a "tentar de novo".
- *  - `audio_ao_vivo_desligado` / `provedor_audio_nao_configurado`: o ESTADO
- *    NORMAL hoje (defaults `audio_ao_vivo=false`, `provedor_audio='nenhum'`
- *    — a chave do provedor não está no servidor). Mesmo padrão do
- *    `CopilotoDesligado`: sóbrio, sem alarme, dizendo o que falta e quem
- *    decide — nunca um botão convidando a insistir numa ação que não vai
- *    funcionar até a configuração mudar.
- *
- * Todo o resto (`copiloto_ao_vivo_bloqueado`, `sala_invalida` com
- * `sub_codigo`, `servico_indisponivel`, `falha_provedor_bot`,
- * `retencao_infinita_detectada`) usa `role=alert` — são recusas de
- * verdade, cada uma com sua própria mensagem (nunca "erro ao iniciar"
- * genérico).
+ * Regra dura: **sem nenhum dos três, o bloco inteiro não existe no DOM** —
+ * nunca um card vazio dizendo "nada". Prova por `offsetParent`, nunca por
+ * `e.hidden` (filho "visível" dentro de pai `display:none` dá verde falso).
  */
-function PainelBot({ sessaoId }: { sessaoId: string }) {
-  const [pedindo, setPedindo] = useState(false);
-  const [resposta, setResposta] = useState<{ botId: string } | null>(null);
-  const [erro, setErro] = useState<unknown>(null);
+function BlocoCuidado({
+  pendentes,
+  falta,
+  sugestoesCiclo,
+  sessaoId,
+  blocosRoteiro,
+  irPara,
+}: {
+  pendentes: { sim: string; rotulo: string }[];
+  falta: { campos: { id: string; rotulo: string }[]; observar: string[] };
+  sugestoesCiclo: SugestaoCopilotoPolling[];
+  sessaoId: string;
+  blocosRoteiro?: { id: string; titulo?: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  // Decisão de 15/09 (mantida): era `sugestoesCiclo[length - 1]` direto — a
+  // observação crítica sumia toda vez que o ciclo trouxesse uma sugestão
+  // nova sem ela, mesmo que o risco continuasse valendo. `ultimoNaoNulo`
+  // mantém a última observação crítica real.
+  const achadoObservacao = ultimoNaoNulo(sugestoesCiclo, (s) =>
+    s.sugestao?.observacao && (s.sugestao.observacao.tipo === "recomendacao" || s.sugestao.observacao.tipo === "hipotese") ? s.sugestao.observacao : null,
+  );
+  const observacaoCritica = achadoObservacao?.valor ?? null;
 
-  async function pedir() {
-    if (pedindo) return;
-    setPedindo(true);
-    setErro(null);
-    try {
-      const r = await pedirBotCopiloto(sessaoId);
-      setResposta({ botId: r.bot_id });
-    } catch (e) {
-      setResposta(null);
-      setErro(e);
-    } finally {
-      setPedindo(false);
-    }
-  }
+  const achadoDesvio = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
 
-  const codigoErro = erro instanceof ErroSessao ? erro.codigo : undefined;
+  const temFaltaNoBloco = falta.campos.length > 0 || falta.observar.length > 0;
+  const temRisco = pendentes.length > 0 || Boolean(observacaoCritica) || temFaltaNoBloco || Boolean(achadoDesvio);
 
-  // Estado NORMAL: bot não configurado hoje (default) — não é erro. Sem
-  // clique nenhum a advogada não usa este quadro (ele nasce assim que a
-  // tela abre, não é resposta a uma ação dela) — então não ocupa espaço
-  // permanente na grade; vira `null` (regra do Marcio, 14/09: quadro
-  // vazio na sessão inteira não merece lugar fixo).
-  if (codigoErro === "audio_ao_vivo_desligado" || codigoErro === "provedor_audio_nao_configurado") {
-    return null;
-  }
-
-  // Estado NORMAL: idempotência — já existe bot pedido para esta sessão.
-  if (codigoErro === "bot_ja_pedido") {
-    return (
-      <Quadro rotulo="Bot na sala">
-        <p role="status" className="text-sm text-tinta-suave">
-          Já existe um bot pedido para esta sessão — não é possível pedir um segundo.
-        </p>
-      </Quadro>
-    );
-  }
+  // CONDICIONAL: sem risco nenhum, o bloco não existe no DOM — nunca um
+  // card vazio dizendo "nada". `offsetParent`/renderização condicional real
+  // (não CSS `hidden`) é o que o teste precisa provar.
+  if (!temRisco) return null;
 
   return (
-    <Quadro rotulo="Bot na sala">
+    <Quadro rotulo="Cuidado" icone={<IconeAlerta />} tom="vermelho" como="article">
       <div className="flex flex-col gap-2.5">
-        <Botao type="button" variante="primario" tamanho="compacto" carregando={pedindo} onClick={() => void pedir()} className="self-start">
-          Pedir bot na sala
-        </Botao>
-
-        {!pedindo && erro !== null && <MensagemRecusaBot erro={erro} codigo={codigoErro} aoTentarDeNovo={() => void pedir()} />}
-
-        {!pedindo && !erro && resposta && (
-          <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-            Bot pedido. Ele deve entrar na sala em instantes, visível para o cliente como participante.
-          </p>
+        {pendentes.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {pendentes.map((p) => (
+              <li key={p.sim} className="text-sm text-tinta">
+                {/* Tradução do jargão obrigatória: "SIMs pendentes" → a
+                 * pendência por extenso. `p.rotulo` já vem da API como frase
+                 * humana ("Decisores presentes", "Próximo passo") — o rótulo
+                 * genérico "N de 4 SIMs" fica de fora da tela ao vivo. */}
+                Falta: {p.rotulo}
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
-    </Quadro>
-  );
-}
 
-function MensagemRecusaBot({
-  erro,
-  codigo,
-  aoTentarDeNovo,
-}: {
-  erro: unknown;
-  codigo: string | undefined;
-  aoTentarDeNovo: () => void;
-}) {
-  if (codigo === "sala_invalida") {
-    const { titulo, descricao } = mensagemSalaInvalida(erro instanceof ErroSessao ? erro.detalhes : undefined);
-    return (
-      <div role="alert" className="flex flex-col items-start gap-2 rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm">
-        <p className="font-bold text-[color:var(--vermelho)]">{titulo}</p>
-        <p className="text-tinta">{descricao}</p>
-        <Botao variante="perigo" tamanho="compacto" onClick={aoTentarDeNovo}>
-          Tentar de novo
-        </Botao>
-      </div>
-    );
-  }
-
-  const conhecida = codigo ? MENSAGENS_RECUSA_BOT[codigo] : undefined;
-  const { titulo, descricao, podeTentarDeNovo } = conhecida ?? {
-    titulo: "Não foi possível pedir o bot",
-    descricao: erro instanceof ErroSessao ? erro.message : "Erro inesperado. Tente de novo em instantes.",
-    podeTentarDeNovo: true,
-  };
-  return (
-    <div role="alert" className="flex flex-col items-start gap-2 rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm">
-      <p className="font-bold text-[color:var(--vermelho)]">{titulo}</p>
-      <p className="text-tinta">{descricao}</p>
-      {podeTentarDeNovo && (
-        <Botao variante="perigo" tamanho="compacto" onClick={aoTentarDeNovo}>
-          Tentar de novo
-        </Botao>
-      )}
-    </div>
-  );
-}
-
-/**
- * A CAMADA 1 do §5 — fato, SEM IA. Participantes da sala x decisores que o
- * briefing esperava (`server/copiloto/participantes.ts::compararComDecisores`).
- * Apresentado como FATO com as duas fontes visíveis (exemplo do plano):
- * "O briefing esperava 2 decisores: Terezinha e Cleison. Na sala: Terezinha."
- *
- * `ausentes` != `ambiguos` — tratamento DISTINTO e deliberado:
- *  - `ausentes`: o nome não casou com NENHUM participante — é FATO, a tela
- *    afirma.
- *  - `ambiguos`: o nome casou com MAIS DE UM participante (ou de forma
- *    incerta) — a tela diz "não consegui conferir", NUNCA "ausente".
- *    Casamento por nome normalizado erra (apelido, nome composto,
- *    "Cleison" x "Cleison Roberto") — um falso "decisor ausente" faz a
- *    advogada agir errado com a família na frente dela. `ambiguos` recebe
- *    o mesmo cuidado que uma acusação: nunca afirmado sem certeza.
- *
- * Nome de pessoa real é texto puro (`{variável}` do JSX já escapa — React
- * nunca interpreta HTML de string; nenhum `dangerouslySetInnerHTML` aqui,
- * de propósito — nome de participante vem de fora e é entrada não confiável).
- *
- * Decisão de 15/09 (dono do produto): passou a ser renderizado no mosaico,
- * na célula que os antigos quadros 7/7 liberaram — a informação de
- * decisores mora NUM LUGAR SÓ. `numero`/`icone` são opcionais para não
- * quebrar quem já chamava este componente fora do mosaico numerado (só o
- * call-site do mosaico passa `numero={7}`); sem eles, o `<Quadro>` continua
- * sem número, como antes.
- */
-export function ApresentacaoComparacaoDecisores({
-  comparacao,
-  numero,
-  icone,
-}: {
-  comparacao: ComparacaoDecisoresPresentes;
-  numero?: number;
-  icone?: ReactNode;
-}) {
-  const { decisores_esperados, participantes_presentes, ausentes, ambiguos } = comparacao;
-  if (decisores_esperados.length === 0) return null;
-
-  return (
-    <Quadro rotulo="Decisores esperados x presentes" numero={numero} icone={icone} como="article" className="min-h-[7rem]">
-      <div className="flex flex-col gap-2 text-sm text-tinta">
-        <p>
-          O briefing esperava {decisores_esperados.length === 1 ? "1 decisor" : `${decisores_esperados.length} decisores`}:{" "}
-          {decisores_esperados.join(", ")}. Na sala:{" "}
-          {participantes_presentes.length > 0 ? participantes_presentes.join(", ") : "ninguém identificado ainda"}.
-        </p>
-
-        {ausentes.length > 0 && (
-          <div className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3 py-2">
-            <p className="font-bold text-[color:var(--ambar)]">{ausentes.length === 1 ? "Não entrou na sala:" : "Não entraram na sala:"}</p>
-            <p className="text-tinta">{ausentes.join(", ")}</p>
+        {temFaltaNoBloco && (
+          <div className="flex flex-col gap-2">
+            {falta.campos.length > 0 && (
+              <div>
+                <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Ainda não perguntou:</p>
+                <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
+                  {falta.campos.map((campo) => (
+                    <li key={campo.id} className="text-sm text-tinta">
+                      {campo.rotulo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {falta.observar.length > 0 && (
+              <div>
+                <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
+                <ul className="flex flex-col gap-1">
+                  {falta.observar.map((item, i) => (
+                    <li key={i} className="text-sm text-tinta-suave">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
-        {ambiguos.length > 0 && (
-          <div className="rounded-controle border border-dashed border-linha-forte px-3 py-2">
-            <p className="font-bold text-tinta-fraca">Não foi possível confirmar:</p>
-            <p className="text-tinta-suave">{ambiguos.join(", ")} — o nome na sala não casou com confiança suficiente. Não trate como ausência.</p>
+        {observacaoCritica && achadoObservacao && (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Selo tom={TOM_TIPO[observacaoCritica.tipo]}>{ROTULO_TIPO[observacaoCritica.tipo]}</Selo>
+              <SeloConfianca confianca={observacaoCritica.confianca} />
+            </div>
+            <p className="text-sm text-tinta">{observacaoCritica.texto}</p>
+            <CarimboHoraSeAntigo criadoEm={achadoObservacao.criadoEm} sugestaoId={achadoObservacao.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+          </div>
+        )}
+
+        {achadoDesvio && (
+          <div className="flex flex-col gap-1 border-t border-dashed border-linha pt-2.5">
+            <DesvioSugerido sessaoId={sessaoId} sugestaoId={achadoDesvio.sugestaoId} desvio={achadoDesvio.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+            <CarimboHoraSeAntigo criadoEm={achadoDesvio.criadoEm} sugestaoId={achadoDesvio.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
           </div>
         )}
       </div>
@@ -1498,35 +942,14 @@ export function ApresentacaoComparacaoDecisores({
   );
 }
 
-/**
- * Quadro 7 do mosaico — wrapper que SEMPRE ocupa a célula da grade de apoio,
- * geometria constante (achado do coordenador, 15/09: `ApresentacaoComparacaoDecisores`
- * sozinho retorna `null` sem `decisores_esperados`, e hoje o webhook do
- * Recall descarta 100% dos eventos de participante por um bug de schema —
- * `polling.comparacaoDecisores` é SEMPRE `null` em produção até a correção
- * do backend, Fatia 3, fora deste componente). Sem este wrapper, a célula
- * sumiria da grade toda vez que o polling rodasse, e `2xl:grid-cols-4`
- * ficaria com uma célula a menos exatamente na tela mais comum hoje.
- *
- * `null`/sem decisores esperados: mesmo stub honesto dos quadros 3/5/6
- * ("nada a mostrar ainda", nunca dado inventado) — nunca esconde a célula.
- */
-function QuadroDecisores({ comparacao }: { comparacao: ComparacaoDecisoresPresentes | null }) {
-  const temDado = Boolean(comparacao && comparacao.decisores_esperados.length > 0);
-  if (temDado && comparacao) {
-    return <ApresentacaoComparacaoDecisores comparacao={comparacao} numero={7} icone={<IconeAlerta />} />;
-  }
-  return (
-    <Quadro rotulo="Decisores esperados x presentes" numero={7} icone={<IconeAlerta />} como="article" className="min-h-[7rem]">
-      <p className="text-sm text-tinta-suave">Nenhum decisor esperado registrado ainda nesta sessão.</p>
-    </Quadro>
-  );
-}
+const IconeAlerta = () => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 1.5 15 14.5H1L8 1.5Zm0 4.6v3.6M8 12.1h.01" />
+  </svg>
+);
 
 /** Estado desligado por configuração — texto sóbrio, sem alarme, dizendo o
- * que é e quem liga. Mesmo padrão visual de `ConduzirSessaoApp` em
- * `sem-roteiro` (EstadoVazio com título + descrição, sem ação clicável aqui
- * porque ligar o copiloto é Admin → Parâmetros, fora do alcance desta tela). */
+ * que é e quem liga. */
 function CopilotoDesligado() {
   return (
     <EstadoVazio
@@ -1537,555 +960,7 @@ function CopilotoDesligado() {
   );
 }
 
-/** Correção do Marcio (14/09, mesma regra já aplicada em `PainelBot`): um
- * quadro que só existe para dizer "não há nada aqui" ocupa lugar na grade
- * sem entregar nada — nasce `null`. Bloco sem campo cadastrado E sem ponto
- * de observação no roteiro é comum (nem todo bloco do script tem os dois),
- * não é erro nem estado a explicar. */
-/**
- * Quadro 4 "O QUE ACONTECEU" do mock (mapeamento pedido pelo Marcio, 14/09):
- * é exatamente o antigo "Falta neste bloco" — o que o roteiro/o servidor já
- * sabe que ainda não apareceu na fala, derivado de dado real, zero IA.
- * Reaproveita 100% da regra anterior: quadro nasce `null` quando não há
- * nada, nunca mostra lista vazia fingindo que faltou algo.
- */
-function QuadroOQueAconteceu({ falta }: { falta: { campos: { id: string; rotulo: string }[]; observar: string[] } }) {
-  const nada = falta.campos.length === 0 && falta.observar.length === 0;
-  // Decisão de 15/09 (painel de vigilância, geometria constante): `recolhido`
-  // fazia este quadro pular entre a linha fina (~40px) e o card cheio a cada
-  // vez que o polling trazia ou tirava dado do bloco atual — exatamente o
-  // reflow que quebrava o mosaico. `nada` continua existindo (o `? :` logo
-  // abaixo ainda decide o TEXTO), só a prop que mudava a ALTURA do quadro
-  // saiu. O piso de altura fica por conta de `min-h-[7rem]` no `className`.
-  return (
-    <Quadro rotulo="O que aconteceu" numero={4} icone={<IconeContexto />} como="article" className="min-h-[7rem]">
-      {nada ? (
-        <p className="text-sm text-tinta-suave">Nada específico registrado ainda neste bloco.</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {falta.campos.length > 0 && (
-            <div>
-              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Ainda falta preencher</p>
-              <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
-                {falta.campos.map((campo) => (
-                  <li key={campo.id} className="text-sm text-tinta">
-                    {campo.rotulo}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {falta.observar.length > 0 && (
-            <div>
-              <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
-              <ul className="flex flex-col gap-1">
-                {falta.observar.map((item, i) => (
-                  <li key={i} className="text-sm text-tinta-suave">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-    </Quadro>
-  );
-}
-
-/**
- * Quadro 2 "ALERTA" do mock: junta os sinais de risco que já existem no
- * payload, sem IA e sem inventar um novo — SIMs pendentes (POP 05, mesma
- * contagem/rótulo de sempre, testado em `PainelCopiloto.test.tsx`) e
- * observação de alta confiança do ciclo automático quando `tipo` é
- * `recomendacao`/`hipotese`. Cada fonte aparece só quando tem dado — o
- * quadro nunca fica com um título de alerta e nada embaixo (isso seria
- * alarme falso, o oposto do que "ALERTA" promete).
- *
- * Decisão de 15/09 (o dono do produto, sobre a renderização de
- * `ApresentacaoComparacaoDecisores` no quadro 7): decisores ausentes saiu
- * daqui — a informação de decisores mora NUM LUGAR SÓ, o card completo que
- * ocupa a célula liberada pelos antigos quadros 7/7. Antes desta decisão a
- * frase "Não entrou na sala: X" podia aparecer aqui E no quadro 7 ao mesmo
- * tempo, duplicada. `comparacaoDecisores` deixou de ser prop deste
- * componente (ver call-site na grade de destaque).
- */
-function QuadroAlerta({
-  pendentes,
-  sugestoesCiclo,
-}: {
-  pendentes: { sim: string; rotulo: string }[];
-  sugestoesCiclo: SugestaoCopilotoPolling[];
-}) {
-  const registrados = 4 - pendentes.length;
-
-  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — a
-  // observação crítica (recomendação/hipótese) sumia do quadro Alerta
-  // toda vez que o ciclo trouxesse uma sugestão nova sem ela, mesmo que o
-  // risco continuasse valendo. `ultimoNaoNulo` mantém a última observação
-  // crítica real.
-  const achado = ultimoNaoNulo(sugestoesCiclo, (s) =>
-    s.sugestao?.observacao && (s.sugestao.observacao.tipo === "recomendacao" || s.sugestao.observacao.tipo === "hipotese") ? s.sugestao.observacao : null,
-  );
-  const observacaoCritica = achado?.valor ?? null;
-
-  const semNadaAlem = pendentes.length === 0 && !observacaoCritica;
-
-  return (
-    <Quadro
-      rotulo="Alerta"
-      numero={2}
-      icone={<IconeAlerta />}
-      tom="vermelho"
-      como="article"
-      className="min-h-[9rem]"
-      acao={<Selo tom={pendentes.length === 0 ? "verde" : "neutro"}>{registrados} de 4 SIMs</Selo>}
-    >
-      <div className="flex flex-col gap-2.5">
-        {pendentes.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {pendentes.map((p) => (
-              <li key={p.sim} className="text-sm text-tinta">
-                {p.rotulo}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {observacaoCritica && achado && (
-          <div className="flex flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Selo tom={TOM_TIPO[observacaoCritica.tipo]}>{ROTULO_TIPO[observacaoCritica.tipo]}</Selo>
-              <SeloConfianca confianca={observacaoCritica.confianca} />
-            </div>
-            <p className="text-sm text-tinta">{observacaoCritica.texto}</p>
-            {/* Tarefa 7 aplicada também aqui (não só quadros 5/6): esta
-             * observação sofre exatamente a mesma persistência de
-             * `ultimoNaoNulo` — sem o carimbo, um alerta antigo pareceria
-             * novo. */}
-            <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-          </div>
-        )}
-
-        {semNadaAlem && <p className="text-sm text-tinta-suave">Os 4 SIMs já foram registrados. Nada a apontar agora.</p>}
-      </div>
-    </Quadro>
-  );
-}
-
-/**
- * Quadro 3 "BLOCO ATUAL" do mock. Título vem de `blocosRoteiro` (a mesma
- * lista que `ConduzirSessaoApp.tsx` já carrega do roteiro ativo) — quando
- * ausente, mostra só a posição numérica, nunca um título inventado.
- * "Tempo no bloco" e "confiança" do mock NÃO existem hoje em nenhuma tabela
- * do domínio (`RoteiroBloco`/`EstadoCopiloto`) — ver nota de entrega: campo
- * novo nasce vazio, esta tela não fabrica um relógio nem um score.
- */
-function QuadroBlocoAtual({
-  blocoAtualId,
-  indiceAtual,
-  blocosRoteiro,
-}: {
-  blocoAtualId: string | null;
-  indiceAtual: number;
-  blocosRoteiro?: { id: string; titulo?: string }[];
-}) {
-  const total = blocosRoteiro?.length ?? 0;
-  const titulo = blocosRoteiro?.[indiceAtual]?.titulo;
-
-  // Decisão de 15/09: `recolhido` ligado a `!blocoAtualId` fazia este quadro
-  // mudar de geometria conforme o roteiro carregava — piso fixo por
-  // `min-h-[7rem]`, texto do stub inalterado.
-  return (
-    <Quadro rotulo="Bloco atual" numero={3} icone={<IconeBloco />} como="article" className="min-h-[7rem]">
-      {!blocoAtualId ? (
-        <p className="text-sm text-tinta-suave">Sem roteiro ativo — não há bloco atual para conduzir.</p>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <p className="text-rotulo font-medium uppercase text-tinta-fraca">
-            Parte {String(indiceAtual).padStart(2, "0")}
-            {total > 0 ? ` de ${total - 1}` : ""}
-          </p>
-          <p className="text-sm font-bold text-tinta">{titulo ?? "—"}</p>
-        </div>
-      )}
-    </Quadro>
-  );
-}
-
-/**
- * Quadro 5 "INSIGHT COMERCIAL" do mock: a observação do tipo `inferencia`
- * mais recente do ciclo automático — a leitura da IA sobre padrão comercial
- * (ex.: "está adiando decisão"), sempre com confiança visível ao lado
- * (regra da casa: tipo + confiança, nunca um dos dois sozinho). Distinto do
- * quadro 2 (ALERTA usa `recomendacao`/`hipotese` — risco a agir); aqui é
- * leitura, não convite a ação imediata.
- */
-function QuadroInsightComercial({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
-  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — se o ciclo
-  // automático trouxesse uma sugestão nova SEM observação `inferencia` (ex.:
-  // um `fato` ou nenhuma observação), o insight que já estava na tela
-  // desaparecia sozinho no meio da reunião, mesmo sem nada ter mudado de
-  // verdade. `ultimoNaoNulo` percorre de trás para frente e mantém o último
-  // insight real, ignorando sugestões `visivel:false` (regra de confiança).
-  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => (s.sugestao?.observacao?.tipo === "inferencia" ? s.sugestao.observacao : null));
-
-  // Decisão de 15/09: `recolhido` ligado a `!insight` fazia este quadro subir
-  // e descer de altura a cada tick de polling que trazia ou apagava o
-  // insight mais recente — geometria constante agora, piso por `min-h-[7rem]`.
-  return (
-    <Quadro rotulo="Insight comercial" numero={5} icone={<IconeInsight />} como="article" className="min-h-[7rem]">
-      {!achado ? (
-        <p className="text-sm text-tinta-suave">Nenhum insight comercial ainda nesta sessão.</p>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          <SeloConfianca confianca={achado.valor.confianca} />
-          <p className="text-sm text-tinta">{achado.valor.texto}</p>
-          {achado.valor.evidencia && <Evidencia texto={achado.valor.evidencia} />}
-          <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-        </div>
-      )}
-    </Quadro>
-  );
-}
-
-/**
- * Quadro 6 "PODE PULAR PRA" do mock: mesmo `desvio_sugerido` de sempre
- * (`DesvioSugerido`), agora com quadro/número/tom próprios em vez de morar
- * dentro do card de "Pergunte agora". Continua com botão "Ir para lá" +
- * "Ignorar" e telemetria de desfecho — nada disso muda.
- */
-function QuadroPodePularPra({
-  sessaoId,
-  sugestoesCiclo,
-  blocosRoteiro,
-  irPara,
-}: {
-  sessaoId: string;
-  sugestoesCiclo: SugestaoCopilotoPolling[];
-  blocosRoteiro?: { id: string; titulo?: string }[];
-  irPara?: (indice: number) => void;
-}) {
-  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — uma
-  // sugestão nova sem `desvio_sugerido` apagava o desvio que já estava na
-  // tela. `ultimoNaoNulo` mantém o último desvio real; `achado.sugestaoId`
-  // é o vínculo correto para a telemetria de desfecho de `DesvioSugerido`
-  // (precisa ser da sugestão QUE TEM o desvio, não da mais recente).
-  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
-
-  // Decisão de 15/09: mesma correção de geometria constante — `recolhido`
-  // ligado a `!desvio` saiu, piso por `min-h-[7rem]`.
-  return (
-    <Quadro rotulo="Pode pular pra" numero={6} icone={<IconeHistorico />} como="article" className="min-h-[7rem]">
-      {!achado ? (
-        <p className="text-sm text-tinta-suave">Nenhum desvio sugerido agora — siga o roteiro na ordem.</p>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <DesvioSugerido sessaoId={sessaoId} sugestaoId={achado.sugestaoId} desvio={achado.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-          <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-        </div>
-      )}
-    </Quadro>
-  );
-}
-
-/**
- * Quadros 7 "VOCÊ ACERTOU" / "VOCÊ ERROU" do mock. **Não implementados com
- * dado real** — não existe hoje, em nenhuma tabela do domínio, um registro
- * de acerto/erro da advogada na condução da sessão (`copiloto_sugestoes`
- * guarda `desfecho` de CADA sugestão — aceita/ignorada/expirada — mas isso
- * é telemetria de UMA sugestão específica, não um veredito "ela acertou/
- * errou aqui"). Regra da casa: campo novo nasce vazio e a tela mostra
- * vazio — nunca dado plausível.
- *
- * Decisão de 15/09 (mesmo padrão de `PainelBot`, estado NORMAL sem card
- * permanente): os DOIS quadros eram instanciados com `numero={7}` FIXO,
- * renderizando "7." duas vezes no mosaico — bug de numeração duplicada.
- * Além disso os dois estavam SEMPRE vazios (nenhum chamador tem como
- * preencher `acertou`) e o quadro "Você errou" usava `tom="vermelho"`,
- * um alarme falso permanente numa tela que a advogada olha ao vivo. Em vez
- * de dois cards recolhidos e mudos, o componente passa a retornar `null` —
- * a célula que ele ocupava no mosaico foi para `ApresentacaoComparacaoDecisores`
- * (ver call-site na grade de apoio), que É dado real hoje. Mantido aqui,
- * sem chamador, documentando por que não existe: se um dia o backend
- * produzir esse veredito, este é o lugar certo para religar o quadro.
- */
-// Mantida sem chamador de propósito (ver comentário acima): é onde religar
-// o quadro quando o backend produzir o veredito de acerto/erro.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function QuadroVoceAcertouOuErrou(): null {
-  return null;
-}
-
-/**
- * Rodapé, largura inteira: linha do tempo horizontal dos blocos já
- * percorridos (o inverso de `blocos_nao_percorridos` — o que falta virou o
- * histórico do que já passou, mesma fonte de dado, zero campo novo no
- * backend) + "Próximo passo" (o mesmo `desvio_sugerido` do quadro 6, para
- * não fazer a advogada procurar em dois lugares o botão de navegar).
- */
-function HistoricoCoach({
-  blocosNaoPercorridos,
-  indiceAtual,
-  sugestoesCiclo,
-  blocosRoteiro,
-  irPara,
-}: {
-  blocosNaoPercorridos: { id: string; titulo: string; indice: number }[];
-  indiceAtual: number;
-  sugestoesCiclo: SugestaoCopilotoPolling[];
-  blocosRoteiro?: { id: string; titulo?: string }[];
-  irPara?: (indice: number) => void;
-}) {
-  const indicesNaoPercorridos = new Set(blocosNaoPercorridos.map((b) => b.indice));
-  const percorridos = (blocosRoteiro ?? [])
-    .map((bloco, indice) => ({ id: bloco.id, titulo: bloco.titulo ?? "—", indice }))
-    .filter((bloco) => bloco.indice <= indiceAtual && !indicesNaoPercorridos.has(bloco.indice));
-
-  // Decisão de 15/09: era `sugestoesCiclo[length - 1]` direto — mesmo campo
-  // (`desvio_sugerido`) do quadro 6 (`QuadroPodePularPra`), lido de forma
-  // INDEPENDENTE. Sem `ultimoNaoNulo` aqui também, o quadro 6 podia mostrar
-  // um desvio (persistido) enquanto o rodapé dizia "Seguir o roteiro na
-  // ordem" (recém apagado) — contradição na MESMA tela sobre o MESMO dado.
-  const achado = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
-  const desvio = achado?.valor ?? null;
-  const indiceAlvo = desvio ? (blocosRoteiro?.findIndex((b) => b.id === desvio.bloco_id) ?? -1) : -1;
-
-  return (
-    <Quadro rotulo="Histórico do coach" icone={<IconeHistorico />} como="article">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        {percorridos.length === 0 ? (
-          <p className="text-sm text-tinta-suave">Nenhum bloco percorrido ainda.</p>
-        ) : (
-          // Decisão de 15/09: `flex-wrap` + `overflow-x-auto` no mesmo
-          // elemento se anulavam — com `flex-wrap` nunca sobra conteúdo
-          // horizontal para rolar, então a trilha quebrava em várias linhas
-          // e crescia sem teto conforme a sessão avançava (mais um bloco
-          // percorrido = mais uma linha = reflow do mosaico inteiro).
-          // `flex-nowrap` + `overflow-x-auto` dá UMA linha rolável
-          // horizontalmente, altura fixa; `shrink-0` no `<li>` impede os
-          // itens de espremer uns aos outros para caber; `tabIndex`/
-          // `role="region"`/`aria-label` no `<div>` WRAPPER (nunca na
-          // própria `<ol>` — sobrescreveria o role nativo `list` dela,
-          // deixando os `<li>` órfãos para o axe e violando
-          // `aria-allowed-role`), exigidos por axe/eslint
-          // (`scrollable-region-focusable`/`no-noninteractive-tabindex`,
-          // mesmo padrão dos outros containers roláveis do arquivo).
-          <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Blocos já percorridos" className="flex-1 overflow-x-auto pb-1">
-            <ol className="flex flex-nowrap items-center gap-x-3 gap-y-1.5">
-              {percorridos.map((bloco) => (
-                <li key={bloco.id} className="flex shrink-0 items-center gap-1.5">
-                  <Selo tom={bloco.indice === indiceAtual ? "latao" : "neutro"}>P{String(bloco.indice).padStart(2, "0")}</Selo>
-                  <span className="max-w-[12rem] truncate text-sm text-tinta-suave">{bloco.titulo}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-
-        <div className="flex shrink-0 flex-col items-start gap-1.5 border-t border-dashed border-linha pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
-          <p className="text-rotulo font-medium uppercase text-tinta-fraca">Próximo passo</p>
-          {!desvio || !achado ? (
-            <p className="text-sm text-tinta-suave">Seguir o roteiro na ordem.</p>
-          ) : (
-            <>
-              <p className="text-sm text-tinta">{desvio.motivo}</p>
-              {irPara && indiceAlvo >= 0 && (
-                <Botao variante="secundario" tamanho="compacto" onClick={() => irPara(indiceAlvo)}>
-                  Ir para
-                </Botao>
-              )}
-              <CarimboHoraSeAntigo criadoEm={achado.criadoEm} sugestaoId={achado.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-            </>
-          )}
-        </div>
-      </div>
-    </Quadro>
-  );
-}
-
-function RegistroManual({ sessaoId, sessaoEncerrada }: { sessaoId: string; sessaoEncerrada: boolean }) {
-  const buscarSegmentos = useCallback(() => listarSegmentosCopiloto(sessaoId), [sessaoId]);
-  const { dados: resposta, carregando, erro, recarregar, setDados: setResposta } = useRecurso(buscarSegmentos, [sessaoId]);
-  const segmentos = resposta?.itens ?? null;
-
-  const [texto, setTexto] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
-
-  async function enviar() {
-    const valor = texto.trim();
-    if (!valor) return;
-    setEnviando(true);
-    setErroEnvio(null);
-    try {
-      const segmento = await registrarSegmentoManual(sessaoId, valor);
-      setResposta((atual) => adicionarSegmento(atual, segmento));
-      setTexto("");
-    } catch (e) {
-      if (ehCopilotoDesligado(e)) {
-        setErroEnvio("O copiloto está desligado por configuração — este trecho não foi registrado.");
-      } else {
-        setErroEnvio(e instanceof ErroSessao ? e.message : "Não foi possível registrar o trecho. Tente de novo.");
-      }
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  // A leitura inicial de segmentos também pode bater no 409 (mesma trava,
-  // caminho de leitura) — mesmo tratamento de estado, não de erro.
-  if (!carregando && ehCopilotoDesligado(erro)) {
-    return (
-      <Quadro rotulo="Transcrição ao vivo">
-        <p className="text-sm text-tinta-suave">O copiloto está desligado por configuração — nenhum trecho pode ser registrado agora.</p>
-      </Quadro>
-    );
-  }
-
-  // Achado do Fable (Fatia 5): campo escondido/desabilitado quando a
-  // sessao ja encerrou -- nao e sumico mudo, e ESTADO EXPLICITO (mesma
-  // regra de CopilotoDesligado/GateBloqueado). Sem isto, texto
-  // digitado aqui depois do encerramento nunca entra em transcricoes
-  // (re-encerrar e 409 sessao_ja_encerrada, nao reconsolida) e o
-  // expurgo da Fatia 5 o apaga aos 7 dias -- a advogada acharia que
-  // registrou algo que evapora em silencio. Esta tela e CONVENIENCIA
-  // (impede o ERRO); a trava de verdade e do backend (409 no POST,
-  // backstop no DELETE por criado_em <= encerrado_em).
-  if (sessaoEncerrada) {
-    return (
-      <Quadro rotulo="Transcrição ao vivo">
-        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          Sessão encerrada — transcrição consolidada, sem novos trechos.
-        </p>
-      </Quadro>
-    );
-  }
-
-  // Correção do Marcio (14/09, rodada de layout): "anotação rápida" saiu do
-  // centro da tela (competia com PERGUNTE AGORA) e virou uma faixa
-  // horizontal compacta no rodapé do mosaico — formulário e histórico lado
-  // a lado (a largura toda já está disponível aqui fora da grade 2 colunas),
-  // `rows`/`max-h` menores que antes, mesmo princípio de B73 (rolagem
-  // INTERNA da lista, nunca da página).
-  return (
-    <Quadro rotulo="Transcrição ao vivo" como="article">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <form
-          className="flex flex-col gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void enviar();
-          }}
-        >
-          <Campo rotulo="Trecho da fala" ajuda="Fica registrado como transcrição desta sessão — não é o prontuário jurídico.">
-            <AreaTexto
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              rows={2}
-              placeholder="Ex.: o cliente disse que o filho mais velho não pôde vir hoje…"
-            />
-          </Campo>
-          {erroEnvio && (
-            <p role="alert" className="text-legenda text-[color:var(--vermelho)]">
-              {erroEnvio}
-            </p>
-          )}
-          <Botao type="submit" variante="primario" tamanho="compacto" carregando={enviando} disabled={!texto.trim()} className="self-start">
-            Registrar trecho
-          </Botao>
-        </form>
-
-        <div>
-          {carregando && <EstadoCarregando rotulo="Carregando transcrição…" />}
-          {!carregando && Boolean(erro) && (
-            <p role="alert" className="flex flex-col items-start gap-1.5 text-legenda text-[color:var(--vermelho)]">
-              Não foi possível carregar os trechos já registrados.
-              <Botao variante="perigo" tamanho="compacto" onClick={recarregar}>
-                Tentar de novo
-              </Botao>
-            </p>
-          )}
-          {!carregando && !erro && segmentos && segmentos.length === 0 && (
-            <EstadoVazio compacto titulo="Nenhum trecho registrado ainda" descricao="O que for digitado ou colado acima aparece aqui, em ordem." />
-          )}
-          {!carregando && !erro && segmentos && segmentos.length > 0 && (
-            // "Últimos primeiro" (pedido do Marcio): é ordem de EXIBIÇÃO, não
-            // muda `segmentos` nem o cursor do `useRecurso` — `.slice()` antes
-            // de `.reverse()` porque `reverse()` muda o array in-place.
-            // B73: teto de altura + rolagem INTERNA — a transcrição de uma
-            // sessão de 40min pode ter dezenas de trechos; é o quadro que
-            // rola, nunca a página (pedido do Marcio: "não quero ficar
-            // escrolando pra baixo... pra entender o dinamismo da sessão").
-            // `role="region"`/`tabIndex` no `<div>` WRAPPER, não na `<ul>`
-            // (mesma correção dos outros containers roláveis do arquivo:
-            // colocar direto na lista sobrescreve o role nativo `list` e
-            // deixa os `<li>` órfãos para o axe).
-            <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Trechos já registrados" className="max-h-32 overflow-y-auto pr-1">
-              <ul className="flex flex-col gap-2">
-                {segmentos
-                  .slice()
-                  .reverse()
-                  .map((segmento) => (
-                    <li key={segmento.id} className="rounded-controle border border-linha px-3 py-2 text-sm text-tinta">
-                      <p className="mb-0.5 flex flex-wrap items-baseline gap-x-2 text-legenda text-tinta-fraca">
-                        <span>{formatarDataHora(segmento.criado_em)}</span>
-                        {segmento.falante && <span className="font-medium uppercase">{segmento.falante}</span>}
-                      </p>
-                      <p>{segmento.texto}</p>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    </Quadro>
-  );
-}
-
-/**
- * Persiste o último valor NÃO-NULO de um campo do ciclo automático — achado
- * de 15/09 (painel de vigilância): os quadros 5, 6 e a observação do quadro
- * 2 liam sempre `sugestoesCiclo[sugestoesCiclo.length - 1]`; se a sugestão
- * mais recente não trazia aquele campo (ex.: o ciclo mandou uma observação
- * do tipo `fato`, sem `desvio_sugerido`), o valor que já estava na tela era
- * APAGADO no meio da reunião, mesmo sem nenhuma mudança real — dado que
- * "some sozinho" é tão ruim quanto dado inventado (regra da casa).
- *
- * Percorre de trás para frente e devolve o primeiro onde `extrair` encontra
- * algo — junto com QUAL sugestão originou o valor (`sugestaoId`, usado pela
- * telemetria de desfecho do quadro 6) e QUANDO (`criadoEm`, usado pelo
- * carimbo de hora da tarefa 7, para não fingir que um valor antigo é novo).
- *
- * ⚠️ Só considera `s.visivel === true`: uma sugestão abaixo da confiança
- * mínima é GRAVADA pelo servidor, mas ele decidiu escondê-la
- * (`route.ts:133`) — mostrar o valor dela aqui contrariaria a régua de
- * confiança por um caminho lateral, mesmo que a sugestão mais recente
- * visível seja mais antiga.
- *
- * Função pura, sem dependência de React — testável isoladamente.
- */
-export function ultimoNaoNulo<T>(
-  sugestoes: SugestaoCopilotoPolling[],
-  extrair: (s: SugestaoCopilotoPolling) => T | null | undefined,
-): { valor: T; sugestaoId: string; criadoEm: string } | null {
-  for (let i = sugestoes.length - 1; i >= 0; i -= 1) {
-    const s = sugestoes[i];
-    if (!s.visivel) continue;
-    const valor = extrair(s);
-    if (valor != null) return { valor, sugestaoId: s.sugestao_id, criadoEm: s.criado_em };
-  }
-  return null;
-}
-
-/** Acrescenta o segmento recém-criado à resposta cacheada por `useRecurso`,
- * sem esperar a próxima leitura — mesma técnica de `setDados` usada por
- * `PainelSims`/`PainelBriefingSessao` (estado de servidor, não duplicado). */
-function adicionarSegmento(
-  atual: { itens: SegmentoCopiloto[]; proximo_cursor: number } | undefined,
-  novo: SegmentoCopiloto,
-): { itens: SegmentoCopiloto[]; proximo_cursor: number } {
-  const itens = [...(atual?.itens ?? []), novo];
-  return { itens, proximo_cursor: novo.ordem };
-}
+// `ultimoNaoNulo` vive em `src/components/sessao/copiloto/ultimoNaoNulo.ts`
+// (extraído na Fase 12, Fatia B). Reexportado porque
+// `PainelCopiloto.test.tsx` importa a função pura direto deste arquivo.
+export { ultimoNaoNulo };

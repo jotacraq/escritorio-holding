@@ -1,26 +1,37 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { Ficha360 } from "@/lib/api";
 import type { RoteiroVersao } from "@/types/roteiro";
 import type { EstadoSims } from "@/components/sessao/api";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoCopilotoComPolling } from "@/types/copiloto";
+import { ErroSessao } from "@/components/sessao/api";
 
 /**
- * B72 (pedido do Marcio, 11-14/09: "tela única, todas as informações à
- * mostra, modelo do Juliano" — desfaz C10/a divisão por abas). Este arquivo
- * trava a garantia que substitui o antigo contrato de abas:
+ * Fase 12, Fatia B ("a tela vira leitura", pedido do Marcio 16/09: "a tela
+ * hoje está poluída [...] preciso que essa tela seja intuitiva"). Reescrito
+ * do zero sobre a base de B72 — o antigo contrato ("tudo visível na primeira
+ * dobra", barra de 12 partes, 4 SIMs, briefing, oferta, perfil de consulta)
+ * foi EXATAMENTE o que este pedido reverte. O que este arquivo trava agora:
  *
- *  1. Briefing e Copiloto aparecem os DOIS sem nenhum clique — não existe
- *     mais aba escondendo um atrás do outro.
- *  2. O roteiro (barra de progresso + bloco atual) está sempre visível, na
- *     mesma tela, nunca hospedado dentro de um painel que pode ficar oculto.
- *  3. Não existe mais `role=tablist`/`role=tab` nesta tela — a navegação por
- *     abas foi removida de propósito, não é regressão a "recuperar".
- *
- * `PainelBriefingSessao`/`PainelCopiloto`/`PainelSims`/`PainelOferta`/
- * `BlocoRoteiro`/`BarraProgresso` são dublês: cada um já tem teste próprio
- * (ou, no caso de PainelCopiloto, `PainelCopiloto.test.tsx`) — aqui o que se
- * testa é COMPOSIÇÃO, não o conteúdo de cada painel.
+ *  1. A linha fina do topo (`Agora: <título>`) existe, é a ÚNICA leitura
+ *     permanente do roteiro — sem barra de progresso, sem `<nav>` fixa.
+ *  2. `origem === "indisponivel"`/`bloco_id === null` NUNCA vira "Parte 0"
+ *     — mostra "ainda identificando…" (CLAUDE.md: nada de dado inventado).
+ *  3. 🔴 Trava do plano: quando `bloco_atual_resolvido.bloco_id` vem do
+ *     servidor, a linha fina usa ESSE título — nunca deriva do índice local/
+ *     `sessionStorage` (que não existe mais nesta tela).
+ *  4. `· Falta <nome> na sala` só aparece com decisor ausente; some por
+ *     completo sem ausência.
+ *  5. Erro de sala (`sala_invalida`) do bot aparece na linha fina mesmo com
+ *     `PainelBot` fora da vista.
+ *  6. `[Corrigir parte]` é um `<select>`, alvo `min-h-11` (44px).
+ *  7. `PainelBriefingSessao`/`PainelSims`/`PainelOferta`/`BarraProgresso`/
+ *     `AtalhosTeclado`/`PainelVigilanciaAoVivo`/`PainelPerfilConsulta` NÃO
+ *     aparecem mais nesta tela (saíram para a Ficha 360, fora do escopo
+ *     desta fatia).
+ *  8. `PainelCopiloto` continua montado (dublê — tem teste próprio).
  */
 
 const { estado } = vi.hoisted(() => ({
@@ -28,6 +39,9 @@ const { estado } = vi.hoisted(() => ({
     ficha: null as Ficha360 | null,
     roteiro: null as RoteiroVersao | null,
     sims: null as EstadoSims | null,
+    pollingRespostaPadrao: null as EstadoCopilotoComPolling | null,
+    pollingChamadas: [] as Array<{ bloco: number; desdeSegmento: number; desdeSugestao: number; fixadoEm?: string }>,
+    erroPedirBot: null as Error | null,
   },
 }));
 
@@ -42,27 +56,64 @@ vi.mock("@/components/sessao/api", async () => {
     buscarRoteiroAtivo: () => Promise.resolve(estado.roteiro),
     buscarSims: () => Promise.resolve(estado.sims),
     listarOfertas: () => Promise.resolve({ itens: [], preco: null }),
+    buscarPollingCopiloto: (
+      _sessaoId: string,
+      parametros: { bloco: number; desdeSegmento: number; desdeSugestao: number; fixadoEm?: string },
+    ) => {
+      estado.pollingChamadas.push(parametros);
+      return Promise.resolve(estado.pollingRespostaPadrao ?? RESPOSTA_POLLING_VAZIA(parametros));
+    },
+    pedirBotCopiloto: () => (estado.erroPedirBot ? Promise.reject(estado.erroPedirBot) : Promise.resolve({ sessao_id: "s1", bot_id: "bot-1" })),
   };
 });
 
-vi.mock("@/components/briefing/PainelBriefingSessao", () => ({
-  PainelBriefingSessao: () => <div data-testid="stub-briefing">Briefing Estratégico (stub)</div>,
-}));
-
-// `vi.fn()` (não uma arrow function fixa): permite trocar a implementação
-// por teste (`mockImplementationOnce`) sem um segundo `vi.mock` concorrente
-// para o mesmo módulo — dois `vi.mock` do mesmo caminho no mesmo arquivo são
-// hoisted e o ÚLTIMO silenciosamente vence em TODOS os testes do arquivo,
-// mascarando qual mock está de fato ativo.
-function stubCopilotoPadrao() {
-  return <div data-testid="stub-copiloto">Copiloto (stub)</div>;
-}
-const mockPainelCopiloto = vi.fn(stubCopilotoPadrao);
 vi.mock("@/components/sessao/PainelCopiloto", () => ({
-  PainelCopiloto: () => mockPainelCopiloto(),
+  PainelCopiloto: () => <div data-testid="stub-copiloto">Copiloto (stub)</div>,
 }));
 
 const { ConduzirSessaoApp } = await import("./ConduzirSessaoApp");
+
+const POLLING_PADRAO = { em_foco_ms: 3000, sem_foco_ms: 10000 };
+
+function RESPOSTA_POLLING_VAZIA(parametros: { desdeSegmento: number; desdeSugestao: number }): EstadoCopilotoComPolling {
+  return {
+    sessao_id: "s1",
+    bloco_atual_id: null,
+    falta_no_bloco: { campos: [], observar: [] },
+    sims_pendentes: [],
+    blocos_nao_percorridos: [],
+    estado_copiloto: "aguardando",
+    segmentos_novos: [],
+    proximo_cursor_segmento: parametros.desdeSegmento,
+    sugestoes_novas: [],
+    proximo_cursor_sugestao: parametros.desdeSugestao,
+    ciclo: { avaliado: true, resultado: null, motivo_bloqueio: null },
+    polling: POLLING_PADRAO,
+    bot: null,
+    comparacao_decisores: null,
+    bloco_atual_resolvido: { bloco_id: null, indice: null, titulo: null, origem: "indisponivel", confianca: null, decidido_em: null, fixacao_expira_em: null },
+  };
+}
+
+function respostaComBlocoResolvido(
+  overrides: Partial<BlocoAtualResolvido>,
+  comparacaoDecisores: ComparacaoDecisoresPresentes | null = null,
+): EstadoCopilotoComPolling {
+  return {
+    ...RESPOSTA_POLLING_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }),
+    comparacao_decisores: comparacaoDecisores,
+    bloco_atual_resolvido: {
+      bloco_id: "b1",
+      indice: 1,
+      titulo: "PARTE 01 — Os 4 SIMs",
+      origem: "inferido",
+      confianca: 0.8,
+      decidido_em: "2026-09-16T12:00:00Z",
+      fixacao_expira_em: null,
+      ...overrides,
+    },
+  };
+}
 
 const ROTEIRO: RoteiroVersao = {
   id: "r1",
@@ -99,90 +150,216 @@ async function abrir() {
   return montado;
 }
 
+/**
+ * `usePollingCopiloto` (linha fina do topo) só dispara o 1º ciclo depois de
+ * `em_foco_ms` (3000ms reais, ver `POLLING_MS_EM_FOCO_INICIAL` no hook) —
+ * sem isto, `waitFor` (timeout padrão ~1s) nunca alcançaria a 1ª resposta.
+ * `vi.advanceTimersByTimeAsync` avança o relógio E deixa as microtasks da
+ * promise do `fetch` mockado resolverem entre os avanços — `advanceTimersByTime`
+ * puro (síncrono) não esperaria o `await buscarPollingCopiloto(...)` dentro
+ * do ciclo.
+ */
+async function avancarPrimeiroCicloDoPolling() {
+  await vi.advanceTimersByTimeAsync(3000);
+}
+
 beforeEach(() => {
   estado.ficha = FICHA;
   estado.roteiro = ROTEIRO;
   estado.sims = SIMS_VAZIOS;
-  mockPainelCopiloto.mockClear();
-  mockPainelCopiloto.mockImplementation(stubCopilotoPadrao);
-  try {
-    window.sessionStorage.clear();
-  } catch {
-    /* jsdom sempre tem sessionStorage */
-  }
+  estado.pollingRespostaPadrao = null;
+  estado.pollingChamadas = [];
+  estado.erroPedirBot = null;
+  // `shouldAdvanceTime`: os timers REAIS do ambiente (usados por `waitFor`
+  // internamente) continuam correndo em paralelo — só o relógio que os
+  // efeitos do componente enxergam (`Date.now`, `setTimeout` do próprio
+  // `usePollingCopiloto`) é controlado por `vi.advanceTimersByTimeAsync`.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
-describe("ConduzirSessaoApp — painel único, sem abas (B72)", () => {
-  it("briefing e copiloto aparecem os dois, sem nenhum clique", async () => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (Fase 12, Fatia B)", () => {
+  it("copiloto continua montado, sem nenhum clique", async () => {
     const { container } = await abrir();
-    expect(container.querySelector('[data-testid="stub-briefing"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
   });
 
-  it("não existe mais navegação por abas nesta tela", async () => {
-    const { queryAllByRole } = await abrir();
-    expect(queryAllByRole("tablist")).toHaveLength(0);
-    expect(queryAllByRole("tab")).toHaveLength(0);
+  it("sem bloco resolvido ainda: mostra 'ainda identificando…', nunca 'Parte 0' (nada de dado inventado)", async () => {
+    const { container } = await abrir();
+    expect(container.textContent).toContain("Agora:");
+    expect(container.textContent).toContain("ainda identificando…");
+    expect(container.textContent).not.toContain("Parte 0");
   });
 
-  it("o roteiro (barra de progresso) está sempre visível, na mesma tela que o copiloto e o briefing", async () => {
+  it("bloco resolvido pelo SERVIDOR: usa o título dele, nunca deriva do índice local", async () => {
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({});
     const { container } = await abrir();
-    const barraProgresso = container.querySelector('nav[aria-label="Partes da Sessão de Viabilidade"]');
-    expect(barraProgresso).toBeTruthy();
-    // offsetParent (não `hidden`/display de um ancestral só): prova que o
-    // nó está de fato renderizado na árvore visível, não escondido dentro
-    // de um container fechado (mesma armadilha do teste de UI: filho
-    // "visível" dentro de pai oculto dá verde falso).
-    expect(container.querySelector('[data-testid="stub-briefing"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
+    await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("PARTE 01 — Os 4 SIMs");
+  });
+
+  it("sessionStorage não existe mais nesta tela: reabrir não lê nem grava a chave antiga", async () => {
+    const chave = "sic-hf:sessao:s1:parte-atual";
+    window.sessionStorage.setItem(chave, "1");
+    await abrir();
+    // A tela não consulta mais esta chave — o valor gravado antes não muda
+    // nada (prova indireta: o `bloco_atual_resolvido` do payload é quem
+    // decide, e aqui ele vem `indisponivel` mesmo com a chave antiga em "1").
+    const { container } = await abrir();
+    expect(container.textContent).toContain("ainda identificando…");
+  });
+
+  it("decisor ausente: '· Falta <nome> na sala' aparece; sem ausência, some por completo", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha", "Cleison"],
+      participantes_presentes: ["Terezinha"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: ["Cleison"],
+      ambiguos: [],
+    };
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({}, comparacao);
+    const { container } = await abrir();
+    await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("Cleison não está na sala");
+  });
+
+  it("todos presentes: nenhuma menção a ausência na linha fina", async () => {
+    const comparacao: ComparacaoDecisoresPresentes = {
+      decisores_esperados: ["Terezinha"],
+      participantes_presentes: ["Terezinha"],
+      presentes: [{ nome_briefing: "Terezinha", nome_participante: "Terezinha" }],
+      ausentes: [],
+      ambiguos: [],
+    };
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({}, comparacao);
+    const { container } = await abrir();
+    await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("PARTE 01");
+    expect(container.textContent).not.toContain("não está na sala");
+    expect(container.textContent).not.toContain("não estão na sala");
+  });
+
+  it("'Corrigir parte' é um <select>, nunca um botão, com alvo de toque de 44px", async () => {
+    const { getByLabelText } = await abrir();
+    const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(select.className).toContain("min-h-11");
+  });
+
+  it("escolher 'Corrigir parte' dispara a fixação manual com bloco+fixado_em juntos (nunca bloco sozinho)", async () => {
+    const { getByLabelText } = await abrir();
+    const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "1" } });
+    await waitFor(() => {
+      const chamadaComFixacao = estado.pollingChamadas.find((c) => c.fixadoEm);
+      expect(chamadaComFixacao).toBeTruthy();
+      expect(chamadaComFixacao?.bloco).toBe(1);
+    });
+  });
+
+  /**
+   * Defeito 1 do Fable (16/09) — "dois ponteiros na mesma linha, discordando":
+   * o `<select>` refletia `indiceAtual` da TELA, nunca sincronizado com
+   * `bloco_atual_resolvido.indice` do servidor. Prova: quando o servidor
+   * resolve o bloco 1, o `<select>` mostra a opção 1 selecionada — nunca a 0
+   * "de fábrica" enquanto a linha "Agora:" já diz outra coisa.
+   */
+  it("o <select> segue o índice que o SERVIDOR resolveu — nunca fica preso no índice antigo da tela", async () => {
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({});
+    const { getByLabelText, container } = await abrir();
+    await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("PARTE 01 — Os 4 SIMs");
+    await waitFor(() => {
+      const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
+      expect(select.value).toBe("1");
+    });
+  });
+
+  /**
+   * Defeito 1(b) do Fable — "é impossível corrigir para a parte 0 numa tela
+   * recém-aberta": o `<select>` nascia com `value={0}` e escolher a opção já
+   * selecionada não disparava `onChange` (o DOM só dispara `change` quando o
+   * VALOR muda). Prova: a tela abre no índice 0 (nenhum bloco resolvido
+   * ainda) e escolher explicitamente "00 — Abertura" tem que fixar mesmo
+   * assim.
+   */
+  it("escolher a parte 0 numa tela recém-aberta funciona (antes o índice já preso em 0 matava o onChange)", async () => {
+    const { getByLabelText } = await abrir();
+    const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
+    expect(select.value).toBe("0");
+    fireEvent.change(select, { target: { value: "0" } });
+    await waitFor(() => {
+      const chamadaComFixacao = estado.pollingChamadas.find((c) => c.fixadoEm);
+      expect(chamadaComFixacao).toBeTruthy();
+      expect(chamadaComFixacao?.bloco).toBe(0);
+    });
+  });
+
+  /**
+   * Defeito 2 do Fable — "'Fixado até' mente depois que expira": o estado
+   * local (`fixadoAte`) era gravado no clique e nunca zerado; passados os
+   * 300s o servidor volta a `origem !== "fixado_manualmente"`, mas a frase
+   * continuava mostrando um horário do PASSADO, para sempre. Prova: com
+   * fixação ativa a frase aparece; assim que o próximo ciclo do servidor
+   * traz `origem: "inferido"` (fixação expirada), a frase some por completo.
+   */
+  it("'Fixado por você até' aparece com a fixação ativa e some quando o servidor expira a fixação", async () => {
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({
+      origem: "fixado_manualmente",
+      fixacao_expira_em: "2026-09-16T12:05:00Z",
+    });
+    const { container } = await abrir();
+    await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("Fixado por você até");
+
+    estado.pollingRespostaPadrao = respostaComBlocoResolvido({ origem: "inferido", fixacao_expira_em: null });
+    await vi.advanceTimersByTimeAsync(3000);
+    await waitFor(() => expect(container.textContent).not.toContain("Fixado por você até"));
+  });
+
+  /**
+   * Defeito 3 do Fable — "polling dobrou, e um dos dois nunca para":
+   * `LinhaFinaRoteiro` instanciava a própria cópia de `usePollingCopiloto`
+   * (`sessaoEncerrada` fixo em `false`) e `PainelCopiloto` instanciava outra
+   * — 2 requisições a cada tick, e a da linha fina nunca parava depois de
+   * "Encerrar copiloto". Prova: um único ciclo do relógio produz UMA única
+   * chamada de polling (não duas), porque as duas partes da tela agora leem
+   * o MESMO `usePollingCopiloto` elevado a `ConduzirSessaoApp`.
+   */
+  it("um único poller: um ciclo do relógio dispara UMA chamada de polling, não duas", async () => {
+    await abrir();
+    const chamadasAntes = estado.pollingChamadas.length;
+    await avancarPrimeiroCicloDoPolling();
+    expect(estado.pollingChamadas.length - chamadasAntes).toBe(1);
+  });
+
+  it("erro de sala (meeting_not_found) aparece na linha fina mesmo com PainelBot fora da vista", async () => {
+    estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
+      codigo: "fatal",
+      sub_codigo: "meeting_not_found",
+    });
+    const { getByRole, container } = await abrir();
+    // `PainelBot` está oculto (`display:none`), mas o botão continua no DOM
+    // — é assim que o efeito roda sem ocupar pixel.
+    const botao = getByRole("button", { name: /pedir bot na sala/i });
+    fireEvent.click(botao);
+    await waitFor(() => expect(container.textContent).toContain("Não entrou na sala"));
+  });
+
+  it("componentes removidos desta tela (Fase 12, Fatia B) não aparecem mais: sem barra de progresso, sem 4 SIMs, sem briefing, sem nav fixa", async () => {
+    const { container, queryByRole } = await abrir();
+    expect(container.querySelector('nav[aria-label="Navegar entre partes"]')).toBeNull();
+    expect(container.querySelector('nav[aria-label="Partes da Sessão de Viabilidade"]')).toBeNull();
+    expect(container.textContent).not.toContain("Anotação da parte atual");
+    expect(container.textContent).not.toContain("Briefing Estratégico");
+    expect(queryByRole("progressbar")).toBeNull();
   });
 
   it("não tem violação de acessibilidade", async () => {
     const { container } = await abrir();
     await semViolacoes(container);
-  });
-});
-
-/**
- * Kill-switch (`copiloto_sessao.ativo=false`) — achado do Fable (herdado de
- * C10): o copiloto nunca pode sumir só porque o recurso está desligado por
- * configuração, senão a Dra. Elaine não distingue "não implementado" de
- * "desligado agora". O comportamento INTERNO do estado desligado
- * (EstadoVazio, sem "tentar de novo") é coberto em `PainelCopiloto.test.tsx`;
- * aqui o que se prova é que a COMPOSIÇÃO — `PainelCopiloto` sendo montado
- * na tela — não muda com o estado interno do copiloto.
- */
-describe("ConduzirSessaoApp — o copiloto continua montado com o copiloto desligado", () => {
-  it("o painel é montado, mesmo representando o estado desligado", async () => {
-    mockPainelCopiloto.mockImplementation(() => (
-      <div data-testid="stub-copiloto">Copiloto desligado (stub do estado real)</div>
-    ));
-
-    const { container } = await abrir();
-
-    expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
-    expect(container.textContent).toContain("Copiloto desligado");
-  });
-});
-
-/**
- * Faixa horizontal abaixo de `xl` (pedido do dono, 15/09, 2ª rodada): a
- * grade da primeira dobra usa UMA `<div>` `grid` com `grid-template-areas`
- * nomeadas — o `PainelSims` muda de área (faixa cheia abaixo de `xl`,
- * coluna lateral em `xl`+) só por CSS, nunca por uma segunda instância
- * escondida. Este teste é a guarda estrutural contra o risco citado no
- * pedido: "corrigi num lugar e esqueci o outro" se alguém duplicasse o
- * componente para resolver os dois breakpoints.
- */
-describe("ConduzirSessaoApp — PainelSims não duplica no DOM entre os dois layouts (15/09, 2ª rodada)", () => {
-  it('o quadro "SIMs" aparece exatamente uma vez, não duas instâncias (faixa + coluna)', async () => {
-    const { container } = await abrir();
-    // `PainelSims` é real aqui (só `PainelCopiloto` é mockado) — o rótulo
-    // "SIMs" do `Quadro` que o envolve só existe se o componente for
-    // montado. `heading`/rótulo com esse texto exato identifica o Quadro.
-    const ocorrencias = Array.from(container.querySelectorAll("*")).filter(
-      (el) => el.children.length === 0 && el.textContent?.trim() === "SIMs",
-    );
-    expect(ocorrencias).toHaveLength(1);
   });
 });

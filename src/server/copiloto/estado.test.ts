@@ -11,25 +11,60 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * ciclo").
  */
 
+/**
+ * `not(coluna, "is", null)` aqui PRECISA filtrar de verdade — não um
+ * passthrough. Achado do Fable (defeito 1, agravante): um mock que ignora o
+ * predicado deu verde para `estado.ts` mesmo na rodada em que o filtro real
+ * (`conteudo->bloco_inferido`, sem `->>`) deixava passar o JSON `null`
+ * explícito que `validar.ts` grava para o "não sei" honesto da IA. Só
+ * suporta o único caminho de coluna usado nesta base
+ * (`conteudo->bloco_inferido->>bloco_id`), lendo o valor exatamente como o
+ * Postgres leria: `->` entra no objeto (jsonb `null` inclusive), `->>` sai
+ * como texto (jsonb `null` vira SQL `NULL`).
+ */
 function consultaEncadeavel(resultado: unknown) {
   const builder: Record<string, unknown> = {};
+  let linhaFiltrada = resultado;
   const encadeavel = () => builder;
-  const terminal = async () => resultado;
+  const not = (coluna: string, operador: string, valor: unknown) => {
+    if (coluna === "conteudo->bloco_inferido->>bloco_id" && operador === "is" && valor === null) {
+      const linha = (linhaFiltrada as { data?: { conteudo?: { bloco_inferido?: { bloco_id?: string | null } | null } } } | null)?.data;
+      const blocoId = linha?.conteudo?.bloco_inferido?.bloco_id ?? null;
+      if (blocoId === null) {
+        linhaFiltrada = { data: null, error: (linhaFiltrada as { error?: unknown } | null)?.error ?? null };
+      }
+      return builder;
+    }
+    throw new Error(`predicado 'not' não suportado pelo mock: ${coluna} ${operador} ${String(valor)}`);
+  };
+  const terminal = async () => linhaFiltrada;
   Object.assign(builder, {
     select: encadeavel,
     eq: encadeavel,
-    not: encadeavel,
+    not,
     order: encadeavel,
     limit: encadeavel,
     maybeSingle: terminal,
-    then: (ok: (v: unknown) => unknown) => Promise.resolve(resultado).then(ok),
+    then: (ok: (v: unknown) => unknown) => Promise.resolve(linhaFiltrada).then(ok),
   });
   return builder;
 }
 
 const ROTEIRO_VAZIO = { definicao: { blocos: [] } };
 
-function montarSupabase(sessaoData: unknown, selectSpy?: ReturnType<typeof vi.fn>) {
+/**
+ * `dados.copilotoSugestoes` — Fase 12, Fatia 1 (defeito 1 do Fable): permite
+ * simular a leitura de `resolverBlocoAtual` sobre `copiloto_sugestoes`, para
+ * provar que o filtro exige a MARCA `conteudo->bloco_inferido` (não basta
+ * `bloco_id` não nulo — ver comentário de `estado.ts::resolverBlocoAtual`).
+ * `undefined` preserva o comportamento antigo (mock devolve `null`, "sem
+ * inferência").
+ */
+function montarSupabase(
+  sessaoData: unknown,
+  selectSpy?: ReturnType<typeof vi.fn>,
+  dados?: { copilotoSugestoes?: unknown; inferenciaAtiva?: boolean },
+) {
   const from = vi.fn((tabela: string) => {
     if (tabela === "sessoes_viabilidade") {
       if (selectSpy) {
@@ -57,10 +92,15 @@ function montarSupabase(sessaoData: unknown, selectSpy?: ReturnType<typeof vi.fn
     // defeito-raiz. Mock devolve "sem inferência" por padrão — os testes
     // deste arquivo não dependem de `bloco_atual_resolvido`.
     if (tabela === "configuracoes") {
+      // `inferenciaAtiva` só é lida por `lerConfiguracaoBool` — este mock
+      // devolve `data: null` sempre (o default do leitor, `true`, é quem
+      // decide); passar `inferenciaAtiva: false` aqui não muda o mock (fora
+      // do escopo do teste do defeito 1), mantido só para leitura clara do
+      // parâmetro caso um teste futuro precise.
       return consultaEncadeavel({ data: null, error: null });
     }
     if (tabela === "copiloto_sugestoes") {
-      return consultaEncadeavel({ data: null, error: null });
+      return consultaEncadeavel({ data: dados?.copilotoSugestoes ?? null, error: null });
     }
     throw new Error(`tabela não mockada: ${tabela}`);
   });
@@ -323,5 +363,138 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
       "copiloto_sugestoes",
       "consentimentos",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fase 12, Fatia 1 — DEFEITO 1 do `fable-orchestrator` (reprovação):
+// "o botão 'Me ajuda agora' rebobina o ponteiro e carimba como inferência da
+// IA". `resolverBlocoAtual` filtrava por `bloco_id is not null`, que casa
+// com QUALQUER linha gravada por QUALQUER caminho — inclusive as que vêm de
+// `desvio_sugerido`/do índice de contexto (nunca de uma inferência real).
+// Estes testes provam o filtro NOVO: exige `conteudo->bloco_inferido` não
+// nulo, a MARCA que só existe quando a IA de fato inferiu.
+// ---------------------------------------------------------------------------
+
+function roteiroComNBlocos(n: number) {
+  return {
+    definicao: {
+      blocos: Array.from({ length: n }, (_, i) => ({ id: `bloco-${i}`, titulo: `Parte ${i + 1}` })),
+    },
+  };
+}
+
+describe("montarEstadoCopiloto — bloco_atual_resolvido (Fase 12, Fatia 1, defeito 1 do Fable)", () => {
+  it("🔴 TESTE DE ACEITE: sessão com inferência gravada no bloco 8 mantém o índice 8 mesmo sem fixação manual (o chamador não manda mais `bloco` cru)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
+      undefined,
+      {
+        copilotoSugestoes: {
+          bloco_id: "bloco-8",
+          conteudo: { bloco_inferido: { bloco_id: "bloco-8", confianca: 0.82, evidencia: "citação real" } },
+          criado_em: "2026-09-16T12:00:00.000Z",
+        },
+      },
+    );
+    // `indiceBlocoAtual=null, fixacaoManual=null` — mesmo caminho que
+    // `POST .../sugestao` agora usa (não recebe mais `bloco` do corpo).
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido).toEqual({
+      bloco_id: "bloco-8",
+      indice: 8,
+      titulo: "Parte 9",
+      origem: "inferido",
+      confianca: 0.82,
+      decidido_em: "2026-09-16T12:00:00.000Z",
+      fixacao_expira_em: null,
+    });
+  });
+
+  it("🔴 AGRAVANTE 1: linha histórica com bloco_id gravado mas SEM bloco_inferido no conteudo (fallback antigo, ou sessão anterior à 0106) NÃO é promovida a 'inferido'", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
+      undefined,
+      {
+        // Linha histórica de verdade: chave `bloco_inferido` AUSENTE do
+        // jsonb (nunca escrita — sessão anterior à 0106, ou fallback antigo
+        // que só gravava `bloco_id` solto). O mock de `not(...)` (acima)
+        // aplica o MESMO predicado do Postgres (`->>bloco_id is not null`)
+        // sobre este objeto — chave ausente também dá `undefined ?? null`,
+        // então esta linha é excluída pelo filtro tal como a real seria.
+        copilotoSugestoes: { conteudo: {}, criado_em: "2026-09-16T12:00:00.000Z" },
+      },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido).toEqual({
+      bloco_id: null,
+      indice: null,
+      titulo: null,
+      origem: "indisponivel",
+      confianca: null,
+      decidido_em: null,
+      fixacao_expira_em: null,
+    });
+  });
+
+  it("🔴 DEFEITO 1 (Fable, 2ª rodada): linha com `bloco_inferido: null` EXPLÍCITO — o 'não sei' honesto que `validar.ts` grava quando a IA não infere — também NÃO é promovida a 'inferido'; a última inferência REAL anterior continua valendo (aqui simulada como ausência de linha após o filtro, mesmo efeito de `indisponivel` quando não há nenhuma outra linha no histórico)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
+      undefined,
+      {
+        // `'{"bloco_inferido": null}'::jsonb -> 'bloco_inferido' is not null`
+        // → TRUE no Postgres (é o defeito medido em produção): um filtro que
+        // usasse `->` (sem `>`) deixaria esta linha passar. Com `->>`, jsonb
+        // `null` vira SQL NULL de verdade e a linha é excluída — igual à
+        // linha sem a chave.
+        copilotoSugestoes: { conteudo: { bloco_inferido: null }, criado_em: "2026-09-16T12:10:00.000Z" },
+      },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido).toEqual({
+      bloco_id: null,
+      indice: null,
+      titulo: null,
+      origem: "indisponivel",
+      confianca: null,
+      decidido_em: null,
+      fixacao_expira_em: null,
+    });
+  });
+
+  it("🔴 AGRAVANTE 2: a confiança exposta é a de `bloco_inferido.confianca`, NUNCA a coluna `confianca` (que é confianca_geral da sugestão inteira)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }),
+      undefined,
+      {
+        copilotoSugestoes: {
+          // `confianca_geral` da sugestão (coluna) DIFERENTE da confiança da
+          // inferência de bloco (dentro do conteudo) — valores propositalmente
+          // distintos para o teste denunciar se algum código voltar a ler a
+          // coluna errada.
+          confianca: 0.4,
+          conteudo: { bloco_inferido: { bloco_id: "bloco-1", confianca: 0.91, evidencia: "citação real" } },
+          criado_em: "2026-09-16T12:05:00.000Z",
+        },
+      },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.confianca).toBe(0.91);
+  });
+
+  it("bloco_id inferido que não casa mais com o roteiro ativo (roteiro trocou no meio da sessão) cai para indisponível, nunca um título inventado", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(2) }),
+      undefined,
+      {
+        copilotoSugestoes: {
+          conteudo: { bloco_inferido: { bloco_id: "bloco-inexistente", confianca: 0.7, evidencia: "x" } },
+          criado_em: "2026-09-16T12:00:00.000Z",
+        },
+      },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.origem).toBe("indisponivel");
+    expect(resultado.bloco_atual_resolvido?.titulo).toBeNull();
   });
 });

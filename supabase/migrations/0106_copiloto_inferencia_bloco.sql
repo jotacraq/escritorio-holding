@@ -30,26 +30,21 @@
 --       código — grava-se aqui a mesma chave para tornar o valor visível e
 --       editável sem deploy, `on conflict do nothing` preserva o default se
 --       já existir).
---   (b) `update prompts_versoes` na v1 do prompt `copiloto_sessao` (0094) —
---       ACRÉSCIMO da regra de `bloco_inferido` ao corpo do prompt existente.
---       🔴 EXCEÇÃO DELIBERADA à regra da casa "prompt é versionado, nunca
---       editado" (CLAUDE.md): esta v1 NUNCA foi ativada em produção
---       (`ativo=false` desde que nasceu, nenhuma sonda rodada, nenhuma
---       execução de IA gerada com ela — conferido: 0 outras linhas de
---       `prompts_versoes` para a chave `copiloto_sessao` além desta).
---       Editar uma versão que nunca produziu histórico não corrompe
---       auditoria nenhuma; CRIAR uma v2 aqui obrigaria a próxima ativação a
---       escolher entre v1 (sem a regra) e v2 (com ela) sem necessidade — o
---       pedido explícito do arquiteto foi "update da v1, não v2". Da PRÓXIMA
---       vez que este prompt precisar mudar DEPOIS de ativado, a regra volta
---       a valer sem exceção: nova versão, nunca update.
---
--- REGRA NOVA NO PROMPT (texto, não schema — mesmo padrão de todo o resto do
--- corpo do prompt 0094, que já vive fora do JSON Schema estrito):
---   "`bloco_inferido.bloco_id` só pode ser id presente na lista de blocos
---   que você recebeu; se a fala dos últimos 90 segundos não permitir
---   identificar com segurança em que bloco a conversa está, devolva `null`
---   — nunca o bloco anterior por inércia."
+--   (b) 🔴 CORRIGIDO (achado do coordenador, medido em produção antes de
+--       publicar): esta migration NÃO toca mais `prompts_versoes` — o
+--       `update ... where chave='copiloto_sessao' and versao=1` que existia
+--       aqui editava a versão ERRADA. Medido no banco real
+--       (`fcfsnqqaphtamhrpuyoh`): `copiloto_sessao` v1 está com `ativo=false`
+--       (a premissa "nunca foi ativada" está certa para a v1), mas quem está
+--       ATIVA hoje é a **v2** (`ativo=true`, 4612 chars) — uma versão que
+--       esta migration nem sabia que existia. Editar a v1 não teria efeito
+--       nenhum em produção: a IA que roda de verdade (a v2) nunca receberia
+--       o pedido de inferir o bloco, `bloco_inferido` voltaria sempre
+--       ausente, e a tela ficaria em "ainda identificando…" a sessão
+--       inteira — inerte, sem erro, sem alarme, só descoberto em produção.
+--       A regra de `bloco_inferido` agora entra pela 0107, que cria uma
+--       v3 DERIVADA do corpo da v2 (a que está ativa), nunca por UPDATE —
+--       "prompt é versionado" (CLAUDE.md) volta a valer sem exceção.
 --
 -- SEM ENUM NOVO no schema de saída (`schema.ts::BlocoInferidoSchema`, 3
 -- campos de string/número) — o risco de estourar o teto medido da gramática
@@ -69,19 +64,12 @@
 --     `Conflict Arbiter Indexes: configuracoes_pkey` — mesmo plano colado no
 --     cabeçalho da 0103/0105 para o MESMO padrão de INSERT nesta MESMA
 --     tabela.
---   - `update prompts_versoes ... where chave=$1 and versao=$2`: Index Scan
---     sobre a unique `(chave, versao)` (0009) — é a mesma chave que TODO
---     `insert ... on conflict (chave, versao) do nothing` já usa nesta
---     tabela (0042, 0059, 0066, 0090, 0094); um UPDATE pelo mesmo par usa o
---     MESMO índice pelo MESMO motivo (igualdade nas duas colunas da unique).
+--   A tabela `prompts_versoes` não é mais tocada por ESTA migration (ver
+--   0107) — nada a medir aqui além do INSERT em `configuracoes` acima.
 --   A APLICAÇÃO desta migration em produção fica PENDENTE da medição real —
 --   ver o relatório desta entrega.
 --
--- ROLLBACK (ordem inversa; o UPDATE do prompt é reversível só se o texto
--- anterior for preservado por quem aplicar — colado abaixo por segurança):
---   -- corpo_sistema ANTERIOR ao UPDATE: ver supabase/migrations/0094_prompt_copiloto.sql
---   -- (o texto completo da v1 original está naquele arquivo, intacto — esta
---   -- migration não o modifica, só ACRESCENTA a seção nova ao final).
+-- ROLLBACK:
 --   delete from configuracoes where chave = 'copiloto_sessao.inferencia_bloco_ativa';
 --   delete from configuracoes where chave = 'copiloto_sessao.janela_fixacao_manual_segundos';
 -- ===========================================================================
@@ -113,33 +101,5 @@ insert into configuracoes (chave, valor, descricao) values
   'interruptor do copiloto.')
 on conflict (chave) do nothing;
 
-
--- ===========================================================================
--- (b) Atualiza o CORPO do prompt v1 `copiloto_sessao` (0094) — EXCEÇÃO
--- deliberada e justificada no cabeçalho acima (v1 nunca ativada, sem
--- histórico de execução). Acrescenta a saída `bloco_inferido` e a regra
--- dura de "nunca o bloco anterior por inércia". `ativo` continua FALSE
--- (nenhuma linha desta migration muda essa coluna) — a ativação segue
--- dependendo da sonda de schema + bancada de latência, como sempre.
--- ===========================================================================
-update prompts_versoes
-   set corpo_sistema = corpo_sistema || $incremento$
-
-FASE 12 — INFERÊNCIA DO BLOCO ATUAL (acréscimo ao contrato de saída acima)
-
-Além dos 5 campos originais, sua saída agora tem um 6º campo, `bloco_inferido`, que responde a
-uma pergunta DIFERENTE de `desvio_sugerido`: não "para onde a sessão deveria ir", mas "em que
-bloco do roteiro a conversa está AGORA, a julgar pela fala dos últimos ~90 segundos".
-
-- `bloco_inferido`: objeto com `bloco_id` (de um bloco que existe LITERALMENTE na lista de
-  blocos do roteiro ativo que você recebeu), `confianca` (0 a 1) e `evidencia` (uma citação
-  literal da janela de transcrição que sustenta a inferência, até 200 caracteres) — ou nulo.
-
-REGRA DURA, sem exceção: `bloco_inferido.bloco_id` só pode ser um id presente na lista de
-blocos que você recebeu. Se a fala dos últimos 90 segundos não permitir identificar com
-segurança em que bloco a conversa está, devolva `bloco_inferido: null` — NUNCA o bloco
-anterior por inércia, e nunca um palpite sem uma citação literal que o sustente. Um
-`bloco_inferido` errado move o ponteiro que a advogada vê na tela; "não sei" aqui é sempre
-preferível a um palpite fraco disfarçado de fato.
-$incremento$
- where chave = 'copiloto_sessao' and versao = 1;
+-- O prompt `copiloto_sessao` (v3, DERIVADA da v2 ativa) é tratado à parte,
+-- na 0107 — ver o cabeçalho desta migration, item (b).

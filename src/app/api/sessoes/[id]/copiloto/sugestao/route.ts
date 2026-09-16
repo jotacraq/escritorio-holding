@@ -9,6 +9,7 @@ import { exigirVePatrimonio } from "@/server/auth";
 import { ErroApi, erroConflito, erroNaoEncontrado, respostaErro } from "@/server/erros";
 import { copilotoEstaAtivo } from "@/server/copiloto/config";
 import { montarContextoCopiloto } from "@/server/copiloto/contexto";
+import { montarEstadoCopiloto } from "@/server/copiloto/estado";
 import { conferirOrcamentoCopiloto } from "@/server/copiloto/orcamento";
 import { conferirGateCopiloto } from "@/server/copiloto/gate";
 import { executarIaCopiloto } from "@/server/copiloto/executar-ia";
@@ -18,11 +19,20 @@ import type { RespostaSugestaoCopiloto } from "@/types/copiloto";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
-// `bloco` é opcional pelo mesmo motivo de `GET /api/sessoes/[id]/copiloto`
-// (Fatia 1): o servidor não sabe "onde a advogada está agora", só a tela sabe.
-const CorpoSchema = z.object({
-  bloco: z.coerce.number().int().min(0).optional().default(0),
-});
+// 🔴 CORRIGIDO (achado do Fable, Fase 12 Fatia 1 — defeito 1): `bloco` NÃO É
+// MAIS aceito do corpo da requisição. Antes, um `?bloco=`/corpo vindo da tela
+// (`indiceAtual` de `PainelCopiloto.tsx`, sempre 0 numa tela recém-aberta)
+// era usado para montar o contexto E gravado como se fosse "onde a IA
+// entende que a conversa está" — rebobinando o ponteiro para o bloco 0 a
+// cada clique em "Me ajuda agora", mesmo com a inferência já tendo avançado
+// para o bloco 8. O servidor agora usa SEMPRE o bloco já resolvido por
+// `montarEstadoCopiloto`/`resolverBlocoAtual` (mesma fonte que o GET de
+// polling usa para o ciclo automático) — nenhum campo de bloco entra mais
+// no corpo aceito. `.passthrough().transform(() => ({}))` aceita e descarta
+// silenciosamente qualquer campo (`bloco` incluso) que um caller antigo ainda
+// mande — nunca 400 por retrocompatibilidade, e nunca esse valor chega a ser
+// lido em lugar nenhum do handler.
+const CorpoSchema = z.object({}).passthrough().transform(() => ({}));
 
 const CHAVE_CONFIANCA_MINIMA = "copiloto_sessao.confianca_minima";
 const PADRAO_CONFIANCA_MINIMA = 0.6;
@@ -66,6 +76,19 @@ const MENSAGEM_GATE: Record<string, string> = {
  * persistido, não onde ele sai do escritório — são duas coisas diferentes, e
  * confundi-las foi o erro original deste desenho.
  *
+ * 🔴 CORRIGIDO 2ª VEZ (achado do Fable, Fase 12 Fatia 1 — defeito 1): o
+ * corpo da requisição NÃO carrega mais `bloco`. Até esta correção, o corpo
+ * mandado pela tela (`indiceAtual` de `PainelCopiloto.tsx`, sempre 0 numa
+ * tela recém-aberta) era usado tanto para montar o contexto ENVIADO à IA
+ * quanto — via fallback — para o que era GRAVADO como bloco em
+ * `copiloto_sugestoes.bloco_id`. Resultado: clicar em "Me ajuda agora" no
+ * meio de uma conversa já inferida no bloco 8 rebobinava o ponteiro da
+ * sessão para o bloco 0 e carimbava isso como se fosse inferência da IA. O
+ * bloco agora vem SEMPRE de `montarEstadoCopiloto`/`resolverBlocoAtual` —
+ * a mesma fonte que `GET /api/sessoes/[id]/copiloto` já usa para o ciclo
+ * automático — e o INSERT grava exclusivamente `bloco_inferido.bloco_id`
+ * (nunca mais o índice usado para montar contexto).
+ *
  *  1. `exigirVePatrimonio()` — mesmo papel de quem lê transcrição/patrimônio.
  *  2. `copiloto_sessao.ativo=false` → 409 `copiloto_desligado` (kill-switch
  *     da Fatia 1, checado aqui também).
@@ -93,7 +116,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     await exigirVePatrimonio();
     const { id: sessaoId } = ParametroSchema.parse(await params);
-    const { bloco } = CorpoSchema.parse(await request.json().catch(() => ({})));
+    CorpoSchema.parse(await request.json().catch(() => ({})));
 
     const supabase = await criarClienteServidor();
 
@@ -134,7 +157,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const contexto = await montarContextoCopiloto(supabase, sessaoId, bloco);
+    // 🔴 CORRIGIDO (achado do Fable): o índice do bloco para montar contexto
+    // vem do BLOCO JÁ RESOLVIDO PELO SERVIDOR (mesma fonte que o GET de
+    // polling usa para o ciclo automático, `route.ts` da rota de estado) —
+    // nunca mais de um índice cru vindo da tela. `?? 0` só cobre o caso
+    // "nem fixação manual recente nem inferência resolveram nada ainda"
+    // (sessão nova/copiloto acabou de começar) — é o MESMO fallback que o
+    // ciclo automático já usa para montar contexto, nunca para decidir bloco.
+    const estadoAtual = await montarEstadoCopiloto(supabase, sessaoId, null, null);
+    const indiceBlocoAtual = estadoAtual.bloco_atual_resolvido.indice ?? 0;
+
+    const contexto = await montarContextoCopiloto(supabase, sessaoId, indiceBlocoAtual);
 
     const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto });
 
@@ -171,7 +204,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from("copiloto_sugestoes")
       .insert({
         sessao_id: sessaoId,
-        bloco_id: validado.sugestao.desvio_sugerido?.bloco_id ?? contexto.bloco_atual?.id ?? null,
+        // 🔴 CORRIGIDO (achado do Fable): SÓ `bloco_inferido.bloco_id` (já
+        // validado contra o roteiro ativo, `validar.ts`) — nunca
+        // `desvio_sugerido`/`contexto.bloco_atual` como fallback. Mesma
+        // correção de `ciclo.ts` (ver comentário lá para o raciocínio
+        // completo): a coluna passa a ter um significado só ("onde a IA
+        // entende que a conversa está"), nunca "para onde deveria ir" nem "o
+        // índice usado para montar o contexto desta chamada".
+        bloco_id: validado.sugestao.bloco_inferido?.bloco_id ?? null,
         gatilho: "sob_demanda",
         conteudo: validado.sugestao,
         confianca: validado.sugestao.confianca_geral,

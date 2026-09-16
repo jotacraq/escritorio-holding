@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CHAVE_EXPURGO_ATIVO, CHAVE_RETENCAO_DIAS_SEGMENTOS, etapaExpurgoSegmentosCopiloto } from "./expurgo";
+import type { SugestaoCopiloto } from "@/types/copiloto";
+import {
+  CHAVE_EXPURGO_ATIVO,
+  CHAVE_RETENCAO_DIAS_SEGMENTOS,
+  etapaExpurgoSegmentosCopiloto,
+  redigirEvidenciasConteudo,
+} from "./expurgo";
 
 /**
  * Expurgo de `sessoes_copiloto_segmentos` — Fase 10, Fatia 5 (§8, §10 B69).
@@ -15,6 +21,10 @@ import { CHAVE_EXPURGO_ATIVO, CHAVE_RETENCAO_DIAS_SEGMENTOS, etapaExpurgoSegment
  *      da sessão já saíram — nunca "pela metade".
  *   4. Teto por passada (`LOTE_SEGMENTOS`) — `restaLote=true` avisa a
  *      próxima passagem para continuar, sem nunca truncar sem sinalizar.
+ *   5. 🔴 Achado do `security-pentester` (Fase 12, Fatia 1): quando o
+ *      expurgo de segmentos de uma sessão CONCLUI, a citação literal em
+ *      `copiloto_sugestoes.conteudo` (campos `evidencia`) é REDIGIDA junto
+ *      — nunca sobrevive indefinidamente ao insumo que a originou.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- mock de builder encadeável do supabase-js */
@@ -45,6 +55,12 @@ interface SegmentoRow {
   criado_em: string;
 }
 
+interface SugestaoRow {
+  id: string;
+  sessao_id: string;
+  conteudo: SugestaoCopiloto;
+}
+
 /**
  * Cliente falso ÚNICO para todo o teste, com estado mutável em memória para
  * `configuracoes`, `sessoes_copiloto` e `sessoes_copiloto_segmentos` — o
@@ -54,7 +70,13 @@ interface SegmentoRow {
  * `.select(..., {count:'exact',head:true}).eq().lt()` e
  * `.update().eq().is()` — o mock cobre cada forma usada por `expurgo.ts`).
  */
-function clienteFalso(estado: { configs: Config[]; sessoes: SessaoCopilotoRow[]; segmentos: SegmentoRow[] }): SupabaseClient {
+function clienteFalso(estado: {
+  configs: Config[];
+  sessoes: SessaoCopilotoRow[];
+  segmentos: SegmentoRow[];
+  sugestoes?: SugestaoRow[];
+}): SupabaseClient {
+  const sugestoes = estado.sugestoes ?? [];
   const from = vi.fn((tabela: string): any => {
     if (tabela === "configuracoes") {
       const builder: any = {};
@@ -74,7 +96,7 @@ function clienteFalso(estado: { configs: Config[]; sessoes: SessaoCopilotoRow[];
       const builder: any = { _filtros: {} };
       builder.select = () => builder;
       builder.order = () => builder;
-      builder.not = (campo: string, _op: string, _valor: null) => {
+      builder.not = (campo: string) => {
         builder._filtros[campo] = "not_null";
         return builder;
       };
@@ -169,6 +191,43 @@ function clienteFalso(estado: { configs: Config[]; sessoes: SessaoCopilotoRow[];
       return builder;
     }
 
+    if (tabela === "copiloto_sugestoes") {
+      const builder: any = { _filtros: {} };
+      builder.select = () => builder;
+      builder.eq = (campo: string, valor: string) => {
+        builder._filtros[campo] = valor;
+        return builder;
+      };
+      builder.limit = () => builder;
+      builder.returns = () => builder;
+      // `redigirSugestoesDaSessao` (Fase 12, Fatia 1 — 2ª correção do Fable)
+      // usa `.update({conteudo}).eq("id", ...)` por linha, NUNCA `upsert`: um
+      // `upsert` parcial (`{id, conteudo}`) dispara `23502` em produção
+      // porque a linha PROPOSTA ao `INSERT ... ON CONFLICT` é validada contra
+      // os NOT NULL de `copiloto_sugestoes` (`sessao_id`/`gatilho`) ANTES de
+      // resolver o conflito — este mock não tem como enxergar essa
+      // constraint (não é um Postgres de verdade), por isso ela some se o
+      // código regredir para `upsert`; ver `upsert.constraint.test.ts` para
+      // a prova de que o payload parcial falha de verdade no schema real.
+      // `_filtros.id` é setado por `.eq("id", ...)` (mesmo `builder.eq`
+      // acima) — o `update` mira SEMPRE uma linha por vez.
+      builder.update = (patch: Record<string, unknown>) => {
+        builder._patch = patch;
+        return builder;
+      };
+      builder.then = (resolve: (v: { data: unknown; error: unknown }) => unknown) => {
+        if (builder._patch) {
+          const alvo = sugestoes.find((s) => s.id === builder._filtros.id);
+          if (!alvo) return Promise.resolve(resolve({ data: null, error: { message: "linha não encontrada", code: "PGRST116" } }));
+          Object.assign(alvo, builder._patch);
+          return Promise.resolve(resolve({ data: null, error: null }));
+        }
+        const linhas = sugestoes.filter((s) => s.sessao_id === builder._filtros.sessao_id);
+        return Promise.resolve(resolve({ data: linhas.map((s) => ({ id: s.id, conteudo: s.conteudo })), error: null }));
+      };
+      return builder;
+    }
+
     throw new Error(`tabela inesperada no mock: ${tabela}`);
   });
   return { from } as unknown as SupabaseClient;
@@ -185,7 +244,14 @@ describe("etapaExpurgoSegmentosCopiloto", () => {
       segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(100) }],
     });
     const r = await etapaExpurgoSegmentosCopiloto(cliente);
-    expect(r).toEqual({ segmentosRemovidos: 0, sessoesConcluidas: 0, sessoesComSegmentosRetidos: 0, pulada: "expurgo_desligado" });
+    expect(r).toEqual({
+      segmentosRemovidos: 0,
+      sessoesConcluidas: 0,
+      sessoesComSegmentosRetidos: 0,
+      sessoesComFalhaDeRedacao: 0,
+      sessoesComRedacaoParcial: 0,
+      pulada: "expurgo_desligado",
+    });
   });
 
   it("expurgo_ativo=true mas retencao_dias_segmentos com valor INVÁLIDO (0) → ZERO linha tocada", async () => {
@@ -769,6 +835,18 @@ describe("etapaExpurgoSegmentosCopiloto — 5º caminho (sessão esvaziada sem c
         builder.then = (resolve: (v: unknown) => unknown) => Promise.resolve(resolve({ data: [], error: null })); // ambas esvaziadas
         return builder;
       }
+      if (tabela === "copiloto_sugestoes") {
+        // Nenhuma sugestão gravada neste teste (foco é o isolamento do
+        // CARIMBO) — devolve vazio, `redigirSugestoesDaSessao` não tem nada
+        // a fazer para nenhuma das duas sessões.
+        const builder: any = {};
+        builder.select = () => builder;
+        builder.eq = () => builder;
+        builder.limit = () => builder;
+        builder.returns = () => builder;
+        builder.then = (resolve: (v: unknown) => unknown) => Promise.resolve(resolve({ data: [], error: null }));
+        return builder;
+      }
       throw new Error(`tabela inesperada: ${tabela}`);
     });
 
@@ -776,6 +854,148 @@ describe("etapaExpurgoSegmentosCopiloto — 5º caminho (sessão esvaziada sem c
     // s1 falhou (timeout simulado) — não conta como concluída; s2 conta.
     expect(r.sessoesConcluidas).toBe(1);
     expect(tentativasUpdateS1).toBe(1); // tentou, falhou, seguiu em frente — não travou o laço
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 ACHADO DO security-pentester (Fase 12, Fatia 1) — `bloco_inferido.
+// evidencia` (e, confirmado ao investigar, TAMBÉM `proxima_pergunta.
+// evidencia`/`falta_no_bloco[].evidencia`/`observacao.evidencia`, que já
+// gravavam citação literal desde a Fase 10) sobreviviam INDEFINIDAMENTE em
+// `copiloto_sugestoes.conteudo`, mesmo depois de `sessoes_copiloto_segmentos`
+// (a transcrição bruta) ser expurgada. Prova: a citação NÃO sobrevive ao
+// expurgo — nem para o campo novo, nem para os três campos antigos.
+// ---------------------------------------------------------------------------
+function sugestaoComEvidenciaEmTudo(): SugestaoCopiloto {
+  return {
+    proxima_pergunta: { texto: "Pergunta X", motivo: "motivo", evidencia: "a mae quer deixar a fazenda so para o filho mais velho" },
+    falta_no_bloco: [
+      { item: "item 1", evidencia: "a irma nao sabe da decisao do pai sobre o patrimonio" },
+      { item: "item 2", evidencia: null }, // já não conferida antes — deve continuar null, não virar erro
+    ],
+    observacao: { tipo: "fato", texto: "texto", evidencia: "ela disse que o pai tem duas empresas e uma fazenda", confianca: 0.9 },
+    desvio_sugerido: { bloco_id: "bloco-2", motivo: "motivo do desvio", confianca: 0.7 },
+    confianca_geral: 0.8,
+    campos_evidencia_nao_conferida: [],
+    bloco_inferido: { bloco_id: "bloco-3", confianca: 0.6, evidencia: "a fazenda foi comprada pelo avo em 1998" },
+  };
+}
+
+describe("redigirEvidenciasConteudo (função pura)", () => {
+  it("🔴 remove a citação literal dos QUATRO campos de evidência, preservando o resto do conteúdo", () => {
+    const original = sugestaoComEvidenciaEmTudo();
+    const redigido = redigirEvidenciasConteudo(original);
+
+    // As citações literais SOMEM.
+    expect(redigido.proxima_pergunta?.evidencia).toBeNull();
+    expect(redigido.falta_no_bloco[0].evidencia).toBeNull();
+    expect(redigido.observacao?.evidencia).toBeNull();
+    expect(redigido.bloco_inferido?.evidencia).toBe(""); // contrato exige string, não null — ver comentário no módulo
+
+    // Nenhuma citação literal do original sobra em NENHUM campo do resultado
+    // (prova mais forte que checar campo a campo: varre o JSON inteiro).
+    const serializado = JSON.stringify(redigido);
+    expect(serializado).not.toContain("fazenda");
+    expect(serializado).not.toContain("irma");
+    expect(serializado).not.toContain("empresas");
+
+    // O RESTO do conteúdo (bloco_id, confiança, motivo, texto, tipo) sobrevive intacto.
+    expect(redigido.proxima_pergunta?.texto).toBe("Pergunta X");
+    expect(redigido.proxima_pergunta?.motivo).toBe("motivo");
+    expect(redigido.falta_no_bloco[0].item).toBe("item 1");
+    expect(redigido.falta_no_bloco[1].evidencia).toBeNull(); // já era null, continua null
+    expect(redigido.observacao?.tipo).toBe("fato");
+    expect(redigido.observacao?.confianca).toBe(0.9);
+    expect(redigido.desvio_sugerido).toEqual(original.desvio_sugerido); // campo sem evidência, intocado
+    expect(redigido.confianca_geral).toBe(0.8);
+    expect(redigido.bloco_inferido?.bloco_id).toBe("bloco-3");
+    expect(redigido.bloco_inferido?.confianca).toBe(0.6);
+  });
+
+  it("sugestão sem nenhuma evidência (campos null/ausentes) não quebra — idempotente", () => {
+    const semNada: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: null,
+      desvio_sugerido: null,
+      confianca_geral: 0.5,
+      campos_evidencia_nao_conferida: ["proxima_pergunta.evidencia"],
+      bloco_inferido: null,
+    };
+    const redigido = redigirEvidenciasConteudo(semNada);
+    expect(redigido).toEqual(semNada);
+  });
+});
+
+describe("etapaExpurgoSegmentosCopiloto — redação de evidência em copiloto_sugestoes (achado do pentester)", () => {
+  it("🔴 quando o expurgo de segmentos da sessão CONCLUI, a citação literal em copiloto_sugestoes.conteudo é redigida na MESMA passagem", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      sugestoes: [{ id: "sug1", sessao_id: "s1", conteudo: sugestaoComEvidenciaEmTudo() }] as SugestaoRow[],
+    };
+    const cliente = clienteFalso(estado);
+    const r = await etapaExpurgoSegmentosCopiloto(cliente);
+
+    // O expurgo de segmento aconteceu normalmente (não muda o comportamento existente).
+    expect(r.segmentosRemovidos).toBe(1);
+    expect(r.sessoesConcluidas).toBe(1);
+    expect(estado.segmentos).toHaveLength(0);
+
+    // A citação literal SUMIU de copiloto_sugestoes — não sobrevive ao expurgo.
+    const sugestaoGravada = estado.sugestoes[0].conteudo;
+    expect(sugestaoGravada.proxima_pergunta?.evidencia).toBeNull();
+    expect(sugestaoGravada.falta_no_bloco[0].evidencia).toBeNull();
+    expect(sugestaoGravada.observacao?.evidencia).toBeNull();
+    expect(sugestaoGravada.bloco_inferido?.evidencia).toBe("");
+    expect(JSON.stringify(sugestaoGravada)).not.toContain("fazenda");
+
+    // O restante da sugestão (bloco_id, confiança, motivo) continua auditável — a linha NÃO some.
+    expect(sugestaoGravada.bloco_inferido?.bloco_id).toBe("bloco-3");
+    expect(sugestaoGravada.confianca_geral).toBe(0.8);
+  });
+
+  it("sessão SEM segmento vencido (nada a expurgar) NÃO redige copiloto_sugestoes — sem carimbo, sem redação", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(1) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(1) }], // recente, dentro do prazo
+      sugestoes: [{ id: "sug1", sessao_id: "s1", conteudo: sugestaoComEvidenciaEmTudo() }] as SugestaoRow[],
+    };
+    const cliente = clienteFalso(estado);
+    const r = await etapaExpurgoSegmentosCopiloto(cliente);
+
+    expect(r.sessoesConcluidas).toBe(0); // sessão não concluiu — ainda tem segmento pendente
+    // Evidência intacta: a sessão nem terminou o expurgo de segmentos.
+    expect(estado.sugestoes[0].conteudo.bloco_inferido?.evidencia).toBe("a fazenda foi comprada pelo avo em 1998");
+  });
+
+  it("2ª passada sobre sessão JÁ carimbada não tenta redigir de novo (idempotente, sem I/O supérfluo)", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [
+        { sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: "2026-01-01T00:00:00Z", encerrado_em: DIAS(60) } as SessaoCopilotoRow,
+      ],
+      segmentos: [] as SegmentoRow[],
+      // já redigida numa passagem anterior — continua redigida, ninguém reescreve à toa.
+      sugestoes: [
+        { id: "sug1", sessao_id: "s1", conteudo: redigirEvidenciasConteudo(sugestaoComEvidenciaEmTudo()) },
+      ] as SugestaoRow[],
+    };
+    const cliente = clienteFalso(estado);
+    await etapaExpurgoSegmentosCopiloto(cliente);
+    // sessão já carimbada não é elegível — nunca entra no laço de redação.
+    expect(estado.sugestoes[0].conteudo.bloco_inferido?.evidencia).toBe("");
   });
 });
 

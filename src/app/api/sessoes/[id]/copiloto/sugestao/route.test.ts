@@ -67,6 +67,7 @@ function consultaEncadeavel(resultado: unknown) {
     select: encadeavel,
     eq: encadeavel,
     is: encadeavel,
+    not: encadeavel, // `resolverBlocoAtual` (Fase 12, Fatia 1) usa `.not("conteudo->bloco_inferido", "is", null)`
     gte: encadeavel,
     order: encadeavel,
     limit: encadeavel,
@@ -100,6 +101,12 @@ function montarCenario(c: Cenario, insertExecucoesIaSpy: ReturnType<typeof vi.fn
     if (tabela === "configuracoes") {
       // copilotoEstaAtivo() e lerConfiguracaoJson (confiança mínima) passam
       // por aqui — o valor de confiança mínima não importa neste teste.
+      // `resolverBlocoAtual` (Fase 12, Fatia 1) também lê esta tabela para
+      // `copiloto_sessao.inferencia_bloco_ativa`/`janela_fixacao_manual_segundos`
+      // — o mock genérico devolve `c.copilotoAtivo` para QUALQUER chave, o
+      // que por coincidência não muda o resultado destes testes (o default
+      // de `inferencia_bloco_ativa` já é `true`, e nenhum teste aqui verifica
+      // `bloco_atual_resolvido`).
       return consultaEncadeavel({ data: { valor: c.copilotoAtivo }, error: null });
     }
     if (tabela === "sessoes_viabilidade") {
@@ -129,6 +136,23 @@ function montarCenario(c: Cenario, insertExecucoesIaSpy: ReturnType<typeof vi.fn
       // busca a versão ativa da chave 'sessao_viabilidade'. Sem versão
       // ativa aqui: `bloco_atual` continua null, igual ao comportamento
       // anterior a esta correção (o teste não depende do conteúdo do roteiro).
+      return consultaEncadeavel({ data: null, error: null });
+    }
+    if (tabela === "copiloto_sugestoes") {
+      // Fase 12, Fatia 1 (achado do Fable, defeito 1): a rota agora chama
+      // `montarEstadoCopiloto` ANTES de montar contexto, para usar o bloco
+      // RESOLVIDO PELO SERVIDOR em vez do índice cru do corpo da requisição
+      // — `resolverBlocoAtual` lê esta tabela quando não há fixação manual.
+      // Vazio aqui = "sem inferência ainda", o teste não depende do índice.
+      return consultaEncadeavel({ data: null, error: null });
+    }
+    if (tabela === "consentimentos") {
+      // `montarEstadoCopiloto` também calcula `sims_pendentes`
+      // (`calcularSimsPendentes`), que lê o consentimento de gravação —
+      // este teste não verifica esse campo do estado, só que a IA foi
+      // alcançada; vazio = "sem consentimento de gravação encontrado" (não
+      // confundir com o consentimento do GATE JURÍDICO, mockado no cliente
+      // ADMIN abaixo, tabela homônima — são leituras diferentes).
       return consultaEncadeavel({ data: null, error: null });
     }
     throw new Error(`tabela não mockada em supabaseServidorMock: ${tabela}`);
@@ -164,6 +188,10 @@ function requisicao() {
   return new Request("http://localhost/api/sessoes/11111111-1111-4111-8111-111111111111/copiloto/sugestao", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    // Fase 12, Fatia 1 (achado do Fable, defeito 1): `bloco` NÃO é mais lido
+    // do corpo — mantido aqui só para provar que um corpo antigo (tela ainda
+    // não atualizada, ou request replay) é descartado sem quebrar a rota
+    // (`CorpoSchema` faz `.passthrough().transform(() => ({}))`).
     body: JSON.stringify({ bloco: 0 }),
   }) as never; // NextRequest é um superset de Request; o handler só usa .json()/.url
 }

@@ -300,18 +300,20 @@ export async function executarCicloCopiloto(
       .from("copiloto_sugestoes")
       .insert({
         sessao_id: params.sessaoId,
-        // Fase 12, Fatia 1: `bloco_id` passa a gravar, PRIMEIRO, a
-        // INFERÊNCIA de onde a conversa está (`bloco_inferido`, já validado
-        // contra o roteiro ativo em `validar.ts` — nunca um valor não
-        // conferido). Fallback preserva o comportamento de ANTES desta
-        // fatia (desvio sugerido, senão o bloco atual do contexto) para as
-        // sessões em que a IA não devolveu inferência nesta rodada — a
-        // coluna nunca fica sem valor por causa desta mudança.
-        bloco_id:
-          validado.sugestao.bloco_inferido?.bloco_id ??
-          validado.sugestao.desvio_sugerido?.bloco_id ??
-          contexto.bloco_atual?.id ??
-          null,
+        // 🔴 CORRIGIDO (achado do Fable, Fase 12 Fatia 1 — defeito 1): `bloco_id`
+        // grava SÓ `bloco_inferido.bloco_id` (já validado contra o roteiro
+        // ativo em `validar.ts`), NUNCA `desvio_sugerido`/`contexto.bloco_atual`
+        // como fallback. O fallback antigo misturava três significados
+        // diferentes na MESMA coluna ("onde a IA acha que a conversa está" vs.
+        // "para onde a sessão deveria ir" vs. "o índice que o CHAMADOR mandou
+        // montar contexto") — e `resolverBlocoAtual` (estado.ts) não tinha como
+        // distinguir um do outro na leitura, promovendo desvio/contexto a
+        // "inferido" sempre que a IA devolvia `bloco_inferido: null` (o "não
+        // sei" honesto que o prompt 0106 EXIGE). `null` aqui é o valor
+        // correto quando a IA não infere nesta rodada — `resolverBlocoAtual`
+        // trata isso como "sem inferência nesta linha", não como ausência de
+        // dado a preencher por outra via.
+        bloco_id: validado.sugestao.bloco_inferido?.bloco_id ?? null,
         gatilho: decisao.gatilho,
         conteudo: validado.sugestao,
         confianca: validado.sugestao.confianca_geral,

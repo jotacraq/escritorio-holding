@@ -70,17 +70,6 @@ export interface EstadoCopiloto {
    * (a rota não cria a linha sozinha: quem cria é o primeiro POST de
    * segmento manual, ou a Fatia 4 ao pedir o bot). */
   estado_copiloto: "aguardando" | "ativo" | "encerrado" | "erro";
-  /** Fase 12, Fatia A. `?:` pelo mesmo motivo de `SugestaoCopiloto.bloco_em_curso`
-   * — contrato novo por composição, sem quebrar literais de teste do front.
-   * `'manual'` = a última escrita em `bloco_atual_id` veio de
-   * `POST .../copiloto/bloco` (correção da advogada); `'ia'` = veio do
-   * `bloco_em_curso` da IA (só possível com `bloco_automatico=true`, ainda
-   * desligado nesta fatia); ausente/`null` = `bloco_atual_id` nunca foi
-   * escrito (sessão nova, ou de antes desta fatia). */
-  bloco_atual_origem?: "ia" | "manual" | null;
-  /** Fase 12, Fatia A — carimbo da última escrita em `bloco_atual_id`,
-   * `?:` pelo mesmo motivo acima. */
-  bloco_atual_em?: string | null;
 }
 
 // ---------------------------------------------------------------------------

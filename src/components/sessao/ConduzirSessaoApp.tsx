@@ -9,23 +9,14 @@ import type { PrecoCroqui } from "@/types/cenario";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
-import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
-import { BarraProgresso } from "@/components/sessao/BarraProgresso";
-import { BlocoRoteiro } from "@/components/sessao/BlocoRoteiro";
-import { PainelSims } from "@/components/sessao/PainelSims";
-import { PainelOferta } from "@/components/sessao/PainelOferta";
-import { AtalhosTeclado } from "@/components/sessao/AtalhosTeclado";
-import { PainelBriefingSessao } from "@/components/briefing/PainelBriefingSessao";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
-import { PainelVigilanciaAoVivo, PainelPerfilConsulta } from "@/components/sessao/PainelPerfilSessao";
-import { formatarData } from "@/lib/formatar";
-
-/** Chave de sessionStorage: em qual PARTE ela estava, para sobreviver a F5 sem voltar ao começo. */
-function chaveIndice(sessaoId: string) {
-  return `sic-hf:sessao:${sessaoId}:parte-atual`;
-}
+import { usePollingCopiloto } from "@/components/sessao/copiloto/usePollingCopiloto";
+import { resumoAusentesLinhaFina } from "@/components/sessao/copiloto/ApresentacaoComparacaoDecisores";
+import { PainelBot } from "@/components/sessao/copiloto/PainelBot";
+import { formatarData, formatarHora } from "@/lib/formatar";
+import type { BlocoAtualResolvido } from "@/types/copiloto";
 
 type EstadoCarga =
   | { fase: "carregando" }
@@ -73,8 +64,13 @@ function SeloPresenca({ agendamentos }: { agendamentos: Agendamento[] }) {
 
 export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const [estado, setEstado] = useState<EstadoCarga>({ fase: "carregando" });
-  const [indice, setIndice] = useState(0);
+  const [indiceLocal, setIndice] = useState(0);
   const [tentativa, setTentativa] = useState(0);
+  // Defeito 2 do Fable (16/09): "Fixado até" tem que sumir quando a fixação
+  // expira de verdade. Some assim que o SERVIDOR (`resolvido.origem`) parar
+  // de dizer `"fixado_manualmente"` — nunca por timer local, que mentiria
+  // sobre o instante exato em que o servidor voltou a decidir sozinho.
+  const [encerradaManualmente, setEncerradaManualmente] = useState(false);
 
   // Busca PURA: devolve o próximo estado, não o grava — o efeito abaixo só
   // faz setState em continuação (`.then/.catch`), o padrão de `useRecurso`.
@@ -93,20 +89,14 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 
     const [sims, ofertasResposta] = await Promise.all([buscarSims(sessaoId), listarOfertas(jornadaId)]);
 
-    let indiceInicial = 0;
-    try {
-      const salvo = window.sessionStorage.getItem(chaveIndice(sessaoId));
-      if (salvo) {
-        const n = Number(salvo);
-        if (Number.isInteger(n) && n >= 0 && n < roteiro.definicao.blocos.length) indiceInicial = n;
-      }
-    } catch {
-      /* sessionStorage indisponível — começa do 0 */
-    }
-
+    // Fase 12, Fatia B: o `sessionStorage` do índice manual SAIU (era o
+    // "ponteiro manual encarnado" concorrendo com `bloco_atual_resolvido`,
+    // que o SERVIDOR agora resolve — dois ponteiros brigando era o defeito-
+    // raiz da Fase 12, Fatia 1). A tela sempre abre em 0; assim que o
+    // polling da linha fina responder, `bloco_atual_resolvido` manda.
     return {
       estado: { fase: "pronto", ficha, roteiro, sims, ofertas: ofertasResposta.itens, preco: ofertasResposta.preco },
-      indice: indiceInicial,
+      indice: 0,
     };
   }, [jornadaId]);
 
@@ -134,48 +124,58 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const total = estado.fase === "pronto" ? estado.roteiro.definicao.blocos.length : 0;
   const sessaoId = estado.fase === "pronto" ? estado.ficha.sessao!.id : null;
 
+  // Defeito 3 do Fable (16/09): "um só poller". `usePollingCopiloto` sobe
+  // para cá — `LinhaFinaRoteiro` e `PainelCopiloto` passam a LER o mesmo
+  // estado por prop, em vez de cada um instanciar o hook (2 timers, 2
+  // requisições a cada tick, custo de IA em dobro). `sessaoId ?? ""` é
+  // seguro: o efeito interno do hook só dispara o 1º ciclo depois de
+  // `POLLING_MS_EM_FOCO_INICIAL`, e a troca para o id real (quando a sessão
+  // carrega) reinicia os cursores — mesmo contrato de antes.
+  const polling = usePollingCopiloto(sessaoId ?? "", indiceLocal, !sessaoId || encerradaManualmente);
+  const encerradaPorDuracaoMaxima = polling.ciclo?.resultado === "sessao_encerrada_por_duracao_maxima";
+  const sessaoEncerrada = encerradaManualmente || encerradaPorDuracaoMaxima;
+  const resolvido = polling.blocoAtualResolvido;
+
+  // Defeito 1 do Fable: o SERVIDOR é a fonte, a tela reflete. O índice
+  // exibido é DERIVADO — `bloco_atual_resolvido.indice` quando o servidor
+  // já tem veredito (fixação manual confirmada ou inferência), e só então
+  // cai no eco local. Sem isto, a linha "Agora: X" (servidor) e o
+  // `<select>` "Corrigir: Y" (tela) discordavam na mesma linha.
+  //
+  // Derivar em vez de sincronizar por efeito é o que mata o `setState`
+  // dentro de `useEffect` (react-hooks/set-state-in-effect): não existe
+  // segundo render para alinhar os dois, nem janela em que a tela mostra
+  // um valor que o servidor já contradisse. `indiceLocal` sobrevive só
+  // como ECO OTIMISTA do clique, para o `<select>` não esperar o tick —
+  // e é ele, não o derivado, que vai ao hook: o parâmetro só alimenta o
+  // contexto do pedido sob demanda, e passar o derivado criaria laço
+  // (resolvido → indice → hook → resolvido).
+  //
+  // Reincidência do Fable (16/09, "cliquei e voltou"): `resolvido` já existe
+  // no meio da sessão (não é só o instante antes da 1ª resposta) — então
+  // `resolvido?.indice ?? indiceLocal` sempre vencia para o servidor, e o
+  // eco otimista nunca aparecia na prática; o `<select>` revertia por até 8s
+  // (o tempo da IA em `virada_bloco`) a cada clique. Correção: enquanto
+  // `polling.indiceFixacaoPendente` não é `null` (fixação enviada, servidor
+  // ainda não confirmou NEM contradisse — ver o hook), ELE vence; depois que
+  // o servidor se pronuncia (ou o teto do hook estoura), o hook mesmo zera a
+  // pendência e a derivação volta a cair em `resolvido?.indice`.
+  const indice = polling.indiceFixacaoPendente ?? resolvido?.indice ?? indiceLocal;
+
+  // "Corrigir parte" (o ÚNICO caminho de correção desta tela desde que as
+  // setas do teclado saíram — recurso fantasma: mudavam só a tela, nunca
+  // fixavam no servidor). Fixa de verdade; o eco otimista agora vem de
+  // `polling.indiceFixacaoPendente` (gravado pelo próprio hook dentro de
+  // `fixarBlocoManualmente`), não mais de `setIndice` aqui — `indiceLocal`
+  // segue existindo só como fallback para antes da 1ª resposta do servidor.
   const irPara = useCallback(
     (novoIndice: number) => {
-      setIndice((atual) => {
-        const proximo = Math.max(0, Math.min(total - 1, novoIndice));
-        if (sessaoId) {
-          try {
-            window.sessionStorage.setItem(chaveIndice(sessaoId), String(proximo));
-          } catch {
-            /* ok não persistir */
-          }
-        }
-        return proximo === atual ? atual : proximo;
-      });
+      if (!Number.isInteger(novoIndice) || novoIndice < 0 || novoIndice >= total) return;
+      setIndice(novoIndice);
+      polling.fixarBlocoManualmente(novoIndice);
     },
-    [total, sessaoId],
+    [total, polling.fixarBlocoManualmente],
   );
-
-  // Navegação por teclado (setas). Ignora quando o foco está em campo de texto,
-  // para não brigar com a digitação da anotação rápida ou do valor da oferta.
-  useEffect(() => {
-    if (estado.fase !== "pronto") return;
-    function aoTeclar(evento: KeyboardEvent) {
-      const alvo = evento.target as HTMLElement | null;
-      const digitando = alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.tagName === "SELECT" || alvo.isContentEditable);
-      if (digitando) return;
-      if (evento.key === "ArrowRight") {
-        evento.preventDefault();
-        irPara(indice + 1);
-      } else if (evento.key === "ArrowLeft") {
-        evento.preventDefault();
-        irPara(indice - 1);
-      } else if (evento.key === "Home") {
-        evento.preventDefault();
-        irPara(0);
-      } else if (evento.key === "End") {
-        evento.preventDefault();
-        irPara(total - 1);
-      }
-    }
-    window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [estado.fase, indice, irPara, total]);
 
   const blocoAtual = useMemo(() => {
     if (estado.fase !== "pronto") return null;
@@ -230,176 +230,193 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 
   if (!blocoAtual || !sessaoId) return null;
 
-  const mostrarOferta = estado.ofertas.length > 0 || indice >= total - 3;
-
   return (
-    <div className="flex w-full flex-col gap-2 pb-28">
+    <div className="flex w-full flex-col gap-2 pb-4">
       <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
 
       {/*
-       * Redesenho de largura cheia (pedido do Marcio, 14/09): "tudo sobre a
-       * sessão em andamento precisa estar visível na primeira dobra, para
-       * monitorar no segundo monitor durante a sessão em tempo real" — é
-       * painel de VIGILÂNCIA, não página de leitura. Quatro peças formam a
-       * primeira dobra, nesta ordem:
+       * Fase 12, Fatia B — "a tela vira leitura" (pedido do Marcio, 16/09):
+       * "a tela hoje está poluída com diversas informações que não são
+       * úteis [...] os detalhes vemos depois, no resumo da sessão [...]
+       * preciso que essa tela seja intuitiva". Tudo que era PLACAR/CONSULTA
+       * ocasional saiu daqui — renasce na Ficha 360 (Fatia 2): a barra de 12
+       * partes clicáveis, a `<nav>` fixa "Anterior/Próxima", os 4 SIMs
+       * (decisão do dono, 16/09: consentimento de gravação NÃO é requisito
+       * — sai sem substituto), a vigilância ao vivo, a anotação da parte, o
+       * perfil de consulta, os atalhos de teclado, o briefing estratégico e
+       * a oferta.
        *
-       *  1. Faixa fina do roteiro (logo abaixo) — "Parte X de Y — Título" +
-       *     os N números clicáveis, uma linha, ~60-70px.
-       *  2. Sugestão (quadro 1) + Alerta (quadro 2) do `PainelCopiloto` — o
-       *     copiloto propriamente dito.
-       *  3. Os 4 SIMs, ao lado do mosaico (não mais dentro da 2ª dobra) —
-       *     registrar um SIM não pode exigir rolar a página no meio da
-       *     conversa.
-       *  4. Transcrição ao vivo + registrar trecho — dentro do
-       *     `PainelCopiloto`, logo após o quadro 2 (ver comentário lá).
-       *
-       * `PainelPerfilSessao` deixou de ser a coluna esquerda inteira: só o
-       * que é VIGILÂNCIA AO VIVO (Progresso da sessão, Estado final) continua
-       * aqui em cima, ao lado do mosaico — 5 dos 7 campos (Perfil, Leitura
-       * decisória, Modo, Preço, Sessão) são CONSULTA ocasional do briefing,
-       * não leitura contínua durante a fala do cliente, e desceram para
-       * fora da primeira dobra (ver mais abaixo). `items-start` em toda a
-       * grade: cada bloco tem a altura do próprio conteúdo, nunca estica
-       * para casar com o vizinho mais alto — densidade real, sem espaço
-       * morto.
-       *
-       * Decisão do dono (15/09, 1ª rodada): breakpoint alinhado com a grade
-       * B (mais abaixo) em `lg` (1024px), não mais `xl` (1280px) — entre
-       * 1024 e 1279px a tela tinha uma seção em 2 colunas e outra em 1.
-       *
-       * Decisão do dono (15/09, 2ª rodada, medição aceita): mesmo com o
-       * teto do `<blockquote>` (Tarefa 1) e a quebra em `lg` (Tarefa 2), os
-       * 4 SIMs empilhados numa coluna de 260px somam ~692px — não cabem em
-       * 900px de viewport junto com cabeçalho, faixa do roteiro e
-       * vigilância (medido, ver Diário). Solução: abaixo de `xl` (1280px)
-       * o `PainelSims` DEIXA a coluna lateral e vira uma FAIXA de largura
-       * cheia, ACIMA do mosaico do `PainelCopiloto` — os 4 SIMs dividem
-       * espaço horizontal em vez de empilhar, e os botões de ação param de
-       * quebrar para linha própria (ver `PainelSims.tsx`).
-       *
-       * Decisão do dono (15/09, 3ª rodada, achado aceito): `xl` é
-       * INCLUSIVO (min-width: 1280px) — então as duas larguras que o dono
-       * pediu para medir (1280×800, 1440×900) caíam no modo COLUNA, não na
-       * faixa, e continuavam em ~692px sem caber. Corte movido de `xl`
-       * para `2xl` (1536px): agora 1280×800 e 1440×900 usam a faixa
-       * (medido: ~436px, cabe), e só monitor grande (o caso de uso
-       * declarado — "monitorar no segundo monitor", comentário acima) usa
-       * a coluna lateral. `2xl` escolhido em vez de um valor customizado
-       * (ex. 1441px) para não criar escala de breakpoint fora do padrão do
-       * projeto — o mesmo motivo que fez `PainelCopiloto.tsx` adotar
-       * `2xl:grid-cols-4` na grade de apoio (outro agente, mesma decisão).
-       *
-       * Implementado com UMA `<div>` `grid` e `grid-template-areas`
-       * nomeadas (`copiloto`/`vigilancia`/`sims`) em vez de duas grades
-       * concorrentes: é a MESMA instância de cada componente mudando de
-       * área por breakpoint — nunca duas instâncias com uma escondida. Isso
-       * evita o problema do requisito do dono: duplicar `PainelSims` no DOM
-       * quebraria o axe (conteúdo repetido para leitor de tela) e o teste
-       * de `offsetParent`. A ordem de leitura (vigilância → SIMs → mosaico)
-       * é a mesma em qualquer largura — só a GEOMETRIA muda, nunca a ordem
-       * das áreas no `grid-template-areas`.
-       *
-       * A coluna lateral nasce em 300px (não mais 260px→300px em dois
-       * estágios `xl`/`2xl`): como a transição faixa→coluna e o alargamento
-       * da coluna aconteciam em breakpoints DIFERENTES antes (`xl`/`2xl`),
-       * ao herdar o único corte em `2xl` as duas regras concorreriam pela
-       * mesma propriedade (`grid-template-columns`) no mesmo breakpoint —
-       * absorvidas em uma só: a coluna já nasce na largura final quando
-       * aparece.
+       * No lugar de tudo isso: UMA linha fina no topo (`LinhaFinaRoteiro`,
+       * abaixo) — "Agora: <título> · <ausentes>" + o `<select>` "Corrigir
+       * parte". As setas de teclado SAÍRAM (achado do Fable, 16/09): mudavam
+       * só a tela, nunca chamavam `fixarBlocoManualmente` — o servidor
+       * ignorava, e a correção continuava presa no ponteiro antigo. O
+       * `<select>` "Corrigir parte" é o único caminho de correção agora, e
+       * ele fixa de verdade.
        */}
-      {/* Sem o wrapper `Quadro` de propósito aqui: um rótulo "ROTEIRO" em
-       * caixa alta acima somaria uma linha inteira a uma faixa que já diz
-       * "Parte X de Y — Título" por extenso (dentro de `BarraProgresso
-       * compacta`) — literalmente o "quadro que não precisa existir"
-       * aplicado à própria faixa. A borda fina do `nao-imprimir` dentro do
-       * componente já delimita a área; aqui só o respiro de padding. */}
-      <div className="rounded-controle border border-linha bg-papel-elevado px-3 py-2">
-        <BarraProgresso blocos={estado.roteiro.definicao.blocos} indiceAtual={indice} aoIrPara={irPara} compacta />
-      </div>
+      <LinhaFinaRoteiro
+        sessaoId={sessaoId}
+        indiceAtual={indice}
+        blocosRoteiro={estado.roteiro.definicao.blocos}
+        irPara={irPara}
+        polling={polling}
+      />
 
-      <div
-        className="grid grid-cols-1 items-start gap-2 [grid-template-areas:'vigilancia'_'sims'_'copiloto'] 2xl:grid-cols-[minmax(0,1fr)_300px] 2xl:[grid-template-areas:'copiloto_vigilancia'_'copiloto_sims']"
-      >
-        {/*
-         * Ordem no DOM = ordem visual abaixo de `2xl` (vigilância → sims →
-         * copiloto), para não descasar da ordem de leitura por teclado/
-         * leitor de tela: `grid-template-areas` só reordena a GEOMETRIA, a
-         * navegação sequencial (Tab, leitor de tela linha a linha) sempre
-         * segue a ordem do DOM. Em `2xl`+ a área "copiloto" ocupa as duas
-         * linhas da coluna esquerda — a inversão visual ali é aceitável
-         * porque em `2xl`+ a tela é larga o bastante para vigilância/SIMs
-         * ficarem sempre visíveis ao lado, sem precisar rolar até o
-         * copiloto primeiro (o motivo original do redesenho, ver comentário
-         * acima).
-         */}
-        <div className="flex flex-col gap-2 [grid-area:vigilancia]">
-          <PainelVigilanciaAoVivo sessao={estado.ficha.sessao!} indiceAtual={indice} totalBlocos={total} />
-        </div>
-
-        <div className="[grid-area:sims]">
-          <PainelSims
-            roteiro={estado.roteiro}
-            sessaoId={sessaoId}
-            estado={estado.sims}
-            aoAtualizar={(novoEstado) => setEstado((e) => (e.fase === "pronto" ? { ...e, sims: novoEstado } : e))}
-          />
-        </div>
-
-        <div className="flex flex-col gap-2 [grid-area:copiloto]">
-          <PainelCopiloto sessaoId={sessaoId} indiceAtual={indice} blocosRoteiro={estado.roteiro.definicao.blocos} irPara={irPara} />
-        </div>
-      </div>
-
-      {/* Fora da primeira dobra (ordem de importância, pedido do Marcio):
-       * Anotação da parte · Perfil/briefing de CONSULTA · Atalhos de teclado
-       * · Briefing Estratégico · Oferta. "Histórico do coach" e "Encerrar
-       * copiloto" já vêm depois, dentro do próprio `PainelCopiloto` — nunca
-       * duplicados aqui. */}
-      <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-[minmax(0,1fr)_260px]">
-        <Quadro rotulo="Anotação da parte atual" como="article">
-          <BlocoRoteiro sessaoId={sessaoId} bloco={blocoAtual} indice={indice} total={total} />
-        </Quadro>
-
-        <div className="flex flex-col gap-2">
-          <PainelPerfilConsulta
-            pessoa={estado.ficha.pessoa}
-            jornada={estado.ficha.jornada}
-            sessao={estado.ficha.sessao!}
-            briefingAtual={estado.ficha.briefingAtual}
-            preco={estado.preco}
-          />
-          <AtalhosTeclado />
-        </div>
-      </div>
-
-      <Quadro rotulo="Briefing" como="article">
-        <PainelBriefingSessao jornadaId={jornadaId} sessaoId={sessaoId} briefingAtual={estado.ficha.briefingAtual} />
-      </Quadro>
-
-      {mostrarOferta && (
-        <PainelOferta
-          jornadaId={jornadaId}
-          ofertas={estado.ofertas}
-          preco={estado.preco}
-          aoAtualizar={(ofertas) => setEstado((e) => (e.fase === "pronto" ? { ...e, ofertas } : e))}
-        />
-      )}
-
-      <nav
-        aria-label="Navegar entre partes"
-        className="nao-imprimir fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-linha bg-papel-elevado px-4 py-3 shadow-flutuante sm:px-6"
-      >
-        <Botao variante="secundario" onClick={() => irPara(indice - 1)} disabled={indice === 0}>
-          ← Anterior
-        </Botao>
-        <span aria-live="polite" className="text-sm text-tinta-suave">
-          Parte <span className="font-bold text-tinta">{indice}</span> de {total - 1}
-        </span>
-        <Botao variante="primario" onClick={() => irPara(indice + 1)} disabled={indice === total - 1}>
-          Próxima →
-        </Botao>
-      </nav>
+      <PainelCopiloto
+        sessaoId={sessaoId}
+        indiceAtual={indice}
+        blocosRoteiro={estado.roteiro.definicao.blocos}
+        irPara={irPara}
+        polling={polling}
+        sessaoEncerrada={sessaoEncerrada}
+        aoEncerrar={() => setEncerradaManualmente(true)}
+      />
     </div>
+  );
+}
+
+/**
+ * Fase 12, Fatia B — a linha fina que substitui a primeira dobra inteira.
+ * Densa, uma linha, hierarquia por POSIÇÃO (nunca card/ícone/fonte grande —
+ * regra da casa, achado de 15/09 "Marcio quer denso e chapado"):
+ *
+ *   Agora: Radiografia patrimonial · Falta Cleison na sala   [Corrigir parte ▾]
+ *
+ * Fonte de cada pedaço:
+ *  - `Agora: <título>` — `bloco_atual_resolvido`, do MESMO `polling` que
+ *    `ConduzirSessaoApp` eleva e passa por prop (correção do achado do Fable
+ *    de 16/09: "um só poller" — antes esta função instanciava uma 2ª cópia
+ *    do hook, dobrando a requisição a cada tick).
+ *  - `· Falta <nome> na sala` — `resumoAusentesLinhaFina` (já existente),
+ *    some por completo quando não há ausente.
+ *  - Erro de sala (`meeting_not_found` etc.) — `PainelBot` continua
+ *    existindo (pedir o bot é OPERAÇÃO), mas fica fora da vista; só o
+ *    `aoMudarEstado` dele alimenta o aviso aqui, para o erro NUNCA ficar
+ *    mudo mesmo com o quadro fora da tela.
+ */
+function LinhaFinaRoteiro({
+  sessaoId,
+  indiceAtual,
+  blocosRoteiro,
+  irPara,
+  polling,
+}: {
+  sessaoId: string;
+  indiceAtual: number;
+  blocosRoteiro: { id: string; titulo: string }[];
+  irPara: (indice: number) => void;
+  polling: ReturnType<typeof usePollingCopiloto>;
+}) {
+  const [codigoErroBot, setCodigoErroBot] = useState<string | undefined>(undefined);
+
+  const resolvido = polling.blocoAtualResolvido;
+  const rotuloAgora = rotuloBlocoAtual(resolvido);
+  const ausentes = resumoAusentesLinhaFina(polling.comparacaoDecisores);
+  // Defeito 2 do Fable: "Fixado até" só existe enquanto o SERVIDOR confirmar
+  // `origem === "fixado_manualmente"` com uma `fixacao_expira_em` — nada de
+  // estado local ecoando o clique para sempre. Passados os 300s, o próximo
+  // tick troca `origem` para `"inferido"`/`"indisponivel"` e a frase some
+  // sozinha, sem carimbar um horário do passado.
+  const fixadoAte = resolvido?.origem === "fixado_manualmente" ? resolvido.fixacao_expira_em : null;
+
+  return (
+    <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-controle border border-linha bg-papel-elevado px-3 py-1.5 text-sm">
+      <p className="text-tinta">
+        <span className="font-bold">Agora:</span> {rotuloAgora}
+        {ausentes && <span className="text-tinta-suave"> · {ausentes}</span>}
+        {fixadoAte && <span className="text-tinta-fraca"> · Fixado por você até {formatarHora(fixadoAte)}</span>}
+      </p>
+
+      <AvisoSalaInvalidaLinhaFina codigoErro={codigoErroBot} />
+
+      <CorrigirParte indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} aoEscolher={irPara} />
+
+      {/* `PainelBot` continua existindo para o `aoMudarEstado` alimentar o
+       * aviso acima — fora da vista (pedir o bot é OPERAÇÃO, não CONDUÇÃO,
+       * comentário de topo de `PainelBot.tsx`), nunca removido do DOM: um
+       * `display:none` aqui bastaria para `offsetParent` provar ausência
+       * visual sem deixar de rodar o efeito que pede o bot. */}
+      <div className="hidden">
+        <PainelBot sessaoId={sessaoId} aoMudarEstado={setCodigoErroBot} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 🔴 Trava do plano: `origem === "indisponivel"` ou `bloco_id === null`
+ * NUNCA vira "Parte 0" — índice inválido virando 0 seria dado inventado
+ * (CLAUDE.md). Isolada nesta função para trocar em 1 linha se o dono um dia
+ * preferir "manter a última parte conhecida" em vez de "ainda
+ * identificando…".
+ */
+function rotuloBlocoAtual(resolvido: BlocoAtualResolvido | null): string {
+  if (!resolvido || resolvido.origem === "indisponivel" || resolvido.bloco_id === null || !resolvido.titulo) {
+    return "ainda identificando…";
+  }
+  return resolvido.titulo;
+}
+
+/**
+ * Erro de sala (`sala_invalida`, ex. `meeting_not_found`) não pode ficar
+ * mudo só porque `PainelBot` saiu da vista (comentário do plano) —
+ * `role="alert"` sóbrio, sem duplicar a mensagem completa de `PainelBot`
+ * (que seria vista de novo se a advogada abrir a Ficha 360).
+ */
+function AvisoSalaInvalidaLinhaFina({ codigoErro }: { codigoErro: string | undefined }) {
+  if (codigoErro !== "sala_invalida") return null;
+  return (
+    <p role="alert" className="text-[color:var(--vermelho)]">
+      Não entrou na sala — confira o link da reunião.
+    </p>
+  );
+}
+
+/**
+ * `[Corrigir parte ▾]` — `<select>` pequeno, NUNCA botão (o plano pede
+ * explicitamente um controle de escolha, não uma ação disparada às cegas).
+ * Alvo de toque `min-h-11` (44px) mesmo sendo visualmente pequeno — lição
+ * registrada: "link de 11px embaixo de número de 30px não é alvo".
+ */
+function CorrigirParte({
+  indiceAtual,
+  blocosRoteiro,
+  aoEscolher,
+}: {
+  indiceAtual: number;
+  blocosRoteiro: { id: string; titulo: string }[];
+  aoEscolher: (indice: number) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-tinta-suave">
+      <span className="sr-only">Corrigir a parte atual do roteiro</span>
+      {/*
+       * Defeito 1(b) do Fable (16/09): "escolher a parte 0 numa tela recém-
+       * aberta não disparava `onChange`" — o `<select>` já nascia com
+       * `value={0}` (fallback antes do servidor responder), e o DOM só
+       * dispara `change` quando o VALOR muda; escolher a opção já selecionada
+       * é um no-op nativo do navegador, não um bug deste handler.
+       *
+       * `key={indiceAtual}` remonta o `<select>` do ZERO sempre que o índice
+       * vem de fora (troca de bloco, resposta do servidor) — a instância nova
+       * nunca "lembra" que o usuário já tinha essa opção marcada, então a
+       * PRIMEIRA escolha dele, seja qual for (inclusive a 0), sempre parte de
+       * um estado sem seleção prévia do ponto de vista do navegador e
+       * dispara `onChange` normalmente.
+       */}
+      <select
+        key={indiceAtual}
+        defaultValue={indiceAtual}
+        onChange={(evento) => aoEscolher(Number(evento.target.value))}
+        className="min-h-11 max-w-[14rem] rounded-controle border border-linha-forte bg-papel px-2 text-sm text-tinta focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--foco)]"
+      >
+        {blocosRoteiro.map((bloco, i) => (
+          <option key={bloco.id} value={i}>
+            Corrigir: {String(i).padStart(2, "0")} — {bloco.titulo}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

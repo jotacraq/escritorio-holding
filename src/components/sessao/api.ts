@@ -234,13 +234,25 @@ export function registrarDesfechoSugestaoCopiloto(
 
 export function buscarPollingCopiloto(
   sessaoId: string,
-  parametros: { bloco: number; desdeSegmento: number; desdeSugestao: number },
+  parametros: {
+    bloco: number;
+    desdeSegmento: number;
+    desdeSugestao: number;
+    /** Fase 12, Fatia B — presente só no request disparado pelo `<select>`
+     * "Corrigir parte" da linha fina (`ConduzirSessaoApp.tsx`): o par
+     * `bloco`/`fixadoEm` (ISO, "agora") é o que a rota exige para tratar
+     * `bloco` como FIXAÇÃO MANUAL (`route.ts`/`estado.ts::FixacaoManualBloco`)
+     * em vez do valor depreciado de índice cru. Omitido nos ciclos normais
+     * de polling — `bloco` sozinho, sem `fixadoEm`, nunca fixa nada. */
+    fixadoEm?: string;
+  },
 ): Promise<EstadoCopilotoComPolling> {
   const busca = new URLSearchParams({
     bloco: String(parametros.bloco),
     desde_segmento: String(parametros.desdeSegmento),
     desde_sugestao: String(parametros.desdeSugestao),
   });
+  if (parametros.fixadoEm) busca.set("fixado_em", parametros.fixadoEm);
   return chamar<EstadoCopilotoComPolling>(`/api/sessoes/${sessaoId}/copiloto?${busca.toString()}`);
 }
 
