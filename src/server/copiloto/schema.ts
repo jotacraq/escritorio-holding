@@ -52,12 +52,33 @@ const DesvioSugeridoSchema = z
   })
   .nullable();
 
+/**
+ * Fase 12, Fatia 1 — 6º campo, NÃO um enum: corrige o defeito-raiz de
+ * `estado.ts`/`ciclo.ts` dependerem do índice que a TELA guarda em
+ * `sessionStorage`. "Em que bloco a fala dos últimos ~90s indica que a
+ * conversa está agora" — DIFERENTE de `desvio_sugerido` (que é "para onde a
+ * sessão DEVERIA ir", uma sugestão de ação com botão). Escopo reduzido de
+ * propósito: nenhum enum novo aqui — era `veredito` (cobertura, fora desta
+ * entrega) que ameaçava estourar o teto medido da gramática estrita (3.905 B
+ * compila / 4.428 B não, 04/09/2026); um objeto de 3 campos de string/número
+ * não corre esse risco, mas a SONDA (`POST /api/admin/sonda-schema`)
+ * continua sendo quem confirma, não uma conta de cabeça.
+ */
+const BlocoInferidoSchema = z
+  .object({
+    bloco_id: z.string(),
+    confianca: z.number(),
+    evidencia: z.string(),
+  })
+  .nullable();
+
 export const SugestaoCopilotoIaSchema = z.object({
   proxima_pergunta: ProximaPerguntaSchema,
   falta_no_bloco: z.array(ItemFaltaSchema),
   observacao: ObservacaoSchema,
   desvio_sugerido: DesvioSugeridoSchema,
   confianca_geral: z.number(),
+  bloco_inferido: BlocoInferidoSchema,
 });
 
 export type SugestaoCopilotoIa = z.infer<typeof SugestaoCopilotoIaSchema>;
@@ -75,3 +96,8 @@ export const TETO_MOTIVO_DESVIO = 240;
 
 /** Máximo de itens em `falta_no_bloco` (§4.3 do plano: "lista de no máximo 4 objetos"). */
 export const MAX_ITENS_FALTA_NO_BLOCO = 4;
+
+/** Fase 12, Fatia 1 — mesmo teto de evidência de `desvio_sugerido` (não há
+ * teto próprio no plano; reusa o valor mais próximo em espírito: uma citação
+ * curta, não um parágrafo). */
+export const TETO_EVIDENCIA_BLOCO_INFERIDO = 200;

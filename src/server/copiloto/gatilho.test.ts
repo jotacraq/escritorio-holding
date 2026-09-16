@@ -4,10 +4,14 @@ import { avaliarGatilho, decidirGatilho, type EstadoParaGatilho } from "./gatilh
 
 /**
  * Os TRÊS gatilhos do ciclo automático (Fase 10, Fatia 3, §4.3 do plano):
- * tempo+fala-nova, virada de bloco (piso 15s), sob demanda (fora deste
+ * tempo+fala-nova, virada de bloco MANUAL (piso 8s), sob demanda (fora deste
  * módulo — o botão nunca passa por `avaliarGatilho`). "Nunca por turno de
  * fala. Nunca por cron fixo. Silêncio = zero chamada." — é isto que
  * `decidirGatilho` precisa provar sozinho, sem banco.
+ *
+ * Fase 12, Fatia 1: `virada_bloco` SÓ conta quando `blocoAtualOrigem ===
+ * "manual"` — mudança de bloco por INFERÊNCIA da própria IA não é gatilho
+ * (senão vira laço: inferiu → mudou → disparou → inferiu de novo).
  */
 
 const AGORA = Date.parse("2026-09-11T14:00:00.000Z");
@@ -18,6 +22,7 @@ function estado(sobrescritas: Partial<EstadoParaGatilho> = {}): EstadoParaGatilh
     houveSegmentoNovo: false,
     ultimoBlocoIndice: null,
     blocoAtualIndice: 0,
+    blocoAtualOrigem: "manual",
     agoraMs: AGORA,
     intervaloSegundos: 45,
     ...sobrescritas,
@@ -76,24 +81,26 @@ describe("decidirGatilho — núcleo puro", () => {
     expect(r).toEqual({ dispara: true, gatilho: "intervalo" });
   });
 
-  it("virada de bloco: mudou de índice e já passou o PISO de 15s → dispara por 'virada_bloco'", () => {
+  it("virada de bloco MANUAL: mudou de índice, origem='manual', já passou o PISO de 8s → dispara por 'virada_bloco'", () => {
     const r = decidirGatilho(
       estado({
         ultimoCicloEm: new Date(AGORA - 20_000).toISOString(),
         ultimoBlocoIndice: 2,
         blocoAtualIndice: 3,
+        blocoAtualOrigem: "manual",
         houveSegmentoNovo: false,
       }),
     );
     expect(r).toEqual({ dispara: true, gatilho: "virada_bloco" });
   });
 
-  it("virada de bloco ANTES do piso de 15s (martelada) → NÃO dispara por bloco — mas cai na checagem de intervalo, que também não bate", () => {
+  it("virada de bloco ANTES do piso de 8s (martelada) → NÃO dispara por bloco — mas cai na checagem de intervalo, que também não bate", () => {
     const r = decidirGatilho(
       estado({
-        ultimoCicloEm: new Date(AGORA - 5_000).toISOString(), // 5s atrás, abaixo do piso de 15s
+        ultimoCicloEm: new Date(AGORA - 5_000).toISOString(), // 5s atrás, abaixo do piso de 8s
         ultimoBlocoIndice: 2,
         blocoAtualIndice: 3,
+        blocoAtualOrigem: "manual",
         houveSegmentoNovo: true, // mesmo COM fala nova, 5s < 45s do intervalo
       }),
     );
@@ -106,6 +113,7 @@ describe("decidirGatilho — núcleo puro", () => {
         ultimoCicloEm: new Date(AGORA - 46_000).toISOString(),
         ultimoBlocoIndice: 3,
         blocoAtualIndice: 3,
+        blocoAtualOrigem: "manual",
         houveSegmentoNovo: true,
       }),
     );
@@ -115,9 +123,10 @@ describe("decidirGatilho — núcleo puro", () => {
   it("virada de bloco tem PRIORIDADE sobre intervalo quando os dois bateriam ao mesmo tempo", () => {
     const r = decidirGatilho(
       estado({
-        ultimoCicloEm: new Date(AGORA - 50_000).toISOString(), // > 45s (intervalo bateria) E > 15s (piso de bloco bateria)
+        ultimoCicloEm: new Date(AGORA - 50_000).toISOString(), // > 45s (intervalo bateria) E > 8s (piso de bloco bateria)
         ultimoBlocoIndice: 1,
         blocoAtualIndice: 2,
+        blocoAtualOrigem: "manual",
         houveSegmentoNovo: true,
       }),
     );
@@ -130,10 +139,68 @@ describe("decidirGatilho — núcleo puro", () => {
         ultimoCicloEm: null,
         ultimoBlocoIndice: null,
         blocoAtualIndice: 5,
+        blocoAtualOrigem: "manual",
         houveSegmentoNovo: false,
       }),
     );
     expect(r.gatilho).not.toBe("virada_bloco");
+  });
+
+  // -------------------------------------------------------------------------
+  // Fase 12, Fatia 1 — a trava contra o laço de realimentação. Sem ela, o
+  // ciclo dispara em cascata: infere bloco novo → grava → a avaliação
+  // seguinte vê o índice mudar → dispara "virada de bloco" (furando o piso
+  // do intervalo) → infere de novo → repete.
+  // -------------------------------------------------------------------------
+
+  it("🔴 TRAVA: mudou de índice mas origem='inferido' → NÃO dispara por virada_bloco (mudança da própria IA não é gatilho)", () => {
+    const r = decidirGatilho(
+      estado({
+        ultimoCicloEm: new Date(AGORA - 20_000).toISOString(), // > piso de 8s
+        ultimoBlocoIndice: 2,
+        blocoAtualIndice: 3,
+        blocoAtualOrigem: "inferido",
+        houveSegmentoNovo: false, // sem fala nova: intervalo também não bateria
+      }),
+    );
+    expect(r).toEqual({ dispara: false, gatilho: null });
+  });
+
+  it("🔴 TRAVA: origem='indisponivel' também não conta como virada, mesmo com índice mudando", () => {
+    const r = decidirGatilho(
+      estado({
+        ultimoCicloEm: new Date(AGORA - 20_000).toISOString(),
+        ultimoBlocoIndice: 0,
+        blocoAtualIndice: 1,
+        blocoAtualOrigem: "indisponivel",
+        houveSegmentoNovo: false,
+      }),
+    );
+    expect(r).toEqual({ dispara: false, gatilho: null });
+  });
+
+  it("🔴 TESTE DE ACEITE (obrigatório, encomendado pelo coordenador): 3 avaliações seguidas com bloco INFERIDO diferente a cada uma não disparam NENHUM ciclo extra", () => {
+    // Simula 3 janelas de tempo (cada uma > piso de 8s desde a anterior, e >
+    // 45s de intervalo também bateria SE fosse considerado) em que a IA
+    // inferiu um bloco novo a cada avaliação — o cenário exato do laço.
+    const janelas = [
+      { ultimoBlocoIndice: 0, blocoAtualIndice: 1, ultimoCicloEmMs: AGORA - 60_000 },
+      { ultimoBlocoIndice: 1, blocoAtualIndice: 2, ultimoCicloEmMs: AGORA - 40_000 },
+      { ultimoBlocoIndice: 2, blocoAtualIndice: 3, ultimoCicloEmMs: AGORA - 20_000 },
+    ];
+
+    for (const janela of janelas) {
+      const r = decidirGatilho(
+        estado({
+          ultimoCicloEm: new Date(janela.ultimoCicloEmMs).toISOString(),
+          ultimoBlocoIndice: janela.ultimoBlocoIndice,
+          blocoAtualIndice: janela.blocoAtualIndice,
+          blocoAtualOrigem: "inferido",
+          houveSegmentoNovo: false,
+        }),
+      );
+      expect(r).toEqual({ dispara: false, gatilho: null });
+    }
   });
 });
 
@@ -173,6 +240,7 @@ describe("avaliarGatilho — camada de leitura", () => {
     const r = await avaliarGatilho(cliente({ ciclo: { data: null, error: null }, segmento: { data: null, error: null } }), {
       sessaoId: "s1",
       blocoAtualIndice: 0,
+      blocoAtualOrigem: "manual",
       intervaloSegundos: 45,
       agoraMs: AGORA,
     });
@@ -182,7 +250,7 @@ describe("avaliarGatilho — camada de leitura", () => {
   it("nenhum ciclo anterior, HÁ segmento existente → dispara por intervalo (1ª avaliação)", async () => {
     const r = await avaliarGatilho(
       cliente({ ciclo: { data: null, error: null }, segmento: { data: { ordem: 1 }, error: null } }),
-      { sessaoId: "s1", blocoAtualIndice: 0, intervaloSegundos: 45, agoraMs: AGORA },
+      { sessaoId: "s1", blocoAtualIndice: 0, blocoAtualOrigem: "manual", intervaloSegundos: 45, agoraMs: AGORA },
     );
     expect(r).toEqual({ dispara: true, gatilho: "intervalo" });
   });
@@ -190,7 +258,7 @@ describe("avaliarGatilho — camada de leitura", () => {
   it("falha de leitura NUNCA dispara — mesmo princípio do gate/orçamento", async () => {
     const r = await avaliarGatilho(
       cliente({ ciclo: { data: null, error: { code: "08006", message: "conexão perdida" } }, segmento: { data: null, error: null } }),
-      { sessaoId: "s1", blocoAtualIndice: 0, intervaloSegundos: 45, agoraMs: AGORA },
+      { sessaoId: "s1", blocoAtualIndice: 0, blocoAtualOrigem: "manual", intervaloSegundos: 45, agoraMs: AGORA },
     );
     expect(r).toEqual({ dispara: false, gatilho: null });
   });

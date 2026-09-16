@@ -21,11 +21,19 @@ import type {
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
-// `bloco` já existia (Fatia 1): sem ele, a rota assume o primeiro bloco (0).
+// `bloco` — Fase 12, Fatia 1: OPCIONAL e DEPRECIADO (nunca removido — quebraria
+// o fallback de reversão). Antes desta fatia era a ÚNICA fonte do bloco
+// atual; agora só vale como FIXAÇÃO MANUAL, e só quando vier acompanhado de
+// `fixado_em` (ISO, carimbo de QUANDO a tela leu o clique) — um `?bloco=`
+// solto (link antigo, `sessionStorage` remanescente de antes desta fatia)
+// NUNCA ressuscita como fixação (ver `estado.ts::FixacaoManualBloco`). Sem
+// os dois juntos, o servidor decide sozinho via inferência
+// (`copiloto_sessao.inferencia_bloco_ativa`).
 // `desde_segmento`/`desde_sugestao` são os cursores incrementais da Fatia 3
 // (§2.2/§4.1) — mesma convenção de `GET .../segmentos`: 0 = "desde o início".
 const QuerySchema = z.object({
-  bloco: z.coerce.number().int().min(0).optional().default(0),
+  bloco: z.coerce.number().int().min(0).optional(),
+  fixado_em: z.string().datetime({ offset: true }).optional(),
   desde_segmento: z.coerce.number().int().min(0).optional().default(0),
   desde_sugestao: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -221,7 +229,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     await exigirVePatrimonio();
     const { id: sessaoId } = ParametroSchema.parse(await params);
-    const { bloco, desde_segmento, desde_sugestao } = QuerySchema.parse(
+    const { bloco, fixado_em, desde_segmento, desde_sugestao } = QuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams),
     );
 
@@ -236,8 +244,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const confiancaMinima = await lerConfiguracaoJson<number>(supabase, CHAVE_CONFIANCA_MINIMA, PADRAO_CONFIANCA_MINIMA);
 
+    // Fase 12, Fatia 1: `?bloco=` só vale como FIXAÇÃO MANUAL quando vem
+    // ACOMPANHADO de `fixado_em` — sem os dois juntos, `fixacaoManual` é
+    // `null` e `montarEstadoCopiloto` decide sozinho via inferência (ver
+    // `estado.ts::resolverBlocoAtual`). Um `?bloco=` solto (link antigo,
+    // `sessionStorage` remanescente) nunca ressuscita como fixação.
+    const fixacaoManual = bloco !== undefined && fixado_em ? { indice: bloco, fixadoEm: fixado_em } : null;
+
     const [estado, segmentos, sugestoes, polling] = await Promise.all([
-      montarEstadoCopiloto(supabase, sessaoId, bloco),
+      montarEstadoCopiloto(supabase, sessaoId, bloco ?? null, fixacaoManual),
       buscarSegmentosNovos(supabase, sessaoId, desde_segmento),
       buscarSugestoesNovas(supabase, sessaoId, desde_sugestao, confiancaMinima),
       lerConfigPollingCopiloto(supabase),
@@ -250,7 +265,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     let proximoCursorSugestao = sugestoes.proximoCursor;
     try {
       const admin = criarClienteAdmin();
-      const resultado = await executarCicloCopiloto(supabase, admin, { sessaoId, blocoAtualIndice: bloco });
+      // Fase 12, Fatia 1: o índice/origem para o CICLO (gatilho + montagem
+      // de contexto) vêm do bloco JÁ RESOLVIDO pelo servidor
+      // (`bloco_atual_resolvido`), não mais do `?bloco=` cru — é a correção
+      // do defeito-raiz propagada até aqui. `origem: "fixado_manualmente"`
+      // mapeia para `"manual"` (só ela pode disparar `virada_bloco`, ver
+      // `gatilho.ts`); `"indisponivel"` cai no índice 0 só para a MONTAGEM
+      // de contexto não ficar sem bloco (nunca para decidir virada).
+      const blocoParaCiclo = estado.bloco_atual_resolvido.indice ?? 0;
+      const origemParaCiclo =
+        estado.bloco_atual_resolvido.origem === "fixado_manualmente" ? "manual" : estado.bloco_atual_resolvido.origem;
+      const resultado = await executarCicloCopiloto(supabase, admin, {
+        sessaoId,
+        blocoAtualIndice: blocoParaCiclo,
+        blocoAtualOrigem: origemParaCiclo,
+      });
       ciclo = paraInfoCiclo(resultado);
 
       if (resultado.situacao === "sugestao_gravada" && resultado.ordemEvento > proximoCursorSugestao) {

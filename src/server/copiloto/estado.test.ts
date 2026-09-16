@@ -18,6 +18,7 @@ function consultaEncadeavel(resultado: unknown) {
   Object.assign(builder, {
     select: encadeavel,
     eq: encadeavel,
+    not: encadeavel,
     order: encadeavel,
     limit: encadeavel,
     maybeSingle: terminal,
@@ -43,6 +44,22 @@ function montarSupabase(sessaoData: unknown, selectSpy?: ReturnType<typeof vi.fn
       return consultaEncadeavel({ data: sessaoData, error: null });
     }
     if (tabela === "consentimentos") {
+      return consultaEncadeavel({ data: null, error: null });
+    }
+    // Fase 12, Fatia 1 — `resolverBlocoAtual` (estado.ts) lê
+    // `copiloto_sessao.inferencia_bloco_ativa` (configuracoes) e, quando
+    // ligada e sem fixação manual, a última inferência em
+    // `copiloto_sugestoes`. É a ÚNICA leitura extra que esta fatia
+    // acrescenta ao contrato "1 select coalescido + 1 de consentimento"
+    // documentado no topo deste arquivo — aceite revisado deliberadamente
+    // pelo arquiteto: o custo é 1 leitura pequena (`limit 1` sobre índice já
+    // existente), só quando NÃO há fixação manual vigente, para corrigir o
+    // defeito-raiz. Mock devolve "sem inferência" por padrão — os testes
+    // deste arquivo não dependem de `bloco_atual_resolvido`.
+    if (tabela === "configuracoes") {
+      return consultaEncadeavel({ data: null, error: null });
+    }
+    if (tabela === "copiloto_sugestoes") {
       return consultaEncadeavel({ data: null, error: null });
     }
     throw new Error(`tabela não mockada: ${tabela}`);
@@ -233,11 +250,16 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
 
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
 
-    // `from` só é chamado para 'sessoes_viabilidade' e 'consentimentos' —
-    // se algum código chamasse `.from('briefings')` separadamente, o mock
-    // lançaria "tabela não mockada: briefings" e este teste falharia.
+    // `from` só é chamado para 'sessoes_viabilidade', as 2 leituras da
+    // inferência de bloco (Fase 12, Fatia 1: `configuracoes` +
+    // `copiloto_sugestoes`, ver comentário de `montarSupabase`) e
+    // 'consentimentos' — se algum código chamasse `.from('briefings')`
+    // separadamente, o mock lançaria "tabela não mockada: briefings" e este
+    // teste falharia.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      "configuracoes",
+      "copiloto_sugestoes",
       "consentimentos",
     ]);
   });
@@ -275,7 +297,15 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
     expect(resultado.expurgo_segmentos_em).toBe("2026-09-20T03:00:00.000Z");
   });
 
-  it("🔴 mesma query coalescida de sempre — nenhum select adicional só para ler o carimbo de expurgo", async () => {
+  it("🔴 mesma query coalescida de sempre para o carimbo de expurgo — nenhum select A MAIS além do que a Fatia 1 já acrescenta", async () => {
+    // Aceite ORIGINAL desta fatia (Fase 10, Fatia 5): "sessoes_viabilidade" +
+    // "consentimentos", sem nada a mais para ler o expurgo. Fase 12, Fatia 1
+    // ACRESCENTA deliberadamente 2 chamadas (configuracoes + copiloto_sugestoes)
+    // à lista — é o custo aceito da inferência do bloco atual
+    // (resolverBlocoAtual), documentado no comentário de `montarSupabase`
+    // acima. Este teste prova que o EXPURGO em si não soma nada ALÉM disso —
+    // não que a fatia inteira ficou com zero leitura extra (ela não fica, por
+    // desenho).
     const supabase = montarSupabase(
       sessaoBase({
         sessoes_copiloto: {
@@ -289,6 +319,8 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      "configuracoes",
+      "copiloto_sugestoes",
       "consentimentos",
     ]);
   });

@@ -2,6 +2,7 @@ import type { ContextoCopiloto, SugestaoCopiloto, TipoObservacaoCopiloto } from 
 import type { SugestaoCopilotoIa } from "./schema";
 import {
   MAX_ITENS_FALTA_NO_BLOCO,
+  TETO_EVIDENCIA_BLOCO_INFERIDO,
   TETO_EVIDENCIA_FALTA,
   TETO_EVIDENCIA_OBSERVACAO,
   TETO_EVIDENCIA_PERGUNTA,
@@ -79,6 +80,9 @@ function contemTermoDeValor(saida: SugestaoCopilotoIa): boolean {
   }
   if (saida.desvio_sugerido) {
     textos.push(saida.desvio_sugerido.motivo);
+  }
+  if (saida.bloco_inferido) {
+    textos.push(saida.bloco_inferido.evidencia);
   }
 
   const normalizados = textos.map(normalizarTexto);
@@ -199,6 +203,28 @@ export function validarSugestaoCopiloto(
     // (não é uma questão de evidência, é uma questão de existência do alvo).
   }
 
+  // -- bloco_inferido (Fase 12, Fatia 1): MESMA regra de `desvio_sugerido` —
+  // bloco_id fora do roteiro ativo DESCARTA o campo inteiro, nunca "corrige"
+  // para outro bloco. Evidência abaixo do piso/não conferida também descarta
+  // o campo inteiro (diferente de `proxima_pergunta`/`falta_no_bloco`, que só
+  // anulam a EVIDÊNCIA e mantêm o resto) — aqui não faz sentido um "bloco
+  // inferido sem evidência": a inferência OU tem lastro na fala real, OU não
+  // deveria existir.
+  let blocoInferido: SugestaoCopiloto["bloco_inferido"] = null;
+  if (saidaIa.bloco_inferido) {
+    const alvoValido = blocosValidos.has(saidaIa.bloco_inferido.bloco_id);
+    const evidenciaOk = alvoValido && evidenciaConferida(saidaIa.bloco_inferido.evidencia, contexto);
+    if (alvoValido && evidenciaOk) {
+      blocoInferido = {
+        bloco_id: saidaIa.bloco_inferido.bloco_id,
+        confianca: clampConfianca(saidaIa.bloco_inferido.confianca),
+        evidencia: cortar(saidaIa.bloco_inferido.evidencia, TETO_EVIDENCIA_BLOCO_INFERIDO),
+      };
+    }
+    // bloco_id inválido OU evidência não conferida: blocoInferido permanece
+    // null — mesmo raciocínio de desvio_sugerido.
+  }
+
   return {
     sugestao: {
       proxima_pergunta: proximaPergunta,
@@ -207,6 +233,7 @@ export function validarSugestaoCopiloto(
       desvio_sugerido: desvioSugerido,
       confianca_geral: clampConfianca(saidaIa.confianca_geral),
       campos_evidencia_nao_conferida: camposNaoConferidos,
+      bloco_inferido: blocoInferido,
     },
     motivoRecusaTotal: null,
   };

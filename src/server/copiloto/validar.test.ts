@@ -38,6 +38,13 @@ function contextoBase(): ContextoCopiloto {
     janela_transcricao: ["cliente: meu filho não conseguiu entrar hoje, ele viaja amanhã"],
     resumo_acumulado: {},
     roteiro_ativo_blocos_ids: ["parte_00", "parte_01", "parte_02", "parte_03", "parte_04"],
+    roteiro_ativo_blocos: [
+      { id: "parte_00", titulo: "Abertura", objetivo: null },
+      { id: "parte_01", titulo: "Motivação do Cliente", objetivo: null },
+      { id: "parte_02", titulo: "Sigilo e Gravação", objetivo: null },
+      { id: "parte_03", titulo: "Radiografia Familiar e Patrimonial", objetivo: null },
+      { id: "parte_04", titulo: "A Fase do Desconforto", objetivo: null },
+    ],
   };
 }
 
@@ -48,6 +55,7 @@ function saidaBase(): SugestaoCopilotoIa {
     observacao: null,
     desvio_sugerido: null,
     confianca_geral: 0.8,
+    bloco_inferido: null,
   };
 }
 

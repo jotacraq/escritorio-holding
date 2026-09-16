@@ -42,6 +42,7 @@ function consultaEncadeavel(resultado: unknown) {
     select: encadeavel,
     eq: encadeavel,
     is: encadeavel,
+    not: encadeavel,
     gt: encadeavel,
     gte: encadeavel,
     order: encadeavel,

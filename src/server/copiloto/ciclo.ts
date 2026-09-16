@@ -5,7 +5,7 @@ import { conferirOrcamentoCopiloto } from "./orcamento";
 import { montarContextoCopiloto } from "./contexto";
 import { executarIaCopiloto } from "./executar-ia";
 import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
-import { avaliarGatilho, type TipoGatilhoCopiloto } from "./gatilho";
+import { avaliarGatilho, type OrigemBlocoParaGatilho, type TipoGatilhoCopiloto } from "./gatilho";
 import { encerrarSePassouDoTempo } from "./encerrar";
 import { lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { ContextoCopiloto, SugestaoCopiloto } from "@/types/copiloto";
@@ -166,7 +166,19 @@ async function reivindicarJanela(
 export async function executarCicloCopiloto(
   supabase: SupabaseClient,
   admin: SupabaseClient,
-  params: { sessaoId: string; blocoAtualIndice: number; agoraMs?: number },
+  params: {
+    sessaoId: string;
+    blocoAtualIndice: number;
+    /** Fase 12, Fatia 1 — origem do bloco atual RESOLVIDO pelo chamador
+     * (`estado.ts::resolverBlocoAtual`, via `EstadoCopilotoCompleto.bloco_atual_resolvido.origem`
+     * — `"fixado_manualmente"` mapeia para `"manual"` aqui; `"inferido"`/
+     * `"indisponivel"` mapeiam 1:1). Repassado a `avaliarGatilho` para a
+     * trava de `virada_bloco` (só conta quando `"manual"` — ver
+     * `gatilho.ts`). Default `"indisponivel"` para quem ainda não migrou a
+     * chamada (nunca dispara virada por omissão). */
+    blocoAtualOrigem?: OrigemBlocoParaGatilho;
+    agoraMs?: number;
+  },
 ): Promise<ResultadoCiclo> {
   const agoraMs = params.agoraMs ?? Date.now();
 
@@ -221,6 +233,7 @@ export async function executarCicloCopiloto(
   const decisao = await avaliarGatilho(supabase, {
     sessaoId: params.sessaoId,
     blocoAtualIndice: params.blocoAtualIndice,
+    blocoAtualOrigem: params.blocoAtualOrigem ?? "indisponivel",
     intervaloSegundos,
     agoraMs,
   });
@@ -287,7 +300,18 @@ export async function executarCicloCopiloto(
       .from("copiloto_sugestoes")
       .insert({
         sessao_id: params.sessaoId,
-        bloco_id: validado.sugestao.desvio_sugerido?.bloco_id ?? contexto.bloco_atual?.id ?? null,
+        // Fase 12, Fatia 1: `bloco_id` passa a gravar, PRIMEIRO, a
+        // INFERÊNCIA de onde a conversa está (`bloco_inferido`, já validado
+        // contra o roteiro ativo em `validar.ts` — nunca um valor não
+        // conferido). Fallback preserva o comportamento de ANTES desta
+        // fatia (desvio sugerido, senão o bloco atual do contexto) para as
+        // sessões em que a IA não devolveu inferência nesta rodada — a
+        // coluna nunca fica sem valor por causa desta mudança.
+        bloco_id:
+          validado.sugestao.bloco_inferido?.bloco_id ??
+          validado.sugestao.desvio_sugerido?.bloco_id ??
+          contexto.bloco_atual?.id ??
+          null,
         gatilho: decisao.gatilho,
         conteudo: validado.sugestao,
         confianca: validado.sugestao.confianca_geral,

@@ -222,6 +222,13 @@ export async function montarContextoCopiloto(
     janela_transcricao: janelaD,
     resumo_acumulado: resumoE,
     roteiro_ativo_blocos_ids: blocos.map((b) => b.id),
+    // Fase 12, Fatia 1 — `(id, titulo, objetivo)` de TODOS os blocos, SEM
+    // `falas`/`proibido`/`campos`/`observar` (mesmo raciocínio de peso do
+    // bloco A: `falas` sozinha já era 94-97% do peso de 1 bloco; mandar o
+    // corpo inteiro de TODOS os blocos multiplicaria isso pelo número de
+    // blocos do roteiro). É o que permite `bloco_inferido` (schema.ts)
+    // apontar para um bloco que não seja o atual.
+    roteiro_ativo_blocos: blocos.map((b) => ({ id: b.id, titulo: b.titulo, objetivo: b.objetivo })),
   };
 }
 

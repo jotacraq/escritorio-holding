@@ -36,6 +36,7 @@ const contextoVazio: ContextoCopiloto = {
   janela_transcricao: [],
   resumo_acumulado: {},
   roteiro_ativo_blocos_ids: [],
+  roteiro_ativo_blocos: [],
 };
 
 function clienteFalso(): SupabaseClient {

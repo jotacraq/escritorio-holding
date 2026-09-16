@@ -11,26 +11,39 @@ import { registrarErro } from "@/server/erros";
  *      params de `avaliarGatilho` (Fase 11: a constante local que existia
  *      como fallback foi removida — quem chama sem passar o valor do banco
  *      não compila, em vez de herdar 45s em silêncio).
- *   2. **virada de bloco**: a advogada avança/volta no roteiro — com PISO de
- *      `PISO_VIRADA_BLOCO_SEGUNDOS` (8s desde 15/09/2026, era 15s) anti-
- *      martelada (trocar de bloco 3x em 3s não dispara 3 ciclos). Baixado
- *      junto com o intervalo (45→20s): a 15s o piso ficaria a apenas 5s do
- *      intervalo e o gatilho 2 perderia o sentido de "evento que dispara MAIS
- *      CEDO que o intervalo" (linha abaixo) — 8s mantém a folga proporcional.
+ *   2. **virada de bloco MANUAL** — com PISO de `PISO_VIRADA_BLOCO_SEGUNDOS`
+ *      (8s) anti-martelada (trocar de bloco 3x em 3s não dispara 3 ciclos).
+ *
+ *      🔴 CORRIGIDO (Fase 12, Fatia 1): até esta fatia, `blocoAtualIndice`
+ *      vinha SEMPRE da tela, e qualquer mudança de índice contava como
+ *      "virada de bloco". Isso deixou de ser seguro quando o PRÓPRIO ciclo
+ *      passou a poder mudar o bloco atual por inferência
+ *      (`estado.ts::resolverBlocoAtual`, `ciclo.ts` grava `bloco_inferido`
+ *      em `copiloto_sugestoes.bloco_id`): sem esta correção, a cadeia vira
+ *      ciclo infere bloco novo → grava → a AVALIAÇÃO SEGUINTE vê o índice
+ *      mudar → dispara "virada de bloco" (ignorando o piso de 20s do
+ *      intervalo) → infere de novo → dispara de novo — um laço que
+ *      multiplica chamadas de IA sem limite, alimentado pela própria saída
+ *      do ciclo anterior. Por isso este gatilho agora SÓ conta quando a
+ *      mudança de bloco veio de CORREÇÃO MANUAL (`origem === "manual"` no
+ *      bloco novo) — mudança inferida pela IA já aconteceu DENTRO de um
+ *      ciclo, por definição, e não é um evento novo que justifique disparar
+ *      outro. O piso de `PISO_VIRADA_BLOCO_SEGUNDOS` continua valendo (a
+ *      advogada corrigindo 3x em 3s ainda não dispara 3 ciclos).
  *   3. **sob demanda**: o botão da Fatia 2 — não passa por este módulo; ele
  *      já ignora o intervalo por natureza (`POST .../sugestao` não usa
  *      `copiloto_ciclos`, é fora do escopo desta claim).
  *
  * "NUNCA por turno de fala. NUNCA por cron fixo. Silêncio = zero chamada." —
  * este módulo é o que torna essa frase código: sem segmento novo E sem
- * virada de bloco, `avaliarGatilho` devolve `nenhum`, mesmo que o intervalo
- * já tenha estourado há muito tempo (uma sessão em silêncio de 20 minutos
- * não acumula 26 chamadas represadas — ela não dispara nenhuma).
+ * virada de bloco MANUAL, `avaliarGatilho` devolve `nenhum`, mesmo que o
+ * intervalo já tenha estourado há muito tempo (uma sessão em silêncio de 20
+ * minutos não acumula 26 chamadas represadas — ela não dispara nenhuma).
  *
  * FUNÇÃO PURA no núcleo (`decidirGatilho`) — testável sem banco. A parte que
- * lê o banco (`avaliarGatilho`) só busca os três fatos que a função pura
+ * lê o banco (`avaliarGatilho`) só busca os fatos de que a função pura
  * precisa: quando foi o último ciclo desta sessão, se há segmento novo desde
- * então, e qual bloco a última claim viu.
+ * então, e a ORIGEM do bloco na última claim vs. agora.
  */
 
 const PISO_VIRADA_BLOCO_SEGUNDOS = 8;
@@ -42,6 +55,12 @@ export interface DecisaoGatilho {
   gatilho: TipoGatilhoCopiloto | null;
 }
 
+/** Origem do bloco atual no momento de uma avaliação de gatilho — MESMO
+ * conceito de `BlocoAtualResolvido.origem` (types/copiloto.ts), reduzido ao
+ * que este módulo precisa distinguir: só `"manual"` conta como evento de
+ * virada (ver comentário de topo). */
+export type OrigemBlocoParaGatilho = "manual" | "inferido" | "indisponivel";
+
 export interface EstadoParaGatilho {
   /** `criado_em` da última linha de `copiloto_ciclos` desta sessão, ou `null`
    * se o ciclo nunca disparou (primeira avaliação da sessão). */
@@ -51,8 +70,11 @@ export interface EstadoParaGatilho {
   houveSegmentoNovo: boolean;
   /** Índice do bloco no momento da última claim (`null` = nunca claimado). */
   ultimoBlocoIndice: number | null;
-  /** Índice do bloco AGORA, que o chamador (a tela) informou. */
+  /** Índice do bloco AGORA, resolvido pelo servidor (`estado.ts::resolverBlocoAtual`). */
   blocoAtualIndice: number;
+  /** Origem do bloco AGORA — só `"manual"` pode disparar `virada_bloco`
+   * (ver comentário de topo, Fase 12/Fatia 1). */
+  blocoAtualOrigem: OrigemBlocoParaGatilho;
   agoraMs: number;
   intervaloSegundos: number;
 }
@@ -61,18 +83,20 @@ export interface EstadoParaGatilho {
  * Núcleo puro. Ordem de avaliação importa: intervalo+fala-nova primeiro,
  * porque é o gatilho "de fundo" que sustenta a sessão inteira; virada de
  * bloco depois, como um evento pontual que pode disparar MAIS CEDO que o
- * intervalo (é o próprio ponto do gatilho 2 — reagir ao ato da advogada, não
- * esperar o relógio).
+ * intervalo (é o próprio ponto do gatilho 2 — reagir ao ato DELIBERADO da
+ * advogada, não à inferência do próprio sistema, e não esperar o relógio).
  */
 export function decidirGatilho(estado: EstadoParaGatilho): DecisaoGatilho {
   const segundosDesdeUltimoCiclo = estado.ultimoCicloEm
     ? (estado.agoraMs - Date.parse(estado.ultimoCicloEm)) / 1000
     : Number.POSITIVE_INFINITY;
 
-  const mudouDeBloco =
-    estado.ultimoBlocoIndice !== null && estado.ultimoBlocoIndice !== estado.blocoAtualIndice;
+  const mudouDeBlocoPorCorrecaoManual =
+    estado.blocoAtualOrigem === "manual" &&
+    estado.ultimoBlocoIndice !== null &&
+    estado.ultimoBlocoIndice !== estado.blocoAtualIndice;
 
-  if (mudouDeBloco && segundosDesdeUltimoCiclo >= PISO_VIRADA_BLOCO_SEGUNDOS) {
+  if (mudouDeBlocoPorCorrecaoManual && segundosDesdeUltimoCiclo >= PISO_VIRADA_BLOCO_SEGUNDOS) {
     return { dispara: true, gatilho: "virada_bloco" };
   }
 
@@ -112,7 +136,16 @@ export function decidirGatilho(estado: EstadoParaGatilho): DecisaoGatilho {
  */
 export async function avaliarGatilho(
   supabase: SupabaseClient,
-  params: { sessaoId: string; blocoAtualIndice: number; intervaloSegundos: number; agoraMs?: number },
+  params: {
+    sessaoId: string;
+    blocoAtualIndice: number;
+    /** Fase 12, Fatia 1 — origem do bloco atual resolvido pelo chamador
+     * (`estado.ts::resolverBlocoAtual`). Só `"manual"` pode disparar
+     * `virada_bloco` (ver comentário de topo do arquivo). */
+    blocoAtualOrigem: OrigemBlocoParaGatilho;
+    intervaloSegundos: number;
+    agoraMs?: number;
+  },
 ): Promise<DecisaoGatilho> {
   const agoraMs = params.agoraMs ?? Date.now();
   const { intervaloSegundos } = params;
@@ -154,6 +187,7 @@ export async function avaliarGatilho(
       houveSegmentoNovo,
       ultimoBlocoIndice: ultimoCiclo?.bloco_indice ?? null,
       blocoAtualIndice: params.blocoAtualIndice,
+      blocoAtualOrigem: params.blocoAtualOrigem,
       agoraMs,
       intervaloSegundos,
     });

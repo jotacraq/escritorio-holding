@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RoteiroDefinicao } from "@/types/roteiro";
 import type {
+  BlocoAtualResolvido,
   BlocoPendente,
   CampoPendente,
   ComparacaoDecisoresPresentes,
@@ -9,6 +10,7 @@ import type {
   SimPendente,
 } from "@/types/copiloto";
 import { erroNaoEncontrado } from "@/server/erros";
+import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
 import { compararComDecisores } from "./participantes";
 
 /**
@@ -169,18 +171,154 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
    * (§6.1 do plano) — a tela deve dizer "transcrição bruta expurgada em …",
    * nunca esconder a sessão nem mostrar erro. */
   expurgo_segmentos_em: string | null;
+  /** Fase 12, Fatia 1 — ver `resolverBlocoAtual`/comentário de
+   * `montarEstadoCopiloto`. Obrigatório aqui (interno); exposto como
+   * OPCIONAL em `EstadoCopilotoComPolling` (types/copiloto.ts) para não
+   * quebrar literais de teste do front. */
+  bloco_atual_resolvido: BlocoAtualResolvido;
+}
+
+/** Chave de configuração da fixação manual por tempo (mesma que a rota usa
+ * para decidir por quanto tempo `?bloco=`/`fixado_em=` vence a inferência). */
+export const CHAVE_JANELA_FIXACAO_MANUAL_SEGUNDOS = "copiloto_sessao.janela_fixacao_manual_segundos";
+const PADRAO_JANELA_FIXACAO_MANUAL_SEGUNDOS = 300;
+
+/** Interruptor de reversão da inferência (0106) — `false` faz o servidor
+ * voltar 100% à fixação manual (`?bloco=`, sem `fixado_em`, tratado como
+ * índice puro — comportamento idêntico a antes desta fatia). Nasce `true`
+ * (decisão do dono: é correção de cegueira medida, não risco novo). */
+export const CHAVE_INFERENCIA_BLOCO_ATIVA = "copiloto_sessao.inferencia_bloco_ativa";
+
+/** Fixação manual recebida da rota (`?bloco=<indice>&fixado_em=<iso>`).
+ * `fixadoEm` é OBRIGATÓRIO para a fixação valer — um `?bloco=` sem
+ * `fixado_em` (ex.: link antigo, ou `sessionStorage` remanescente de uma
+ * sessão de antes desta fatia) NUNCA ressuscita como fixação: sem carimbo de
+ * tempo não há como calcular a janela, e aceitar cegamente reintroduziria o
+ * próprio defeito que esta fatia corrige (índice velho da tela tratado como
+ * fato). */
+export interface FixacaoManualBloco {
+  indice: number;
+  fixadoEm: string;
 }
 
 /**
- * `indiceBlocoAtual` vem do CHAMADOR (a rota recebe `?bloco=<indice>` — é o
- * mesmo índice que `ConduzirSessaoApp` já guarda em `sessionStorage`, nunca
- * recalculado aqui: o servidor não tem "onde a advogada está agora", só a
- * tela tem). Fora do intervalo válido → trata como 0, nunca lança.
+ * Resolve o `BlocoAtualResolvido` — a correção do defeito-raiz. Precedência:
+ *   1. Fixação manual, se `fixadoEm` estiver dentro de
+ *      `copiloto_sessao.janela_fixacao_manual_segundos` (300s ao nascer) a
+ *      partir de AGORA — nunca calculada a partir de `criado_em` da sessão,
+ *      é sempre "há quanto tempo a advogada clicou", não "há quanto tempo a
+ *      sessão existe".
+ *   2. Senão, e só se `copiloto_sessao.inferencia_bloco_ativa=true`: a
+ *      última linha de `copiloto_sugestoes` desta sessão com `bloco_id not
+ *      null`, mais recente por `ordem_evento` — MESMO índice do polling
+ *      (`idx_copiloto_sugestoes_polling`, 0091), nenhum índice novo. É 1
+ *      query adicional (não estava no caminho antes desta fatia) — pequena
+ *      (`limit 1` sobre índice existente) e só roda quando NÃO há fixação
+ *      manual vigente.
+ *   3. Senão, `indisponivel` — NUNCA um índice 0 por default (dado
+ *      inventado, CLAUDE.md).
+ */
+async function resolverBlocoAtual(
+  supabase: SupabaseClient,
+  sessaoId: string,
+  blocos: RoteiroDefinicao["blocos"],
+  fixacaoManual: FixacaoManualBloco | null,
+): Promise<BlocoAtualResolvido> {
+  if (fixacaoManual) {
+    const janelaSegundos = await lerConfiguracaoInt(
+      supabase,
+      CHAVE_JANELA_FIXACAO_MANUAL_SEGUNDOS,
+      PADRAO_JANELA_FIXACAO_MANUAL_SEGUNDOS,
+    );
+    const idadeSegundos = (Date.now() - Date.parse(fixacaoManual.fixadoEm)) / 1000;
+    const fixacaoValida =
+      Number.isInteger(fixacaoManual.indice) &&
+      fixacaoManual.indice >= 0 &&
+      fixacaoManual.indice < blocos.length &&
+      Number.isFinite(idadeSegundos) &&
+      idadeSegundos >= 0 &&
+      idadeSegundos < janelaSegundos;
+
+    if (fixacaoValida) {
+      const bloco = blocos[fixacaoManual.indice]!;
+      const expiraEm = new Date(Date.parse(fixacaoManual.fixadoEm) + janelaSegundos * 1000).toISOString();
+      return {
+        bloco_id: bloco.id,
+        indice: fixacaoManual.indice,
+        titulo: bloco.titulo,
+        origem: "fixado_manualmente",
+        confianca: null,
+        decidido_em: fixacaoManual.fixadoEm,
+        fixacao_expira_em: expiraEm,
+      };
+    }
+    // Fixação expirada ou fora de intervalo: cai para a inferência abaixo,
+    // exatamente como se não tivesse vindo `?bloco=` nesta chamada.
+  }
+
+  const inferenciaAtiva = await lerConfiguracaoBool(supabase, CHAVE_INFERENCIA_BLOCO_ATIVA, true);
+  if (inferenciaAtiva) {
+    const { data: ultimaInferida, error } = await supabase
+      .from("copiloto_sugestoes")
+      .select("bloco_id, confianca, criado_em")
+      .eq("sessao_id", sessaoId)
+      .not("bloco_id", "is", null)
+      .order("ordem_evento", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ bloco_id: string; confianca: number | null; criado_em: string }>();
+    if (!error && ultimaInferida && ultimaInferida.bloco_id) {
+      const indiceInferido = blocos.findIndex((b) => b.id === ultimaInferida.bloco_id);
+      // `bloco_id` gravado que não casa mais com o roteiro ativo (ex.: o
+      // roteiro ativo trocou no meio da sessão) → tratado como indisponível,
+      // nunca um título inventado.
+      if (indiceInferido >= 0) {
+        const bloco = blocos[indiceInferido]!;
+        return {
+          bloco_id: bloco.id,
+          indice: indiceInferido,
+          titulo: bloco.titulo,
+          origem: "inferido",
+          confianca: ultimaInferida.confianca,
+          decidido_em: ultimaInferida.criado_em,
+          fixacao_expira_em: null,
+        };
+      }
+    }
+  }
+
+  return {
+    bloco_id: null,
+    indice: null,
+    titulo: null,
+    origem: "indisponivel",
+    confianca: null,
+    decidido_em: null,
+    fixacao_expira_em: null,
+  };
+}
+
+/**
+ * 🔴 CORRIGIDO (Fase 12, Fatia 1): até esta fatia, `indiceBlocoAtual` vinha
+ * do CHAMADOR (a rota recebia `?bloco=<indice>` — o mesmo índice que
+ * `ConduzirSessaoApp` guardava em `sessionStorage`) e este comentário dizia,
+ * por escrito, que "o servidor não tem 'onde a advogada está agora', só a
+ * tela tem". Isso deixou de ser verdade: o servidor agora INFERE o bloco a
+ * partir da fala real (`copiloto_sugestoes.bloco_id`, escrito pelo ciclo
+ * automático a partir de `bloco_inferido` da IA — `ciclo.ts`,
+ * `schema.ts::BlocoInferidoSchema`) e só cede a vez para o índice da tela
+ * quando essa fixação é RECENTE (`fixacaoManual`, ver
+ * `resolverBlocoAtual`/`CHAVE_JANELA_FIXACAO_MANUAL_SEGUNDOS`). O parâmetro
+ * `indiceBlocoAtual` permanece (compatibilidade com `contexto.ts`/`ciclo.ts`,
+ * que continuam usando um índice simples para montar o CONTEÚDO do bloco
+ * atual do roteiro — não para decidir QUAL é o bloco atual) — quem decide
+ * qual bloco é "atual" para a TELA é `bloco_atual_resolvido` no retorno
+ * desta função, não mais `indiceBlocoAtual`.
  */
 export async function montarEstadoCopiloto(
   supabase: SupabaseClient,
   sessaoId: string,
-  indiceBlocoAtual: number,
+  indiceBlocoAtual: number | null,
+  fixacaoManual: FixacaoManualBloco | null = null,
 ): Promise<EstadoCopilotoCompleto> {
   const { data, error } = await supabase
     .from("sessoes_viabilidade")
@@ -194,10 +332,18 @@ export async function montarEstadoCopiloto(
   if (!data) throw erroNaoEncontrado("Sessão de Viabilidade não encontrada.");
 
   const blocos = data.roteiros_versoes?.definicao?.blocos ?? [];
-  const indice = Number.isInteger(indiceBlocoAtual) && indiceBlocoAtual >= 0 && indiceBlocoAtual < blocos.length
-    ? indiceBlocoAtual
-    : 0;
-  const blocoAtual = blocos[indice] ?? null;
+
+  const blocoAtualResolvido = await resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual);
+  // `indice` para o CONTEÚDO do bloco (campos/observar/percorridos) segue o
+  // mesmo fallback de sempre (0 quando nada resolve) — é um detalhe de
+  // MONTAGEM DE CONTEXTO, diferente de `bloco_atual_resolvido`, que é o FATO
+  // exposto à tela e nunca finge um índice que não existe.
+  const indiceParaConteudo =
+    blocoAtualResolvido.indice ??
+    (Number.isInteger(indiceBlocoAtual) && (indiceBlocoAtual as number) >= 0 && (indiceBlocoAtual as number) < blocos.length
+      ? (indiceBlocoAtual as number)
+      : 0);
+  const blocoAtual = blocos[indiceParaConteudo] ?? null;
 
   const camposPendentes: CampoPendente[] = (blocoAtual?.campos ?? []).map((c) => ({
     id: c.id,
@@ -210,7 +356,7 @@ export async function montarEstadoCopiloto(
 
   const blocosNaoPercorridos: BlocoPendente[] = blocos
     .map((b, i) => ({ id: b.id, titulo: b.titulo, indice: i }))
-    .filter((b) => b.indice > indice);
+    .filter((b) => b.indice > indiceParaConteudo);
 
   const { bot, comparacaoDecisores } = montarBotEComparacaoDecisores(data);
 
@@ -224,6 +370,7 @@ export async function montarEstadoCopiloto(
     bot,
     comparacao_decisores: comparacaoDecisores,
     expurgo_segmentos_em: data.sessoes_copiloto?.expurgo_segmentos_em ?? null,
+    bloco_atual_resolvido: blocoAtualResolvido,
   };
 }
 
