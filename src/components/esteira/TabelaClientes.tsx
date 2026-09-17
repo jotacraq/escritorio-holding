@@ -4,6 +4,8 @@ import { useMemo, type ReactNode } from "react";
 import type { EtapaJornada, EtapaOrdem, JornadaKanban } from "@/lib/api";
 import { formatarCidadeUf } from "@/lib/formatar";
 import { rotulo } from "@/lib/vocabulario";
+import { derivarProximoPasso } from "@/lib/pasta/proximo-passo";
+import { sinaisDoKanban } from "@/lib/pasta/sinais";
 import { Tabela, type ColunaTabela } from "@/components/ui/Tabela";
 import { Prazo } from "@/components/ui/Prazo";
 import { SeloEstado } from "@/components/ui/SeloEstado";
@@ -16,6 +18,7 @@ import {
   type Fonte,
   type PrazoAberto,
 } from "@/components/painel/dadosDeUrgencia";
+import { ChipProximoPasso } from "./ChipProximoPasso";
 import { MenuMover } from "./MenuMover";
 import { faseDaEtapa, ROTULO_FASE } from "./sessaoDaEtapa";
 
@@ -175,6 +178,20 @@ export function TabelaClientes({
             estado={j.croqui_fase ?? j.croqui_status ?? "sem_croqui"}
           />
         ),
+      },
+      {
+        // T4 — "não entendo o que posso fazer": as outras quatro colunas
+        // descrevem ESTADO; esta é a única com VERBO. Mesma derivação do
+        // cartão do quadro (`CartaoJornada.tsx`): `sinaisDoKanban(j)` lê só o
+        // que a linha já carrega (é o MESMO objeto `JornadaKanban` da tabela,
+        // zero fetch por linha) e `ChipProximoPasso` é o componente que já
+        // existe para isto — reusado, não reescrito.
+        chave: "proximo_passo",
+        cabecalho: "O que fazer",
+        celula: (j) => {
+          const proximo = derivarProximoPasso(sinaisDoKanban(j));
+          return <ChipProximoPasso proximo={proximo} jornadaId={j.id} tamanho="compacto" />;
+        },
       },
     ];
 

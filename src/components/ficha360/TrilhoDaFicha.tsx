@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import type { Ficha360 } from "@/lib/api";
 import { useRecurso } from "@/hooks/useRecurso";
-import { ROTULO_DONO, derivarProximoPasso, hrefDoPasso } from "@/lib/pasta/proximo-passo";
+import { ROTULO_DONO, derivarProximoPasso, hrefDoPasso, type DonoPasso } from "@/lib/pasta/proximo-passo";
 import { sinaisComExecucao, sinaisDaFicha } from "@/lib/pasta/sinais";
 import { PASSO_POR_CHAVE, agruparPorSessao, derivarTrilho, passoAtual } from "@/lib/pasta/trilho";
 import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
@@ -79,21 +79,38 @@ export type AcaoDeAgora =
   | { tipo: "abrir-gaveta"; rotulo: string; title?: string; chave: ChaveItemPasta }
   | { tipo: "ir"; rotulo: string; title?: string; href: string };
 
+/**
+ * "Ligar para o cliente · Equipe" — o verbo mais o DONO, sempre juntos.
+ *
+ * T4: é a diferença entre "está pendente" e "está pendente COMIGO", que é
+ * exatamente o que o dono do produto pede quando diz "não sei o que preciso
+ * fazer". `ROTULO_DONO` já existia (`proximo-passo.ts`) e não aparecia na
+ * tela — só ia para a `nota` de quando NÃO havia botão (linha 153).
+ */
+function rotuloComDono(verbo: string, dono: DonoPasso): string {
+  return `${verbo} · ${ROTULO_DONO[dono]}`;
+}
+
 export function acaoDeAgora(ficha: Ficha360, opcoes: { temBarraEnviar: boolean }): AcaoDeAgora | null {
   const proximo = derivarProximoPasso(sinaisDaFicha(ficha));
   if (proximo.dono === "ninguem") return null;
 
+  // A frase inteira (detalhe/sigla) + o dono vivem só no `title` — nunca no
+  // fluxo (DS §2.2). Ex.: "Ligação Estratégica (POP 03) — Equipe".
+  const titleComDono = `${proximo.title ?? proximo.passo} — ${ROTULO_DONO[proximo.dono]}`;
+
   // §5.5 — o passo que se resolve mandando um link vira o botão de copiar.
   const link = LINK_DO_PASSO[proximo.chave];
   if (link && opcoes.temBarraEnviar) {
-    return { tipo: "copiar-link", rotulo: link.rotulo, title: proximo.title ?? proximo.passo, tipoDeLink: link.tipo };
+    return { tipo: "copiar-link", rotulo: rotuloComDono(link.rotulo, proximo.dono), title: titleComDono, tipoDeLink: link.tipo };
   }
 
   const chave = proximo.chave as ChaveItemPasta;
-  if (ITENS_EM_GAVETA.has(chave)) return { tipo: "abrir-gaveta", rotulo: proximo.passo, title: proximo.title, chave };
+  if (ITENS_EM_GAVETA.has(chave))
+    return { tipo: "abrir-gaveta", rotulo: rotuloComDono(proximo.passo, proximo.dono), title: titleComDono, chave };
 
   if (!proximo.rota) return null;
-  return { tipo: "ir", rotulo: proximo.passo, title: proximo.title, href: hrefDoPasso(ficha.jornada.id, proximo) };
+  return { tipo: "ir", rotulo: rotuloComDono(proximo.passo, proximo.dono), title: titleComDono, href: hrefDoPasso(ficha.jornada.id, proximo) };
 }
 
 export function TrilhoDaFicha({

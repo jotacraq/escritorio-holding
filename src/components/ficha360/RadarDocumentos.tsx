@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
 import { useToast } from "@/hooks/useToast";
@@ -175,10 +176,36 @@ export function RadarDocumentos({
   );
 
   if (!recolhivel) return corpo;
+
+  // T4 — "tudo à disposição para anexar": o radar nasce recolhido (Fase 7,
+  // para ganhar altura), mas o CAMINHO de anexar não pode morar atrás de um
+  // `<details>` fechado — é o caso "feature sem porta de entrada" que o
+  // vault registra. `BlocoRecolhivel.resumo` só aceita `string` (não é este
+  // arquivo, está fora do escopo autorizado desta rodada — ver relato), então
+  // a linha "N de M prontos · P a pedir · Anexar documento" é composta aqui,
+  // FORA do `<summary>`, e passamos `resumo={null}` ao bloco para não
+  // duplicar a contagem. O radar continua recolhido — só o verbo sai.
+  // `#documentos` já é deep-link conhecido: `CHAVES_EM_GAVETA` (page.tsx)
+  // abre a gaveta certa no `hashchange`, sem prop nova nem fetch novo.
   return (
-    <BlocoRecolhivel titulo="Documentos" resumo={resumoRecolhido}>
-      {corpo}
-    </BlocoRecolhivel>
+    <div className="flex flex-col gap-1">
+      {resumoRecolhido && (
+        <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-0.5 text-legenda font-medium text-tinta-fraca">
+          <span>{resumoRecolhido}</span>
+          <span aria-hidden="true">·</span>
+          <Link
+            href="#documentos"
+            title="Abrir a gaveta de documentos para anexar"
+            className="inline-flex min-h-11 items-center rounded-controle px-1 text-sm font-semibold text-[color:var(--latao)] transition-colors duration-[var(--transicao-rapida)] hover:underline"
+          >
+            Anexar documento
+          </Link>
+        </p>
+      )}
+      <BlocoRecolhivel titulo="Documentos" resumo={null}>
+        {corpo}
+      </BlocoRecolhivel>
+    </div>
   );
 }
 
