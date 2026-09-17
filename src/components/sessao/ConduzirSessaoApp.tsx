@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buscarFicha360, type Agendamento, type Ficha360 } from "@/lib/api";
 import { buscarRoteiroAtivo, buscarSims, listarOfertas, ErroSessao, type EstadoSims } from "@/components/sessao/api";
+import { linkSalaValido, gravarLinkSala } from "@/components/ficha360/api-sessao";
+import { useFocoAoAbrir } from "@/components/ficha360/useFocoAoAbrir";
 import type { Oferta, RoteiroVersao } from "@/types/roteiro";
 import type { PrecoCroqui } from "@/types/cenario";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
@@ -11,10 +13,12 @@ import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
+import { Entrada } from "@/components/ui/Campo";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
 import { usePollingCopiloto } from "@/components/sessao/copiloto/usePollingCopiloto";
 import { resumoAusentesLinhaFina } from "@/components/sessao/copiloto/ApresentacaoComparacaoDecisores";
 import { PainelBot } from "@/components/sessao/copiloto/PainelBot";
+import { useTelaCheia } from "@/components/sessao/copiloto/useTelaCheia";
 import { formatarData, formatarHora } from "@/lib/formatar";
 import type { BlocoAtualResolvido } from "@/types/copiloto";
 
@@ -66,6 +70,8 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   const [estado, setEstado] = useState<EstadoCarga>({ fase: "carregando" });
   const [indiceLocal, setIndice] = useState(0);
   const [tentativa, setTentativa] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { ativa: telaCheiaAtiva, alternar: alternarTelaCheia } = useTelaCheia();
   // Defeito 2 do Fable (16/09): "Fixado até" tem que sumir quando a fixação
   // expira de verdade. Some assim que o SERVIDOR (`resolvido.origem`) parar
   // de dizer `"fixado_manualmente"` — nunca por timer local, que mentiria
@@ -182,6 +188,22 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
     return estado.roteiro.definicao.blocos[indice] ?? null;
   }, [estado, indice]);
 
+  // Pedido 1 (16/09): "o botão de inserir o link do meet esteja visível [...]
+  // caso não tenha o link, informe para enviar". A gravação usa a MESMA rota
+  // e validação da Ficha 360 (`gravarLinkSala`/`linkSalaValido`,
+  // `@/components/ficha360/api-sessao`) — sem duplicar a regra de negócio.
+  // O sucesso NÃO recarrega a tela: o `link_sala` devolvido pelo servidor
+  // substitui só esse campo dentro da `ficha` já carregada — é escrita de
+  // servidor refletida no estado que a tela já mantém, não um segundo estado
+  // local competindo com ele.
+  const aoAtualizarLinkSala = useCallback(
+    async (linkNovo: string) => {
+      const { sessao } = await gravarLinkSala(jornadaId, linkNovo);
+      setEstado((atual) => (atual.fase === "pronto" ? { ...atual, ficha: { ...atual.ficha, sessao } } : atual));
+    },
+    [jornadaId],
+  );
+
   if (estado.fase === "carregando") {
     return (
       <div className="flex flex-col gap-bloco" aria-busy="true">
@@ -231,8 +253,16 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
   if (!blocoAtual || !sessaoId) return null;
 
   return (
-    <div className="flex w-full flex-col gap-2 pb-4">
-      <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
+    <div ref={containerRef} className={`flex w-full flex-col gap-2 pb-4 ${telaCheiaAtiva ? "modo-tela-cheia-sessao" : ""}`}>
+      {/* Pedido 2 (16/09): "a tela fica cheia e a gente vai visualizando os
+       * insights [...] esconder o cabeçalho da página e a navegação do
+       * AppShell; os 3 blocos + a linha fina ocupam tudo". O `Cabecalho`
+       * DESTA página (nome do cliente, "Ver ficha completa") some junto —
+       * a lateral/topo do `AppShell` (fora desta árvore) são apagados por
+       * CSS via `.modo-tela-cheia-sessao` (`globals.css`, mesmo padrão de
+       * `:has()` de `.largura-cheia`). O botão de tela cheia continua
+       * acessível dentro de `LinhaFinaRoteiro`, que nunca some. */}
+      {!telaCheiaAtiva && <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />}
 
       {/*
        * Fase 12, Fatia B — "a tela vira leitura" (pedido do Marcio, 16/09):
@@ -260,6 +290,10 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
         blocosRoteiro={estado.roteiro.definicao.blocos}
         irPara={irPara}
         polling={polling}
+        linkSala={estado.ficha.sessao?.link_sala ?? null}
+        aoAtualizarLinkSala={aoAtualizarLinkSala}
+        telaCheiaAtiva={telaCheiaAtiva}
+        aoAlternarTelaCheia={() => void alternarTelaCheia(containerRef.current)}
       />
 
       <PainelCopiloto
@@ -276,11 +310,11 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
 }
 
 /**
- * Fase 12, Fatia B — a linha fina que substitui a primeira dobra inteira.
+ * Fase 12, Fatia B/C — a linha fina que substitui a primeira dobra inteira.
  * Densa, uma linha, hierarquia por POSIÇÃO (nunca card/ícone/fonte grande —
  * regra da casa, achado de 15/09 "Marcio quer denso e chapado"):
  *
- *   Agora: Radiografia patrimonial · Falta Cleison na sala   [Corrigir parte ▾]
+ *   Agora: Radiografia patrimonial · Falta Cleison na sala  [Convidar o bot] [⛶]   [Corrigir parte ▾]
  *
  * Fonte de cada pedaço:
  *  - `Agora: <título>` — `bloco_atual_resolvido`, do MESMO `polling` que
@@ -289,10 +323,18 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
  *    do hook, dobrando a requisição a cada tick).
  *  - `· Falta <nome> na sala` — `resumoAusentesLinhaFina` (já existente),
  *    some por completo quando não há ausente.
- *  - Erro de sala (`meeting_not_found` etc.) — `PainelBot` continua
- *    existindo (pedir o bot é OPERAÇÃO), mas fica fora da vista; só o
- *    `aoMudarEstado` dele alimenta o aviso aqui, para o erro NUNCA ficar
- *    mudo mesmo com o quadro fora da tela.
+ *  - Ação do link/bot (Fatia C, pedido do Marcio 16/09: "o botão de inserir
+ *    o link do meet esteja visível [...] para o bot solicitar entrada") —
+ *    `AcaoSalaLinhaFina`, três estados: sem link → colar; com link sem bot
+ *    pedido → `PainelBot` REVELADO (`compacto`, sem duplicar a lógica dele);
+ *    bot já pedido → frase sóbria, sem convite a clicar de novo.
+ *  - Erro de sala (`meeting_not_found` etc.) — o mesmo `PainelBot` fica fora
+ *    da vista quando ainda não há link (não adianta convidar a pedir um bot
+ *    sem sala); só o `aoMudarEstado` dele alimenta o aviso aqui, para o erro
+ *    NUNCA ficar mudo mesmo com o `PainelBot` completo fora da tela.
+ *  - Botão de tela cheia (Fatia C) — `useTelaCheia`, sempre visível, nunca
+ *    escondido mesmo dentro do próprio modo (é o único jeito de sair sem
+ *    depender de `Esc`).
  */
 function LinhaFinaRoteiro({
   sessaoId,
@@ -300,12 +342,20 @@ function LinhaFinaRoteiro({
   blocosRoteiro,
   irPara,
   polling,
+  linkSala,
+  aoAtualizarLinkSala,
+  telaCheiaAtiva,
+  aoAlternarTelaCheia,
 }: {
   sessaoId: string;
   indiceAtual: number;
   blocosRoteiro: { id: string; titulo: string }[];
   irPara: (indice: number) => void;
   polling: ReturnType<typeof usePollingCopiloto>;
+  linkSala: string | null;
+  aoAtualizarLinkSala: (linkNovo: string) => Promise<void>;
+  telaCheiaAtiva: boolean;
+  aoAlternarTelaCheia: () => void;
 }) {
   const [codigoErroBot, setCodigoErroBot] = useState<string | undefined>(undefined);
 
@@ -327,19 +377,174 @@ function LinhaFinaRoteiro({
         {fixadoAte && <span className="text-tinta-fraca"> · Fixado por você até {formatarHora(fixadoAte)}</span>}
       </p>
 
-      <AvisoSalaInvalidaLinhaFina codigoErro={codigoErroBot} />
+      <div className="flex flex-wrap items-center gap-2">
+        <AvisoSalaInvalidaLinhaFina codigoErro={codigoErroBot} />
 
-      <CorrigirParte indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} aoEscolher={irPara} />
+        <AcaoSalaLinhaFina linkSala={linkSala} aoAtualizarLinkSala={aoAtualizarLinkSala} sessaoId={sessaoId} aoMudarEstadoBot={setCodigoErroBot} />
 
-      {/* `PainelBot` continua existindo para o `aoMudarEstado` alimentar o
-       * aviso acima — fora da vista (pedir o bot é OPERAÇÃO, não CONDUÇÃO,
-       * comentário de topo de `PainelBot.tsx`), nunca removido do DOM: um
-       * `display:none` aqui bastaria para `offsetParent` provar ausência
-       * visual sem deixar de rodar o efeito que pede o bot. */}
-      <div className="hidden">
-        <PainelBot sessaoId={sessaoId} aoMudarEstado={setCodigoErroBot} />
+        <BotaoTelaCheia ativa={telaCheiaAtiva} aoAlternar={aoAlternarTelaCheia} />
+
+        <CorrigirParte indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} aoEscolher={irPara} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Pedido 1 (16/09) — "o botão de inserir o link do meet esteja visível [...]
+ * caso não tenha o link [...] informe para enviar, para o bot solicitar
+ * entrada". Três estados, na mesma linha:
+ *
+ *  1. Sem `linkSala`: aviso + "Colar link da sala" — abre um campo inline
+ *     compacto (sem navegar para a Ficha 360). `linkSalaValido`/
+ *     `gravarLinkSala` são os MESMOS de `SessaoSala.tsx` — zero regra nova.
+ *  2. Com `linkSala`, bot ainda não pedido: `PainelBot` REVELADO
+ *     (`compacto`) — "Convidar o bot" de verdade, mesma lógica de sempre.
+ *     Link discreto "Abrir sala" ao lado (a sala às vezes é aberta à parte).
+ *  3. Bot já pedido/erro tratado pelo próprio `PainelBot` (idempotência
+ *     `bot_ja_pedido`, estados normais de áudio desligado etc.).
+ */
+function AcaoSalaLinhaFina({
+  linkSala,
+  aoAtualizarLinkSala,
+  sessaoId,
+  aoMudarEstadoBot,
+}: {
+  linkSala: string | null;
+  aoAtualizarLinkSala: (linkNovo: string) => Promise<void>;
+  sessaoId: string;
+  aoMudarEstadoBot: (codigoErro: string | undefined) => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  // O campo só ganha foco quando o formulário APARECE (clique em "Colar link
+  // da sala"/"Trocar link") — nunca na montagem da tela. Mesmo padrão de
+  // `SessaoSala.tsx` (Ficha 360).
+  const refEndereco = useFocoAoAbrir<HTMLInputElement>(editando);
+
+  if (!linkSala && !editando) {
+    return (
+      <>
+        <span className="text-[color:var(--vermelho)]">Sem link da sala</span>
+        <Botao
+          type="button"
+          variante="secundario"
+          tamanho="compacto"
+          onClick={() => {
+            setTexto("");
+            setErro(null);
+            setEditando(true);
+          }}
+        >
+          Colar link da sala
+        </Botao>
+      </>
+    );
+  }
+
+  if (editando) {
+    return (
+      <form
+        className="flex flex-wrap items-center gap-1.5"
+        noValidate
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const url = linkSalaValido(texto);
+          if (!url) {
+            setErro("Cole o link completo, começando com https://.");
+            return;
+          }
+          setSalvando(true);
+          setErro(null);
+          try {
+            await aoAtualizarLinkSala(url);
+            setEditando(false);
+          } catch {
+            setErro("Não foi possível salvar. Confira a internet e tente de novo.");
+          } finally {
+            setSalvando(false);
+          }
+        }}
+      >
+        <label className="sr-only" htmlFor="link-sala-linha-fina">
+          Endereço da sala (Zoom, Meet ou Teams)
+        </label>
+        <Entrada
+          ref={refEndereco}
+          id="link-sala-linha-fina"
+          type="url"
+          inputMode="url"
+          autoComplete="off"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="https://…"
+          aria-invalid={erro ? true : undefined}
+          aria-describedby={erro ? "link-sala-linha-fina-erro" : undefined}
+          className="!min-h-11 w-56 !py-1"
+        />
+        <Botao type="submit" variante="primario" tamanho="compacto" carregando={salvando}>
+          Salvar
+        </Botao>
+        <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setEditando(false)} disabled={salvando}>
+          Cancelar
+        </Botao>
+        {erro && (
+          <p id="link-sala-linha-fina-erro" role="alert" className="w-full text-[color:var(--vermelho)]">
+            {erro}
+          </p>
+        )}
+      </form>
+    );
+  }
+
+  return (
+    <>
+      <a href={linkSala!} target="_blank" rel="noreferrer" className="min-h-11 items-center text-tinta-suave underline underline-offset-2 hover:text-[color:var(--latao)]">
+        Abrir sala
+      </a>
+      <PainelBot sessaoId={sessaoId} aoMudarEstado={aoMudarEstadoBot} compacto />
+      <Botao
+        type="button"
+        variante="fantasma"
+        tamanho="compacto"
+        onClick={() => {
+          setTexto(linkSala ?? "");
+          setErro(null);
+          setEditando(true);
+        }}
+      >
+        Trocar link
+      </Botao>
+    </>
+  );
+}
+
+const ICONE_TELA_CHEIA_ENTRAR = (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 3H3v4M13 3h4v4M7 17H3v-4M13 17h4v-4" />
+  </svg>
+);
+const ICONE_TELA_CHEIA_SAIR = (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 8V4h4M16 8V4h-4M4 12v4h4M16 12v4h-4" />
+  </svg>
+);
+
+/**
+ * Pedido 2 (16/09) — "tinha que ter um comando de tela cheia [...] segundo
+ * monitor, a gente vai visualizando os insights, erros e acertos". Discreto,
+ * na linha fina — nunca um botão grande de CTA. O ESTADO vem de
+ * `useTelaCheia` (confirmado por `fullscreenchange`), então sair pela tecla
+ * `Esc` também deixa o rótulo/ícone corretos, sem depender deste clique.
+ */
+function BotaoTelaCheia({ ativa, aoAlternar }: { ativa: boolean; aoAlternar: () => void }) {
+  return (
+    <Botao type="button" variante="fantasma" tamanho="compacto" onClick={aoAlternar} aria-pressed={ativa} title={ativa ? "Sair da tela cheia" : "Tela cheia"}>
+      {ativa ? ICONE_TELA_CHEIA_SAIR : ICONE_TELA_CHEIA_ENTRAR}
+      <span className="sr-only">{ativa ? "Sair da tela cheia" : "Entrar em tela cheia"}</span>
+    </Botao>
   );
 }
 

@@ -261,6 +261,24 @@ html[data-escala="grande"] {
   }
 }
 
+/* Tela cheia da condução de sessão (Fase 12, Fatia C — "segundo monitor
+   durante a reunião", pedido do Marcio 16/09). O botão em
+   `ConduzirSessaoApp.tsx` chama a Fullscreen API E marca
+   `.modo-tela-cheia-sessao` num elemento QUE ENVOLVE a tela inteira; este
+   seletor lê `:has()` a partir do `<body>` para apagar a lateral e o
+   cabeçalho do `AppShell` — que ficam ACIMA de `{children}` na árvore, pelo
+   mesmo motivo de `.largura-cheia` acima: Context não sobe, CSS sim. Nada é
+   removido do DOM (só visual) — o foco do teclado ainda alcançaria os links
+   ocultos, por isso o botão de tela cheia também é o único a receber foco
+   ao entrar (ver o `ref` no componente). */
+body:has(.modo-tela-cheia-sessao) .nav-lateral,
+body:has(.modo-tela-cheia-sessao) > header {
+  display: none;
+}
+body:has(.modo-tela-cheia-sessao) main {
+  padding: 0;
+}
+
 .dark {
   /* Migração GPS-THB (14/09/2026, B5): derivado QUENTE (viés marrom, não
      cinza-azulado neutro) — coerente com o `--papel` creme e o `--latao`

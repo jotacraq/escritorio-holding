@@ -114,8 +114,15 @@ export function mensagemSalaInvalida(detalhes: unknown): { titulo: string; descr
  * de `ConduzirSessaoApp.tsx`) do código de erro corrente — é como a linha
  * fina sabe mostrar "não entrou na sala" sem duplicar a lógica de leitura
  * do erro em dois lugares.
+ *
+ * `compacto` (Fase 12, Fatia C — "convidar o bot" visível na linha fina):
+ * MESMO estado, MESMO `pedir()`, MESMAS mensagens de recusa — só a moldura
+ * muda, de `Quadro` (título "Bot na sala", pensado para um mosaico de
+ * cartões) para um fragmento inline que cabe ao lado de "Agora: <parte>".
+ * Nenhuma lógica nova: é a razão de existir desta prop, em vez de reescrever
+ * o pedido do bot dentro de `ConduzirSessaoApp.tsx`.
  */
-export function PainelBot({ sessaoId, aoMudarEstado }: { sessaoId: string; aoMudarEstado?: (codigoErro: string | undefined) => void }) {
+export function PainelBot({ sessaoId, aoMudarEstado, compacto = false }: { sessaoId: string; aoMudarEstado?: (codigoErro: string | undefined) => void; compacto?: boolean }) {
   const [pedindo, setPedindo] = useState(false);
   const [resposta, setResposta] = useState<{ botId: string } | null>(null);
   const [erro, setErro] = useState<unknown>(null);
@@ -150,12 +157,44 @@ export function PainelBot({ sessaoId, aoMudarEstado }: { sessaoId: string; aoMud
 
   // Estado NORMAL: idempotência — já existe bot pedido para esta sessão.
   if (codigoErro === "bot_ja_pedido") {
+    if (compacto) {
+      return (
+        <p role="status" className="text-tinta-suave">
+          Bot já pedido
+        </p>
+      );
+    }
     return (
       <Quadro rotulo="Bot na sala">
         <p role="status" className="text-sm text-tinta-suave">
           Já existe um bot pedido para esta sessão — não é possível pedir um segundo.
         </p>
       </Quadro>
+    );
+  }
+
+  // No modo compacto a mensagem de recusa longa já tem casa própria (o
+  // aviso da linha fina, alimentado por `aoMudarEstado`) — repeti-la aqui
+  // duplicaria o mesmo erro duas vezes na mesma linha. Só "tentar de novo"
+  // fica junto do botão; o texto completo mora em `AvisoSalaInvalidaLinhaFina`
+  // (`ConduzirSessaoApp.tsx`).
+  if (compacto) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Botao type="button" variante="primario" tamanho="compacto" carregando={pedindo} onClick={() => void pedir()}>
+          Convidar o bot
+        </Botao>
+        {!pedindo && !erro && resposta && (
+          <p role="status" className="text-tinta-suave">
+            Bot pedido — entra na sala em instantes
+          </p>
+        )}
+        {!pedindo && erro !== null && (
+          <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => void pedir()}>
+            Tentar de novo
+          </Botao>
+        )}
+      </div>
     );
   }
 

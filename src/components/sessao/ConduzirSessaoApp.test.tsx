@@ -42,12 +42,28 @@ const { estado } = vi.hoisted(() => ({
     pollingRespostaPadrao: null as EstadoCopilotoComPolling | null,
     pollingChamadas: [] as Array<{ bloco: number; desdeSegmento: number; desdeSugestao: number; fixadoEm?: string }>,
     erroPedirBot: null as Error | null,
+    gravarLinkSalaChamadas: [] as string[],
   },
 }));
 
 vi.mock("@/lib/api", () => ({
   buscarFicha360: () => Promise.resolve(estado.ficha),
 }));
+
+// Fase 12, Fatia C — o link do Meet/Zoom fica editável direto na linha fina;
+// reusa `linkSalaValido` (puro, real) e mocka só `gravarLinkSala` (faz
+// `fetch`). `sessao` devolvida reflete o link novo, do jeito que o servidor
+// devolveria de verdade.
+vi.mock("@/components/ficha360/api-sessao", async () => {
+  const real = await vi.importActual<typeof import("@/components/ficha360/api-sessao")>("@/components/ficha360/api-sessao");
+  return {
+    ...real,
+    gravarLinkSala: (jornadaId: string, linkSala: string | null) => {
+      estado.gravarLinkSalaChamadas.push(linkSala ?? "");
+      return Promise.resolve({ sessao: { id: "s1", jornada_id: jornadaId, link_sala: linkSala } });
+    },
+  };
+});
 
 vi.mock("@/components/sessao/api", async () => {
   const real = await vi.importActual<typeof import("@/components/sessao/api")>("@/components/sessao/api");
@@ -138,7 +154,7 @@ const FICHA = {
   jornada: { id: "j1" },
   pessoa: { id: "p1", nome: "Maria Teste" },
   briefingAtual: null,
-  sessao: { id: "s1", jornada_id: "j1" },
+  sessao: { id: "s1", jornada_id: "j1", link_sala: null },
   agendamentos: [],
 } as unknown as Ficha360;
 
@@ -170,6 +186,10 @@ beforeEach(() => {
   estado.pollingRespostaPadrao = null;
   estado.pollingChamadas = [];
   estado.erroPedirBot = null;
+  estado.gravarLinkSalaChamadas = [];
+  // `FICHA.sessao` é reusada entre testes — devolve ao estado "sem link"
+  // para nenhum teste herdar o link gravado por outro.
+  FICHA.sessao = { id: "s1", jornada_id: "j1", link_sala: null } as unknown as Ficha360["sessao"];
   // `shouldAdvanceTime`: os timers REAIS do ambiente (usados por `waitFor`
   // internamente) continuam correndo em paralelo — só o relógio que os
   // efeitos do componente enxergam (`Date.now`, `setTimeout` do próprio
@@ -336,15 +356,14 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     expect(estado.pollingChamadas.length - chamadasAntes).toBe(1);
   });
 
-  it("erro de sala (meeting_not_found) aparece na linha fina mesmo com PainelBot fora da vista", async () => {
+  it("erro de sala (meeting_not_found) aparece na linha fina (Fase 12, Fatia C: PainelBot agora visível, com link cadastrado)", async () => {
+    FICHA.sessao = { id: "s1", jornada_id: "j1", link_sala: "https://meet.example.com/sala" } as unknown as Ficha360["sessao"];
     estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
       codigo: "fatal",
       sub_codigo: "meeting_not_found",
     });
     const { getByRole, container } = await abrir();
-    // `PainelBot` está oculto (`display:none`), mas o botão continua no DOM
-    // — é assim que o efeito roda sem ocupar pixel.
-    const botao = getByRole("button", { name: /pedir bot na sala/i });
+    const botao = getByRole("button", { name: /convidar o bot/i });
     fireEvent.click(botao);
     await waitFor(() => expect(container.textContent).toContain("Não entrou na sala"));
   });
@@ -356,6 +375,109 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     expect(container.textContent).not.toContain("Anotação da parte atual");
     expect(container.textContent).not.toContain("Briefing Estratégico");
     expect(queryByRole("progressbar")).toBeNull();
+  });
+
+  /**
+   * Fase 12, Fatia C — Pedido 1 do dono ("o botão de inserir o link do meet
+   * esteja visível [...] caso não tenha o link [...] informe para enviar").
+   */
+  describe("ação do link da sala/bot, visível na linha fina (Fatia C)", () => {
+    it("sem link cadastrado: mostra que falta e a ação de colar aparece", async () => {
+      const { getByRole, container } = await abrir();
+      expect(container.textContent).toContain("Sem link da sala");
+      expect(getByRole("button", { name: /colar link da sala/i })).toBeTruthy();
+    });
+
+    it("colar um link válido salva (mesma validação/rota da Ficha 360) e não recarrega a tela — 'Convidar o bot' aparece a seguir", async () => {
+      const { getByRole, getByLabelText, container } = await abrir();
+      fireEvent.click(getByRole("button", { name: /colar link da sala/i }));
+      const campo = getByLabelText(/endereço da sala/i) as HTMLInputElement;
+      fireEvent.change(campo, { target: { value: "https://meet.example.com/sala-nova" } });
+      fireEvent.click(getByRole("button", { name: /^salvar$/i }));
+
+      await waitFor(() => expect(estado.gravarLinkSalaChamadas).toContain("https://meet.example.com/sala-nova"));
+      await waitFor(() => expect(container.textContent).not.toContain("Sem link da sala"));
+      expect(getByRole("button", { name: /convidar o bot/i })).toBeTruthy();
+    });
+
+    it("link inválido (sem https): mostra erro humano e NÃO chama a API", async () => {
+      const { getByRole, getByLabelText } = await abrir();
+      fireEvent.click(getByRole("button", { name: /colar link da sala/i }));
+      const campo = getByLabelText(/endereço da sala/i) as HTMLInputElement;
+      fireEvent.change(campo, { target: { value: "sala-sem-protocolo" } });
+      fireEvent.click(getByRole("button", { name: /^salvar$/i }));
+
+      await waitFor(() => expect(getByRole("alert")).toBeTruthy());
+      expect(estado.gravarLinkSalaChamadas).toHaveLength(0);
+    });
+
+    it("com link cadastrado e bot ainda não pedido: 'Convidar o bot' aparece (PainelBot revelado, mesma lógica)", async () => {
+      FICHA.sessao = { id: "s1", jornada_id: "j1", link_sala: "https://meet.example.com/sala" } as unknown as Ficha360["sessao"];
+      const { getByRole, queryByRole } = await abrir();
+      expect(getByRole("button", { name: /convidar o bot/i })).toBeTruthy();
+      expect(queryByRole("button", { name: /colar link da sala/i })).toBeNull();
+    });
+
+    it("bot já pedido: estado sóbrio, sem convidar a clicar de novo", async () => {
+      FICHA.sessao = { id: "s1", jornada_id: "j1", link_sala: "https://meet.example.com/sala" } as unknown as Ficha360["sessao"];
+      estado.erroPedirBot = new ErroSessao("Já existe um bot pedido para esta sessão.", 409, "bot_ja_pedido");
+      const { getByRole, container, queryByRole } = await abrir();
+      fireEvent.click(getByRole("button", { name: /convidar o bot/i }));
+      await waitFor(() => expect(container.textContent).toContain("Bot já pedido"));
+      expect(queryByRole("button", { name: /convidar o bot/i })).toBeNull();
+    });
+  });
+
+  /**
+   * Fase 12, Fatia C — Pedido 2 do dono ("comando de tela cheia [...]
+   * segundo monitor"). `document.exitFullscreen`/`requestFullscreen` não
+   * existem no jsdom — mockados aqui; o estado do botão só muda quando o
+   * evento `fullscreenchange` dispara, nunca de forma otimista.
+   */
+  describe("tela cheia (Fatia C)", () => {
+    const original = {
+      requestFullscreen: Element.prototype.requestFullscreen,
+      exitFullscreen: document.exitFullscreen,
+    };
+
+    afterEach(() => {
+      Element.prototype.requestFullscreen = original.requestFullscreen;
+      document.exitFullscreen = original.exitFullscreen;
+      Object.defineProperty(document, "fullscreenElement", { value: null, configurable: true });
+    });
+
+    it("entrar em tela cheia chama a Fullscreen API e o estado do botão acompanha 'fullscreenchange'", async () => {
+      const requestFullscreen = vi.fn(() => {
+        Object.defineProperty(document, "fullscreenElement", { value: document.body, configurable: true });
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      });
+      Element.prototype.requestFullscreen = requestFullscreen as typeof Element.prototype.requestFullscreen;
+      document.exitFullscreen = vi.fn(() => {
+        Object.defineProperty(document, "fullscreenElement", { value: null, configurable: true });
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      });
+
+      const { getByRole } = await abrir();
+      const botao = getByRole("button", { name: /entrar em tela cheia/i });
+      fireEvent.click(botao);
+
+      await waitFor(() => expect(requestFullscreen).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(getByRole("button", { name: /sair da tela cheia/i })).toBeTruthy());
+
+      fireEvent.click(getByRole("button", { name: /sair da tela cheia/i }));
+      await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(getByRole("button", { name: /entrar em tela cheia/i })).toBeTruthy());
+    });
+
+    it("recusa do navegador (Promise rejeitada) não quebra a tela — fallback silencioso, botão continua coerente", async () => {
+      Element.prototype.requestFullscreen = vi.fn(() => Promise.reject(new Error("recusado")));
+      const { getByRole } = await abrir();
+      fireEvent.click(getByRole("button", { name: /entrar em tela cheia/i }));
+      await waitFor(() => expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1));
+      expect(getByRole("button", { name: /entrar em tela cheia/i })).toBeTruthy();
+    });
   });
 
   it("não tem violação de acessibilidade", async () => {
