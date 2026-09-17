@@ -177,16 +177,28 @@ export async function obterZak(credentialId: string): Promise<ResultadoZak> {
     return { situacao: "sem_credencial" };
   }
 
-  const corpoToken = (await respostaToken.json().catch(() => null)) as { access_token?: string } | null;
-  if (!respostaToken.ok || !corpoToken?.access_token) {
-    registrarErro("integracoes/zoom.obterZak#http_recall", new Error(`recall_${respostaToken.status}`), { credential_id: credentialId });
+  // 🔴 MEDIDO CONTRA A API VIVA (17/09/2026): a Recall devolve o campo como
+  // `token`, NÃO `access_token` — apesar de a documentação escrever
+  // `access_token` no exemplo. Lendo só `access_token`, a resposta 200 caía
+  // no ramo de erro e o log gravava o absurdo `recall_200` (status de
+  // sucesso registrado como falha). `access_token` fica como alternativa,
+  // caso a API passe a devolver os dois nomes.
+  const corpoToken = (await respostaToken.json().catch(() => null)) as
+    | { token?: string; access_token?: string }
+    | null;
+  const tokenAcesso = corpoToken?.token ?? corpoToken?.access_token ?? null;
+  if (!respostaToken.ok || !tokenAcesso) {
+    registrarErro("integracoes/zoom.obterZak#http_recall", new Error(`recall_${respostaToken.status}`), {
+      credential_id: credentialId,
+      chaves_recebidas: corpoToken ? Object.keys(corpoToken).join(",") : "(corpo vazio)",
+    });
     return { situacao: "falha_provedor", detalhe: `recall_${respostaToken.status}` };
   }
 
   let respostaZak: Response;
   try {
     respostaZak = await fetch(`${ZOOM_API_BASE_URL}/users/me/zak`, {
-      headers: { Authorization: `Bearer ${corpoToken.access_token}` },
+      headers: { Authorization: `Bearer ${tokenAcesso}` },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (erro) {
