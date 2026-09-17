@@ -1,5 +1,6 @@
 /**
- * A primeira linha do painel: quantos, de quê, na ordem em que atrasa.
+ * A barra de comando do painel: quantos, de quê, na ordem em que atrasa —
+ * **sempre visível**, `sticky` no topo da tela.
  *
  * ## O que ela substitui (não é remoção — é troca)
  *
@@ -18,6 +19,21 @@
  * Estado nunca é só cor: o item urgente tem número, rótulo, e a palavra
  * "urgente" no `title` — em escala de cinza continua legível pela posição e
  * pelo texto.
+ *
+ * ## T2 — vira a barra de comando (16/09/2026)
+ *
+ * Pedido literal do Marcio: *"nunca tenho amostra de acesso rápido [...] o
+ * admin tem que ter o controle do sistema"*. A fila de atalhos já existia;
+ * o que faltava era ficar acessível SEM rolar. `sticky top-[61px] lg:top-0`:
+ * 61px é a altura medida do header mobile do `AppShell` (`h-11` = 44px +
+ * `py-2` = 16px + borda 1px) — abaixo de `lg` o header do celular já ocupa o
+ * topo da viewport, e a barra cola imediatamente abaixo dele, nunca por
+ * baixo (por isso o `z-10`, sempre menor que o `z-30` do header).
+ *
+ * Uma linha só, rótulo à esquerda do número, número em `tabular-nums` — é
+ * literalmente o "acesso rápido" pedido. Abaixo de `sm` a barra rola
+ * **dentro de si mesma** (`overflow-x-auto`), nunca a página: o item
+ * continua `min-h-11` (público 50+, alvo não encolhe).
  */
 
 export interface ItemResumo {
@@ -56,7 +72,10 @@ export function ResumoDoDia({ itens }: { itens: readonly ItemResumo[] }) {
   const visiveis = itens.filter(vaiParaAFaixa);
   if (visiveis.length === 0) return null;
   return (
-    <nav aria-label="Resumo de hoje" className="flex flex-wrap gap-alvo">
+    <nav
+      aria-label="Resumo de hoje"
+      className="sticky top-[61px] z-10 -mx-3 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-linha bg-papel-fundo/95 px-3 py-2 backdrop-blur sm:mx-0 sm:flex-wrap sm:overflow-visible sm:border-none sm:bg-transparent sm:px-0 sm:py-0 lg:top-0"
+    >
       {visiveis.map((item) => {
         const vazio = item.valor === null;
         const realce = item.urgente && !vazio && item.valor! > 0;
@@ -65,7 +84,7 @@ export function ResumoDoDia({ itens }: { itens: readonly ItemResumo[] }) {
             key={item.id}
             href={item.href}
             title={vazio ? item.motivoVazio : realce ? `${item.rotulo} — urgente` : undefined}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-pilula border px-3.5 text-sm transition-[border-color,box-shadow] duration-[var(--transicao-rapida)] hover:shadow-cartao ${
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pilula border px-3.5 text-sm transition-[border-color,box-shadow] duration-[var(--transicao-rapida)] hover:shadow-cartao ${
               realce
                 ? "border-transparent bg-vermelho-fraco text-[color:var(--estado-vermelho)] hover:border-[color:var(--vermelho)]"
                 : "border-linha-forte bg-papel-elevado text-tinta hover:border-[color:var(--latao)]"

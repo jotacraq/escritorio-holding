@@ -471,12 +471,20 @@ function ConteudoDoDia({
           <ResumoDoDia itens={resumo} />
 
           {/* Faixa 1 — o que não espera. O rótulo só aparece quando há as duas
-              faixas: com uma só, nomear seria ruído (a tela inteira é ela). */}
+              faixas: com uma só, nomear seria ruído (a tela inteira é ela).
+              T2 (16/09) — rótulo de seção deixou de custar uma linha de
+              `text-subtitulo` (20px + peso 700) e virou separador de ERP:
+              12px, régua horizontal, mesmo padrão do `Cartao`/`Kpi` (§2,
+              DESIGN-SYSTEM.md). O `aria-labelledby` continua apontando para
+              o mesmo id — a leitura por leitor de tela não muda. */}
           {agoraMesmo.length > 0 && (
             <section aria-labelledby="faixa-agora" className="flex flex-col gap-item">
-              <h2 id="faixa-agora" className="text-subtitulo font-bold text-tinta">
-                Precisa de você agora
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 id="faixa-agora" className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
+                  Precisa de você agora
+                </h2>
+                <span aria-hidden="true" className="h-px flex-1 bg-linha" />
+              </div>
               {agoraMesmo.map((bloco) => (
                 <div key={bloco.id}>{bloco.render()}</div>
               ))}
@@ -485,23 +493,27 @@ function ConteudoDoDia({
 
           {estaSemana.length > 0 && (
             <section aria-labelledby="faixa-semana" className="flex flex-col gap-item">
-              <h2 id="faixa-semana" className="text-subtitulo font-bold text-tinta">
-                Ainda esta semana
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 id="faixa-semana" className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
+                  Ainda esta semana
+                </h2>
+                <span aria-hidden="true" className="h-px flex-1 bg-linha" />
+              </div>
               {estaSemana.map((bloco) => (
                 <div key={bloco.id}>{bloco.render()}</div>
               ))}
             </section>
           )}
 
-          <TudoCerto blocos={tranquilos} />
-
           {/* Sistema — existe só para o admin, e cabe numa linha. */}
           {ve("sistema") && (
             <section aria-labelledby="secao-sistema" className="flex flex-col gap-item">
-              <h2 id="secao-sistema" className="text-subtitulo font-bold text-tinta">
-                Sistema
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 id="secao-sistema" className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
+                  Sistema
+                </h2>
+                <span aria-hidden="true" className="h-px flex-1 bg-linha" />
+              </div>
               <ProvaDeVida versao={versao} />
             </section>
           )}
@@ -509,6 +521,14 @@ function ConteudoDoDia({
           {ehAdmin && agoraMesmo.length === 0 && estaSemana.length === 0 && (
             <p className="text-sm text-tinta-suave">Nada exige ação hoje. Os números da semana estão na aba “Números”.</p>
           )}
+
+          {/* T2 (16/09) — "Sem pendência" desce para o rodapé da fila,
+              sempre depois das duas faixas de trabalho: hoje ele podia cair
+              ENTRE "Precisa de você agora" e "Ainda esta semana" e separar
+              visualmente o que precisa de atenção (pedido do Marcio:
+              "o admin tem que ter o controle do sistema" — trabalho fica
+              junto, sem boa notícia no meio). */}
+          <TudoCerto blocos={tranquilos} />
         </>
       )}
     </div>
