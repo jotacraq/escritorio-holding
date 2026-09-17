@@ -32,6 +32,20 @@ vi.mock("@/server/copiloto/recall", () => ({
   encerrarBotComRetentativa: (...a: unknown[]) => encerrarBotComRetentativaMock(...a),
 }));
 
+// Bot autenticado no Zoom (17/09/2026) — mockado sempre "OK" por padrão
+// (`linkEhZoom` continua a implementação REAL: os testes precisam continuar
+// distinguindo Zoom de Meet pelo link, não por um mock que sempre diz sim).
+const zakWebhookConfiguradoMock = vi.fn();
+const montarZakUrlComSegredoMock = vi.fn();
+vi.mock("@/server/integracoes/zoom", async (importarOriginal) => {
+  const original = await importarOriginal<typeof import("@/server/integracoes/zoom")>();
+  return {
+    ...original,
+    zakWebhookConfigurado: (...a: unknown[]) => zakWebhookConfiguradoMock(...a),
+    montarZakUrlComSegredo: (...a: unknown[]) => montarZakUrlComSegredoMock(...a),
+  };
+});
+
 const { POST } = await import("./route");
 
 interface Cenario {
@@ -44,6 +58,9 @@ interface Cenario {
   gravacaoExternaIdExistente: string | null;
   estadoSessaoCopiloto: string | null;
   upsertFalha: boolean;
+  /** Bot autenticado no Zoom (17/09/2026). `null` = conta ainda não
+   * autorizada (integracoes_zoom.recall_credential_id NULL). */
+  credencialZoomExistente: string | null;
 }
 
 function consultaEncadeavel(resultado: unknown) {
@@ -77,6 +94,7 @@ const CENARIO_LIBERADO: Cenario = {
   gravacaoExternaIdExistente: null,
   estadoSessaoCopiloto: "ativo",
   upsertFalha: false,
+  credencialZoomExistente: "cred_zoom_1",
 };
 
 function montarCenario(c: Partial<Cenario> = {}) {
@@ -117,6 +135,12 @@ function montarCenario(c: Partial<Cenario> = {}) {
     if (tabela === "consentimentos") {
       return consultaEncadeavel({
         data: cenario.consentimentoConcedido ? { concedido: true, revogado_em: null } : null,
+        error: null,
+      });
+    }
+    if (tabela === "integracoes_zoom") {
+      return consultaEncadeavel({
+        data: { recall_credential_id: cenario.credencialZoomExistente },
         error: null,
       });
     }
@@ -184,6 +208,8 @@ afterEach(() => {
   copilotoEstaAtivoMock.mockReset();
   audioAoVivoEstaAtivoMock.mockReset();
   provedorAudioConfiguradoMock.mockReset();
+  zakWebhookConfiguradoMock.mockReset();
+  montarZakUrlComSegredoMock.mockReset();
 });
 
 function configurarMocksDeConfig(c: Partial<Cenario> = {}) {
@@ -194,6 +220,8 @@ function configurarMocksDeConfig(c: Partial<Cenario> = {}) {
   recallConfiguradoMock.mockReturnValue(true);
   copilotoWebhookConfiguradoMock.mockReturnValue(true);
   montarWebhookUrlComSegredoMock.mockReturnValue("https://exemplo.com/api/webhooks/copiloto/transcricao?k=segredo");
+  zakWebhookConfiguradoMock.mockReturnValue(true);
+  montarZakUrlComSegredoMock.mockReturnValue("https://exemplo.com/api/integracoes/zoom/zak?k=segredo-zak");
 }
 
 describe("POST /api/sessoes/[id]/copiloto/bot — kill-switches, ANTES de qualquer fetch ao Recall", () => {
@@ -340,6 +368,21 @@ describe("POST /api/sessoes/[id]/copiloto/bot — sucesso e sala inexistente", (
     expect(chamada.retention.hours).toBe(168);
   });
 
+  // Bot autenticado no Zoom (17/09/2026) — link de Zoom + credencial
+  // existente: `zakUrl` chega em `pedirBot()`.
+  it("link de Zoom com credencial autorizada: pedirBot recebe zakUrl com o segredo", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenario({ linkSala: "https://zoom.us/j/123", credencialZoomExistente: "cred_zoom_1" });
+    configurarMocksDeConfig();
+    pedirBotMock.mockResolvedValue({ situacao: "criado", botId: "bot_novo", statusChanges: [], recordings: [] });
+
+    const resposta = await POST(requisicao(), PARAMS);
+
+    expect(resposta.status).toBe(201);
+    const chamada = pedirBotMock.mock.calls[0][0];
+    expect(chamada.zakUrl).toBe("https://exemplo.com/api/integracoes/zoom/zak?k=segredo-zak");
+  });
+
   // 🔴 Aceite do §8 — o sub_code TEM de chegar ao corpo da resposta.
   it("meeting_not_found: 409 sala_invalida com sub_codigo no corpo, não erro genérico", async () => {
     exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
@@ -401,6 +444,49 @@ describe("POST /api/sessoes/[id]/copiloto/bot — sucesso e sala inexistente", (
     expect(upsertComPendencia).toBeDefined();
     expect(upsertComPendencia?.[0].gravacao_externa_id).toBe("bot_preso");
     expect(upsertComPendencia?.[0].estado).toBe("erro");
+  });
+});
+
+describe("POST /api/sessoes/[id]/copiloto/bot — Zoom autenticado (17/09/2026)", () => {
+  it("link de Meet: NUNCA consulta integracoes_zoom nem manda zakUrl a pedirBot", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenario({ linkSala: "https://meet.google.com/abc-defg-hij", credencialZoomExistente: "cred_zoom_1" });
+    configurarMocksDeConfig();
+    pedirBotMock.mockResolvedValue({ situacao: "criado", botId: "bot_meet", statusChanges: [], recordings: [] });
+
+    const resposta = await POST(requisicao(), PARAMS);
+
+    expect(resposta.status).toBe(201);
+    expect(supabaseAdminMock.from).not.toHaveBeenCalledWith("integracoes_zoom");
+    const chamada = pedirBotMock.mock.calls[0][0];
+    expect(chamada.zakUrl).toBeUndefined();
+  });
+
+  it("link de Zoom SEM conta autorizada (recall_credential_id NULL): 409 zoom_nao_autorizado, ZERO chamada ao Recall", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenario({ linkSala: "https://zoom.us/j/123", credencialZoomExistente: null });
+    configurarMocksDeConfig();
+
+    const resposta = await POST(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(409);
+    expect(corpo.erro).toBe("zoom_nao_autorizado");
+    expect(pedirBotMock).not.toHaveBeenCalled();
+  });
+
+  it("link de Zoom SEM ZOOM_ZAK_WEBHOOK_SECRET configurado: 503 servico_indisponivel, ZERO chamada ao Recall", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    montarCenario({ linkSala: "https://zoom.us/j/123", credencialZoomExistente: "cred_zoom_1" });
+    configurarMocksDeConfig();
+    zakWebhookConfiguradoMock.mockReturnValue(false);
+
+    const resposta = await POST(requisicao(), PARAMS);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(503);
+    expect(corpo.erro).toBe("servico_indisponivel");
+    expect(pedirBotMock).not.toHaveBeenCalled();
   });
 });
 

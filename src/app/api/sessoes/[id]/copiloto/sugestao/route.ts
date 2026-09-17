@@ -14,6 +14,7 @@ import { conferirOrcamentoCopiloto } from "@/server/copiloto/orcamento";
 import { conferirGateCopiloto } from "@/server/copiloto/gate";
 import { executarIaCopiloto } from "@/server/copiloto/executar-ia";
 import { sugestaoEVisivel, validarSugestaoCopiloto } from "@/server/copiloto/validar";
+import { acumularInventarioNaSessao } from "@/server/copiloto/inventario";
 import { lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { RespostaSugestaoCopiloto } from "@/types/copiloto";
 
@@ -234,6 +235,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       throw erroInsercao;
     }
+
+    // 17/09/2026 — acumula os itens de inventário desta chamada DEPOIS do
+    // INSERT confirmado (nunca antes: uma sugestão recusada pelo backstop
+    // do banco não deveria deixar rastro no acumulado). Sai cedo (zero
+    // query) quando não há item novo — ver comentário de topo de
+    // `inventario.ts`. Falha aqui NUNCA derruba a resposta ao cliente: a
+    // sugestão já foi gravada e é isso que importa para quem chamou.
+    await acumularInventarioNaSessao(admin, { sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
 
     const resposta: RespostaSugestaoCopiloto = {
       sugestao_id: gravado.id,

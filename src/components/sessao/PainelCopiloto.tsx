@@ -827,16 +827,53 @@ function DesvioSugerido({
 }
 
 /**
- * BLOCO 2 — "Cuidado" (condicional). Fusão dos 3 antigos quadros de
- * jargão/risco:
+ * A "falha ainda não corrigida" — Fase 12, Fatia A2 (pedido do Marcio,
+ * 17/09): cobertura do roteiro medida ao vivo, guiando "conforme a banda
+ * toca". Critério do dono: ACERTO = cobriu o bloco (pergunta feita, mesmo
+ * sem resposta); ERRO = pulou item obrigatório. `falta_no_bloco` da IA já É
+ * essa falha — só nunca foi apresentada como tal (ver `schema.ts`/`validar.ts`:
+ * é o item não coberto do bloco atual, com `evidencia` como citação literal
+ * conferida por substring contra a transcrição real).
+ *
+ * Saída (a) do pedido, não (b): derivar no cliente a partir do que a IA já
+ * devolve HOJE, sem esperar um campo `cobertura` novo no schema/backend (que
+ * está em paralelo, fora do escopo desta tarefa). `falta_no_bloco[0].evidencia`
+ * é exatamente "o item que faltou" + "a citação que prova o contexto real" —
+ * o par que a régua dos 30s pede.
+ *
+ * DUAS DENSIDADES, um dado só (o resumo pós-sessão, Fatia 2, mostrará o
+ * placar completo bloco a bloco, incluindo acertos — não é esta tarefa):
+ * aqui, ao vivo, só a falha ainda aberta, a MAIS RECENTE, sem lista, sem
+ * "Acertos: N/M" — porque saber que acertou não muda a próxima frase da
+ * advogada, só saber que errou muda. `ultimoNaoNulo` (mesmo padrão da
+ * observação crítica abaixo) evita que a falha suma da tela quando o ciclo
+ * seguinte não repete o campo, mesmo que o bloco ainda esteja incompleto.
+ *
+ * Exige `evidencia` não nula: sem citação literal conferida não é uma falha
+ * apresentável como fato (regra da casa — nada de dado inventado na tela),
+ * só telemetria (`campos_evidencia_nao_conferida`).
+ */
+function ultimoItemFaltaComEvidencia(
+  sugestoes: SugestaoCopilotoPolling[],
+): { valor: { item: string; evidencia: string }; sugestaoId: string; criadoEm: string } | null {
+  return ultimoNaoNulo(sugestoes, (s) => {
+    const item = s.sugestao?.falta_no_bloco.find((f) => f.evidencia);
+    return item && item.evidencia ? { item: item.item, evidencia: item.evidencia } : null;
+  });
+}
+
+/**
+ * BLOCO 2 — "Cuidado" (condicional). Fusão dos quadros de jargão/risco:
  *  - `QuadroAlerta` (SIMs pendentes) → "Falta pedir a autorização de
  *    gravação" e demais pendências, por extenso;
  *  - `QuadroOQueAconteceu` (falta no bloco do estado determinístico) →
  *    "Ainda não perguntou:" no bloco atual;
  *  - `QuadroPodePularPra` (desvio sugerido) → continua com "Ir para lá"/
- *    "Ignorar", agora dentro do mesmo bloco de risco.
+ *    "Ignorar", agora dentro do mesmo bloco de risco;
+ *  - Fase 12, Fatia A2 — a falha de cobertura da IA (`falta_no_bloco` com
+ *    evidência), como LINHA, não card: "acertos e erros" do pedido do dono.
  *
- * Regra dura: **sem nenhum dos três, o bloco inteiro não existe no DOM** —
+ * Regra dura: **sem nenhum dos quatro, o bloco inteiro não existe no DOM** —
  * nunca um card vazio dizendo "nada". Prova por `offsetParent`, nunca por
  * `e.hidden` (filho "visível" dentro de pai `display:none` dá verde falso).
  */
@@ -866,8 +903,11 @@ function BlocoCuidado({
 
   const achadoDesvio = ultimoNaoNulo(sugestoesCiclo, (s) => s.sugestao?.desvio_sugerido ?? null);
 
+  const achadoFalhaCobertura = ultimoItemFaltaComEvidencia(sugestoesCiclo);
+
   const temFaltaNoBloco = falta.campos.length > 0 || falta.observar.length > 0;
-  const temRisco = pendentes.length > 0 || Boolean(observacaoCritica) || temFaltaNoBloco || Boolean(achadoDesvio);
+  const temRisco =
+    pendentes.length > 0 || Boolean(observacaoCritica) || temFaltaNoBloco || Boolean(achadoDesvio) || Boolean(achadoFalhaCobertura);
 
   // CONDICIONAL: sem risco nenhum, o bloco não existe no DOM — nunca um
   // card vazio dizendo "nada". `offsetParent`/renderização condicional real
@@ -917,6 +957,22 @@ function BlocoCuidado({
                 </ul>
               </div>
             )}
+          </div>
+        )}
+
+        {achadoFalhaCobertura && (
+          <div className="flex flex-col gap-0.5 border-t border-dashed border-linha pt-2.5">
+            {/* Linha, não card — a falha ainda aberta mais recente, com a
+             * citação literal que a valida (§ pedido do dono, 17/09: "os
+             * acertos e os erros", "conforme a banda toca"). Acertos NUNCA
+             * aparecem aqui: não mudam a próxima frase; ver comentário de
+             * `ultimoItemFaltaComEvidencia`. */}
+            <p className="text-sm text-tinta">
+              <span className="font-medium text-[color:var(--vermelho)]">Ainda não perguntou: </span>
+              {achadoFalhaCobertura.valor.item}
+            </p>
+            <p className="text-legenda italic text-tinta-fraca">&ldquo;{achadoFalhaCobertura.valor.evidencia}&rdquo;</p>
+            <CarimboHoraSeAntigo criadoEm={achadoFalhaCobertura.criadoEm} sugestaoId={achadoFalhaCobertura.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
           </div>
         )}
 

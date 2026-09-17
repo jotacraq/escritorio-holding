@@ -34,6 +34,8 @@ const contextoVazio: ContextoCopiloto = {
     decisores_presentes: null,
   },
   janela_transcricao: [],
+  dossie: null,
+  inventario_resumo: null,
   resumo_acumulado: {},
   roteiro_ativo_blocos_ids: [],
   roteiro_ativo_blocos: [],

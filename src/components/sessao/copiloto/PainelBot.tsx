@@ -62,6 +62,39 @@ const MENSAGENS_RECUSA_BOT: Record<string, { titulo: string; descricao: string; 
       "O fornecedor devolveu retenção indefinida do áudio, apesar do pedido explícito de prazo limitado — nenhum segmento foi gravado. Avise a equipe técnica antes de tentar de novo.",
     podeTentarDeNovo: false,
   },
+  // Bot autenticado no Zoom (17/09/2026) — a conta ainda não foi autorizada
+  // (Admin → Integrações → Zoom). Distinto de `sala_invalida`: aqui o link
+  // está certo, falta é a autorização OAuth do lado do sistema.
+  zoom_nao_autorizado: {
+    titulo: "A conta Zoom ainda não foi autorizada",
+    descricao: "Peça para a equipe técnica autorizar o Zoom em Admin → Integrações antes de pedir o bot nesta sala.",
+    podeTentarDeNovo: false,
+  },
+};
+
+/** Sub-códigos do Zoom para reunião com bot (§ zoom-signed-in-bots +
+ * medidos/documentados do lado do Recall) — cada um com instrução do que
+ * fazer, nunca "erro ao iniciar" genérico. Mapa próprio (não
+ * `MENSAGENS_RECUSA_BOT`) porque estes chegam DENTRO de `sala_invalida`,
+ * como `detalhes.sub_codigo` — mesmo canal de `meeting_not_found`. */
+const SUB_CODIGOS_ZOOM: Record<string, { titulo: string; descricao: string }> = {
+  meeting_requires_sign_in: {
+    titulo: "A reunião exige participante autenticado",
+    descricao:
+      "A conta Zoom desta reunião exige login. Se a conta Zoom do sistema ainda não foi autorizada, peça para a equipe técnica fazer isso em Admin → Integrações; se já foi, confira se a credencial ainda é válida.",
+  },
+  zoom_local_recording_disabled: {
+    titulo: "A gravação local está desativada nesta conta Zoom",
+    descricao: "Peça para o administrador da conta Zoom da reunião habilitar a gravação local, ou ative a permissão de gravação para o bot na configuração da conta.",
+  },
+  zoom_bot_in_waiting_room: {
+    titulo: "O bot ficou preso na sala de espera",
+    descricao: "Alguém precisa admitir o bot manualmente na sala de espera do Zoom, ou desative a sala de espera para esta reunião.",
+  },
+  zoom_local_recording_request_disabled_by_host: {
+    titulo: "O anfitrião desativou o pedido de gravação local",
+    descricao: "Peça para o anfitrião da reunião permitir gravação local para participantes, ou aprove o pedido de gravação manualmente durante a chamada.",
+  },
 };
 
 /** O `sub_codigo` é o detalhe que mais importa (§4.2.2): `meeting_not_found`
@@ -77,6 +110,9 @@ export function mensagemSalaInvalida(detalhes: unknown): { titulo: string; descr
       titulo: "Não encontrei uma reunião nesse link",
       descricao: "Confira o link da sala na Ficha da jornada — é o motivo mais comum deste aviso. Depois de corrigir, peça o bot de novo.",
     };
+  }
+  if (d.sub_codigo && SUB_CODIGOS_ZOOM[d.sub_codigo]) {
+    return SUB_CODIGOS_ZOOM[d.sub_codigo];
   }
   if (d.sub_codigo) {
     return {

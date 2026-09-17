@@ -106,6 +106,13 @@ export interface PedirBotParams {
    * saída do bot. Nunca inclui o próprio `nomeBot` (§4.2.2/B72) — decisão
    * nossa, nunca o default do fornecedor. */
   botDetectionMatches: string[];
+  /** Bot autenticado no Zoom (17/09/2026) — URL NOSSA que devolve o ZAK em
+   * texto puro (`server/integracoes/zoom.ts::montarZakUrlComSegredo`). SÓ
+   * para link de Zoom: o CHAMADOR decide isso pelo host do `linkSala`
+   * (`linkEhZoom`), nunca este módulo — mandar `zoom.zak_url` num bot de
+   * Meet é ruído, e a API pode recusar o corpo. `undefined`/omitido: o
+   * campo `zoom` inteiro não entra no corpo (nunca manda `zoom: {}` vazio). */
+  zakUrl?: string;
 }
 
 export interface StatusChangeBot {
@@ -228,6 +235,11 @@ export async function pedirBot(params: PedirBotParams): Promise<ResultadoPedirBo
     },
     // §4.2.2/B72 — lista explícita e NOSSA; o nome do bot nunca entra aqui.
     bot_detection: { using_participant_events: { matches: params.botDetectionMatches } },
+    // Bot autenticado no Zoom (17/09/2026, docs.recall.ai/docs/zoom-signed-in-bots).
+    // SÓ quando o CHAMADOR mandou `zakUrl` (link de Zoom com credencial
+    // configurada) — `JSON.stringify` omite a chave inteira quando o valor é
+    // `undefined`, então um bot de Meet nunca carrega `zoom` no corpo.
+    zoom: params.zakUrl ? { zak_url: params.zakUrl } : undefined,
   };
 
   let resposta: Response;

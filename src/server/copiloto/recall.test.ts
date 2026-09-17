@@ -157,6 +157,39 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     expect(corpo.bot_detection.using_participant_events.matches).not.toContain(PARAMS_BASE.nomeBot);
   });
 
+  // Bot autenticado no Zoom (17/09/2026, docs.recall.ai/docs/zoom-signed-in-bots).
+  it("com zakUrl, o corpo enviado contém zoom.zak_url EXATAMENTE o valor recebido", async () => {
+    process.env.RECALL_API_KEY = "chave-teste";
+    const fetchEspiao = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
+    });
+    vi.stubGlobal("fetch", fetchEspiao);
+
+    await pedirBot({ ...PARAMS_BASE, zakUrl: "https://exemplo.com/api/integracoes/zoom/zak?k=segredo" });
+
+    const [, init] = fetchEspiao.mock.calls[0] as [string, RequestInit];
+    const corpo = JSON.parse(init.body as string);
+    expect(corpo.zoom).toEqual({ zak_url: "https://exemplo.com/api/integracoes/zoom/zak?k=segredo" });
+  });
+
+  it("sem zakUrl (bot de Meet), o corpo enviado NÃO tem a chave zoom", async () => {
+    process.env.RECALL_API_KEY = "chave-teste";
+    const fetchEspiao = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
+    });
+    vi.stubGlobal("fetch", fetchEspiao);
+
+    await pedirBot(PARAMS_BASE);
+
+    const [, init] = fetchEspiao.mock.calls[0] as [string, RequestInit];
+    const corpo = JSON.parse(init.body as string);
+    expect(Object.prototype.hasOwnProperty.call(corpo, "zoom")).toBe(false);
+  });
+
   it("o corpo enviado contém automatic_leave com valores NOSSOS, não os defaults do fornecedor", async () => {
     process.env.RECALL_API_KEY = "chave-teste";
     const fetchEspiao = vi.fn().mockResolvedValue({

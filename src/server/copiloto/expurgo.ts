@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
-import type { SugestaoCopiloto } from "@/types/copiloto";
+import { redigirEvidenciasInventario, temEvidenciaNaoRedigidaNoInventario } from "@/server/copiloto/inventario";
+import type { InventarioAcumulado, SugestaoCopiloto } from "@/types/copiloto";
 
 /**
  * Expurgo de `sessoes_copiloto_segmentos` por idade — Fase 10, Fatia 5
@@ -64,6 +65,23 @@ import type { SugestaoCopiloto } from "@/types/copiloto";
  *     rotina). A LINHA inteira nunca é apagada (é histórico de decisão da
  *     IA, auditável) — só a citação, no mesmo instante em que a fala bruta
  *     correspondente sai de `sessoes_copiloto_segmentos`.
+ *   - 🔴 `sessoes_copiloto.inventario_acumulado` (0111) das sessões cujo
+ *     expurgo de segmentos é CONCLUÍDO nesta passagem: o campo `evidencia`
+ *     de CADA item do array é REDIGIDO (ver `redigirEvidenciasInventario`
+ *     em `inventario.ts`) — achado do `security-pentester`, MESMA CLASSE do
+ *     item acima, achado no dia seguinte (17/09/2026) num campo que nasceu
+ *     na 0111: `inventario_acumulado[].evidencia` também é citação literal
+ *     ("a sala comercial no centro é minha e da minha irmã, comprei há 8
+ *     anos") e, sem isto, sobreviveria à fala bruta expurgada. `categoria`/
+ *     `descricao`/`titularidade`/`posse`/`valor_mencionado` sobrevivem — só
+ *     a citação sai (o LEVANTAMENTO continua valendo).
+ *
+ *   ⛔ `dossie_cliente` (0109) — proposital FORA desta redação. O pentester
+ *   foi preciso: aquilo é ESPELHO de dado CADASTRAL que já existe
+ *   PERMANENTEMENTE em `familiares`/`patrimonio_itens`/`documentos` (não é
+ *   evidência de FALA transitória como os dois casos acima). A retenção do
+ *   dossiê é decisão de PRODUTO pendente com o dono — não bug a corrigir
+ *   nesta correção cirúrgica.
  */
 
 const LOTE_SEGMENTOS = 1000; // teto por passada — ~5-6 sessões inteiras (~180 seg/sessão, §2.1 do plano)
@@ -99,6 +117,14 @@ export interface ResultadoExpurgoCopiloto {
    * inalcançável com `teto_ia_sessao=90` — garantia frágil, sinalizada aqui
    * para não depender de ninguém lembrar de checar o teto do produto. */
   sessoesComRedacaoParcial: number;
+  /** 🔴 Achado do `security-pentester` (17/09/2026) — MESMA CLASSE de
+   * `sessoesComFalhaDeRedacao`, aplicada a `sessoes_copiloto.
+   * inventario_acumulado`: sessão carimbada cuja REDAÇÃO da citação literal
+   * em `inventario_acumulado[].evidencia` falhou (`redigirInventarioDaSessao`).
+   * `0` no caminho normal; `> 0` sinaliza evidência literal ainda gravada
+   * além do prazo de retenção — a sessão já saiu do pool, nenhuma passagem
+   * futura tenta de novo sozinha; investigação manual necessária. */
+  sessoesComFalhaDeRedacaoInventario: number;
   /** `expurgo_desligado` = `copiloto_sessao.expurgo_ativo` != true (default e estado seguro).
    * `sem_retencao_configurada` = a chave do prazo não é um inteiro positivo válido. */
   pulada?: "expurgo_desligado" | "sem_retencao_configurada";
@@ -385,6 +411,12 @@ interface ResultadoCarimbo {
    * `teto_ia_sessao=90`, mas é garantia frágil que pode deixar de valer sem
    * aviso se o teto do produto subir. */
   concluidasComLoteCheio: number;
+  /** 🔴 Achado do pentester (17/09/2026) — sessão carimbada cuja redação de
+   * `inventario_acumulado[].evidencia` FALHOU (ver `sessoesComFalhaDeRedacaoInventario`
+   * em `ResultadoExpurgoCopiloto`). Contador SEPARADO de `concluidasComFalhaDeRedacao`
+   * (que é sobre `copiloto_sugestoes`) — as duas redações são passos
+   * independentes; uma pode falhar sem a outra falhar. */
+  concluidasComFalhaDeRedacaoInventario: number;
 }
 
 async function carimbarSessoesSemPendencia(
@@ -399,6 +431,7 @@ async function carimbarSessoesSemPendencia(
   let concluidasComRetidos = 0;
   let concluidasComFalhaDeRedacao = 0;
   let concluidasComLoteCheio = 0;
+  let concluidasComFalhaDeRedacaoInventario = 0;
 
   for (const sessaoId of candidatas) {
     // CORRECAO (achado (b) do 5o caminho via coordenador - "squatter
@@ -438,6 +471,11 @@ async function carimbarSessoesSemPendencia(
           const resultadoRedacao = await redigirSugestoesDaSessao(admin, sessaoId);
           if (!resultadoRedacao.ok) concluidasComFalhaDeRedacao++;
           if (resultadoRedacao.loteCheio) concluidasComLoteCheio++;
+          // 🔴 Achado do pentester (17/09/2026, mesma classe): a citação
+          // literal em `sessoes_copiloto.inventario_acumulado[].evidencia`
+          // sai JUNTO, no mesmo instante — não numa passagem futura.
+          const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
+          if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
         }
         continue;
       }
@@ -482,6 +520,11 @@ async function carimbarSessoesSemPendencia(
         const resultadoRedacao = await redigirSugestoesDaSessao(admin, sessaoId);
         if (!resultadoRedacao.ok) concluidasComFalhaDeRedacao++;
         if (resultadoRedacao.loteCheio) concluidasComLoteCheio++;
+        // Mesmo raciocínio: retenção pelo backstop é sobre o SEGMENTO — a
+        // citação já registrada em `inventario_acumulado` não precisa do
+        // segmento vivo para ser redigida.
+        const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
+        if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
       }
     } catch (erro) {
       // CORRECAO (achado (b) do 5o caminho via coordenador). Erro nesta
@@ -496,7 +539,13 @@ async function carimbarSessoesSemPendencia(
     }
   }
 
-  return { concluidas, concluidasComRetidos, concluidasComFalhaDeRedacao, concluidasComLoteCheio };
+  return {
+    concluidas,
+    concluidasComRetidos,
+    concluidasComFalhaDeRedacao,
+    concluidasComLoteCheio,
+    concluidasComFalhaDeRedacaoInventario,
+  };
 }
 
 /**
@@ -709,6 +758,63 @@ async function redigirSugestoesDaSessao(
 }
 
 /**
+ * 🔴 REDAÇÃO DE EVIDÊNCIA em `sessoes_copiloto.inventario_acumulado` —
+ * achado do `security-pentester` (17/09/2026), MESMA CLASSE do defeito
+ * corrigido um dia antes em `copiloto_sugestoes.conteudo` (ver
+ * `redigirSugestoesDaSessao` acima, achado da Fase 12 Fatia 1): sem isto, a
+ * citação literal em `inventario_acumulado[].evidencia` sobreviveria
+ * INDEFINIDAMENTE ao expurgo de `sessoes_copiloto_segmentos` (a fala bruta
+ * que a originou) — a coluna nasceu HOJE, na 0111, já com o mesmo buraco.
+ *
+ * Chamada só a partir de `carimbar` (nunca solta), no MESMO instante em que
+ * o expurgo de segmentos da sessão é confirmado — nunca lança: erro aqui é
+ * registrado e devolvido ao chamador (`sessoesComFalhaDeRedacaoInventario`
+ * em `ResultadoExpurgoCopiloto`), o carimbo de `sessoes_copiloto` já
+ * commitou e não é revertido. A PRÓXIMA passagem do cron não tenta de novo
+ * por conta própria (a sessão já está carimbada, fora do pool de
+ * `buscarSessoesElegiveis`) — por isso o resultado TEM de ser visível no
+ * resultado do cron, não só em log (mesma exigência do achado de ontem).
+ *
+ * Leitura por PK (`sessoes_copiloto_pkey`, 0091) — 1 linha, sem lote/teto: a
+ * ÚNICA linha possível por sessão é a própria `sessoes_copiloto`
+ * (`inventario_acumulado` não é uma tabela auxiliar como
+ * `copiloto_sugestoes`, é UMA coluna jsonb de UMA linha já identificada por
+ * `sessaoId`). `UPDATE` por linha (não upsert), mesmo motivo do vizinho: a
+ * linha SEMPRE já existe (é a própria sessão sendo carimbada), `.eq
+ * ("sessao_id", ...)` nunca passa por caminho de INSERT.
+ */
+async function redigirInventarioDaSessao(admin: SupabaseClient, sessaoId: string): Promise<boolean> {
+  try {
+    const { data, error: erroLeitura } = await admin
+      .from("sessoes_copiloto")
+      .select("inventario_acumulado")
+      .eq("sessao_id", sessaoId)
+      .maybeSingle<{ inventario_acumulado: InventarioAcumulado | null }>();
+    if (erroLeitura) throw erroLeitura;
+
+    const acumulado = data?.inventario_acumulado ?? [];
+    if (acumulado.length === 0) return true; // sem inventário nesta sessão — nada a redigir
+    if (!temEvidenciaNaoRedigidaNoInventario(acumulado)) return true; // idempotente: já redigido, não escreve à toa
+
+    const redigido = redigirEvidenciasInventario(acumulado);
+    const { error: erroUpdate } = await admin
+      .from("sessoes_copiloto")
+      .update({ inventario_acumulado: redigido })
+      .eq("sessao_id", sessaoId);
+    if (erroUpdate) throw erroUpdate;
+    return true;
+  } catch (erro) {
+    // Isolamento: falha na redação do inventário desta sessão nunca aborta o
+    // carimbo (já commitado) nem a redação das OUTRAS sessões da mesma
+    // passagem — mesmo raciocínio de `redigirSugestoesDaSessao`. `false`
+    // propagado ao chamador para virar `sessoesComFalhaDeRedacaoInventario`
+    // no resultado do cron.
+    registrarErro("copiloto/expurgo.redigirInventarioDaSessao", erro, { sessao_id: sessaoId });
+    return false;
+  }
+}
+
+/**
  * Etapa chamada pelo cron (`POST /api/cron/regua`, via `server/regua/
  * externas.ts::etapaExpurgoCopiloto`) — MESMO padrão de isolamento de
  * `etapaExpurgoLigacoesIa`: nunca lança, sempre devolve um resultado, uma
@@ -723,6 +829,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComSegmentosRetidos: 0,
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
+      sessoesComFalhaDeRedacaoInventario: 0,
       pulada: "expurgo_desligado",
     };
   }
@@ -735,6 +842,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComSegmentosRetidos: 0,
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
+      sessoesComFalhaDeRedacaoInventario: 0,
       pulada: "sem_retencao_configurada",
     };
   }
@@ -750,6 +858,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
         sessoesComSegmentosRetidos: 0,
         sessoesComFalhaDeRedacao: 0,
         sessoesComRedacaoParcial: 0,
+        sessoesComFalhaDeRedacaoInventario: 0,
         retencaoDias,
       };
     }
@@ -798,6 +907,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       concluidasComRetidos: sessoesComSegmentosRetidos,
       concluidasComFalhaDeRedacao: sessoesComFalhaDeRedacao,
       concluidasComLoteCheio: sessoesComRedacaoParcial,
+      concluidasComFalhaDeRedacaoInventario: sessoesComFalhaDeRedacaoInventario,
     } = await carimbarSessoesSemPendencia(admin, candidatasAoCarimbo, sessoesEsvaziadas, sessoesElegiveis, limiteIso, motivo);
 
     return {
@@ -806,6 +916,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComSegmentosRetidos,
       sessoesComFalhaDeRedacao,
       sessoesComRedacaoParcial,
+      sessoesComFalhaDeRedacaoInventario,
       retencaoDias,
       restaLote: encheuLote,
     };
@@ -820,6 +931,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
         sessoesComSegmentosRetidos: 0,
         sessoesComFalhaDeRedacao: 0,
         sessoesComRedacaoParcial: 0,
+        sessoesComFalhaDeRedacaoInventario: 0,
         erro: "coluna_ausente",
       };
     }
@@ -830,6 +942,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComSegmentosRetidos: 0,
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
+      sessoesComFalhaDeRedacaoInventario: 0,
       erro: erro instanceof Error ? erro.message.slice(0, 300) : String(erro).slice(0, 300),
     };
   }

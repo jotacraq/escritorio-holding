@@ -36,6 +36,8 @@ function contextoBase(): ContextoCopiloto {
       decisores_presentes: 1,
     },
     janela_transcricao: ["cliente: meu filho não conseguiu entrar hoje, ele viaja amanhã"],
+    dossie: null,
+    inventario_resumo: null,
     resumo_acumulado: {},
     roteiro_ativo_blocos_ids: ["parte_00", "parte_01", "parte_02", "parte_03", "parte_04"],
     roteiro_ativo_blocos: [
@@ -56,6 +58,7 @@ function saidaBase(): SugestaoCopilotoIa {
     desvio_sugerido: null,
     confianca_geral: 0.8,
     bloco_inferido: null,
+    inventario_mencionado: [],
   };
 }
 
@@ -207,6 +210,122 @@ describe("validarSugestaoCopiloto — confiança fora de [0,1] é limitada (clam
 
     const negativa = validarSugestaoCopiloto({ ...saidaBase(), confianca_geral: -0.3 }, contextoBase());
     expect(negativa.sugestao?.confianca_geral).toBe(0);
+  });
+});
+
+describe("validarSugestaoCopiloto — inventario_mencionado (17/09/2026)", () => {
+  it("item com evidência CONFERIDA (citação literal da janela de transcrição) passa", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "imovel",
+          descricao: "a casa da família",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: null,
+          evidencia: "meu filho não conseguiu entrar hoje", // literal da janela D do contextoBase()
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.inventario_mencionado).toHaveLength(1);
+    expect(resultado.sugestao?.inventario_mencionado?.[0]).toMatchObject({ categoria: "imovel", posse: "propria" });
+  });
+
+  it("🔴 item SEM evidência conferida não entra — o item inteiro é descartado, nunca só a evidência", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "empresa",
+          descricao: "construtora inventada",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: null,
+          evidencia: "frase que nunca foi dita por ninguém na sessão",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.inventario_mencionado).toEqual([]);
+  });
+
+  it("🔴 menção de TERCEIRO (posse='terceiro') passa a validação de evidência normalmente — o filtro de contagem é depois, em resumirInventario", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "empresa",
+          descricao: "construtora do genro",
+          titularidade: null,
+          posse: "terceiro",
+          valor_mencionado: null,
+          evidencia: "meu filho não conseguiu entrar hoje",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    // O validador NÃO filtra por posse — ele só confere evidência/forma. A
+    // exclusão de 'terceiro' do TOTAL acontece em resumirInventario
+    // (inventario.test.ts), não aqui: o item continua existindo como fato
+    // registrado ("mencionou uma empresa que é de terceiro"), só não conta.
+    expect(resultado.sugestao?.inventario_mencionado).toHaveLength(1);
+    expect(resultado.sugestao?.inventario_mencionado?.[0]?.posse).toBe("terceiro");
+  });
+
+  it("lista cortada em MAX_ITENS_INVENTARIO_POR_CHAMADA itens", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: Array.from({ length: 10 }, (_, i) => ({
+        categoria: "outro" as const,
+        descricao: `item ${i}`,
+        titularidade: null,
+        posse: "incerta" as const,
+        valor_mencionado: null,
+        evidencia: "meu filho não conseguiu entrar hoje",
+      })),
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.inventario_mencionado?.length).toBeLessThanOrEqual(6);
+  });
+
+  it("valor 'uns 800 mil' (ordem de grandeza em texto) NÃO dispara o filtro de termo proibido", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "imovel",
+          descricao: "sala comercial",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: "uns 800 mil",
+          evidencia: "meu filho não conseguiu entrar hoje",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.motivoRecusaTotal).toBeNull();
+    expect(resultado.sugestao?.inventario_mencionado?.[0]?.valor_mencionado).toBe("uns 800 mil");
+  });
+
+  it("valor com 'R$'/'reais' em inventario_mencionado recusa a sugestão INTEIRA (B61, mesma regra dos outros campos)", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "imovel",
+          descricao: "sala comercial",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: "R$ 800.000,00",
+          evidencia: "meu filho não conseguiu entrar hoje",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.motivoRecusaTotal).toBe("termo_proibido");
+    expect(resultado.sugestao).toBeNull();
   });
 });
 

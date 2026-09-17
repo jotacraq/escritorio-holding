@@ -53,7 +53,22 @@ interface MontarSupabaseOpts {
   /** `configuracoes['copiloto_sessao.papeis_de_fala']` — ausente cai no default `true`
    * (mesmo comportamento de produção: nasce ligado). */
   papeisDeFalaValor?: { data: unknown; error: unknown };
+  /** Override por chave — `{ "copiloto_sessao.dossie_cliente": { data: {valor:false}, error: null } }`.
+   * Só usado quando a chave pedida bate exatamente; senão cai em `papeisDeFalaValor`. */
+  configuracaoPorChave?: Record<string, { data: unknown; error: unknown }>;
+  /** `sessoes_copiloto.dossie_cliente` embutido no select principal — o caso
+   * COMUM (sessão que já passou por `montarContextoCopiloto` ao menos 1×) é
+   * já vir preenchido, por isso o default aqui NÃO é `undefined`: testes que
+   * não se importam com dossiê continuam provando "zero query nova" sem
+   * precisar declarar isto toda vez. Passe `null` explicitamente para testar
+   * o caminho raro de 1ª montagem. */
+  dossieCliente?: unknown;
+  /** `sessoes_copiloto.inventario_acumulado` embutido no select principal —
+   * default `[]` (sessão sem nenhum item ainda, caso comum). */
+  inventarioAcumulado?: unknown;
 }
+
+const DOSSIE_JA_PERSISTIDO = { faixa_patrimonio: null, familiares: [], patrimonio_tipos: [], documentos_recebidos: [], documentos_pendentes: [] };
 
 function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
   const sessaoData = {
@@ -63,7 +78,12 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
     sims: {},
     jornadas: { pessoa_id: "pessoa-1" },
     roteiros_versoes: opts.roteirosVersoesEmbed,
-    sessoes_copiloto: { participantes: opts.participantes ?? [], resumo_acumulado: {} },
+    sessoes_copiloto: {
+      participantes: opts.participantes ?? [],
+      resumo_acumulado: {},
+      dossie_cliente: "dossieCliente" in opts ? opts.dossieCliente : DOSSIE_JA_PERSISTIDO,
+      inventario_acumulado: opts.inventarioAcumulado ?? [],
+    },
   };
 
   const from = vi.fn((tabela: string) => {
@@ -81,7 +101,28 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
       return consultaEncadeavel({ data: opts.segmentos ?? [], error: null });
     }
     if (tabela === "configuracoes") {
-      return consultaEncadeavel(opts.papeisDeFalaValor ?? { data: null, error: null });
+      // Duas chaves passam por aqui (`papeis_de_fala`, `dossie_cliente`) —
+      // `configuracaoPorChave` sobrepõe o valor default por chave; sem ela,
+      // as duas leituras compartilham `opts.papeisDeFalaValor` (comportamento
+      // de antes desta fatia, preservado para não quebrar teste que não se
+      // importa com a distinção).
+      const builder: Record<string, unknown> = {};
+      let chavePedida: string | null = null;
+      const encadeavel = (...args: unknown[]) => {
+        if (args[0] === "chave") chavePedida = String(args[1]);
+        return builder;
+      };
+      Object.assign(builder, {
+        select: encadeavel,
+        eq: encadeavel,
+        maybeSingle: async () => {
+          if (chavePedida && opts.configuracaoPorChave?.[chavePedida]) {
+            return opts.configuracaoPorChave[chavePedida];
+          }
+          return opts.papeisDeFalaValor ?? { data: null, error: null };
+        },
+      });
+      return builder;
     }
     throw new Error(`tabela não mockada: ${tabela}`);
   });
@@ -272,5 +313,203 @@ describe("montarContextoCopiloto — resolução de papel (15/09/2026, correçã
     expect(new Set(tabelasChamadas)).toEqual(
       new Set(["sessoes_viabilidade", "briefings", "configuracoes", "sessoes_copiloto_segmentos"]),
     );
+  });
+});
+
+describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do Marcio)", () => {
+  it("🔴 kill-switch 'copiloto_sessao.dossie_cliente' DESLIGADO: dossie null MESMO com dossie_cliente já persistido — não apaga a coluna, só para de EXIBIR", async () => {
+    const dossiePersistido = {
+      faixa_patrimonio: "5 a 10 milhões",
+      familiares: [],
+      patrimonio_tipos: [],
+      documentos_recebidos: [],
+      documentos_pendentes: [],
+    };
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      dossieCliente: dossiePersistido,
+      configuracaoPorChave: { "copiloto_sessao.dossie_cliente": { data: { valor: false }, error: null } },
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.dossie).toBeNull();
+  });
+
+  it("kill-switch DESLIGADO barra ANTES de montar — nenhuma query em jornadas/familiares/patrimonio_itens/documentos/documentos_pedidos", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      dossieCliente: null,
+      configuracaoPorChave: { "copiloto_sessao.dossie_cliente": { data: { valor: false }, error: null } },
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.dossie).toBeNull();
+    const tabelasChamadas = (supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(tabelasChamadas).not.toContain("jornadas");
+    expect(tabelasChamadas).not.toContain("familiares");
+  });
+
+  it("dossie_cliente JÁ PERSISTIDO (caso comum): devolve direto, SEM consultar jornadas/familiares/patrimonio_itens/documentos/documentos_pedidos", async () => {
+    const dossiePersistido = {
+      faixa_patrimonio: "5 a 10 milhões",
+      familiares: [{ papel: "conjuge", nome: "Elaine", regime: "comunhao_parcial" }],
+      patrimonio_tipos: ["imovel"],
+      documentos_recebidos: ["imposto_renda"],
+      documentos_pendentes: [],
+    };
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      dossieCliente: dossiePersistido,
+    });
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.dossie).toEqual(dossiePersistido);
+    const tabelasChamadas = (supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(tabelasChamadas).not.toContain("jornadas");
+    expect(tabelasChamadas).not.toContain("familiares");
+    expect(tabelasChamadas).not.toContain("patrimonio_itens");
+    expect(tabelasChamadas).not.toContain("documentos");
+    expect(tabelasChamadas).not.toContain("documentos_pedidos");
+  });
+
+  it("dossie_cliente NULO (1ª chamada da sessão): monta via buscarDossieCliente e GRAVA de volta (upsert)", async () => {
+    const upsertSpy = vi.fn<(valores: Record<string, unknown>, opts: unknown) => Promise<{ error: null }>>(() =>
+      Promise.resolve({ error: null }),
+    );
+    const supabaseBase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      dossieCliente: null,
+    });
+    const fromOriginal = supabaseBase.from as ReturnType<typeof vi.fn>;
+    const from = vi.fn((tabela: string) => {
+      if (tabela === "jornadas") return consultaEncadeavel({ data: { faixa_patrimonio_declarada: "1 a 5 milhões" }, error: null });
+      if (tabela === "familiares") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "patrimonio_itens") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "documentos") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "documentos_pedidos") return consultaEncadeavel({ data: [], error: null });
+      if (tabela === "sessoes_copiloto") return { upsert: upsertSpy };
+      return fromOriginal(tabela);
+    });
+    const supabase = { from } as unknown as SupabaseClient;
+
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+
+    expect(contexto.dossie).toEqual({
+      faixa_patrimonio: "1 a 5 milhões",
+      familiares: [],
+      patrimonio_tipos: [],
+      documentos_recebidos: [],
+      documentos_pendentes: [],
+    });
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(upsertSpy.mock.calls[0]![0]).toMatchObject({ sessao_id: "sessao-1" });
+  });
+
+  it("pessoa_id ausente (sessão sem jornada→pessoa resolvível): dossie null, NUNCA tenta montar", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      dossieCliente: null,
+    });
+    // Remove o vínculo de pessoa que `montarSupabase` normalmente embute.
+    const fromOriginal = supabase.from as ReturnType<typeof vi.fn>;
+    const from = vi.fn((tabela: string) => {
+      if (tabela === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: {
+            id: "sessao-1",
+            jornada_id: "jornada-1",
+            roteiro_versao_id: "roteiro-1",
+            sims: {},
+            jornadas: null,
+            roteiros_versoes: { definicao: DEFINICAO_CARIMBADA },
+            sessoes_copiloto: { participantes: [], resumo_acumulado: {}, dossie_cliente: null },
+          },
+          error: null,
+        });
+      }
+      return fromOriginal(tabela);
+    });
+
+    const contexto = await montarContextoCopiloto({ from } as unknown as SupabaseClient, "sessao-1", 0);
+    expect(contexto.dossie).toBeNull();
+  });
+});
+
+describe("montarContextoCopiloto — bloco G: resumo do inventário mencionado (17/09/2026)", () => {
+  it("sessão sem nenhum item acumulado: resumo com listas vazias, ZERO query nova", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      inventarioAcumulado: [],
+    });
+
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+
+    expect(contexto.inventario_resumo).toEqual({ por_categoria: [], total_itens_proprios: 0, total_itens_incertos: 0 });
+  });
+
+  it("resume por categoria a partir do que já veio no select principal (sem query extra)", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      inventarioAcumulado: [
+        {
+          chave: "imovel:sala comercial no centro",
+          categoria: "imovel",
+          descricao: "sala comercial no centro",
+          titularidade: "do casal",
+          posse: "propria",
+          valor_mencionado: "uns 800 mil",
+          evidencia: "temos uma sala comercial no centro",
+          primeira_mencao_em: "2026-09-17T10:00:00Z",
+          ultima_mencao_em: "2026-09-17T10:00:00Z",
+        },
+        {
+          chave: "empresa:construtora do genro",
+          categoria: "empresa",
+          descricao: "construtora do genro",
+          titularidade: null,
+          posse: "terceiro",
+          valor_mencionado: null,
+          evidencia: "meu genro tem uma construtora",
+          primeira_mencao_em: "2026-09-17T10:05:00Z",
+          ultima_mencao_em: "2026-09-17T10:05:00Z",
+        },
+      ],
+    });
+
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+
+    expect(contexto.inventario_resumo).toEqual({
+      por_categoria: [{ categoria: "imovel", contagem_propria: 1, contagem_incerta: 0, sem_titularidade: 0 }],
+      total_itens_proprios: 1,
+      total_itens_incertos: 0,
+    });
+  });
+
+  it("🔴 kill-switch 'copiloto_sessao.inventario_mencionado' DESLIGADO: resumo null, mesmo com itens já acumulados", async () => {
+    const supabase = montarSupabase({
+      roteiroVersaoId: "roteiro-1",
+      roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
+      inventarioAcumulado: [
+        {
+          chave: "imovel:sala",
+          categoria: "imovel",
+          descricao: "sala",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: null,
+          evidencia: "temos uma sala",
+          primeira_mencao_em: "2026-09-17T10:00:00Z",
+          ultima_mencao_em: "2026-09-17T10:00:00Z",
+        },
+      ],
+      configuracaoPorChave: { "copiloto_sessao.inventario_mencionado": { data: { valor: false }, error: null } },
+    });
+
+    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    expect(contexto.inventario_resumo).toBeNull();
   });
 });

@@ -109,9 +109,130 @@ export interface RespostaSegmentos {
 // `frontend-engineer` importa daqui.
 // ---------------------------------------------------------------------------
 
+/** Um familiar no dossiê — papel + nome (liberado 17/09/2026) + regime de
+ * casamento (só presente para cônjuge). Ver `server/copiloto/dossie.ts`. */
+export interface FamiliarDossie {
+  papel: string;
+  /** `null` quando o familiar não tem nome cadastrado — nunca inventado. */
+  nome: string | null;
+  /** Só presente quando o parentesco é cônjuge e o regime foi informado. */
+  regime: string | null;
+}
+
+/** O dossiê do cliente — "a IA passa a conhecer a família do cliente"
+ * (decisão de 17/09/2026). Montado 1× por sessão por
+ * `server/copiloto/dossie.ts::montarDossieCliente`, persistido em
+ * `sessoes_copiloto.dossie_cliente`. Nunca carrega valor monetário nem
+ * conteúdo de documento — só rótulo/contagem/nome (orçamento de byte, ver
+ * comentário de topo de `dossie.ts`). */
+export interface DossieCliente {
+  /** `jornadas.faixa_patrimonio_declarada` — rótulo, nunca valor. */
+  faixa_patrimonio: string | null;
+  familiares: FamiliarDossie[];
+  /** Tipos de bem com ao menos 1 item ativo (`patrimonio_itens.tipo`), deduplicado. */
+  patrimonio_tipos: string[];
+  /** Tipos de documento já recebidos (existe linha em `documentos`). */
+  documentos_recebidos: string[];
+  /** Tipos de documento pedidos e ainda sem conferência nem dispensa. */
+  documentos_pendentes: string[];
+}
+
+// ---------------------------------------------------------------------------
+// 17/09/2026 — inventário patrimonial MENCIONADO NA FALA (`server/copiloto/
+// inventario.ts`, `server/copiloto/schema.ts::ItemInventarioMencionadoSchema`).
+// DIFERENTE de `DossieCliente` acima: o dossiê é o que o ESCRITÓRIO já tem
+// cadastrado (`patrimonio_itens`, `familiares`); isto é o que o DECISOR
+// relata durante a SESSÃO — script PARTE 03 (`tmp/script-sv-oficial.md`),
+// mesmo padrão do dossiê de exemplo (`tmp/dossie-exemplo-maria.md` §5):
+// quantos · de quem · ordem de grandeza, por categoria.
+// ---------------------------------------------------------------------------
+
+export type CategoriaInventarioMencionado = "imovel" | "empresa" | "investimento" | "outro";
+
+/** O filtro do pedido do dono: "empresas que eles consideram como deles DE
+ * FATO". `"propria"` conta no total; `"terceiro"` nunca conta (é menção de
+ * bem de outra pessoa, ex. "meu genro tem uma empresa"); `"incerta"`
+ * aparece separado, como "a confirmar" — nunca somado. */
+export type PosseInventarioMencionado = "propria" | "terceiro" | "incerta";
+
+/** Um item de inventário como a IA o propôs nesta chamada — já validado
+ * (evidência conferida contra a janela de transcrição) e cortado nos tetos
+ * de `schema.ts`. É o formato que entra no acumulador (`inventario.ts`),
+ * nunca gravado solto: todo item vem de uma citação literal. */
+export interface ItemInventarioMencionado {
+  categoria: CategoriaInventarioMencionado;
+  descricao: string;
+  /** `null` = o decisor não disse de quem é (nunca inventado). */
+  titularidade: string | null;
+  posse: PosseInventarioMencionado;
+  /** Texto como foi dito ("uns 800 mil") — nunca convertido em número. `null`
+   * quando nenhuma ordem de grandeza foi mencionada. */
+  valor_mencionado: string | null;
+  evidencia: string;
+}
+
+/** Um item já ACUMULADO em `sessoes_copiloto.inventario_acumulado` — mesmos
+ * campos do item bruto, mais o controle de deduplicação/atualização que só
+ * existe depois que o item entrou no acumulador (`server/copiloto/
+ * inventario.ts::acumularInventario`). Upsert por `chave` (descrição
+ * normalizada + categoria) — nunca delete+insert (regra da casa,
+ * "anti-piscada": item já registrado não some por não ter sido repetido na
+ * janela de 90s mais recente). */
+export interface ItemInventarioAcumulado extends ItemInventarioMencionado {
+  /** Chave de deduplicação — descrição normalizada (minúsculas, sem acento,
+   * espaços colapsados) + categoria. Não exposta à IA; é detalhe interno do
+   * acumulador. */
+  chave: string;
+  primeira_mencao_em: string;
+  ultima_mencao_em: string;
+}
+
+/** `sessoes_copiloto.inventario_acumulado` (jsonb) — o array completo de
+ * itens já vistos nesta sessão, TODAS as categorias, TODAS as posses. É o
+ * que `acumularInventario` lê e escreve; NUNCA é o que vai para a IA (ver
+ * `ResumoInventarioAcumulado` abaixo) — mandar a lista item a item de volta
+ * ao contexto cresceria sem teto ao longo da sessão, contra a trava física
+ * do p95 do ciclo (9.191 ms medido 15/09, `contexto.ts`). */
+export type InventarioAcumulado = ItemInventarioAcumulado[];
+
+/** O que REALMENTE entra no `ContextoCopiloto` (bloco G) — resumo por
+ * categoria, nunca a lista item a item (teto físico de bytes/latência, ver
+ * comentário de `InventarioAcumulado`). Serve para a IA saber "o que já foi
+ * levantado" sem reenviar tudo: contagens + o que falta (titularidade
+ * ausente), nunca o texto completo de cada item. */
+export interface ResumoCategoriaInventario {
+  categoria: CategoriaInventarioMencionado;
+  /** Só itens com `posse:"propria"` (regra de contagem do pedido do dono —
+   * "de fato"). */
+  contagem_propria: number;
+  /** Itens com `posse:"incerta"` — "a confirmar", nunca somado acima. */
+  contagem_incerta: number;
+  /** Quantos itens de posse própria AINDA não têm `titularidade` — o que
+   * falta perguntar, mesmo padrão de `falta_no_bloco`. */
+  sem_titularidade: number;
+}
+
+/** Bloco G do contexto de IA — resumo por categoria + total falado em
+ * português (mesma frase de fechamento do script, PARTE 03: "estamos
+ * falando aproximadamente de um patrimônio de R$ [X], distribuído dessa
+ * forma"). `total_itens_proprios` é a CONTAGEM que responde ao pedido do
+ * dono ("lógica de contagem com base nas empresas que eles consideram como
+ * deles de fato") — nunca inclui `terceiro`, nunca inclui `incerta`. */
+export interface ResumoInventarioAcumulado {
+  por_categoria: ResumoCategoriaInventario[];
+  total_itens_proprios: number;
+  total_itens_incertos: number;
+}
+
 /** O que entra na IA, montado no servidor (server/copiloto/contexto.ts).
- * Nenhum nome de decisor, nenhum valor de patrimônio, nenhum CPF — ver §7 do
- * plano. Exportado para o teste de mesa do montador de contexto. */
+ * 🔴 17/09/2026: a fronteira de PII original ("nenhum nome de decisor,
+ * nenhum valor de patrimônio") foi REVERTIDA por decisão do Marcio ("pode
+ * liberar tudo pra IA, patrimônio, documentos, tudo" — vault `05 Decisoes/
+ * 2026-09-17 - SIC-HF dossie completo liberado para a IA.md`). O que entra
+ * agora é `dossie` (rótulo/contagem/nome — nunca valor monetário nem
+ * conteúdo de documento, por orçamento de byte, não por LGPD — ver
+ * `server/copiloto/dossie.ts`). Exportado para o teste de mesa do montador
+ * de contexto. */
 export interface ContextoCopiloto {
   /** De onde veio o roteiro deste contexto (14/09/2026, achado em produção:
    * `sessoes_viabilidade.roteiro_versao_id` só é carimbado no 1º SIM —
@@ -162,6 +283,22 @@ export interface ContextoCopiloto {
   };
   /** Últimos ~90s de fala, `"papel: texto"` — nome próprio já trocado por papel. */
   janela_transcricao: string[];
+  /** 17/09/2026 — "a IA passa a conhecer a família do cliente"
+   * (server/copiloto/dossie.ts). Montado 1× por sessão e persistido em
+   * `sessoes_copiloto.dossie_cliente`; este módulo só LÊ o que já foi
+   * gravado (nunca remonta a cada ciclo — o p95 do ciclo não comporta uma
+   * 5ª/6ª/7ª query por chamada). `null` só na primeira leitura de uma
+   * sessão sem `pessoa_id` resolvível (nunca deveria acontecer em produção
+   * — toda sessão tem jornada, toda jornada tem pessoa). */
+  dossie: DossieCliente | null;
+  /** 17/09/2026 — bloco G: resumo por categoria do inventário MENCIONADO na
+   * fala (`server/copiloto/inventario.ts`). `null` só quando o kill-switch
+   * `copiloto_sessao.inventario_mencionado` está desligado, OU a sessão
+   * ainda não teve nenhum item acumulado — NUNCA a lista item a item (teto
+   * físico, ver `ResumoInventarioAcumulado`). Serve para a IA não repetir
+   * pergunta já respondida e notar o que falta (ex.: "três imóveis citados,
+   * nenhum com titularidade"). */
+  inventario_resumo: ResumoInventarioAcumulado | null;
   /** `sessoes_copiloto.resumo_acumulado` como está — ninguém reescreve nesta fatia. */
   resumo_acumulado: Record<string, unknown>;
   /** Ids de todos os blocos do roteiro ativo — é contra ISTO que o servidor
@@ -220,6 +357,16 @@ export interface SugestaoCopiloto {
    * permite identificar com segurança — NUNCA "o bloco anterior por
    * inércia" (regra do prompt, 0106). */
   bloco_inferido?: { bloco_id: string; confianca: number; evidencia: string } | null;
+  /** 17/09/2026 — itens de inventário NOVOS propostos nesta chamada, já
+   * validados (evidência conferida) e cortados nos tetos de `schema.ts`.
+   * `[]` é o valor normal (a maioria das janelas de ~90s não menciona bem
+   * novo) — não confundir com "sessão sem inventário", que é o array vazio
+   * em `sessoes_copiloto.inventario_acumulado` (a ROTA acumula estes itens
+   * lá, este campo aqui é só o DELTA desta chamada, para telemetria/auditoria
+   * de `copiloto_sugestoes.conteudo`, mesmo padrão dos outros campos desta
+   * interface). `?:` pelo mesmo motivo de `bloco_inferido`: contrato novo
+   * por composição, sem quebrar literais de teste do front. */
+  inventario_mencionado?: ItemInventarioMencionado[];
 }
 
 /** Resposta de sucesso de `POST /api/sessoes/[id]/copiloto/sugestao`. */
@@ -583,6 +730,11 @@ export type CodigoRecusaBotCopiloto =
   /** Idempotência — sessão já tem bot pedido. CASO NORMAL, não erro:
    * clicar duas vezes (ou reabrir a tela) não pede um 2º bot. */
   | "bot_ja_pedido"
+  /** Bot autenticado no Zoom (17/09/2026) — link de Zoom mas
+   * `integracoes_zoom.recall_credential_id` ainda NULL (conta não
+   * autorizada em Admin → Integrações). Só ocorre para link de Zoom; Meet
+   * nunca passa por esta checagem. */
+  | "zoom_nao_autorizado"
   /** O provedor não respondeu como esperado (502) — pode tentar de novo. */
   | "falha_provedor_bot"
   /** 🔴 Link de sala errado ou reunião inexistente — `detalhes.sub_codigo`

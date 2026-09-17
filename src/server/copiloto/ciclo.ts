@@ -5,6 +5,7 @@ import { conferirOrcamentoCopiloto } from "./orcamento";
 import { montarContextoCopiloto } from "./contexto";
 import { executarIaCopiloto } from "./executar-ia";
 import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
+import { acumularInventarioNaSessao } from "./inventario";
 import { avaliarGatilho, type OrigemBlocoParaGatilho, type TipoGatilhoCopiloto } from "./gatilho";
 import { encerrarSePassouDoTempo } from "./encerrar";
 import { lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
@@ -325,6 +326,11 @@ export async function executarCicloCopiloto(
       .select("id, ordem_evento, criado_em")
       .single<{ id: string; ordem_evento: number; criado_em: string }>();
     if (erroInsercao) throw erroInsercao;
+
+    // 17/09/2026 — mesma regra da rota sob demanda: acumula DEPOIS do INSERT
+    // confirmado, sai cedo (zero query) sem item novo. Falha aqui não afeta
+    // o resultado do ciclo (já foi gravado o que importa).
+    await acumularInventarioNaSessao(admin, { sessaoId: params.sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
 
     return {
       situacao: "sugestao_gravada",

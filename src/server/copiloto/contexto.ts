@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RoteiroDefinicao } from "@/types/roteiro";
-import type { ContextoCopiloto } from "@/types/copiloto";
-import { erroNaoEncontrado } from "@/server/erros";
+import type { ContextoCopiloto, DossieCliente, InventarioAcumulado } from "@/types/copiloto";
+import { erroNaoEncontrado, registrarErro } from "@/server/erros";
 import { lerConfiguracaoBool } from "@/server/ia/configuracao";
 import { normalizarNome, normalizarParticipantesBrutos, type ParticipanteRegistrado } from "@/server/copiloto/participantes";
+import { buscarDossieCliente } from "@/server/copiloto/dossie";
+import { resumirInventario } from "@/server/copiloto/inventario";
 
 /**
  * Montador do contexto que vai para a IA do copiloto — Fase 10, Fatia 2
@@ -12,12 +14,29 @@ import { normalizarNome, normalizarParticipantesBrutos, type ParticipanteRegistr
  * estado.ts, Fatia 1), que este módulo REUSA para os blocos A e C em vez de
  * duplicar a query.
  *
- * FRONTEIRA DE PII (§7 do plano): este módulo é o "um lugar só" onde o nome
- * do falante vira papel (`advogada`/`decisor_N`/`acompanhante_N`) e onde os
- * NOMES dos decisores do briefing NUNCA entram — só a contagem. Patrimônio,
- * CPF, endereço e dado de IR não são consultados aqui: não há import de
- * `cenarios`, `croqui_calculos` nem `documentos` neste arquivo, por
- * construção (não por checagem em runtime).
+ * 🔴 FRONTEIRA DE PII — REVERTIDA em 17/09/2026 (§14-20 antigos deste
+ * comentário afirmavam "por construção" o oposto do que vale agora). Decisão
+ * do Marcio: *"pode liberar tudo pra IA, patrimônio, documentos, tudo"*
+ * (vault `05 Decisoes/2026-09-17 - SIC-HF dossie completo liberado para a
+ * IA.md`), ao ser apresentado o bloqueio B1 — ele escolheu ALÉM da
+ * recomendação técnica (que era "sem números"). O contexto agora inclui o
+ * **bloco DOSSIÊ** (`server/copiloto/dossie.ts`): faixa de patrimônio
+ * declarada, composição familiar com NOME, tipos de bem e tipos de
+ * documento recebidos/pendentes. Nomes de DECISORES do briefing continuam
+ * só contagem (isso não mudou — é outro dado, outra decisão, ver
+ * `buscarRecorteBriefing` abaixo) e conteúdo de documento (IR, contrato
+ * social) CONTINUA fora — não por LGPD, mas porque 2.000-8.000 tokens de
+ * documento estouram o timeout do ciclo (ver comentário de topo de
+ * `dossie.ts`).
+ *
+ * O DOSSIÊ NUNCA É MONTADO NO CAMINHO QUENTE: `sessoes_copiloto.dossie_cliente`
+ * é escrito 1× (a primeira vez que esta função roda para aquela sessão) e
+ * lido nas chamadas seguintes — inclusive dentro do CICLO AUTOMÁTICO
+ * (`ciclo.ts`, a cada ~20s), que NÃO PODE ganhar 5 queries novas por
+ * execução (p95 já em 9.191 ms contra timeout de 8.000 ms, medido
+ * 15/09/2026 — ver `montarOuReaproveitarDossie` abaixo). Kill-switch
+ * `copiloto_sessao.dossie_cliente` (0109, nasce TRUE) — desligar para o bloco
+ * parar de ir para a IA SEM apagar o que já foi persistido.
  *
  * 🔴 PAPÉIS DE FALA (15/09/2026) — CORREÇÃO de cegueira medida em produção:
  * 128 segmentos com o nome PRÓPRIO gravado certo (`"João CSM"`) chegavam à
@@ -26,14 +45,31 @@ import { normalizarNome, normalizarParticipantesBrutos, type ParticipanteRegistr
  * RESOLVIDO NA ESCRITA (`server/copiloto/participantes.ts::resolverPapelNoJoin`,
  * chamado por `entrada-bot.ts` no `join`) e gravado em
  * `sessoes_copiloto.participantes[].papel` — este módulo só CONSOME o mapa
- * pronto (`rotuloFalante`), nunca decide papel sozinho. Isso preserva a
- * fronteira de PII: o NOME nunca sai desta função, só o papel estável já
- * resolvido alhures.
+ * pronto (`rotuloFalante`), nunca decide papel sozinho. ISSO NÃO MUDOU com a
+ * liberação de 17/09: fala ao vivo continua indo por papel, não nome — a
+ * liberação foi sobre o DOSSIÊ (família/patrimônio/documento), um bloco
+ * diferente do contexto.
  *
  * Bloco E (resumo acumulado) fica FORA desta função nesta entrega: mora em
  * `sessoes_copiloto.resumo_acumulado` (0091), e a Fatia 2 só LÊ o que já está
  * lá (a rota sob demanda não reescreve o resumo — reescrever a cada ciclo é
  * comportamento do ciclo automático, Fatia 3). Aqui ele entra como está.
+ *
+ * 🔴 Bloco G (17/09/2026) — INVENTÁRIO MENCIONADO NA FALA (`server/copiloto/
+ * inventario.ts`), DIFERENTE do bloco F (dossiê CADASTRAL): este bloco é só
+ * o RESUMO POR CATEGORIA de `sessoes_copiloto.inventario_acumulado` — NUNCA
+ * a lista item a item. Mesmo motivo do bloco F ter nascido "montado 1× por
+ * sessão": o acumulado CRESCE ao longo da sessão (cada categoria mencionada
+ * de novo, cada item novo), e mandar tudo de volta a cada ciclo violaria a
+ * MESMA trava física (p95 do ciclo em 9.191 ms contra timeout de 8.000 ms).
+ * Este módulo só LÊ o campo `inventario_acumulado` já persistido (vindo no
+ * MESMO select principal, ZERO query nova) e resume — quem ESCREVE
+ * `inventario_acumulado` é a ROTA/CICLO, DEPOIS de validar a saída da IA
+ * (`validar.ts`), nunca este módulo (mesma separação de responsabilidade do
+ * resto do arquivo: `contexto.ts` monta o que ENTRA na IA, nunca grava o que
+ * SAI dela). Kill-switch próprio (`copiloto_sessao.inventario_mencionado`,
+ * 0111) — mesmo padrão fail-OPEN do bloco F: desligar só para de EXIBIR,
+ * nunca apaga o que já foi acumulado.
  */
 
 const JANELA_TRANSCRICAO_SEGUNDOS = 90;
@@ -48,7 +84,12 @@ interface SessaoParaContexto {
   jornada_id: string;
   jornadas: { pessoa_id: string } | null;
   roteiros_versoes: { definicao: RoteiroDefinicao } | null;
-  sessoes_copiloto: { participantes: unknown; resumo_acumulado: Record<string, unknown> } | null;
+  sessoes_copiloto: {
+    participantes: unknown;
+    resumo_acumulado: Record<string, unknown>;
+    dossie_cliente: DossieCliente | null;
+    inventario_acumulado: InventarioAcumulado | null;
+  } | null;
 }
 
 interface SegmentoJanela {
@@ -81,7 +122,7 @@ export async function montarContextoCopiloto(
     .from("sessoes_viabilidade")
     .select(
       "id, jornada_id, roteiro_versao_id, sims, jornadas(pessoa_id), roteiros_versoes(definicao), " +
-        "sessoes_copiloto(participantes, resumo_acumulado)",
+        "sessoes_copiloto(participantes, resumo_acumulado, dossie_cliente, inventario_acumulado)",
     )
     .eq("id", sessaoId)
     .maybeSingle<SessaoParaContexto>();
@@ -205,6 +246,29 @@ export async function montarContextoCopiloto(
   // aqui nesta fatia — ver comentário de topo) ------------------------------
   const resumoE = data.sessoes_copiloto?.resumo_acumulado ?? {};
 
+  // --- F · dossiê do cliente (17/09/2026) — CAMINHO COMUM (sessão que já
+  // passou por esta função ao menos 1×, que é a maioria das chamadas do
+  // ciclo automático): `dossie_cliente` já veio no select principal, ZERO
+  // query nova. Só na 1ª chamada de uma sessão (`dossie_cliente is null`) é
+  // que `montarOuReaproveitarDossie` faz as 5 idas ao banco de
+  // `buscarDossieCliente` — e persiste o resultado, para a 2ª chamada em
+  // diante (inclusive dentro do MESMO ciclo automático de 20s) já vir
+  // pronta pelo select. Ver comentário de topo do arquivo. */
+  const dossieF = await montarOuReaproveitarDossie(supabase, {
+    sessaoId,
+    jornadaId: data.jornada_id,
+    pessoaId: data.jornadas?.pessoa_id ?? null,
+    dossieJaPersistido: data.sessoes_copiloto?.dossie_cliente ?? null,
+  });
+
+  // --- G · resumo do inventário mencionado na fala (17/09/2026) — ZERO
+  // query nova (`inventario_acumulado` já veio no select principal). Só o
+  // RESUMO sai daqui (ver comentário de topo) — quem grava itens novos é a
+  // ROTA/CICLO, depois de validar a saída desta mesma chamada.
+  const inventarioResumoG = (await inventarioMencionadoEstaAtivo(supabase))
+    ? resumirInventario(data.sessoes_copiloto?.inventario_acumulado ?? [])
+    : null;
+
   return {
     roteiro_fonte: roteiroFonte,
     bloco_atual: blocoA,
@@ -221,6 +285,8 @@ export async function montarContextoCopiloto(
     estado_factual: contextoC,
     janela_transcricao: janelaD,
     resumo_acumulado: resumoE,
+    dossie: dossieF,
+    inventario_resumo: inventarioResumoG,
     roteiro_ativo_blocos_ids: blocos.map((b) => b.id),
     // Fase 12, Fatia 1 — `(id, titulo, objetivo)` de TODOS os blocos, SEM
     // `falas`/`proibido`/`campos`/`observar` (mesmo raciocínio de peso do
@@ -230,6 +296,97 @@ export async function montarContextoCopiloto(
     // apontar para um bloco que não seja o atual.
     roteiro_ativo_blocos: blocos.map((b) => ({ id: b.id, titulo: b.titulo, objetivo: b.objetivo })),
   };
+}
+
+/** `copiloto_sessao.dossie_cliente` (0109) — kill-switch do bloco F. Lido
+ * SEMPRE (mesmo padrão de `papeisDeFalaEstaoAtivos`, bloco D: "desligar no
+ * meio de uma sessão precisa valer IMEDIATAMENTE" — se este módulo confiasse
+ * só no que já foi persistido, desligar a chave não pararia de EXIBIR o
+ * dossiê de uma sessão que já o tinha gravado antes do desligamento).
+ * DESLIGADO não apaga `sessoes_copiloto.dossie_cliente` (a coluna continua
+ * com o valor gravado) — só faz esta função devolver `null` ao CHAMADOR,
+ * então a IA para de receber o bloco sem precisar de migration para
+ * reverter. Falha de leitura cai em `true` (fail-OPEN — mesma filosofia da
+ * 0108: "é remoção de restrição, não trava nova"; o padrão fail-CLOSED de
+ * outros kill-switches do copiloto é para o que sai da sala, não para o que
+ * a advogada já podia ver na Ficha do cliente). */
+const CHAVE_DOSSIE_CLIENTE_ATIVO = "copiloto_sessao.dossie_cliente";
+
+async function dossieClienteEstaAtivo(supabase: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(supabase, CHAVE_DOSSIE_CLIENTE_ATIVO, true);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Bloco F — dossiê do cliente (17/09/2026). Caminho comum: `dossieJaPersistido`
+ * não é `null` (o select principal já trouxe) → devolve direto (só a leitura
+ * do interruptor, mesmo custo do bloco D — ZERO query nova em `familiares`/
+ * `patrimonio_itens`/`documentos`/`documentos_pedidos`).
+ *
+ * Caminho raro (1ª chamada da sessão, interruptor ligado): monta via
+ * `buscarDossieCliente` (5 idas ao banco, `dossie.ts`) e GRAVA de volta em
+ * `sessoes_copiloto.dossie_cliente` — `upsert` com `onConflict: "sessao_id"`
+ * (mesmo padrão de `bot/route.ts` para `gravacao_externa_id`: a linha de
+ * `sessoes_copiloto` pode ainda não existir quando o dossiê é montado antes
+ * de qualquer segmento/bot, por isso `upsert`, não `update`). Corrida entre
+ * duas chamadas concorrentes (ciclo automático + botão "Me ajuda agora" no
+ * mesmo instante) é INÓCUA: ambas montam o MESMO dossiê a partir do MESMO
+ * dado, a 2ª escrita só sobrescreve com valor idêntico — não há necessidade
+ * de CAS aqui (diferente de `participantes`, que é lista mutável).
+ *
+ * Falha ao GRAVAR não deve derrubar o ciclo: `registrarErro` + segue com o
+ * dossiê montado em memória (a IA recebe o dossiê desta chamada; a próxima
+ * chamada tenta gravar de novo, já que releu `null`). Falha ao MONTAR
+ * (`buscarDossieCliente` lança) também não deve travar o resto do contexto
+ * — dossiê ausente é degradação aceitável (a IA responde sem esse bloco),
+ * nunca motivo para a sugestão inteira falhar.
+ *
+ * `pessoaId` nulo (sessão sem jornada→pessoa resolvível, não deveria
+ * acontecer em produção) devolve `null` sem tentar montar.
+ */
+async function montarOuReaproveitarDossie(
+  supabase: SupabaseClient,
+  params: { sessaoId: string; jornadaId: string; pessoaId: string | null; dossieJaPersistido: DossieCliente | null },
+): Promise<DossieCliente | null> {
+  if (!(await dossieClienteEstaAtivo(supabase))) return null;
+  if (params.dossieJaPersistido) return params.dossieJaPersistido;
+  if (!params.pessoaId) return null;
+
+  let dossie: DossieCliente;
+  try {
+    dossie = await buscarDossieCliente(supabase, params.pessoaId, params.jornadaId);
+  } catch (erro) {
+    registrarErro("copiloto/contexto.montarOuReaproveitarDossie#montar", erro, { sessao_id: params.sessaoId });
+    return null;
+  }
+
+  const { error: erroGravacao } = await supabase
+    .from("sessoes_copiloto")
+    .upsert({ sessao_id: params.sessaoId, dossie_cliente: dossie }, { onConflict: "sessao_id" });
+  if (erroGravacao) {
+    registrarErro("copiloto/contexto.montarOuReaproveitarDossie#gravar", erroGravacao, { sessao_id: params.sessaoId });
+  }
+
+  return dossie;
+}
+
+/** `copiloto_sessao.inventario_mencionado` (0111) — kill-switch do bloco G,
+ * mesmo padrão fail-OPEN de `dossieClienteEstaAtivo` acima: lido SEMPRE (não
+ * só na escrita), para desligar no meio de uma sessão valer imediatamente na
+ * LEITURA sem precisar de migration. Desligado não apaga
+ * `sessoes_copiloto.inventario_acumulado` — só faz esta função devolver
+ * `null` ao chamador. */
+const CHAVE_INVENTARIO_MENCIONADO_ATIVO = "copiloto_sessao.inventario_mencionado";
+
+async function inventarioMencionadoEstaAtivo(supabase: SupabaseClient): Promise<boolean> {
+  try {
+    return await lerConfiguracaoBool(supabase, CHAVE_INVENTARIO_MENCIONADO_ATIVO, true);
+  } catch {
+    return true;
+  }
 }
 
 /**

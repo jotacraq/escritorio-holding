@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SugestaoCopiloto } from "@/types/copiloto";
+import type { InventarioAcumulado, ItemInventarioAcumulado, SugestaoCopiloto } from "@/types/copiloto";
 import {
   CHAVE_EXPURGO_ATIVO,
   CHAVE_RETENCAO_DIAS_SEGMENTOS,
@@ -47,6 +47,9 @@ interface SessaoCopilotoRow {
    * distinção entre motivo padrão e motivo "com retidos" (achado (i)+(ii)
    * do Fable). `undefined` nos fixtures que não verificam este campo. */
   expurgo_segmentos_motivo?: string | null;
+  /** 🔴 Achado do pentester (17/09/2026) — inventário mencionado ao vivo
+   * (0111). `undefined`/ausente nos fixtures que não exercitam a redação. */
+  inventario_acumulado?: InventarioAcumulado | null;
 }
 
 interface SegmentoRow {
@@ -115,9 +118,26 @@ function clienteFalso(estado: {
         builder._patchCount = opts?.count === "exact";
         return builder;
       };
+      // Leitura por PK usada por `redigirInventarioDaSessao` (mesmo padrão de
+      // `acumularInventarioNaSessao` em inventario.ts) — devolve a linha
+      // inteira do `sessao_id` filtrado por `.eq`.
+      builder.maybeSingle = async () => {
+        const alvo = estado.sessoes.find((s) => s.sessao_id === builder._filtros.sessao_id);
+        return { data: alvo ? { inventario_acumulado: alvo.inventario_acumulado ?? null } : null, error: null };
+      };
       // `.is('expurgo_segmentos_em', null)` no UPDATE (idempotência) reusa `eq`/`is` acima —
       // mas o UPDATE precisa da sessão-alvo via `.eq('sessao_id', ...)`.
+      // 🔴 DOIS updates distintos nesta tabela: o CARIMBO (`expurgo_segmentos_em`
+      // no patch, exige idempotência via `expurgo_segmentos_em === null`) e a
+      // REDAÇÃO do inventário (`inventario_acumulado` no patch, roda DEPOIS do
+      // carimbo já ter sido gravado — não pode reusar o mesmo guard, senão
+      // nunca escreveria).
       builder.then = (resolve: (v: { data: unknown; error: unknown; count?: number }) => unknown) => {
+        if (builder._patch && "inventario_acumulado" in builder._patch) {
+          const alvo = estado.sessoes.find((s) => s.sessao_id === builder._filtros.sessao_id);
+          if (alvo) Object.assign(alvo, builder._patch);
+          return Promise.resolve(resolve({ data: null, error: null }));
+        }
         if (builder._patch) {
           const alvo = estado.sessoes.find((s) => s.sessao_id === builder._filtros.sessao_id);
           let carimbouAgora = false;
@@ -250,6 +270,7 @@ describe("etapaExpurgoSegmentosCopiloto", () => {
       sessoesComSegmentosRetidos: 0,
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
+      sessoesComFalhaDeRedacaoInventario: 0,
       pulada: "expurgo_desligado",
     });
   });
@@ -800,6 +821,10 @@ describe("etapaExpurgoSegmentosCopiloto — 5º caminho (sessão esvaziada sem c
           builder._patch = patch;
           return builder;
         };
+        // `redigirInventarioDaSessao` lê por PK antes de tentar redigir —
+        // este teste não tem inventário nenhum, então devolve vazio (nada a
+        // redigir, `ok:true`, sem I/O extra além da leitura).
+        builder.maybeSingle = async () => ({ data: { inventario_acumulado: null }, error: null });
         builder.then = (resolve: (v: unknown) => unknown) => {
           if (builder._patch) {
             if (builder._filtros.sessao_id === "s1") {
@@ -996,6 +1021,211 @@ describe("etapaExpurgoSegmentosCopiloto — redação de evidência em copiloto_
     await etapaExpurgoSegmentosCopiloto(cliente);
     // sessão já carimbada não é elegível — nunca entra no laço de redação.
     expect(estado.sugestoes[0].conteudo.bloco_inferido?.evidencia).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 ACHADO DO security-pentester (17/09/2026) — MESMA CLASSE do achado
+// acima, num campo NOVO: `sessoes_copiloto.inventario_acumulado[].evidencia`
+// (0111) também é citação literal da fala do cliente e, sem esta correção,
+// sobreviveria INDEFINIDAMENTE ao expurgo de `sessoes_copiloto_segmentos`
+// (a fala bruta que a originou). Prova: a citação NÃO sobrevive ao expurgo,
+// e `categoria`/`descricao`/`titularidade`/`posse`/`valor_mencionado`
+// continuam intactos — só a citação sai.
+// ---------------------------------------------------------------------------
+function itemInventarioComEvidencia(): ItemInventarioAcumulado {
+  return {
+    categoria: "imovel",
+    descricao: "sala comercial no centro",
+    titularidade: "cliente e irmã",
+    posse: "propria",
+    valor_mencionado: "cerca de R$ 400 mil",
+    evidencia: "a sala comercial no centro é minha e da minha irmã, comprei há 8 anos",
+    chave: "imovel:sala comercial no centro",
+    primeira_mencao_em: DIAS(40),
+    ultima_mencao_em: DIAS(35),
+  };
+}
+
+describe("etapaExpurgoSegmentosCopiloto — redação de evidência em inventario_acumulado (achado do pentester, 17/09/2026)", () => {
+  it("🔴 quando o expurgo de segmentos da sessão CONCLUI, a citação literal em inventario_acumulado[].evidencia é redigida na MESMA passagem — descricao/posse/titularidade/valor_mencionado sobrevivem", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [
+        {
+          sessao_id: "s1",
+          transcricao_id: "t1",
+          expurgo_segmentos_em: null,
+          encerrado_em: DIAS(29),
+          inventario_acumulado: [itemInventarioComEvidencia()],
+        } as SessaoCopilotoRow,
+      ],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+    };
+    const cliente = clienteFalso(estado);
+    const r = await etapaExpurgoSegmentosCopiloto(cliente);
+
+    // O expurgo de segmento aconteceu normalmente — a redação do inventário
+    // é acréscimo, não muda o comportamento já existente.
+    expect(r.segmentosRemovidos).toBe(1);
+    expect(r.sessoesConcluidas).toBe(1);
+    expect(estado.segmentos).toHaveLength(0);
+    expect(r.sessoesComFalhaDeRedacaoInventario).toBe(0);
+
+    // A citação literal SUMIU — não sobrevive ao expurgo dos segmentos.
+    const itemGravado = estado.sessoes[0].inventario_acumulado![0];
+    expect(itemGravado.evidencia).toBe("");
+    expect(JSON.stringify(estado.sessoes[0].inventario_acumulado)).not.toContain("comprei há 8 anos");
+
+    // O LEVANTAMENTO continua valendo — nenhum outro campo é tocado.
+    expect(itemGravado.categoria).toBe("imovel");
+    expect(itemGravado.descricao).toBe("sala comercial no centro");
+    expect(itemGravado.titularidade).toBe("cliente e irmã");
+    expect(itemGravado.posse).toBe("propria");
+    expect(itemGravado.valor_mencionado).toBe("cerca de R$ 400 mil");
+    expect(itemGravado.chave).toBe("imovel:sala comercial no centro");
+  });
+
+  it("sessão SEM segmento vencido (nada a expurgar) NÃO redige inventario_acumulado — sem carimbo, sem redação", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [
+        {
+          sessao_id: "s1",
+          transcricao_id: "t1",
+          expurgo_segmentos_em: null,
+          encerrado_em: DIAS(1),
+          inventario_acumulado: [itemInventarioComEvidencia()],
+        } as SessaoCopilotoRow,
+      ],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(1) }], // recente, dentro do prazo
+    };
+    const cliente = clienteFalso(estado);
+    const r = await etapaExpurgoSegmentosCopiloto(cliente);
+
+    expect(r.sessoesConcluidas).toBe(0); // sessão não concluiu — ainda tem segmento pendente
+    expect(estado.sessoes[0].inventario_acumulado![0].evidencia).toBe(
+      "a sala comercial no centro é minha e da minha irmã, comprei há 8 anos",
+    );
+  });
+
+  it("2ª passada sobre sessão JÁ carimbada não tenta redigir de novo (idempotente, sem I/O supérfluo)", async () => {
+    const jaRedigido = { ...itemInventarioComEvidencia(), evidencia: "" };
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [
+        {
+          sessao_id: "s1",
+          transcricao_id: "t1",
+          expurgo_segmentos_em: "2026-01-01T00:00:00Z",
+          encerrado_em: DIAS(60),
+          inventario_acumulado: [jaRedigido],
+        } as SessaoCopilotoRow,
+      ],
+      segmentos: [] as SegmentoRow[],
+    };
+    const cliente = clienteFalso(estado);
+    await etapaExpurgoSegmentosCopiloto(cliente);
+    // sessão já carimbada não é elegível — nunca entra no laço de redação.
+    expect(estado.sessoes[0].inventario_acumulado![0].evidencia).toBe("");
+  });
+
+  it("🔴 falha na redação do inventário de UMA sessão não impede o carimbo nem a redação das outras — contador próprio no resultado do cron", async () => {
+    const encerradoEm = DIAS(30);
+    const from = vi.fn((tabela: string): any => {
+      if (tabela === "configuracoes") {
+        const builder: any = {};
+        builder.select = () => builder;
+        builder.eq = (_c: string, v: string) => {
+          builder._chave = v;
+          return builder;
+        };
+        builder.maybeSingle = async () => {
+          if (builder._chave === CHAVE_EXPURGO_ATIVO) return { data: { valor: true }, error: null };
+          if (builder._chave === CHAVE_RETENCAO_DIAS_SEGMENTOS) return { data: { valor: 7 }, error: null };
+          return { data: null, error: null };
+        };
+        return builder;
+      }
+      if (tabela === "sessoes_copiloto") {
+        const builder: any = { _filtros: {} };
+        builder.select = () => builder;
+        builder.not = () => builder;
+        builder.is = () => builder;
+        builder.order = () => builder;
+        builder.limit = () => builder;
+        builder.returns = () => builder;
+        builder.eq = (campo: string, valor: string) => {
+          builder._filtros[campo] = valor;
+          return builder;
+        };
+        builder.update = (patch: Record<string, unknown>) => {
+          builder._patch = patch;
+          return builder;
+        };
+        // A LEITURA por PK (`redigirInventarioDaSessao`) falha para s1,
+        // sucede para s2 — simula erro transiente isolado a uma sessão.
+        builder.maybeSingle = async () => {
+          if (builder._filtros.sessao_id === "s1") throw new Error("timeout de rede na leitura do inventario");
+          return { data: { inventario_acumulado: null }, error: null };
+        };
+        builder.then = (resolve: (v: unknown) => unknown) => {
+          if (builder._patch) return Promise.resolve(resolve({ data: null, error: null, count: 1 }));
+          return Promise.resolve(
+            resolve({
+              data: [
+                { sessao_id: "s1", encerrado_em: encerradoEm },
+                { sessao_id: "s2", encerrado_em: encerradoEm },
+              ],
+              error: null,
+            }),
+          );
+        };
+        return builder;
+      }
+      if (tabela === "sessoes_copiloto_segmentos") {
+        const builder: any = {};
+        builder.select = () => builder;
+        builder.in = () => builder;
+        builder.eq = () => builder;
+        builder.lt = () => builder;
+        builder.limit = () => builder;
+        builder.returns = () => builder;
+        builder.delete = () => {
+          builder._delete = true;
+          return builder;
+        };
+        builder.then = (resolve: (v: unknown) => unknown) => Promise.resolve(resolve({ data: [], error: null })); // ambas esvaziadas
+        return builder;
+      }
+      if (tabela === "copiloto_sugestoes") {
+        const builder: any = {};
+        builder.select = () => builder;
+        builder.eq = () => builder;
+        builder.limit = () => builder;
+        builder.returns = () => builder;
+        builder.then = (resolve: (v: unknown) => unknown) => Promise.resolve(resolve({ data: [], error: null }));
+        return builder;
+      }
+      throw new Error(`tabela inesperada: ${tabela}`);
+    });
+
+    const r = await etapaExpurgoSegmentosCopiloto({ from } as unknown as SupabaseClient);
+    // As DUAS sessões são carimbadas normalmente (a falha é só na redação do
+    // inventário, que roda DEPOIS do carimbo já commitado — não reverte).
+    expect(r.sessoesConcluidas).toBe(2);
+    // Só s1 falhou na redação do inventário — visível no resultado do cron,
+    // não só em log (mesma exigência do achado de ontem).
+    expect(r.sessoesComFalhaDeRedacaoInventario).toBe(1);
   });
 });
 

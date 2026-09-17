@@ -17,6 +17,7 @@ import {
   encerrarBotComRetentativa,
 } from "@/server/copiloto/recall";
 import { lerConfiguracaoInt } from "@/server/ia/configuracao";
+import { linkEhZoom, montarZakUrlComSegredo, zakWebhookConfigurado } from "@/server/integracoes/zoom";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
 
@@ -96,9 +97,20 @@ const NOME_BOT_PARA_REMOCAO_MANUAL = `"${NOME_BOT}"`;
  *     `servico_indisponivel` (mesmo fail-closed dos outros 4 webhooks/integrações).
  *  9. Sessão já tem bot pedido (`gravacao_externa_id` preenchido) → 409
  *     `bot_ja_pedido`, idempotente — não pede um 2º bot para a mesma sessão.
- * 10. `pedirBot()`, com `retention` explícito (§4.2.1). Resposta com
- *     `sala_invalida` → 409 `sala_invalida`, com o `sub_code` do fornecedor
- *     no corpo (nunca "erro ao iniciar" genérico — §4.2.2). Resposta com
+ * 9b. 🔴 BOT AUTENTICADO NO ZOOM (17/09/2026, docs.recall.ai/docs/zoom-signed-in-bots).
+ *     SÓ quando `link_sala` é do Zoom (`linkEhZoom`): sem
+ *     `ZOOM_ZAK_WEBHOOK_SECRET` → 503 `servico_indisponivel`; sem
+ *     `integracoes_zoom.recall_credential_id` (conta ainda não autorizada em
+ *     Admin → Integrações) → 409 `zoom_nao_autorizado`, ESPECÍFICO — nunca o
+ *     "erro ao pedir bot" genérico (o dono perdeu uma sessão real por causa
+ *     dessa ambiguidade). Link de Meet nunca passa por este passo.
+ * 10. `pedirBot()`, com `retention` explícito (§4.2.1) e `zakUrl` quando o
+ *     passo 9b aplicou. Resposta com `sala_invalida` → 409 `sala_invalida`,
+ *     com o `sub_code` do fornecedor no corpo (nunca "erro ao iniciar"
+ *     genérico — §4.2.2; inclui os sub_codes do Zoom:
+ *     `meeting_requires_sign_in`, `zoom_local_recording_disabled`,
+ *     `zoom_bot_in_waiting_room`, `zoom_local_recording_request_disabled_by_host`,
+ *     tratados em `PainelBot.tsx::SUB_CODIGOS_ZOOM`). Resposta com
  *     `retencao_infinita_detectada` → 409, com MENSAGEM CONDICIONAL AO
  *     RESULTADO REAL do encerramento (achado 4 do Fable, ver bloco abaixo).
  * 11. Sucesso: grava `gravacao_externa_id` — 🔴 CORREÇÃO (achado 3 do
@@ -191,11 +203,49 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const retencaoDias = await lerConfiguracaoInt(supabase, CHAVE_RETENCAO_DIAS_SEGMENTOS, PADRAO_RETENCAO_DIAS);
 
+    // Bot autenticado no Zoom (17/09/2026, docs.recall.ai/docs/zoom-signed-in-bots).
+    // SÓ para link de Zoom — mandar zoom.zak_url num bot de Meet é ruído e a
+    // API pode recusar. Sem a env do segredo ou sem a conta Zoom autorizada
+    // ainda (`integracoes_zoom.recall_credential_id` NULL), o erro tem de
+    // ser ESPECÍFICO ("a conta Zoom ainda não foi autorizada"), nunca o
+    // "erro ao pedir bot" genérico — o dono já perdeu uma sessão hoje por
+    // mensagem genérica no mesmo defeito de fundo (autenticação do Zoom).
+    let zakUrl: string | undefined;
+    if (linkEhZoom(sessao.link_sala)) {
+      if (!zakWebhookConfigurado()) {
+        registrarErro("POST /api/sessoes/[id]/copiloto/bot#zoom", new Error("ZOOM_ZAK_WEBHOOK_SECRET ausente"));
+        throw new ErroApi(503, "servico_indisponivel", "A integração com o Zoom não está configurada no servidor.");
+      }
+      const { data: integracaoZoom, error: erroIntegracaoZoom } = await admin
+        .from("integracoes_zoom")
+        .select("recall_credential_id")
+        .eq("id", 1)
+        .maybeSingle<{ recall_credential_id: string | null }>();
+      if (erroIntegracaoZoom) throw erroIntegracaoZoom;
+
+      if (!integracaoZoom?.recall_credential_id) {
+        throw erroConflito(
+          "zoom_nao_autorizado",
+          "A conta Zoom ainda não foi autorizada. Peça para a equipe técnica autorizar em Admin → Integrações antes de pedir o bot nesta sala.",
+        );
+      }
+
+      const url = montarZakUrlComSegredo();
+      if (!url) {
+        // Defesa em profundidade — mesmo raciocínio de `webhookUrl` acima:
+        // `zakWebhookConfigurado()` já confere isso, mas nunca manda
+        // `zakUrl` undefined ao Recall se a env sumir entre as duas checagens.
+        throw new ErroApi(503, "servico_indisponivel", "A integração com o Zoom não está configurada no servidor.");
+      }
+      zakUrl = url;
+    }
+
     const resultado = await pedirBot({
       sessaoId,
       linkSala: sessao.link_sala,
       nomeBot: NOME_BOT,
       webhookUrl,
+      zakUrl,
       // §4.2.1 — SEMPRE explícito. `retencaoDias` vem de configuração
       // (`copiloto_sessao.retencao_dias_segmentos`, hoje sobre os SEGMENTOS
       // no NOSSO banco, B69) — reusado aqui como teto de retenção no

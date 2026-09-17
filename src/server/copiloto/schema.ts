@@ -72,6 +72,46 @@ const BlocoInferidoSchema = z
   })
   .nullable();
 
+/**
+ * 17/09/2026 — inventário patrimonial MENCIONADO na fala (PARTE 03 do
+ * script da SV, `tmp/script-sv-oficial.md`: "levantar a lista de bens" por
+ * categoria, sempre com os três eixos do dossiê de exemplo — quantos, de
+ * quem, ordem de grandeza). DIFERENTE do bloco `dossie` (server/copiloto/
+ * dossie.ts): o dossiê é o que o ESCRITÓRIO já tem cadastrado; isto é o que
+ * o DECISOR está dizendo agora, sessão a sessão, antes de qualquer cadastro
+ * existir.
+ *
+ * DOIS enums novos (`categoria`, `posse`) na MESMA gramática estrita que já
+ * tem `tipo` (4 valores, `TipoObservacaoSchema`) — sonda local (script
+ * ad-hoc, mesmo `paraJsonSchemaEstrito` da sonda real) mediu o schema
+ * INTEIRO com os dois enums em 2.019 B, bem abaixo do teto documentado
+ * (3.905 B compila / 4.428 B não) — não foi preciso o plano de contingência
+ * (`posse: boolean|null` + `categoria` string livre). Ainda assim, `POST
+ * /api/admin/sonda-schema {"chave":"copiloto"}` é quem confirma contra o
+ * provedor real antes de ativar o prompt novo (0094-padrão) — a medição
+ * local é determinística para BYTES, não para o que o provedor aceita.
+ *
+ * `posse` é o filtro do pedido do dono ("empresas que eles consideram como
+ * deles DE FATO"): `"propria"` = o decisor trata como patrimônio próprio ou
+ * da família; `"terceiro"` = menção de posse de outra pessoa ("meu genro
+ * tem uma empresa") — nunca contado; `"incerta"` = não deu para saber pela
+ * fala — aparece na tela como "a confirmar", nunca somado ao total (ver
+ * `server/copiloto/inventario.ts`). Na dúvida entre `propria` e `incerta`,
+ * o PROMPT instrui `incerta` — o schema não pode forçar essa cautela
+ * sozinho, só oferecer o valor.
+ */
+export const CategoriaInventarioMencionadoSchema = z.enum(["imovel", "empresa", "investimento", "outro"]);
+export const PosseInventarioMencionadoSchema = z.enum(["propria", "terceiro", "incerta"]);
+
+const ItemInventarioMencionadoSchema = z.object({
+  categoria: CategoriaInventarioMencionadoSchema,
+  descricao: z.string(),
+  titularidade: z.string().nullable(),
+  posse: PosseInventarioMencionadoSchema,
+  valor_mencionado: z.string().nullable(),
+  evidencia: z.string(),
+});
+
 export const SugestaoCopilotoIaSchema = z.object({
   proxima_pergunta: ProximaPerguntaSchema,
   falta_no_bloco: z.array(ItemFaltaSchema),
@@ -79,6 +119,7 @@ export const SugestaoCopilotoIaSchema = z.object({
   desvio_sugerido: DesvioSugeridoSchema,
   confianca_geral: z.number(),
   bloco_inferido: BlocoInferidoSchema,
+  inventario_mencionado: z.array(ItemInventarioMencionadoSchema),
 });
 
 export type SugestaoCopilotoIa = z.infer<typeof SugestaoCopilotoIaSchema>;
@@ -101,3 +142,21 @@ export const MAX_ITENS_FALTA_NO_BLOCO = 4;
  * teto próprio no plano; reusa o valor mais próximo em espírito: uma citação
  * curta, não um parágrafo). */
 export const TETO_EVIDENCIA_BLOCO_INFERIDO = 200;
+
+/** 17/09/2026 — tetos de `inventario_mencionado[]` (mesmo raciocínio dos
+ * tetos acima: regra de PROMPT + corte defensivo no validador, nunca no
+ * Zod). `descricao`/`titularidade`/`valor_mencionado` são rótulos curtos
+ * ("sala comercial no centro", "do casal", "uns 800 mil") — não uma frase;
+ * `evidencia` segue o mesmo teto de 200 já usado para as outras citações. */
+export const TETO_DESCRICAO_INVENTARIO = 160;
+export const TETO_TITULARIDADE_INVENTARIO = 120;
+export const TETO_VALOR_MENCIONADO_INVENTARIO = 80;
+export const TETO_EVIDENCIA_INVENTARIO = 200;
+
+/** Máximo de itens de inventário que a IA pode propor POR CHAMADA — não é o
+ * total acumulado da sessão (isso não tem teto, `server/copiloto/
+ * inventario.ts` acumula por toda a sessão): é quantos itens NOVOS uma
+ * janela de ~90s de fala pode plausivelmente mencionar. Mesmo espírito de
+ * `MAX_ITENS_FALTA_NO_BLOCO` — teto defensivo de payload por chamada, não
+ * de negócio. */
+export const MAX_ITENS_INVENTARIO_POR_CHAMADA = 6;

@@ -935,6 +935,16 @@ de forma consistente, em outro lugar.
 
 ## 7. Fronteira de PII — o que sai, o que nunca sai, e onde o gate mora
 
+> 🔴 **REVERTIDO em 17/09/2026** (decisão do Marcio: "pode liberar tudo pra IA, patrimônio,
+> documentos, tudo" — vault `05 Decisoes/2026-09-17 - SIC-HF dossie completo liberado para a
+> IA.md`). Quando esta seção foi escrita, a premissa era "patrimônio, CPF, endereço e dado de
+> IR nunca entram no contexto por construção". Isso deixou de ser verdade: o contexto agora
+> inclui um bloco DOSSIÊ (faixa de patrimônio em rótulo, composição familiar com nome, tipos
+> de bem, tipos de documento recebido/pendente — nunca valor exato, nunca CPF/endereço, nunca
+> conteúdo de documento). A tabela abaixo foi atualizada; a linha antiga foi mantida riscada,
+> não apagada, pela mesma razão que o §6.2.2 já registra: "comentário que afirma garantia que
+> deixou de existir é pior que comentário ausente" — apagar sem rastro seria pior ainda.
+
 **Onde o gate é aplicado — corrigido pela errata do §6.2.2.** Em **dois lugares, nesta
 ordem**, e a ordem é o ponto inteiro:
 
@@ -959,7 +969,8 @@ ordem**, e a ordem é o ponto inteiro:
 | Bloco do roteiro, objetivo, proibições | Sim | — (é conteúdo do método, não do cliente) |
 | Recorte do briefing (DISC, objeção, linguagem) | Sim | Já é saída de IA sobre esta mesma família, sob `tratamento_ia` |
 | **Nomes dos decisores do briefing** | **Não.** O contexto recebe "2 decisores esperados, 1 presente", jamais os nomes | `montarContextoCopiloto()` |
-| **Valores de patrimônio, CPF, endereço, dados do IR** | **Nunca.** Não entram no contexto por construção — o copiloto não consulta `cenarios`, `croqui_calculos`, `documentos` nem `pessoas` além do primeiro nome | Não há caminho: essas tabelas não são consultadas |
+| **Faixa de patrimônio, composição familiar (com nome), tipos de bem, tipos de documento recebido/pendente** | 🔴 **Sim, desde 17/09/2026** — decisão do Marcio ("pode liberar tudo pra IA, patrimônio, documentos, tudo", vault `05 Decisoes/2026-09-17 - SIC-HF dossie completo liberado para a IA.md`), REVERTENDO a linha original desta tabela (mantida abaixo, riscada, por transparência histórica). Rótulo/contagem/nome — **nunca valor exato em reais** e **nunca conteúdo de documento** (isso é trava de LATÊNCIA, não de LGPD — o p95 do ciclo automático não comporta 2.000-8.000 tokens de IR/contrato social) | Bloco DOSSIÊ, montado 1× por sessão e persistido em `sessoes_copiloto.dossie_cliente` (`server/copiloto/dossie.ts`, migration 0109); kill-switch `copiloto_sessao.dossie_cliente` |
+| ~~Valores de patrimônio, CPF, endereço, dados do IR — nunca entram no contexto por construção~~ | ~~**Nunca.** Não entram no contexto por construção — o copiloto não consulta `cenarios`, `croqui_calculos`, `documentos` nem `pessoas` além do primeiro nome~~ | ~~Não há caminho: essas tabelas não são consultadas~~ — **linha histórica, FALSA desde 17/09/2026, mantida à vista de propósito (mesmo princípio da nota de §6.2.2 acima): comentário que afirma garantia que deixou de existir é pior que comentário ausente, mas apagar a linha sem deixar rastro seria pior ainda** |
 | Preço do croqui (R$ 7.200 / R$ 4.500) | **Não entra e não pode sair** — guarda de termo na SAIDA, igual a B61 | Validador pós-Zod |
 | Áudio bruto | **Nunca chega ao nosso servidor.** O bot transcreve; recebemos texto | Contrato do webhook (aceita `texto`, não `audio_url`) |
 | `hash_entrada` em `execucoes_ia` | sha256, como sempre — **nunca o conteúdo** | `executarComAuditoria` já faz |

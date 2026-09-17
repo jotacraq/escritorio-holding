@@ -2,8 +2,11 @@ import type { ContextoCopiloto, SugestaoCopiloto, TipoObservacaoCopiloto } from 
 import type { SugestaoCopilotoIa } from "./schema";
 import {
   MAX_ITENS_FALTA_NO_BLOCO,
+  MAX_ITENS_INVENTARIO_POR_CHAMADA,
+  TETO_DESCRICAO_INVENTARIO,
   TETO_EVIDENCIA_BLOCO_INFERIDO,
   TETO_EVIDENCIA_FALTA,
+  TETO_EVIDENCIA_INVENTARIO,
   TETO_EVIDENCIA_OBSERVACAO,
   TETO_EVIDENCIA_PERGUNTA,
   TETO_ITEM_FALTA,
@@ -11,6 +14,8 @@ import {
   TETO_MOTIVO_PERGUNTA,
   TETO_TEXTO_OBSERVACAO,
   TETO_TEXTO_PERGUNTA,
+  TETO_TITULARIDADE_INVENTARIO,
+  TETO_VALOR_MENCIONADO_INVENTARIO,
 } from "./schema";
 
 /**
@@ -83,6 +88,11 @@ function contemTermoDeValor(saida: SugestaoCopilotoIa): boolean {
   }
   if (saida.bloco_inferido) {
     textos.push(saida.bloco_inferido.evidencia);
+  }
+  for (const item of saida.inventario_mencionado) {
+    textos.push(item.descricao, item.evidencia);
+    if (item.titularidade) textos.push(item.titularidade);
+    if (item.valor_mencionado) textos.push(item.valor_mencionado);
   }
 
   const normalizados = textos.map(normalizarTexto);
@@ -225,6 +235,29 @@ export function validarSugestaoCopiloto(
     // null — mesmo raciocínio de desvio_sugerido.
   }
 
+  // -- inventario_mencionado (17/09/2026): DIFERENTE de `falta_no_bloco` —
+  // aqui a evidência não conferida DESCARTA O ITEM INTEIRO, nunca só anula o
+  // campo evidência. Um item de patrimônio sem citação literal comprovada
+  // não é "um fato com prova fraca", é invenção (regra do pedido: "sem
+  // citação conferida contra a transcrição, o item não entra"). Mesmo
+  // raciocínio de `bloco_inferido` acima — a evidência É a razão de existir
+  // do item, não um detalhe a mais dele. Teto de itens POR CHAMADA
+  // (`MAX_ITENS_INVENTARIO_POR_CHAMADA`) é aplicado ANTES da conferência de
+  // evidência (mesma ordem de `falta_no_bloco`: cortar primeiro, validar o
+  // que sobrou — nunca o inverso, que descartaria itens válidos por estarem
+  // depois de itens inválidos na lista da IA).
+  const inventarioMencionado = saidaIa.inventario_mencionado
+    .slice(0, MAX_ITENS_INVENTARIO_POR_CHAMADA)
+    .filter((item) => evidenciaConferida(item.evidencia, contexto))
+    .map((item) => ({
+      categoria: item.categoria,
+      descricao: cortar(item.descricao, TETO_DESCRICAO_INVENTARIO),
+      titularidade: item.titularidade ? cortar(item.titularidade, TETO_TITULARIDADE_INVENTARIO) : null,
+      posse: item.posse,
+      valor_mencionado: item.valor_mencionado ? cortar(item.valor_mencionado, TETO_VALOR_MENCIONADO_INVENTARIO) : null,
+      evidencia: cortar(item.evidencia, TETO_EVIDENCIA_INVENTARIO),
+    }));
+
   return {
     sugestao: {
       proxima_pergunta: proximaPergunta,
@@ -234,6 +267,7 @@ export function validarSugestaoCopiloto(
       confianca_geral: clampConfianca(saidaIa.confianca_geral),
       campos_evidencia_nao_conferida: camposNaoConferidos,
       bloco_inferido: blocoInferido,
+      inventario_mencionado: inventarioMencionado,
     },
     motivoRecusaTotal: null,
   };

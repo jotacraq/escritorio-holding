@@ -9,6 +9,7 @@ import { BriefingSchema, BriefingV2Schema } from "@/server/ia/schema-briefing";
 import { CroquiAnaliseSchema } from "@/server/ia/schema-croqui-analise";
 import { CroquiAnaliseV2Schema } from "@/server/croqui/schema-analise-v2";
 import { MaterialConteudoSchema } from "@/server/ia/material";
+import { SugestaoCopilotoIaSchema } from "@/server/copiloto/schema";
 import { paraJsonSchemaEstrito } from "@/server/ia/provedor/json-schema-estrito";
 
 /**
@@ -41,6 +42,10 @@ const CHAVES = {
   croqui_v1: { schema: CroquiAnaliseSchema, descricao: "Agente do Croqui v1 — o que está em produção" },
   croqui_v2: { schema: CroquiAnaliseV2Schema, descricao: "Agente do Croqui v2 — 13 slides tipados + alocacao + valor_declarado (0059)" },
   material: { schema: MaterialConteudoSchema, descricao: "Material pós-sessão" },
+  copiloto: {
+    schema: SugestaoCopilotoIaSchema,
+    descricao: "Copiloto ao Vivo — 7 campos, com inventario_mencionado (17/09/2026, 2 enums novos: categoria/posse)",
+  },
 } as const;
 type ChaveSonda = keyof typeof CHAVES;
 

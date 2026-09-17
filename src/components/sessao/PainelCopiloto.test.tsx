@@ -992,6 +992,177 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     });
   });
 
+  /**
+   * Fase 12, Fatia A2 (pedido do Marcio, 17/09) — "acertos e erros" ao vivo:
+   * a falha ainda não corrigida, mais recente, em UMA LINHA, com a citação
+   * literal. Derivada de `falta_no_bloco` (saída da IA), não de um campo
+   * `cobertura` novo — ver comentário de `ultimoItemFaltaComEvidencia` em
+   * `PainelCopiloto.tsx`. Acertos NUNCA aparecem ao vivo (só no resumo
+   * pós-sessão, fora desta fatia).
+   */
+  describe("Cuidado — falha de cobertura da IA (acertos e erros)", () => {
+    it("sem falha aberta (falta_no_bloco vazio ou sem evidência): a linha não existe no DOM", async () => {
+      estado.copiloto = { ...ESTADO_BASE, sims_pendentes: [], falta_no_bloco: { campos: [], observar: [] } };
+      const semFalhaCobertura: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.5,
+        campos_evidencia_nao_conferida: [],
+      };
+      estado.pollingRespostaPadrao = respostaPolling({
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-sem-falha",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.5,
+            visivel: true,
+            sugestao: semFalhaCobertura,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      });
+      const { container, queryByText } = await abrirComPolling();
+
+      // Bloco "Cuidado" inteiro some (sem SIM pendente, sem falta no bloco
+      // determinístico, sem falha de cobertura da IA) — prova por
+      // `offsetParent`, nunca por `e.hidden` (padrão de `:315`).
+      const rotuloCuidado = queryByText("Cuidado");
+      expect(rotuloCuidado === null || (rotuloCuidado as HTMLElement).offsetParent === null || !container.contains(rotuloCuidado)).toBe(true);
+      expect(container.textContent).not.toContain("Cuidado");
+    });
+
+    it("com falha aberta: mostra a mais recente com a citação literal, sem lista de acertos", async () => {
+      estado.copiloto = { ...ESTADO_BASE, sims_pendentes: [], falta_no_bloco: { campos: [], observar: [] } };
+      const primeiraFalha: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [{ item: "Confirmar decisores presentes", evidencia: "só a Terezinha está na sala" }],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.7,
+        campos_evidencia_nao_conferida: [],
+      };
+      const segundaFalha: SugestaoCopiloto = {
+        proxima_pergunta: null,
+        falta_no_bloco: [{ item: "Explicar a fala de sigilo", evidencia: "isso aqui fica só entre nós, é sigiloso" }],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.75,
+        campos_evidencia_nao_conferida: [],
+      };
+      estado.pollingRespostas = [
+        respostaPolling({
+          sugestoes_novas: [
+            {
+              sugestao_id: "sug-falha-1",
+              ordem_evento: 1,
+              gatilho: "intervalo",
+              confianca_geral: 0.7,
+              visivel: true,
+              sugestao: primeiraFalha,
+              desfecho: null,
+              criado_em: new Date().toISOString(),
+            },
+          ],
+          proximo_cursor_sugestao: 1,
+          ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+        }),
+      ];
+      const { container, queryByText } = await abrirComPolling();
+      // Escopo no `article` do bloco "Cuidado" — "Fale agora" tem histórico
+      // próprio (`SugestoesDoCiclo`, "1 sugestão anterior") que também cita
+      // a falha; a régua aqui é o que aparece DENTRO de "Cuidado".
+      const cuidado = () => queryByText("Cuidado")?.closest("article");
+      expect(cuidado()?.textContent).toContain("Confirmar decisores presentes");
+      expect(cuidado()?.textContent).toContain("só a Terezinha está na sala");
+
+      // Acertos nunca aparecem — nenhum "N/M", nenhum "acertou".
+      expect(container.textContent).not.toContain("acerto");
+      expect(container.textContent).not.toContain("Acerto");
+
+      estado.pollingRespostaPadrao = respostaPolling({
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-falha-2",
+            ordem_evento: 2,
+            gatilho: "intervalo",
+            confianca_geral: 0.75,
+            visivel: true,
+            sugestao: segundaFalha,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 2,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Só a MAIS RECENTE aparece DENTRO DE "Cuidado" — a falha anterior
+      // some da linha (não é lista acumulada, é a última falha ainda
+      // aberta). Ela pode continuar visível no HISTÓRICO de "Fale agora"
+      // (comportamento pré-existente daquele bloco, fora desta tarefa).
+      expect(cuidado()?.textContent).toContain("Explicar a fala de sigilo");
+      expect(cuidado()?.textContent).toContain("isso aqui fica só entre nós, é sigiloso");
+      expect(cuidado()?.textContent).not.toContain("Confirmar decisores presentes");
+    });
+
+    it("'Fale agora' continua sendo o único bloco com peso visual — a falha de cobertura é linha em 'Cuidado', não um quarto bloco", async () => {
+      const comFalha: SugestaoCopiloto = {
+        proxima_pergunta: {
+          texto: "Quem mais participa das decisões financeiras da família?",
+          motivo: "O 3º SIM ainda não foi confirmado.",
+          evidencia: "meu filho não conseguiu entrar hoje, ele viaja amanhã",
+        },
+        falta_no_bloco: [{ item: "Confirmar decisores presentes", evidencia: "só a Terezinha está na sala" }],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.7,
+        campos_evidencia_nao_conferida: [],
+      };
+      estado.pollingRespostaPadrao = respostaPolling({
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-ambos-1",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.7,
+            visivel: true,
+            sugestao: comFalha,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      });
+      const { container, queryByText } = await abrirComPolling();
+
+      // Nenhum 3º/4º card para a falha de cobertura — ela vive só como
+      // LINHA dentro de "Cuidado" (regra dura do pedido: funde, nunca card
+      // próprio). Os `article`s permanentes da tela ao vivo são só "Fale
+      // agora", "Cuidado" e "O cliente disse" (rodapé discreto, já
+      // documentado no topo do arquivo como apoio, nunca peso) — nenhum
+      // article novo nasce da falha de cobertura.
+      const rotulosDosArtigos = Array.from(container.querySelectorAll("article")).map((a) => a.textContent?.slice(0, 40));
+      expect(rotulosDosArtigos.length).toBe(3);
+      expect(container.textContent).toContain("Fale agora");
+      expect(container.textContent).toContain("Cuidado");
+      expect(container.textContent).toContain("Confirmar decisores presentes");
+
+      // A falha de cobertura mora dentro do `article` de "Cuidado", não em
+      // um article isolado só dela.
+      const cuidado = queryByText("Cuidado")?.closest("article");
+      expect(cuidado?.textContent).toContain("Confirmar decisores presentes");
+    });
+  });
+
   it("sessao_ja_encerrada (clique duplo em Encerrar) não vira erro visível — trata como sucesso", async () => {
     estado.erroEncerrar = new ErroSessao("Esta sessão do copiloto já está encerrada.", 409, "sessao_ja_encerrada");
     const { container, getByRole } = await abrirComPolling();
