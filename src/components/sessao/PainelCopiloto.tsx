@@ -27,45 +27,23 @@ import { ehCopilotoDesligado, usePollingCopiloto } from "@/components/sessao/cop
 import { ultimoNaoNulo } from "@/components/sessao/copiloto/ultimoNaoNulo";
 import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
 import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
+import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
 
 // ---------------------------------------------------------------------------
-// Fase 12, Fatia B — "a tela vira leitura" (pedido do Marcio: a tela ao vivo
-// tem que ser SIMPLES; detalhe/placar vão para o resumo da sessão, fora
-// daqui). Réguas aplicadas neste arquivo:
+// Fase 12, Fatia B/F4 — mosaico de 3 colunas, sem rolagem de página (pedido
+// do Marcio, 17/09: "na mesma tela está tudo reunido [...] não consigo
+// visualizar, é muito conteúdo"). Réguas aplicadas neste arquivo:
 //
 //  1. Se não muda a PRÓXIMA FRASE que a advogada vai dizer nos próximos 30
 //     segundos, não fica na tela ao vivo.
 //  2. Um único foco visual por vez — só o bloco "Fale agora" tem peso;
-//     "Cuidado" e "O cliente disse" são apoio, nunca competem com ele.
+//     "Cuidado" e a transcrição são apoio, nunca competem com ele.
 //  3. Jargão traduzido: "SIMs pendentes" → a pendência por extenso; "falta no
 //     bloco" → "Ainda não perguntou:"; "insight comercial"/"bloco atual"/
 //     "confiança 0,72"/"gatilho: intervalo" saem da tela ao vivo (viram
 //     telemetria ou material do resumo da sessão, nunca leitura ao vivo).
-//
-// Passo 1 (extração, sem mudar comportamento): `usePollingCopiloto`,
-// `ultimoNaoNulo`, `adicionarSegmento`, `mensagemRecusa`/`MENSAGENS_RECUSA`,
-// `PainelBot`+`MensagemRecusaBot`, `ApresentacaoComparacaoDecisores` e
-// `RegistroManual` foram extraídos para `src/components/sessao/copiloto/`.
-// Os testes correspondentes migraram junto (ver `copiloto/*.test.ts(x)`).
-// `ultimoNaoNulo` é reexportado abaixo porque `PainelCopiloto.test.tsx`
-// importa a função pura direto deste arquivo.
-//
-// O que SAI da tela ao vivo nesta fatia (call-site removido; componente
-// preservado para o resumo da sessão/Ficha 360 religar depois — nada é
-// apagado, exceto `QuadroVoceAcertouOuErrou`, que já era `return null`,
-// código morto):
-//  - `QuadroBlocoAtual` ("Bloco atual", "Parte X de Y", número) — a posição
-//    no roteiro passa a viver só na linha fina do topo de
-//    `ConduzirSessaoApp.tsx`, sem número de "confiança".
-//  - `QuadroDecisores`/`ApresentacaoComparacaoDecisores` como card cheio —
-//    vira frase de uma linha na mesma linha fina do topo
-//    (`resumoAusentesLinhaFina`, em `copiloto/ApresentacaoComparacaoDecisores.tsx`).
-//  - `QuadroInsightComercial`, `QuadroPodePularPra` (como card próprio) e
-//    `HistoricoCoach` — acerto/histórico é PLACAR: não muda a próxima frase
-//    ao vivo, vai para o resumo da sessão.
-//  - `PainelBot`/`MensagemRecusaBot` — pedir o bot é OPERAÇÃO, não CONDUÇÃO;
-//    sobe para o cabeçalho de `ConduzirSessaoApp.tsx`. O erro `sala_invalida`
-//    continua reportado — agora pela linha fina do topo, não perdido.
+//  4. Densidade sem rolagem de PÁGINA: cada coluna rola por dentro
+//     (`min-h-0` + `overflow-y-auto` própria) — a página nunca rola.
 // ---------------------------------------------------------------------------
 
 /**
@@ -156,6 +134,11 @@ export function PainelCopiloto({
   // Só instancia o hook (fallback) quando NENHUM `polling` vier por prop —
   // `pollingProp` já é a fonte única quando `ConduzirSessaoApp` está no ar.
   const [encerradaManualmenteLocal, setEncerradaManualmenteLocal] = useState(false);
+  // F4 — "O cliente disse" (registro manual) sai do espaço nobre e vira
+  // recolhível no rodapé: estado local puro de apresentação, nunca duplica
+  // servidor (o CONTEÚDO de `RegistroManual` continua vindo de
+  // `listarSegmentosCopiloto`, isto só decide se a linha 3 do grid existe).
+  const [registroAberto, setRegistroAberto] = useState(false);
   const podePollar = Boolean(estado) && !ehCopilotoDesligado(erro);
   const pollingLocal = usePollingCopiloto(sessaoId, indiceAtual, Boolean(pollingProp) || encerradaManualmenteLocal || !podePollar);
   const polling = pollingProp ?? pollingLocal;
@@ -187,58 +170,101 @@ export function PainelCopiloto({
   const sugestoesCiclo = sessaoEncerrada ? [] : polling.sugestoes;
 
   return (
-    <div className="flex flex-col gap-2">
-      {/* Fase 12, Fatia A — linha de status PERMANENTE, sempre no mesmo
-       * pixel: `min-h-[3.25rem]` reserva o espaço mesmo com a sessão
-       * encerrada (o `<EstadoDoCopiloto>` some, o espaço fica). Full-width,
-       * acima dos 3 blocos (B71: nada disto pisca nem desloca o que já está
-       * embaixo — cada estado só troca por mudança de fato real, nunca por
-       * timer). Não usa `position:sticky` — tapar o bloco "Fale agora" seria
-       * pior que o reflow que está sendo corrigido. */}
-      <div className="min-h-[3.25rem]">
-        {!sessaoEncerrada && (
-          <EstadoDoCopiloto ciclo={polling.ciclo} requisicaoEmVoo={polling.requisicaoEmVoo} falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />
-        )}
+    // F4 — mosaico de 3 colunas, SEM rolagem de página (pedido do Marcio,
+    // 17/09: hoje ~230px do topo são gastos com subtítulo/aviso/"ainda
+    // identificando" antes de qualquer conteúdo útil aparecer). `grid-rows`
+    // fixo (`auto 1fr auto`): a linha do meio (as 3 colunas) é a única que
+    // cresce/encolhe; o rodapé de status fica sempre no mesmo lugar, nunca
+    // deslocado por conteúdo novo em cima dele. `min-h-0` no wrapper e em
+    // cada coluna é o que permite `overflow-y-auto` funcionar dentro de um
+    // grid — sem ele, a coluna cresce com o conteúdo em vez de rolar por
+    // dentro (armadilha de geometria já registrada nesta base).
+    <div className="grid min-h-0 flex-1 grid-rows-[1fr_auto_auto] gap-2">
+      {/* LINHA 1 — as 3 colunas do mosaico. `lg:grid-cols-[40%_32%_28%]`
+       * (Fale agora / Cuidado / Transcrição); abaixo de `lg` empilha em
+       * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
+       * mas a tela não pode quebrar em monitor estreito. */}
+      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+        {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
+         * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
+         * e do "card inteiro clicável muda o contrato do link") — só os
+         * botões "Me ajuda agora"/"Ir para lá"/"Ignorar"/"Dispensar", que já
+         * eram alvos de 44px próprios, continuam clicáveis. */}
+        <div className="min-h-0">
+          <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+        </div>
+
+        {/* COL 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
+         * (nunca um card vazio dizendo "nada"). Funde os 3 antigos quadros
+         * que eram jargão/risco: Alerta (SIMs pendentes) + O que aconteceu
+         * (falta no bloco) + Pode pular pra (desvio sugerido). */}
+        <div className="min-h-0">
+          <BlocoCuidado
+            pendentes={estado.sims_pendentes}
+            falta={estado.falta_no_bloco}
+            sugestoesCiclo={sugestoesCiclo}
+            sessaoId={sessaoId}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+          />
+        </div>
+
+        {/* COL 3 — Transcrição (F3): a mesma lista que `usePollingCopiloto`
+         * já acumula com teto de 60 segmentos — nenhuma rota nova. */}
+        <div className="min-h-0">
+          <PainelTranscricao segmentos={sessaoEncerrada ? [] : polling.segmentos} />
+        </div>
       </div>
 
-      {encerradaPorDuracaoMaxima && (
-        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
-        </p>
+      {/* LINHA 2 — rodapé PERMANENTE, sempre no mesmo pixel, fora do espaço
+       * nobre. `EstadoDoCopiloto` é o ÚNICO `aria-live="polite"` desta tela
+       * (dois disparando no mesmo tick seria ruído) — o resto do rodapé é
+       * ação, não anúncio. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-linha pt-2">
+        <div className="min-h-[3.25rem] flex-1">
+          {!sessaoEncerrada && (
+            <EstadoDoCopiloto ciclo={polling.ciclo} requisicaoEmVoo={polling.requisicaoEmVoo} falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />
+          )}
+          {encerradaPorDuracaoMaxima && (
+            <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+              Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
+            </p>
+          )}
+          {encerradaManualmente && !encerradaPorDuracaoMaxima && (
+            <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+              Copiloto encerrado — transcrição consolidada, sem novas sugestões.
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {/* `[O cliente disse ▸]` — o registro manual é AÇÃO ocasional
+           * (digitar/colar um trecho perdido), não leitura permanente: sai
+           * do espaço nobre e fica recolhido aqui. `RegistroManual` é
+           * exatamente o mesmo componente (campo + lista); só o CONTAINER
+           * muda de lugar/estado. Estado local puro de apresentação — o
+           * CONTEÚDO continua vindo do servidor via `listarSegmentosCopiloto`
+           * dentro de `RegistroManual`, nunca duplicado aqui. */}
+          <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto}>
+            O cliente disse
+            <span aria-hidden="true" className={`ml-1 inline-block transition-transform ${registroAberto ? "rotate-90" : ""}`}>
+              ▸
+            </span>
+          </Botao>
+          {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />}
+        </div>
+      </div>
+
+      {/* LINHA 3 — conteúdo de "O cliente disse", fora do grid nobre e fora
+       * do flex horizontal do rodapé (que espremeria "Encerrar" se o
+       * registro abrisse ali dentro). Só existe no DOM quando aberto — o
+       * grid externo (`grid-rows-[1fr_auto_auto]`) já reserva altura `auto`,
+       * que colapsa a 0 quando esta linha está vazia. */}
+      {registroAberto && (
+        <div>
+          <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
+        </div>
       )}
-
-      {encerradaManualmente && !encerradaPorDuracaoMaxima && (
-        <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          Copiloto encerrado — transcrição consolidada, sem novas sugestões.
-        </p>
-      )}
-
-      {/* BLOCO 1 — "Fale agora". Único com peso visual: é a próxima frase
-       * dela. Nunca clicável por inteiro (a lição do "link de 11px" e do
-       * "card inteiro clicável muda o contrato do link") — só os botões
-       * "Me ajuda agora"/"Ir para lá"/"Ignorar"/"Dispensar", que já eram
-       * alvos de 44px próprios, continuam clicáveis. */}
-      <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-
-      {/* BLOCO 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
-       * (nunca um card vazio dizendo "nada"). Funde os 3 antigos quadros que
-       * eram jargão/risco: Alerta (SIMs pendentes) + O que aconteceu (falta
-       * no bloco) + Pode pular pra (desvio sugerido). */}
-      <BlocoCuidado
-        pendentes={estado.sims_pendentes}
-        falta={estado.falta_no_bloco}
-        sugestoesCiclo={sugestoesCiclo}
-        sessaoId={sessaoId}
-        blocosRoteiro={blocosRoteiro}
-        irPara={irPara}
-      />
-
-      {/* BLOCO 3 — "O cliente disse" (rodapé, altura fixa). Recuperar a
-       * última fala registrada muda a próxima frase dela — passa na régua
-       * dos 30 segundos, mesmo sendo apoio, não foco. */}
-      <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
-
-      {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />}
     </div>
   );
 }

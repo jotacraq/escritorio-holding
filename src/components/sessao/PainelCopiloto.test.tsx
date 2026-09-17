@@ -385,6 +385,9 @@ describe("PainelCopiloto — kill-switch (copiloto_sessao.ativo=false)", () => {
   it("copiloto_desligado ao registrar um trecho: mensagem de estado, não de falha genérica", async () => {
     estado.erroRegistrar = new ErroSessao("Desligado em Admin.", 409, "copiloto_desligado");
     const { getByRole } = await abrir();
+    // F4 — "O cliente disse" saiu do espaço nobre e virou recolhível no
+    // rodapé; precisa abrir antes de alcançar o formulário.
+    fireEvent.click(getByRole("button", { name: /^o cliente disse$/i }));
     const campo = getByRole("textbox", { name: /trecho da fala/i }) as HTMLTextAreaElement;
     const botao = getByRole("button", { name: /registrar trecho/i });
 
@@ -1142,7 +1145,11 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         proximo_cursor_sugestao: 1,
         ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
       });
-      const { container, queryByText } = await abrirComPolling();
+      const { container, getByRole, queryByText } = await abrirComPolling();
+      // F4 — "O cliente disse" agora é recolhível no rodapé; abre para
+      // contar os 3 `article`s como antes (o `<details>`/estado aberto não
+      // muda o que é PERMANENTE na tela, só onde mora fechado por padrão).
+      fireEvent.click(getByRole("button", { name: /^o cliente disse$/i }));
 
       // Nenhum 3º/4º card para a falha de cobertura — ela vive só como
       // LINHA dentro de "Cuidado" (regra dura do pedido: funde, nunca card
@@ -1461,6 +1468,8 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await vi.advanceTimersByTimeAsync(0);
       await vi.waitFor(() => expect(container.textContent).toContain("Copiloto encerrado"));
 
+      // F4 — "O cliente disse" é recolhível; abre para conferir o conteúdo.
+      fireEvent.click(getByRole("button", { name: /^o cliente disse$/i }));
       expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
       expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
       expect(container.textContent).toContain("Sessão encerrada — transcrição consolidada, sem novos trechos.");
@@ -1468,7 +1477,8 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 
     it("estado_copiloto='encerrado' DO SERVIDOR (sobrevive a F5): esconde o formulário mesmo numa abertura fresca da tela", async () => {
       estado.copiloto = { ...ESTADO_BASE, estado_copiloto: "encerrado" };
-      const { container, queryByRole } = await abrirComPolling();
+      const { container, getByRole, queryByRole } = await abrirComPolling();
+      fireEvent.click(getByRole("button", { name: /^o cliente disse$/i }));
 
       expect(queryByRole("button", { name: /registrar trecho/i })).toBeNull();
       expect(queryByRole("textbox", { name: /trecho da fala/i })).toBeNull();
@@ -1478,6 +1488,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
     it("sessão em andamento (estado_copiloto='ativo', sem sessaoEncerrada local): formulário continua disponível", async () => {
       estado.copiloto = { ...ESTADO_BASE, estado_copiloto: "ativo" };
       const { getByRole } = await abrirComPolling();
+      fireEvent.click(getByRole("button", { name: /^o cliente disse$/i }));
 
       expect(getByRole("button", { name: /registrar trecho/i })).toBeTruthy();
       expect(getByRole("textbox", { name: /trecho da fala/i })).toBeTruthy();
@@ -1652,8 +1663,12 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s2", 2)], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
       ];
       const { container } = await abrirComPolling();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(container.textContent).toContain("Fale agora · 1 nova");
+      // F4 (mosaico de 3 colunas): a árvore ganhou mais um nível de
+      // aninhamento (grid → coluna → `Quadro`) — o commit da 1ª sugestão
+      // agora atravessa um `useEffect` a mais antes de estabilizar.
+      // `vi.waitFor` (fake-timer-aware) cobre isso sem fixar um número
+      // mágico de microtasks.
+      await vi.waitFor(() => expect(container.textContent).toContain("Fale agora · 1 nova"));
 
       await vi.advanceTimersByTimeAsync(3000);
 

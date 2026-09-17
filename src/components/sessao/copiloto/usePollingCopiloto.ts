@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ErroSessao, buscarPollingCopiloto } from "@/components/sessao/api";
-import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, InfoCicloCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, InfoCicloCopiloto, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
 
 /** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
  * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
@@ -37,7 +37,25 @@ const POLLING_MS_SEM_FOCO_INICIAL = 10000;
  * parecer travado numa reunião ao vivo. */
 const LIMITE_ECO_PENDENTE_MS = 15000;
 
+/** 🔴 Achado do Fable (17/09): o bug confirmado era o cursor avançar
+ * (`cursorSegmentoRef`) sem NUNCA guardar `resposta.segmentos_novos` em
+ * estado nenhum — nenhum componente renderizava segmento algum, ~1.800
+ * objetos por sessão de 90min pedidos e descartados. Teto de retenção:
+ * sessão real medida com 2.058 segmentos acumulados — guardar tudo faria o
+ * `setState` reconciliar uma lista crescente a cada tick de 3s pelo resto da
+ * sessão. Só os 60 mais recentes ficam em estado; a transcrição completa
+ * já existe no servidor (`GET .../copiloto/segmentos`, usado por
+ * `RegistroManual`) para quem precisar do histórico inteiro. */
+const TETO_SEGMENTOS_EM_ESTADO = 60;
+
 export interface EstadoPollingCopiloto {
+  /** 🔴 Fatia 3 (achado do Fable, 17/09): os segmentos de transcrição que o
+   * polling já buscou e NUNCA guardava em estado nenhum (bug confirmado em
+   * `usePollingCopiloto.ts`, linha do cursor). Acumula como `sugestoes` —
+   * mas com TETO (`TETO_SEGMENTOS_EM_ESTADO`): mantém só os últimos 60,
+   * nunca a sessão inteira. Pode conter linhas duplicadas (eco do Zoom,
+   * ~8% medido) — dado real do áudio, não maquiado nem deduplicado aqui. */
+  segmentos: SegmentoCopiloto[];
   /** Todas as sugestões novas já vistas pelo polling desde que a tela abriu,
    * na ordem de chegada — é a lista que `SugestoesDoCiclo` renderiza. Nunca
    * é limpa por reabrir a lista: só cresce (ou é substituída ao trocar de
@@ -123,6 +141,7 @@ interface FixacaoPendente {
  */
 export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessaoEncerrada: boolean) {
   const ESTADO_INICIAL: EstadoPollingCopiloto = {
+    segmentos: [],
     sugestoes: [],
     ciclo: null,
     encerrado: false,
@@ -255,6 +274,15 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             // piscar a cada resposta vazia") — só acrescenta se houver algo
             // novo; `ciclo` sempre é atualizado (é como a tela sabe que "um
             // ciclo rodou", mesmo em silêncio normal).
+            // 🔴 Correção do bug confirmado: `resposta.segmentos_novos` era
+            // pedido e descartado — agora acumula como `sugestoes` já fazia,
+            // com teto de `TETO_SEGMENTOS_EM_ESTADO` (`slice(-60)`) para uma
+            // sessão longa não empilhar milhares de objetos reconciliados a
+            // cada tick.
+            segmentos:
+              resposta.segmentos_novos.length > 0
+                ? [...atual.segmentos, ...resposta.segmentos_novos].slice(-TETO_SEGMENTOS_EM_ESTADO)
+                : atual.segmentos,
             sugestoes: resposta.sugestoes_novas.length > 0 ? [...atual.sugestoes, ...resposta.sugestoes_novas] : atual.sugestoes,
             ciclo: resposta.ciclo,
             encerrado: encerradoNestaResposta,

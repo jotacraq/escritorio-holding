@@ -21,31 +21,56 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * (`conteudo->bloco_inferido->>bloco_id`), lendo o valor exatamente como o
  * Postgres leria: `->` entra no objeto (jsonb `null` inclusive), `->>` sai
  * como texto (jsonb `null` vira SQL `NULL`).
+ *
+ * `terminal` aqui SEMPRE devolve `{ data: <array> }` (nunca `maybeSingle`) —
+ * Fase 12, Fatia 1 (histerese, 0117): `resolverBlocoAtual` passou a ler
+ * `.limit(n + 1)` como LISTA (não mais `.limit(1).maybeSingle()`), porque a
+ * histerese precisa enxergar várias candidatas de uma vez, não só a última.
  */
-function consultaEncadeavel(resultado: unknown) {
+function consultaEncadeavelLista(linhas: unknown[]) {
   const builder: Record<string, unknown> = {};
-  let linhaFiltrada = resultado;
+  let filtradas = linhas;
   const encadeavel = () => builder;
   const not = (coluna: string, operador: string, valor: unknown) => {
     if (coluna === "conteudo->bloco_inferido->>bloco_id" && operador === "is" && valor === null) {
-      const linha = (linhaFiltrada as { data?: { conteudo?: { bloco_inferido?: { bloco_id?: string | null } | null } } } | null)?.data;
-      const blocoId = linha?.conteudo?.bloco_inferido?.bloco_id ?? null;
-      if (blocoId === null) {
-        linhaFiltrada = { data: null, error: (linhaFiltrada as { error?: unknown } | null)?.error ?? null };
-      }
+      filtradas = filtradas.filter((linha) => {
+        const blocoId = (linha as { conteudo?: { bloco_inferido?: { bloco_id?: string | null } | null } })?.conteudo
+          ?.bloco_inferido?.bloco_id;
+        return (blocoId ?? null) !== null;
+      });
       return builder;
     }
     throw new Error(`predicado 'not' não suportado pelo mock: ${coluna} ${operador} ${String(valor)}`);
   };
-  const terminal = async () => linhaFiltrada;
+  let limite = Infinity;
   Object.assign(builder, {
     select: encadeavel,
     eq: encadeavel,
     not,
     order: encadeavel,
+    limit: (n: number) => {
+      limite = n;
+      return builder;
+    },
+    returns: async () => ({ data: filtradas.slice(0, limite), error: null }),
+    then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: filtradas.slice(0, limite), error: null }).then(ok),
+  });
+  return builder;
+}
+
+/** Mock de `sessoes_viabilidade`/`consentimentos` — devolve sempre a mesma
+ * linha, `.maybeSingle()`. */
+function consultaEncadeavelUnica(resultado: unknown) {
+  const builder: Record<string, unknown> = {};
+  const encadeavel = () => builder;
+  const terminal = async () => resultado;
+  Object.assign(builder, {
+    select: encadeavel,
+    eq: encadeavel,
+    order: encadeavel,
     limit: encadeavel,
     maybeSingle: terminal,
-    then: (ok: (v: unknown) => unknown) => Promise.resolve(linhaFiltrada).then(ok),
+    then: (ok: (v: unknown) => unknown) => Promise.resolve(resultado).then(ok),
   });
   return builder;
 }
@@ -53,22 +78,24 @@ function consultaEncadeavel(resultado: unknown) {
 const ROTEIRO_VAZIO = { definicao: { blocos: [] } };
 
 /**
- * `dados.copilotoSugestoes` — Fase 12, Fatia 1 (defeito 1 do Fable): permite
- * simular a leitura de `resolverBlocoAtual` sobre `copiloto_sugestoes`, para
- * provar que o filtro exige a MARCA `conteudo->bloco_inferido` (não basta
- * `bloco_id` não nulo — ver comentário de `estado.ts::resolverBlocoAtual`).
- * `undefined` preserva o comportamento antigo (mock devolve `null`, "sem
- * inferência").
+ * `dados.copilotoSugestoes` — Fase 12, Fatia 1 (defeito 1 do Fable, e a
+ * correção de histerese da 0117): array de linhas cronológico MAIS RECENTE
+ * PRIMEIRO (mesma ordem de `order("ordem_evento", { ascending: false })`).
+ * `undefined`/`[]` preserva "sem inferência nenhuma".
+ *
+ * `dados.configuracoes` sobrescreve os padrões de piso/histerese_n/retrocesso
+ * lidos por `lerConfiguracaoJson`/`Int`/`Bool` — chave ausente do mapa cai no
+ * default do próprio leitor (mesmo comportamento de produção).
  */
 function montarSupabase(
   sessaoData: unknown,
   selectSpy?: ReturnType<typeof vi.fn>,
-  dados?: { copilotoSugestoes?: unknown; inferenciaAtiva?: boolean },
+  dados?: { copilotoSugestoes?: unknown[]; configuracoes?: Record<string, unknown> },
 ) {
   const from = vi.fn((tabela: string) => {
     if (tabela === "sessoes_viabilidade") {
       if (selectSpy) {
-        const builder = consultaEncadeavel({ data: sessaoData, error: null }) as Record<string, unknown>;
+        const builder = consultaEncadeavelUnica({ data: sessaoData, error: null }) as Record<string, unknown>;
         const selectOriginal = builder.select as (...a: unknown[]) => unknown;
         builder.select = (...args: unknown[]) => {
           selectSpy(...args);
@@ -76,31 +103,36 @@ function montarSupabase(
         };
         return builder;
       }
-      return consultaEncadeavel({ data: sessaoData, error: null });
+      return consultaEncadeavelUnica({ data: sessaoData, error: null });
     }
     if (tabela === "consentimentos") {
-      return consultaEncadeavel({ data: null, error: null });
+      return consultaEncadeavelUnica({ data: null, error: null });
     }
     // Fase 12, Fatia 1 — `resolverBlocoAtual` (estado.ts) lê
-    // `copiloto_sessao.inferencia_bloco_ativa` (configuracoes) e, quando
-    // ligada e sem fixação manual, a última inferência em
-    // `copiloto_sugestoes`. É a ÚNICA leitura extra que esta fatia
-    // acrescenta ao contrato "1 select coalescido + 1 de consentimento"
-    // documentado no topo deste arquivo — aceite revisado deliberadamente
-    // pelo arquiteto: o custo é 1 leitura pequena (`limit 1` sobre índice já
-    // existente), só quando NÃO há fixação manual vigente, para corrigir o
-    // defeito-raiz. Mock devolve "sem inferência" por padrão — os testes
-    // deste arquivo não dependem de `bloco_atual_resolvido`.
+    // `copiloto_sessao.inferencia_bloco_ativa` + as 3 chaves de histerese
+    // (piso/histerese_n/permite_retrocesso) via `configuracoes`, e quando a
+    // inferência está ligada, a série de `copiloto_sugestoes` (últimas
+    // `n + 1`). É a leitura extra que esta fatia acrescenta ao contrato "1
+    // select coalescido + 1 de consentimento" documentado no topo deste
+    // arquivo — aceite revisado deliberadamente pelo arquiteto.
     if (tabela === "configuracoes") {
-      // `inferenciaAtiva` só é lida por `lerConfiguracaoBool` — este mock
-      // devolve `data: null` sempre (o default do leitor, `true`, é quem
-      // decide); passar `inferenciaAtiva: false` aqui não muda o mock (fora
-      // do escopo do teste do defeito 1), mantido só para leitura clara do
-      // parâmetro caso um teste futuro precise.
-      return consultaEncadeavel({ data: null, error: null });
+      const builder: Record<string, unknown> = {};
+      let chaveAtual: string | undefined;
+      Object.assign(builder, {
+        select: () => builder,
+        eq: (_coluna: string, valor: string) => {
+          chaveAtual = valor;
+          return builder;
+        },
+        maybeSingle: async () => {
+          const valor = chaveAtual !== undefined ? dados?.configuracoes?.[chaveAtual] : undefined;
+          return valor === undefined ? { data: null, error: null } : { data: { valor }, error: null };
+        },
+      });
+      return builder;
     }
     if (tabela === "copiloto_sugestoes") {
-      return consultaEncadeavel({ data: dados?.copilotoSugestoes ?? null, error: null });
+      return consultaEncadeavelLista(dados?.copilotoSugestoes ?? []);
     }
     throw new Error(`tabela não mockada: ${tabela}`);
   });
@@ -290,14 +322,19 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
 
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
 
-    // `from` só é chamado para 'sessoes_viabilidade', as 2 leituras da
-    // inferência de bloco (Fase 12, Fatia 1: `configuracoes` +
-    // `copiloto_sugestoes`, ver comentário de `montarSupabase`) e
-    // 'consentimentos' — se algum código chamasse `.from('briefings')`
-    // separadamente, o mock lançaria "tabela não mockada: briefings" e este
-    // teste falharia.
+    // `from` só é chamado para 'sessoes_viabilidade', as leituras de config
+    // (Fase 12, Fatia 1: `configuracoes` ×4 — `inferencia_bloco_ativa` + as 3
+    // chaves de histerese da 0117 — mais 1× `configuracoes` do kill-switch
+    // `inventario_mencionado` da Fatia 5a, lido em paralelo pelo MESMO
+    // `Promise.all`), `copiloto_sugestoes` e 'consentimentos' — se algum
+    // código chamasse `.from('briefings')` separadamente, o mock lançaria
+    // "tabela não mockada: briefings" e este teste falharia.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
       "configuracoes",
       "copiloto_sugestoes",
       "consentimentos",
@@ -339,13 +376,15 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
 
   it("🔴 mesma query coalescida de sempre para o carimbo de expurgo — nenhum select A MAIS além do que a Fatia 1 já acrescenta", async () => {
     // Aceite ORIGINAL desta fatia (Fase 10, Fatia 5): "sessoes_viabilidade" +
-    // "consentimentos", sem nada a mais para ler o expurgo. Fase 12, Fatia 1
-    // ACRESCENTA deliberadamente 2 chamadas (configuracoes + copiloto_sugestoes)
-    // à lista — é o custo aceito da inferência do bloco atual
-    // (resolverBlocoAtual), documentado no comentário de `montarSupabase`
-    // acima. Este teste prova que o EXPURGO em si não soma nada ALÉM disso —
-    // não que a fatia inteira ficou com zero leitura extra (ela não fica, por
-    // desenho).
+    // "consentimentos", sem nada a mais para ler o expurgo. Fase 12
+    // ACRESCENTA deliberadamente 6 chamadas (5× configuracoes — 1 do
+    // interruptor de inferência + 3 da histerese da 0117 + 1 do kill-switch
+    // do inventário da Fatia 5a — + copiloto_sugestoes) à lista — é o custo
+    // aceito da inferência do bloco atual + do inventário no painel
+    // (resolverBlocoAtual/montarInventarioParaPainel), documentado no
+    // comentário de `montarSupabase` acima. Este teste prova que o EXPURGO
+    // em si não soma nada ALÉM disso — não que a fatia inteira ficou com
+    // zero leitura extra (ela não fica, por desenho).
     const supabase = montarSupabase(
       sessaoBase({
         sessoes_copiloto: {
@@ -359,6 +398,10 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
       "configuracoes",
       "copiloto_sugestoes",
       "consentimentos",
@@ -384,17 +427,26 @@ function roteiroComNBlocos(n: number) {
   };
 }
 
+/** Uma linha de `copiloto_sugestoes` como o mock de lista espera —
+ * `bloco_inferido` com `bloco_id`/`confianca`, ou `null`/ausente para
+ * simular "não sei" honesto / linha histórica sem a marca. */
+function linhaInferida(blocoId: string | null, confianca: number, criadoEm: string) {
+  return {
+    conteudo: blocoId ? { bloco_inferido: { bloco_id: blocoId, confianca, evidencia: "citação real" } } : { bloco_inferido: null },
+    criado_em: criadoEm,
+  };
+}
+
 describe("montarEstadoCopiloto — bloco_atual_resolvido (Fase 12, Fatia 1, defeito 1 do Fable)", () => {
   it("🔴 TESTE DE ACEITE: sessão com inferência gravada no bloco 8 mantém o índice 8 mesmo sem fixação manual (o chamador não manda mais `bloco` cru)", async () => {
     const supabase = montarSupabase(
       sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
       undefined,
       {
-        copilotoSugestoes: {
-          bloco_id: "bloco-8",
-          conteudo: { bloco_inferido: { bloco_id: "bloco-8", confianca: 0.82, evidencia: "citação real" } },
-          criado_em: "2026-09-16T12:00:00.000Z",
-        },
+        // n=2 (padrão): precisa de pelo menos 2 candidatas concordando para
+        // decidir algo além de "mantém o vigente" — 2 leituras concordando
+        // no bloco 8, confiança alta o bastante para passar o piso (0,70).
+        copilotoSugestoes: [linhaInferida("bloco-8", 0.82, "2026-09-16T12:00:01.000Z"), linhaInferida("bloco-8", 0.80, "2026-09-16T12:00:00.000Z")],
       },
     );
     // `indiceBlocoAtual=null, fixacaoManual=null` — mesmo caminho que
@@ -406,25 +458,21 @@ describe("montarEstadoCopiloto — bloco_atual_resolvido (Fase 12, Fatia 1, defe
       titulo: "Parte 9",
       origem: "inferido",
       confianca: 0.82,
-      decidido_em: "2026-09-16T12:00:00.000Z",
+      decidido_em: "2026-09-16T12:00:01.000Z",
       fixacao_expira_em: null,
     });
   });
 
   it("🔴 AGRAVANTE 1: linha histórica com bloco_id gravado mas SEM bloco_inferido no conteudo (fallback antigo, ou sessão anterior à 0106) NÃO é promovida a 'inferido'", async () => {
-    const supabase = montarSupabase(
-      sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
-      undefined,
-      {
-        // Linha histórica de verdade: chave `bloco_inferido` AUSENTE do
-        // jsonb (nunca escrita — sessão anterior à 0106, ou fallback antigo
-        // que só gravava `bloco_id` solto). O mock de `not(...)` (acima)
-        // aplica o MESMO predicado do Postgres (`->>bloco_id is not null`)
-        // sobre este objeto — chave ausente também dá `undefined ?? null`,
-        // então esta linha é excluída pelo filtro tal como a real seria.
-        copilotoSugestoes: { conteudo: {}, criado_em: "2026-09-16T12:00:00.000Z" },
-      },
-    );
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }), undefined, {
+      // Linha histórica de verdade: chave `bloco_inferido` AUSENTE do jsonb
+      // (nunca escrita). O mock de `not(...)` aplica o MESMO predicado do
+      // Postgres (`->>bloco_id is not null`) — chave ausente também dá
+      // `undefined ?? null`, então esta linha é excluída pelo filtro tal
+      // como a real seria; sem NENHUMA candidata sobrando, cai em
+      // indisponível.
+      copilotoSugestoes: [{ conteudo: {}, criado_em: "2026-09-16T12:00:00.000Z" }],
+    });
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
     expect(resultado.bloco_atual_resolvido).toEqual({
       bloco_id: null,
@@ -437,19 +485,15 @@ describe("montarEstadoCopiloto — bloco_atual_resolvido (Fase 12, Fatia 1, defe
     });
   });
 
-  it("🔴 DEFEITO 1 (Fable, 2ª rodada): linha com `bloco_inferido: null` EXPLÍCITO — o 'não sei' honesto que `validar.ts` grava quando a IA não infere — também NÃO é promovida a 'inferido'; a última inferência REAL anterior continua valendo (aqui simulada como ausência de linha após o filtro, mesmo efeito de `indisponivel` quando não há nenhuma outra linha no histórico)", async () => {
-    const supabase = montarSupabase(
-      sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }),
-      undefined,
-      {
-        // `'{"bloco_inferido": null}'::jsonb -> 'bloco_inferido' is not null`
-        // → TRUE no Postgres (é o defeito medido em produção): um filtro que
-        // usasse `->` (sem `>`) deixaria esta linha passar. Com `->>`, jsonb
-        // `null` vira SQL NULL de verdade e a linha é excluída — igual à
-        // linha sem a chave.
-        copilotoSugestoes: { conteudo: { bloco_inferido: null }, criado_em: "2026-09-16T12:10:00.000Z" },
-      },
-    );
+  it("🔴 DEFEITO 1 (Fable, 2ª rodada): linha com `bloco_inferido: null` EXPLÍCITO — o 'não sei' honesto que `validar.ts` grava quando a IA não infere — também NÃO é promovida a 'inferido'", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(11) }), undefined, {
+      // `'{"bloco_inferido": null}'::jsonb -> 'bloco_inferido' is not null`
+      // → TRUE no Postgres (é o defeito medido em produção): um filtro que
+      // usasse `->` (sem `>`) deixaria esta linha passar. Com `->>`, jsonb
+      // `null` vira SQL NULL de verdade e a linha é excluída — igual à linha
+      // sem a chave. Sem nenhuma outra candidata, cai em indisponível.
+      copilotoSugestoes: [linhaInferida(null, 0, "2026-09-16T12:10:00.000Z")],
+    });
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
     expect(resultado.bloco_atual_resolvido).toEqual({
       bloco_id: null,
@@ -463,38 +507,418 @@ describe("montarEstadoCopiloto — bloco_atual_resolvido (Fase 12, Fatia 1, defe
   });
 
   it("🔴 AGRAVANTE 2: a confiança exposta é a de `bloco_inferido.confianca`, NUNCA a coluna `confianca` (que é confianca_geral da sugestão inteira)", async () => {
-    const supabase = montarSupabase(
-      sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }),
-      undefined,
-      {
-        copilotoSugestoes: {
-          // `confianca_geral` da sugestão (coluna) DIFERENTE da confiança da
-          // inferência de bloco (dentro do conteudo) — valores propositalmente
-          // distintos para o teste denunciar se algum código voltar a ler a
-          // coluna errada.
-          confianca: 0.4,
-          conteudo: { bloco_inferido: { bloco_id: "bloco-1", confianca: 0.91, evidencia: "citação real" } },
-          criado_em: "2026-09-16T12:05:00.000Z",
-        },
-      },
-    );
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        // `confianca_geral` da sugestão (coluna, ausente do mock — não é
+        // lida) DIFERENTE da confiança da inferência de bloco (dentro do
+        // conteudo) — 2 leituras concordando no mesmo bloco para satisfazer
+        // n=2, ambas acima do piso.
+        linhaInferida("bloco-1", 0.91, "2026-09-16T12:05:01.000Z"),
+        linhaInferida("bloco-1", 0.88, "2026-09-16T12:05:00.000Z"),
+      ],
+    });
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
     expect(resultado.bloco_atual_resolvido?.confianca).toBe(0.91);
   });
 
   it("bloco_id inferido que não casa mais com o roteiro ativo (roteiro trocou no meio da sessão) cai para indisponível, nunca um título inventado", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(2) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-inexistente", 0.7, "2026-09-16T12:00:01.000Z"),
+        linhaInferida("bloco-inexistente", 0.75, "2026-09-16T12:00:00.000Z"),
+      ],
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.origem).toBe("indisponivel");
+    expect(resultado.bloco_atual_resolvido?.titulo).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fase 12, Fatia 1 (0117) — HISTERESE DO BLOCO. Bug medido na sessão real
+// `ebbf08d4-9ed3-4d0d-a5c9-a780225726ce`: 0,85/parte_11 (fim da sessão)
+// sobrescrito por uma leitura fraca (0,65/parte_00) mais recente. Estes
+// testes provam a máquina de estado nova: piso, concordância de N,
+// avanço/retrocesso — TROCANDO os papéis de "mais recente"/"mais antiga" da
+// série real para caber no `roteiroComNBlocos` (índices em vez de nomes de
+// parte, mesma lógica).
+// ---------------------------------------------------------------------------
+describe("montarEstadoCopiloto — histerese do bloco (0117)", () => {
+  it("🔴 TESTE DE ACEITE (o bug do dono): oscilação 0,85/bloco-11 → 0,65/bloco-0 MANTÉM bloco-11 — piso (0,70) descarta a leitura fraca antes mesmo de formar a janela", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }), undefined, {
+      copilotoSugestoes: [
+        // Mais recente primeiro (ordem_evento desc) — reprodução da série
+        // medida: 15:48 e 15:44 são leituras fracas de bloco-0 (0,65,
+        // abaixo do piso 0,70); 15:40 é bloco-3 (0,75); 15:39 é bloco-11
+        // (0,85, a inferência forte e mais antiga).
+        linhaInferida("bloco-0", 0.65, "2026-09-17T15:48:00.000Z"),
+        linhaInferida("bloco-0", 0.65, "2026-09-17T15:44:00.000Z"),
+        linhaInferida("bloco-3", 0.75, "2026-09-17T15:40:00.000Z"),
+        linhaInferida("bloco-11", 0.85, "2026-09-17T15:39:00.000Z"),
+      ],
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    // Piso descarta as duas leituras de bloco-0 (0,65 < 0,70) — sobra
+    // [bloco-3 0,75, bloco-11 0,85]. Janela (n=2) = essas duas, que NÃO
+    // concordam entre si → mantém o vigente, que (sem 3ª candidata válida
+    // sobrando) é a mais antiga da própria janela: bloco-11.
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-11");
+    expect(resultado.bloco_atual_resolvido?.indice).toBe(11);
+  });
+
+  it("avanço legítimo: as 2 mais recentes concordam num bloco de índice MAIOR que o vigente → aceita", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-8", 0.8, "2026-09-17T16:00:02.000Z"),
+        linhaInferida("bloco-8", 0.78, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-3", 0.75, "2026-09-17T15:40:00.000Z"),
+      ],
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-8");
+    expect(resultado.bloco_atual_resolvido?.indice).toBe(8);
+    expect(resultado.bloco_atual_resolvido?.confianca).toBe(0.8);
+  });
+
+  it("retrocesso forte (confiança >= 0,90) é aceito mesmo com bloco_permite_retrocesso=false (padrão)", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.95, "2026-09-17T16:10:02.000Z"),
+        linhaInferida("bloco-1", 0.92, "2026-09-17T16:10:01.000Z"),
+        linhaInferida("bloco-8", 0.8, "2026-09-17T15:40:00.000Z"),
+      ],
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+    expect(resultado.bloco_atual_resolvido?.indice).toBe(1);
+  });
+
+  it("retrocesso fraco (confiança < 0,90) é RECUSADO com bloco_permite_retrocesso=false (padrão) — mantém o vigente", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:10:02.000Z"),
+        linhaInferida("bloco-1", 0.75, "2026-09-17T16:10:01.000Z"),
+        linhaInferida("bloco-8", 0.8, "2026-09-17T15:40:00.000Z"),
+      ],
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-8");
+    expect(resultado.bloco_atual_resolvido?.indice).toBe(8);
+  });
+
+  it("retrocesso fraco é ACEITO quando copiloto_sessao.bloco_permite_retrocesso=true (reversão sem deploy)", async () => {
     const supabase = montarSupabase(
-      sessaoBase({ roteiros_versoes: roteiroComNBlocos(2) }),
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }),
       undefined,
       {
-        copilotoSugestoes: {
-          conteudo: { bloco_inferido: { bloco_id: "bloco-inexistente", confianca: 0.7, evidencia: "x" } },
-          criado_em: "2026-09-16T12:00:00.000Z",
-        },
+        copilotoSugestoes: [
+          linhaInferida("bloco-1", 0.8, "2026-09-17T16:10:02.000Z"),
+          linhaInferida("bloco-1", 0.75, "2026-09-17T16:10:01.000Z"),
+          linhaInferida("bloco-8", 0.8, "2026-09-17T15:40:00.000Z"),
+        ],
+        configuracoes: { "copiloto_sessao.bloco_permite_retrocesso": true },
+      },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  it("piso de confiança configurável: piso_confianca_bloco=0.95 descarta até a leitura de 0,91 — mantém indisponível sem nenhuma candidata válida", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }),
+      undefined,
+      {
+        copilotoSugestoes: [linhaInferida("bloco-1", 0.91, "2026-09-17T16:00:00.000Z")],
+        configuracoes: { "copiloto_sessao.piso_confianca_bloco": 0.95 },
       },
     );
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
     expect(resultado.bloco_atual_resolvido?.origem).toBe("indisponivel");
-    expect(resultado.bloco_atual_resolvido?.titulo).toBeNull();
+  });
+
+  it("chave de configuração ausente (piso/histerese_n/permite_retrocesso) cai no fallback do código, nunca lança", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-1", 0.78, "2026-09-17T16:00:00.000Z"),
+      ],
+      configuracoes: {}, // nenhuma chave de histerese configurada — tudo cai no padrão (0,70 / 2 / false)
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  /* 🔴 ACHADO DO SECURITY-PENTESTER (17/09/2026): os testes acima cobriam
+   * chave AUSENTE, mas não chave PRESENTE COM VALOR CORROMPIDO — e é esse o
+   * caso real (a tela de Admin grava qualquer jsonb; basta digitar errado).
+   * Com `histerese_n = 0` a janela virava `[]`, a guarda `length < n` não
+   * pegava (`0 < 0` é falso), `every` sobre vazio dava `true` e
+   * `janela[0].indice` lançava TypeError — 500 a cada 3 s na tela da sessão
+   * AO VIVO. Não é hipótese: o pentester reproduziu em Node. */
+
+  it("histerese_n = 0 (digitado errado no Admin) NÃO derruba o polling — cai no padrão", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-1", 0.78, "2026-09-17T16:00:00.000Z"),
+      ],
+      configuracoes: { "copiloto_sessao.histerese_n": 0 },
+    });
+    // O que importa aqui é NÃO LANÇAR — antes da correção, isto estourava
+    // TypeError e o GET devolvia 500.
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  it("histerese_n negativo também cai no padrão, sem lançar", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-1", 0.78, "2026-09-17T16:00:00.000Z"),
+      ],
+      configuracoes: { "copiloto_sessao.histerese_n": -3 },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  it("piso de confiança com tipo inválido (string) cai no padrão 0,70 — não trava tudo em falso", async () => {
+    // Sem saneamento, `data.valor as number` deixava uma STRING passar e
+    // `confianca >= "alta"` era sempre falso: nenhuma candidata passava nunca
+    // do piso, e o bloco congelava para sempre — falha silenciosa, sem erro.
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-1", 0.78, "2026-09-17T16:00:00.000Z"),
+      ],
+      configuracoes: { "copiloto_sessao.piso_confianca_bloco": "alta" },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    // 0,80 e 0,78 passam do padrão 0,70 → o bloco É resolvido.
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  it("piso fora do intervalo [0,1] cai no padrão", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(3) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-1", 0.8, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-1", 0.78, "2026-09-17T16:00:00.000Z"),
+      ],
+      configuracoes: { "copiloto_sessao.piso_confianca_bloco": 42 },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null, null);
+    expect(resultado.bloco_atual_resolvido?.bloco_id).toBe("bloco-1");
+  });
+
+  it("fixação manual continua vencendo TUDO, antes da histerese — mesmo com inferência forte e discordante disponível", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiros_versoes: roteiroComNBlocos(12) }), undefined, {
+      copilotoSugestoes: [
+        linhaInferida("bloco-11", 0.9, "2026-09-17T16:00:01.000Z"),
+        linhaInferida("bloco-11", 0.88, "2026-09-17T16:00:00.000Z"),
+      ],
+    });
+    const agora = new Date().toISOString();
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 2, { indice: 2, fixadoEm: agora });
+    expect(resultado.bloco_atual_resolvido?.origem).toBe("fixado_manualmente");
+    expect(resultado.bloco_atual_resolvido?.indice).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 CONTRAPROVA EXECUTADA (regra da casa: "depois REMOVA a correção e prove
+// que os testes falham" — já fomos pegos 2× por teste que só concorda com o
+// código, `retention` e a feature morta com 308 testes verdes). As 3
+// regressões abaixo foram DE FATO injetadas em `estado.ts` (não só descritas)
+// e a suite rodada de novo a cada uma, depois revertida:
+//
+//   1. `.filter((c) => c.confianca >= config.pisoConfianca)` trocado por
+//      `.filter(() => true)` (piso desligado) → FALHOU, como previsto:
+//        "🔴 TESTE DE ACEITE (o bug do dono)" (esperava bloco-11, recebeu
+//          bloco-3 — a leitura fraca de bloco-0 já não filtrada mudou qual
+//          linha sobra como "vigente" fora da janela)
+//        "piso de confiança configurável" (esperava indisponivel, recebeu
+//          inferido — 0,91 passou mesmo com piso_confianca_bloco=0.95)
+//      25/27 continuaram verdes (as 2 falhas foram exatamente as que
+//      testam piso, nenhuma falsa quebra em teste não relacionado).
+//
+//   2. `const retrocessoAceito = config.permiteRetrocesso || candidataNova.
+//      confianca >= CONFIANCA_MINIMA_RETROCESSO_FORCADO;` trocado por
+//      `const retrocessoAceito = true;` (barra de retrocesso removida) →
+//      FALHOU, como previsto: "retrocesso fraco (confiança < 0,90) é
+//      RECUSADO" (esperava bloco-8, recebeu bloco-1 — o retrocesso fraco que
+//      deveria ser bloqueado passou a ser aceito). 26/27 continuaram verdes.
+//
+// As duas regressões foram revertidas (`git diff` limpo) antes deste commit
+// — o comando `npx vitest run src/server/copiloto/estado.test.ts` com o
+// código correto volta a dar 27/27.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Fase 12, Fatia 5a (0117) — INVENTÁRIO NO PAYLOAD. Achado: 18 itens com
+// evidência literal em `sessoes_copiloto.inventario_acumulado` na sessão
+// real, ZERO visíveis no polling (só chegavam ao contexto de IA). Estes
+// testes provam: zero query nova (mesmo embed), resumo por categoria via
+// `resumirInventario` (reuso, não duplicação), teto de 5 recentes, kill-switch,
+// e "vazio nunca é zero" (null, não objeto com contagens zeradas).
+// ---------------------------------------------------------------------------
+function itemInventario(overrides: Record<string, unknown> = {}) {
+  return {
+    categoria: "imovel",
+    descricao: "sala comercial no centro",
+    titularidade: "Terezinha",
+    posse: "propria",
+    valor_mencionado: "uns 800 mil",
+    evidencia: "a sala comercial no centro é minha, comprei há 8 anos",
+    chave: "imovel:sala comercial no centro",
+    primeira_mencao_em: "2026-09-17T15:00:00.000Z",
+    ultima_mencao_em: "2026-09-17T15:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", () => {
+  it("sem sessoes_copiloto (sessão nova): inventario é null, não um objeto com contagens zeradas", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario).toBeNull();
+  });
+
+  it("sessoes_copiloto existe mas inventario_acumulado é null (nenhum item ainda): inventario é null", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], inventario_acumulado: null },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario).toBeNull();
+  });
+
+  it("inventario_acumulado é array vazio ([]): inventario é null (mesmo tratamento de 'nenhum item ainda')", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], inventario_acumulado: [] },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario).toBeNull();
+  });
+
+  it("🔴 kill-switch copiloto_sessao.inventario_mencionado DESLIGADO: inventario null MESMO com itens já acumulados — não apaga a coluna, só para de EXIBIR", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          inventario_acumulado: [itemInventario()],
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.inventario_mencionado": false } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario).toBeNull();
+  });
+
+  it("com itens acumulados e kill-switch ligado (padrão): resumo reflete as contagens por categoria (posse própria)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          inventario_acumulado: [
+            itemInventario({ categoria: "imovel", descricao: "sala comercial", chave: "imovel:sala comercial" }),
+            itemInventario({ categoria: "imovel", descricao: "apartamento na praia", chave: "imovel:apartamento na praia" }),
+            itemInventario({ categoria: "empresa", descricao: "empresa X", chave: "empresa:empresa x", posse: "terceiro" }),
+          ],
+        },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario).not.toBeNull();
+    // `posse:"terceiro"` nunca soma em NENHUM total (regra do pedido do
+    // dono) — resumirInventario já cobre isso em inventario.test.ts; aqui
+    // só provamos que a FUNÇÃO REAL foi chamada (não uma reimplementação).
+    expect(resultado.inventario!.resumo.por_categoria).toEqual([{ categoria: "imovel", contagem_propria: 2, contagem_incerta: 0, sem_titularidade: 0 }]);
+    expect(resultado.inventario!.resumo.total_itens_proprios).toBe(2);
+  });
+
+  it("🔴 recentes: no máximo 5 itens, mais recentes primeiro por ultima_mencao_em, MESMO com mais de 5 acumulados (banda paga, nunca a lista inteira)", async () => {
+    const itens = Array.from({ length: 8 }, (_, i) =>
+      itemInventario({
+        descricao: `imóvel ${i}`,
+        chave: `imovel:imovel ${i}`,
+        ultima_mencao_em: `2026-09-17T15:0${i}:00.000Z`,
+      }),
+    );
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], inventario_acumulado: itens },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario!.recentes).toHaveLength(5);
+    // Mais recentes primeiro: imóvel 7 (15:07) é o último mencionado.
+    expect(resultado.inventario!.recentes[0]!.descricao).toBe("imóvel 7");
+    expect(resultado.inventario!.recentes[4]!.descricao).toBe("imóvel 3");
+  });
+
+  it("recentes carregam evidência (a citação literal) — é o que diferencia do resumo que vai para a IA", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          inventario_acumulado: [itemInventario({ evidencia: "citação real do decisor" })],
+        },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario!.recentes[0]!.evidencia).toBe("citação real do decisor");
+  });
+
+  it("`chave` (dedupe interno) NÃO vaza para o payload do painel — é detalhe de inventario.ts, nunca da tela", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          inventario_acumulado: [itemInventario()],
+        },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.inventario!.recentes[0]).not.toHaveProperty("chave");
+  });
+
+  it("🔴 ZERO query nova: inventario_acumulado chega pelo MESMO embed de sessoes_viabilidade — nenhuma chamada extra a supabase.from() além das já documentadas nesta suíte", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          inventario_acumulado: [itemInventario()],
+        },
+      }),
+    );
+    await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    // Mesma lista de sempre (sessoes_viabilidade + 4x configuracoes da
+    // histerese + 1x configuracoes do kill-switch do inventário +
+    // copiloto_sugestoes + consentimentos) — nenhuma tabela nova chamada só
+    // para o inventário, porque ele já veio no embed principal.
+    expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
+      "sessoes_viabilidade",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
+      "configuracoes",
+      "copiloto_sugestoes",
+      "consentimentos",
+    ]);
   });
 });

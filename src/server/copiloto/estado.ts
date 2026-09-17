@@ -7,10 +7,14 @@ import type {
   ComparacaoDecisoresPresentes,
   EstadoBotCopiloto,
   EstadoCopiloto,
+  InventarioAcumulado,
+  InventarioParaPainel,
+  ItemInventarioRecentePainel,
   SimPendente,
 } from "@/types/copiloto";
 import { erroNaoEncontrado } from "@/server/erros";
-import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
+import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
+import { resumirInventario } from "./inventario";
 import { compararComDecisores } from "./participantes";
 
 /**
@@ -70,6 +74,11 @@ interface SessaoComRoteiroEBloco {
     gravacao_externa_id: string | null;
     participantes: unknown;
     expurgo_segmentos_em: string | null;
+    /** Fase 12, Fatia 5a (0117) — mesmo embed, ZERO query nova (achado do
+     * arquiteto). `InventarioAcumulado` é importado só como `unknown[]`
+     * aqui para não acoplar este módulo ao tipo de `types/copiloto.ts` além
+     * do necessário; `montarInventarioParaPainel` faz o cast estrutural. */
+    inventario_acumulado: InventarioAcumulado | null;
   } | null;
 }
 
@@ -176,6 +185,72 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
    * OPCIONAL em `EstadoCopilotoComPolling` (types/copiloto.ts) para não
    * quebrar literais de teste do front. */
   bloco_atual_resolvido: BlocoAtualResolvido;
+  /** Fase 12, Fatia 5a — ver `montarInventarioParaPainel`. `null` = kill-switch
+   * desligado ou sessão sem item acumulado ainda (nunca objeto com contagens
+   * zeradas). */
+  inventario: InventarioParaPainel | null;
+}
+
+/** `copiloto_sessao.inventario_mencionado` (0111) — MESMA chave que já
+ * controla o bloco G do contexto de IA (`contexto.ts`); reaproveitada aqui
+ * para o PAINEL (Fase 12, Fatia 5a) porque é a mesma decisão de produto
+ * ("mostrar o que foi levantado" x "não mostrar nada ainda") — duas chaves
+ * para a mesma pergunta duplicaria interruptor sem motivo de negócio novo
+ * (regra da casa: chave nasce quando há decisão distinta por trás, não
+ * antes). Desligar aqui NÃO impede o CICLO de continuar ACUMULANDO itens em
+ * `sessoes_copiloto.inventario_acumulado` — é sobre o que a TELA vê, não
+ * sobre o que se grava (mesmo raciocínio de `contexto.ts`). */
+const CHAVE_INVENTARIO_MENCIONADO_ATIVO = "copiloto_sessao.inventario_mencionado";
+
+/** Quantos itens recentes (com evidência) vão para o painel — Fase 12,
+ * Fatia 5a. Fixo, não é chave de `configuracoes`: é um teto de PAYLOAD, não
+ * um parâmetro de negócio (mesmo raciocínio de `LIMITE_SEGMENTOS_NOVOS` na
+ * rota) — mandar mais que isso a cada 3s de polling é banda paga para
+ * redesenhar a mesma lista repetidamente sem ganho para a advogada, que já
+ * vê o resumo por categoria acima destes itens. */
+const LIMITE_ITENS_RECENTES_INVENTARIO_PAINEL = 5;
+
+/**
+ * Fase 12, Fatia 5a (0117) — achado: `sessoes_copiloto.inventario_acumulado`
+ * tem itens com evidência literal (18 na sessão real que motivou esta
+ * fatia) e nunca chegava ao PAINEL (só ao contexto de IA, `contexto.ts`).
+ * ZERO query nova: `inventario_acumulado` já vem no MESMO embed de
+ * `sessoes_copiloto` que `montarEstadoCopiloto` já lê (achado do arquiteto,
+ * F5a) — esta função só RESUME o que já chegou.
+ *
+ * `resumo` reusa `resumirInventario()` (já existe, `inventario.ts::
+ * resumirInventario`, mesma função que alimenta o bloco G do contexto de
+ * IA) — nenhuma lógica de contagem duplicada.
+ *
+ * `recentes` corta os `LIMITE_ITENS_RECENTES_INVENTARIO_PAINEL` itens de
+ * `ultima_mencao_em` mais recente — NUNCA o array inteiro (regra explícita
+ * do arquiteto: mandar 18 itens com citação a cada 3s é banda paga para
+ * redesenhar a mesma lista ~1.800× por sessão). `chave` (dedupe interno) é
+ * removida do formato exposto — detalhe de `inventario.ts`, nunca da tela.
+ *
+ * Pura (zero I/O) — a leitura de `inventario_acumulado` já aconteceu no
+ * SELECT principal; o kill-switch é lido pelo CHAMADOR (mesmo padrão de
+ * `resolverBlocoAtual`, que também recebe config já resolvida quando possível
+ * — aqui não dá porque a leitura da chave é 1 select isolado, feito no
+ * chamador para poder rodar em paralelo com as outras leituras de config
+ * desta função, via `Promise.all`).
+ */
+function montarInventarioParaPainel(
+  acumulado: InventarioAcumulado | null,
+  inventarioMencionadoAtivo: boolean,
+): InventarioParaPainel | null {
+  if (!inventarioMencionadoAtivo) return null;
+  if (!acumulado || acumulado.length === 0) return null;
+
+  const recentes: ItemInventarioRecentePainel[] = [...acumulado]
+    .sort((a, b) => Date.parse(b.ultima_mencao_em) - Date.parse(a.ultima_mencao_em))
+    .slice(0, LIMITE_ITENS_RECENTES_INVENTARIO_PAINEL)
+    .map(({ chave: _chave, ...item }) => item);
+
+  return {
+    resumo: resumirInventario(acumulado),
+    recentes,
+  };
 }
 
 /** Chave de configuração da fixação manual por tempo (mesma que a rota usa
@@ -189,6 +264,61 @@ const PADRAO_JANELA_FIXACAO_MANUAL_SEGUNDOS = 300;
  * (decisão do dono: é correção de cegueira medida, não risco novo). */
 export const CHAVE_INFERENCIA_BLOCO_ATIVA = "copiloto_sessao.inferencia_bloco_ativa";
 
+/**
+ * Fase 12, Fatia 1 (0117) — HISTERESE DO BLOCO INFERIDO. As 3 chaves abaixo
+ * são HIPÓTESE CONSERVADORA, não medição: só há 1 sessão real com bloco
+ * inferido (~19 sugestões com `bloco_inferido` não nulo) e o eco do Zoom
+ * (8% da fala, ver `docs/ARQUITETURA-FASE-10.md`) contamina essa amostra —
+ * não há base para calibrar com confiança estatística ainda. Ver a
+ * migration 0117 para o raciocínio completo.
+ */
+
+/** Confiança mínima para uma inferência de bloco ENTRAR na janela de
+ * histerese — abaixo disto a linha é descartada como se não existisse
+ * (nem soma nem quebra concordância). */
+export const CHAVE_PISO_CONFIANCA_BLOCO = "copiloto_sessao.piso_confianca_bloco";
+const PADRAO_PISO_CONFIANCA_BLOCO = 0.7;
+
+/** Quantas das inferências mais recentes (já filtradas pelo piso) precisam
+ * CONCORDAR no mesmo bloco para a histerese aceitar uma mudança. */
+export const CHAVE_HISTERESE_N = "copiloto_sessao.histerese_n";
+const PADRAO_HISTERESE_N = 2;
+
+/** `false` (padrão): retroceder para um bloco de índice MENOR que o vigente
+ * só é aceito com confiança >= 0.90 (`CONFIANCA_MINIMA_RETROCESSO_FORCADO`,
+ * logo abaixo) mesmo com concordância das N mais recentes — retroceder é o
+ * sintoma do bug medido (0,65 apontando o início sobrescrevendo 0,85 no
+ * fim), então a barra para aceitar é mais alta que para avançar. `true`
+ * remove essa barra extra (retrocesso aceito nas mesmas condições que
+ * avanço) — existe como reversão SEM DEPLOY caso a barra alta se mostre
+ * conservadora demais na prática. */
+export const CHAVE_BLOCO_PERMITE_RETROCESSO = "copiloto_sessao.bloco_permite_retrocesso";
+const PADRAO_BLOCO_PERMITE_RETROCESSO = false;
+
+/** Confiança mínima para um RETROCESSO ser aceito mesmo com
+ * `bloco_permite_retrocesso=false` — retrocesso muito confiante (ex.: a
+ * advogada voltou de propósito a um bloco anterior) não deveria ficar preso
+ * atrás do vigente para sempre. Não é chave de `configuracoes` (ninguém
+ * pediu ajustar este número isoladamente — mesmo raciocínio de
+ * `FATOR_SEM_FOCO` em `config.ts`): se um dia for preciso, a chave nasce
+ * então, não antes. */
+const CONFIANCA_MINIMA_RETROCESSO_FORCADO = 0.9;
+
+/** Teto de linhas lidas do banco para alimentar `aplicarHisterese` —
+ * DIFERENTE de `histerese_n` (o tamanho da JANELA de concordância): o piso de
+ * confiança é aplicado DEPOIS da leitura (em memória, `aplicarHisterese`),
+ * então leituras fracas intercaladas (ex.: o eco do Zoom gerando 2-3
+ * inferências de baixa confiança seguidas) podem "engolir" a janela antes de
+ * alcançar candidatas válidas suficientes — ler só `n + 1` não basta nesse
+ * caso. 10 é uma margem generosa sobre `histerese_n` (padrão 2) sem custo
+ * relevante: mesmo índice `(sessao_id, ordem_evento)` de sempre, e o teto é
+ * FIXO (não escala com o tamanho da sessão) — a 6ª pergunta do protocolo de
+ * sustentabilidade ("e com 10x mais linha?") está coberta por construção.
+ * Não é chave de `configuracoes`: é um limite técnico de leitura, não um
+ * parâmetro de negócio (mesmo raciocínio de `LIMITE_SEGMENTOS_NOVOS` na
+ * rota). */
+const LIMITE_CANDIDATAS_LIDAS_HISTERESE = 10;
+
 /** Fixação manual recebida da rota (`?bloco=<indice>&fixado_em=<iso>`).
  * `fixadoEm` é OBRIGATÓRIO para a fixação valer — um `?bloco=` sem
  * `fixado_em` (ex.: link antigo, ou `sessionStorage` remanescente de uma
@@ -201,20 +331,126 @@ export interface FixacaoManualBloco {
   fixadoEm: string;
 }
 
+/** Uma linha de `copiloto_sugestoes` já normalizada para a histerese — só o
+ * que `aplicarHisterese` precisa, sem o jsonb bruto. Ordem: MAIS RECENTE
+ * primeiro (mesma ordem que a query já traz, `ordem_evento desc`). */
+interface CandidataHisterese {
+  blocoId: string;
+  confianca: number;
+  criadoEm: string;
+}
+
+/** Config lida 1x por chamada e repassada à função pura (nunca lida dentro
+ * dela — `aplicarHisterese` não faz I/O, é testável de mesa). */
+interface ConfigHisterese {
+  pisoConfianca: number;
+  n: number;
+  permiteRetrocesso: boolean;
+}
+
+/**
+ * 🔴 HISTERESE DO BLOCO INFERIDO (Fase 12, Fatia 1, correção 0117) — o bug
+ * medido em produção (sessão `ebbf08d4-9ed3-4d0d-a5c9-a780225726ce`): a regra
+ * antiga pegava SIMPLESMENTE A ÚLTIMA inferência (`limit 1`), sem piso de
+ * confiança e sem impedir retrocesso. Uma leitura fraca (0,65) apontando o
+ * INÍCIO do roteiro sobrescrevia uma forte (0,85) apontando o FIM — a tela
+ * "voltava" para trás no meio de uma sessão que já estava avançada.
+ *
+ * Pura (zero I/O, testável de mesa) — recebe as `candidatas` BRUTAS já
+ * ORDENADAS mais-recente-primeiro (o CHAMADOR lê `LIMITE_CANDIDATAS_LIDAS_
+ * HISTERESE` linhas do banco, uma margem generosa sobre `n` — ver comentário
+ * daquela constante para o motivo: o piso de confiança só é aplicado AQUI,
+ * em memória, então ler pouco deixaria leituras fracas intercaladas
+ * engolirem a janela). Depois do filtro de piso, as `n` primeiras (já
+ * válidas) formam a JANELA de concordância; a candidata válida seguinte
+ * (índice `n` da lista já filtrada) é o "VIGENTE" — o que a regra já tinha
+ * decidido ANTES desta janela mais recente. Isso substitui persistência: não
+ * existe coluna de "bloco vigente" (decisão do arquiteto: zero coluna nova,
+ * zero escrita — um UPDATE a mais por ciclo de polling que já faz ~12 idas
+ * ao banco não se paga); a própria série de `copiloto_sugestoes` já É a
+ * memória.
+ *
+ * Quando não há uma candidata válida além da janela (sessão ainda muito
+ * nova, ou não há histórico suficiente), a mais ANTIGA da própria janela faz
+ * esse papel — é o melhor "antes" disponível.
+ *
+ * REGRA (do plano do arquiteto):
+ *   1. Descarta `confianca < piso` — leitura fraca não entra na janela nem
+ *      pode ser o vigente.
+ *   2. Se as `n` mais recentes válidas NÃO concordam no MESMO `blocoId` →
+ *      MANTÉM o vigente (a variação nas últimas leituras não é forte o
+ *      bastante para mudar nada).
+ *   3. Se concordam (`candidataNova` = a mais recente da janela):
+ *      - `indiceNovo > indiceVigente` → aceita (avanço).
+ *      - `indiceNovo === indiceVigente` → aceita (reafirma o mesmo bloco; é
+ *        o caminho comum quando a conversa não mudou de parte).
+ *      - `indiceNovo < indiceVigente` → só se `permiteRetrocesso=true` OU a
+ *        candidata mais recente tem confiança >=
+ *        `CONFIANCA_MINIMA_RETROCESSO_FORCADO` (0,90).
+ *   4. Nada resolve (piso zerou tudo, sem candidata válida nenhuma) → `null`
+ *      — cabe ao CHAMADOR decidir o fallback (aqui, `indisponivel`, que só
+ *      acontece quando não há NENHUM histórico de inferência válida ainda,
+ *      nunca no meio de uma sessão que já tinha um bloco resolvido).
+ *
+ * `blocos.findIndex` resolve `blocoId → índice` para cada candidata — um
+ * `blocoId` que não casa mais com o roteiro ativo é tratado como se não
+ * existisse (mesmo raciocínio de antes: nunca um título inventado).
+ */
+function aplicarHisterese(
+  candidatas: CandidataHisterese[],
+  blocos: RoteiroDefinicao["blocos"],
+  config: ConfigHisterese,
+): { blocoId: string; indice: number; confianca: number; criadoEm: string } | null {
+  const validas = candidatas
+    .filter((c) => c.confianca >= config.pisoConfianca)
+    .map((c) => ({ ...c, indice: blocos.findIndex((b) => b.id === c.blocoId) }))
+    .filter((c) => c.indice >= 0);
+
+  if (validas.length === 0) return null;
+
+  // Janela = as `n` mais recentes válidas. Vigente = a linha seguinte (a
+  // `(n+1)`-ésima) se existir; senão, a mais antiga da própria janela.
+  const janela = validas.slice(0, config.n);
+  const vigente = validas[config.n] ?? janela[janela.length - 1]!;
+
+  if (janela.length < config.n) {
+    // Não há `n` leituras válidas ainda — não há como formar concordância;
+    // mantém o vigente (regra 4).
+    return vigente;
+  }
+
+  const todasConcordam = janela.every((c) => c.blocoId === janela[0]!.blocoId);
+  if (!todasConcordam) {
+    return vigente;
+  }
+
+  const candidataNova = janela[0]!;
+  if (candidataNova.indice >= vigente.indice) {
+    // Avanço ou reafirmação do mesmo bloco — sempre aceito quando a janela concorda.
+    return candidataNova;
+  }
+  // Retrocesso: só aceito com o interruptor ligado, ou confiança forte o
+  // bastante para presumir correção deliberada (não ruído/eco).
+  const retrocessoAceito = config.permiteRetrocesso || candidataNova.confianca >= CONFIANCA_MINIMA_RETROCESSO_FORCADO;
+  return retrocessoAceito ? candidataNova : vigente;
+}
+
 /**
  * Resolve o `BlocoAtualResolvido` — a correção do defeito-raiz. Precedência:
  *   1. Fixação manual, se `fixadoEm` estiver dentro de
  *      `copiloto_sessao.janela_fixacao_manual_segundos` (300s ao nascer) a
  *      partir de AGORA — nunca calculada a partir de `criado_em` da sessão,
  *      é sempre "há quanto tempo a advogada clicou", não "há quanto tempo a
- *      sessão existe".
- *   2. Senão, e só se `copiloto_sessao.inferencia_bloco_ativa=true`: a
- *      última linha de `copiloto_sugestoes` desta sessão com `bloco_id not
- *      null`, mais recente por `ordem_evento` — MESMO índice do polling
- *      (`idx_copiloto_sugestoes_polling`, 0091), nenhum índice novo. É 1
- *      query adicional (não estava no caminho antes desta fatia) — pequena
- *      (`limit 1` sobre índice existente) e só roda quando NÃO há fixação
- *      manual vigente.
+ *      sessão existe". Continua vencendo TUDO abaixo, sem alteração desta
+ *      fatia (0117 não toca este bloco).
+ *   2. Senão, e só se `copiloto_sessao.inferencia_bloco_ativa=true`: as
+ *      últimas `copiloto_sessao.histerese_n` inferências de bloco desta
+ *      sessão, mais recentes por `ordem_evento` — MESMO índice do polling
+ *      (`idx_copiloto_sugestoes_polling`, 0091), nenhum índice novo — passam
+ *      por `aplicarHisterese` (ver comentário da função: piso de confiança,
+ *      concordância das N mais recentes, barra maior para retroceder).
+ *      `limit(N)` no lugar do antigo `limit(1)` — mesmo predicado
+ *      (`conteudo->bloco_inferido->>bloco_id is not null`), só o teto muda.
  *   3. Senão, `indisponivel` — NUNCA um índice 0 por default (dado
  *      inventado, CLAUDE.md).
  */
@@ -258,48 +494,89 @@ async function resolverBlocoAtual(
 
   const inferenciaAtiva = await lerConfiguracaoBool(supabase, CHAVE_INFERENCIA_BLOCO_ATIVA, true);
   if (inferenciaAtiva) {
-    // 🔴 CORRIGIDO (achado do Fable, Fase 12 Fatia 1 — defeito 1, DUAS
-    // rodadas): a 1ª correção trocou `bloco_id is not null` por
-    // `conteudo->'bloco_inferido' is not null` — mas `->` (sem `>`) devolve
-    // o objeto jsonb inteiro, e quando `validar.ts` grava o "não sei" honesto
-    // como `{"bloco_inferido": null}` (JSON null, não coluna ausente), esse
-    // `->` devolve jsonb `null`, que em SQL **não é** `NULL`
-    // (`'{"bloco_inferido": null}'::jsonb -> 'bloco_inferido' is not null` →
-    // `true`, medido em produção). O filtro passava exatamente na resposta
-    // honesta "não infiro nada" — a linha era promovida a `origem:"inferido"`
-    // com `blocoInferidoId` nulo, e a inferência anterior real (a última que
-    // valia) era descartada a cada ciclo em que a IA respondesse "não sei".
-    // A correção usa `->>` (extrai como texto): sobre jsonb `null` o Postgres
-    // devolve SQL NULL de verdade, então `not(...).is(null)` exclui tanto a
-    // chave ausente (linha histórica, anterior à 0106, ou fallback antigo)
-    // quanto o JSON null explícito — só passa quem tem `bloco_id` de fato.
+    const [pisoBruto, nBruto, permiteRetrocesso] = await Promise.all([
+      lerConfiguracaoJson<number>(supabase, CHAVE_PISO_CONFIANCA_BLOCO, PADRAO_PISO_CONFIANCA_BLOCO),
+      lerConfiguracaoInt(supabase, CHAVE_HISTERESE_N, PADRAO_HISTERESE_N),
+      lerConfiguracaoBool(supabase, CHAVE_BLOCO_PERMITE_RETROCESSO, PADRAO_BLOCO_PERMITE_RETROCESSO),
+    ]);
+
+    // 🔴 SANEAMENTO OBRIGATÓRIO (achado do security-pentester, 17/09/2026).
+    // As duas leituras acima fazem CAST, não validação: `lerConfiguracaoInt`
+    // aceita `0` como inteiro legítimo e `lerConfiguracaoJson<number>` faz
+    // `data.valor as T` sem conferir `typeof`. Nenhuma das duas protege
+    // contra um valor GRAVADO e inválido — só contra chave ausente.
     //
-    // `confianca` também deixa de vir da coluna `copiloto_sugestoes.confianca`
-    // (que é `confianca_geral` — a confiança da sugestão INTEIRA, não da
-    // inferência de bloco) — lida agora de dentro do jsonb, o número certo.
-    const { data: ultimaInferida, error } = await supabase
+    // O cenário não é ataque, é erro de digitação em Admin → Configurações
+    // (a tela grava qualquer jsonb): com `histerese_n = 0`, a janela vira
+    // `slice(0,0) = []`, a guarda `janela.length < n` não pega (`0 < 0` é
+    // falso), `every` sobre array vazio é `true` por vacuidade e
+    // `janela[0].indice` lança `TypeError`. A exceção sobe até o GET do
+    // polling e derruba a tela da sessão AO VIVO com 500 a cada 3 s, até
+    // alguém corrigir a config à mão. O pentester reproduziu isso em Node.
+    //
+    // Regra: valor inválido cai no padrão, NUNCA quebra. Mesma régua de
+    // robustez que já valia para chave ausente.
+    const n = Number.isInteger(nBruto) && nBruto >= 1 ? nBruto : PADRAO_HISTERESE_N;
+    const pisoConfianca =
+      typeof pisoBruto === "number" && Number.isFinite(pisoBruto) && pisoBruto >= 0 && pisoBruto <= 1
+        ? pisoBruto
+        : PADRAO_PISO_CONFIANCA_BLOCO;
+
+    // 🔴 CORRIGIDO (achado do Fable, Fase 12 Fatia 1 — defeito 1, DUAS
+    // rodadas, preservado nesta correção de histerese): a 1ª correção trocou
+    // `bloco_id is not null` por `conteudo->'bloco_inferido' is not null` —
+    // mas `->` (sem `>`) devolve o objeto jsonb inteiro, e quando
+    // `validar.ts` grava o "não sei" honesto como `{"bloco_inferido": null}`
+    // (JSON null, não coluna ausente), esse `->` devolve jsonb `null`, que em
+    // SQL **não é** `NULL` (`'{"bloco_inferido": null}'::jsonb ->
+    // 'bloco_inferido' is not null` → `true`, medido em produção). A
+    // correção usa `->>` (extrai como texto): sobre jsonb `null` o Postgres
+    // devolve SQL NULL de verdade — o filtro abaixo continua idêntico, só o
+    // `limit` muda de 1 para `LIMITE_CANDIDATAS_LIDAS_HISTERESE` (histerese
+    // precisa das `n` mais recentes PARA A JANELA de concordância, mais
+    // margem para achar "o que valia antes dela" sem persistir estado — ver
+    // `aplicarHisterese`; o piso de confiança só é aplicado DEPOIS, em
+    // memória, então ler só `n + 1` deixaria leituras fracas intercaladas
+    // engolirem a janela antes de chegar a candidatas válidas).
+    //
+    // `confianca` vem de dentro do jsonb (`bloco_inferido.confianca`), NUNCA
+    // da coluna `copiloto_sugestoes.confianca` (que é `confianca_geral` — a
+    // confiança da sugestão INTEIRA, não da inferência de bloco).
+    const { data: candidatasRaw, error } = await supabase
       .from("copiloto_sugestoes")
       .select("bloco_id, conteudo, criado_em")
       .eq("sessao_id", sessaoId)
       .not("conteudo->bloco_inferido->>bloco_id", "is", null)
       .order("ordem_evento", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ bloco_id: string | null; conteudo: { bloco_inferido?: { bloco_id: string; confianca: number } | null } | null; criado_em: string }>();
-    const blocoInferidoId = ultimaInferida?.conteudo?.bloco_inferido?.bloco_id ?? null;
-    if (!error && ultimaInferida && blocoInferidoId) {
-      const indiceInferido = blocos.findIndex((b) => b.id === blocoInferidoId);
-      // `bloco_id` gravado que não casa mais com o roteiro ativo (ex.: o
-      // roteiro ativo trocou no meio da sessão) → tratado como indisponível,
-      // nunca um título inventado.
-      if (indiceInferido >= 0) {
-        const bloco = blocos[indiceInferido]!;
+      .limit(Math.max(LIMITE_CANDIDATAS_LIDAS_HISTERESE, n + 1))
+      .returns<
+        Array<{
+          bloco_id: string | null;
+          conteudo: { bloco_inferido?: { bloco_id: string; confianca: number } | null } | null;
+          criado_em: string;
+        }>
+      >();
+
+    if (!error && candidatasRaw) {
+      const candidatas: CandidataHisterese[] = candidatasRaw
+        .map((linha) => {
+          const blocoInferido = linha.conteudo?.bloco_inferido;
+          return blocoInferido?.bloco_id
+            ? { blocoId: blocoInferido.bloco_id, confianca: blocoInferido.confianca, criadoEm: linha.criado_em }
+            : null;
+        })
+        .filter((c): c is CandidataHisterese => c !== null);
+
+      const resolvido = aplicarHisterese(candidatas, blocos, { pisoConfianca, n, permiteRetrocesso });
+      if (resolvido) {
+        const bloco = blocos[resolvido.indice]!;
         return {
           bloco_id: bloco.id,
-          indice: indiceInferido,
+          indice: resolvido.indice,
           titulo: bloco.titulo,
           origem: "inferido",
-          confianca: ultimaInferida.conteudo?.bloco_inferido?.confianca ?? null,
-          decidido_em: ultimaInferida.criado_em,
+          confianca: resolvido.confianca,
+          decidido_em: resolvido.criadoEm,
           fixacao_expira_em: null,
         };
       }
@@ -344,7 +621,10 @@ export async function montarEstadoCopiloto(
     .from("sessoes_viabilidade")
     .select(
       "id, roteiro_versao_id, sims, jornadas(pessoa_id, briefings(conteudo, atual)), roteiros_versoes(definicao), " +
-        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em)",
+        // Fase 12, Fatia 5a: `inventario_acumulado` entra no MESMO embed —
+        // ZERO query nova (achado do arquiteto: "já vem no mesmo embed que
+        // montarEstadoCopiloto já faz").
+        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em, inventario_acumulado)",
     )
     .eq("id", sessaoId)
     .maybeSingle<SessaoComRoteiroEBloco>();
@@ -353,7 +633,13 @@ export async function montarEstadoCopiloto(
 
   const blocos = data.roteiros_versoes?.definicao?.blocos ?? [];
 
-  const blocoAtualResolvido = await resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual);
+  const [blocoAtualResolvido, inventarioMencionadoAtivo] = await Promise.all([
+    resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual),
+    // Fase 12, Fatia 5a — mesma chave que já controla o bloco G do contexto
+    // de IA (0111); lida aqui em PARALELO com a resolução do bloco (que já
+    // faz suas próprias leituras de config) — nenhuma serialização nova.
+    lerConfiguracaoBool(supabase, CHAVE_INVENTARIO_MENCIONADO_ATIVO, true),
+  ]);
   // `indice` para o CONTEÚDO do bloco (campos/observar/percorridos) segue o
   // mesmo fallback de sempre (0 quando nada resolve) — é um detalhe de
   // MONTAGEM DE CONTEXTO, diferente de `bloco_atual_resolvido`, que é o FATO
@@ -391,6 +677,7 @@ export async function montarEstadoCopiloto(
     comparacao_decisores: comparacaoDecisores,
     expurgo_segmentos_em: data.sessoes_copiloto?.expurgo_segmentos_em ?? null,
     bloco_atual_resolvido: blocoAtualResolvido,
+    inventario: montarInventarioParaPainel(data.sessoes_copiloto?.inventario_acumulado ?? null, inventarioMencionadoAtivo),
   };
 }
 

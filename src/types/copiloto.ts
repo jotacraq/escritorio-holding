@@ -596,6 +596,15 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
    * campo acima: contrato novo por composição, sem quebrar literais de
    * teste do front. */
   bloco_atual_resolvido?: BlocoAtualResolvido;
+  /** Fase 12, Fatia 5a (0117) — inventário patrimonial MENCIONADO na fala,
+   * já resumido no servidor (`ItemInventarioRecentePainel`/
+   * `InventarioParaPainel`, mais acima neste arquivo). `null`/ausente
+   * (kill-switch `copiloto_sessao.inventario_mencionado` desligado, ou
+   * sessão sem item acumulado ainda) faz a célula da tela sumir — nunca um
+   * objeto com contagens zeradas. `?:` pelo mesmo motivo dos campos
+   * acima: contrato novo por composição, sem quebrar literais de teste do
+   * front. */
+  inventario?: InventarioParaPainel | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -809,4 +818,57 @@ export interface BlocoAtualResolvido {
   /** Só preenchido quando `origem === "fixado_manualmente"` — quando a
    * fixação deixa de valer e a inferência volta a decidir sozinha. */
   fixacao_expira_em: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// FASE 12, FATIA 5a (0117, 17/09/2026) — o inventário patrimonial mencionado
+// (types acima, "17/09/2026 — inventário patrimonial MENCIONADO NA FALA")
+// já é ACUMULADO em `sessoes_copiloto.inventario_acumulado` desde a 0111,
+// mas nunca chegou ao PAINEL AO VIVO — só ao contexto de IA
+// (`ContextoCopiloto.inventario_resumo`, resumo por categoria). Achado:
+// sessão real com 18 itens com evidência literal, zero visíveis na tela.
+// ---------------------------------------------------------------------------
+
+/** Um item recente do inventário, PARA A TELA — mesmo recorte de
+ * `ItemInventarioAcumulado` menos `chave` (detalhe interno de deduplicação,
+ * nunca exposto fora de `server/copiloto/inventario.ts`). Inclui
+ * `evidencia`: é a citação literal que a advogada usa para confirmar o item
+ * na tela — DIFERENTE do resumo por categoria que vai para a IA
+ * (`ResumoInventarioAcumulado`, que nunca leva evidência nem item a item,
+ * por orçamento de byte no PROMPT). O teto de "5 mais recentes" é do PAINEL,
+ * não da IA — ver `EstadoCopilotoComPolling.inventario` abaixo. */
+export interface ItemInventarioRecentePainel {
+  categoria: CategoriaInventarioMencionado;
+  descricao: string;
+  titularidade: string | null;
+  posse: PosseInventarioMencionado;
+  valor_mencionado: string | null;
+  evidencia: string;
+  primeira_mencao_em: string;
+  ultima_mencao_em: string;
+}
+
+/**
+ * O que `GET /api/sessoes/[id]/copiloto` expõe do inventário acumulado desta
+ * sessão — Fase 12, Fatia 5a. `null` quando o kill-switch
+ * `copiloto_sessao.inventario_mencionado` está desligado (mesma chave que já
+ * controla o bloco G do contexto de IA, 0111 — desligar é sobre o que se
+ * EXIBE, não sobre o que se ACUMULA) OU quando a sessão ainda não tem nenhum
+ * item acumulado — nunca um objeto com contagens zeradas fingindo "0 itens
+ * levantados" (vazio é vazio, nunca zero, regra da casa).
+ *
+ * 🔴 NUNCA o array `InventarioAcumulado` bruto: mandar todos os itens (18 na
+ * sessão que motivou esta fatia) com citação a cada 3s de polling é banda
+ * paga para redesenhar a MESMA lista ~1.800× por sessão. `resumo` é o mesmo
+ * `resumirInventario()` que já alimenta a IA (`server/copiloto/
+ * inventario.ts`, zero lógica nova) e `recentes` é um corte fixo dos 5 itens
+ * de `ultima_mencao_em` mais recente, COM evidência — o suficiente para a
+ * advogada conferir o que acabou de ser dito sem esperar o fim da sessão. */
+export interface InventarioParaPainel {
+  resumo: ResumoInventarioAcumulado;
+  /** Até 5 itens, mais recentes primeiro (por `ultima_mencao_em`). `[]`
+   * quando o acumulado existe mas está vazio (nunca deveria acontecer na
+   * prática — `inventario_acumulado` só é gravado com item dentro — mas o
+   * tipo não assume isso). */
+  recentes: ItemInventarioRecentePainel[];
 }
