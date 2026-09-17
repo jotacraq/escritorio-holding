@@ -345,7 +345,7 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
           zero, o conteúdo quebra dentro da coluna em vez de esticá-la. */}
       {podeVerPatrimonio && (
         <div className="grid items-start gap-x-cartao gap-y-item [&>*]:min-w-0 sm:grid-cols-2">
-          <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} recolhivel />
+          <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} recolhivel aoAbrirGaveta={abrir} />
           <div ref={croquiRef} id="croqui">
             <CartaoCroqui estadoCroqui={estadoCroqui} recolhivel />
           </div>

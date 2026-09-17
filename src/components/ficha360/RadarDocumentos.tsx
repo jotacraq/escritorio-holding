@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useRecurso } from "@/hooks/useRecurso";
 import { useToast } from "@/hooks/useToast";
@@ -72,6 +71,7 @@ export function RadarDocumentos({
   jornadaId,
   aoAtualizar,
   recolhivel = false,
+  aoAbrirGaveta,
 }: {
   jornadaId: string;
   aoAtualizar?: () => void;
@@ -82,6 +82,17 @@ export function RadarDocumentos({
    * há o que fazer. Fora da Ficha o componente continua solto, como era.
    */
   recolhivel?: boolean;
+  /**
+   * Abre a gaveta "documentos" (Fable, achado defeito 1, 16/09/2026). O verbo
+   * "Anexar documento" era um `<Link href="#documentos">`: `next/link`
+   * intercepta o clique e troca o hash por `history.pushState`, que por
+   * especificação NÃO dispara `hashchange` — e não existe `id="documentos"`
+   * no DOM para um scroll nativo pegar de qualquer forma. O clique não fazia
+   * nada. O estado da gaveta vive no pai (`page.tsx`), como em
+   * `PastaDoCliente`/`TrilhoDaFicha` — aqui é só mais um consumidor do mesmo
+   * dono. Opcional porque o Radar também é usado fora da Ficha (sem gaveta).
+   */
+  aoAbrirGaveta?: (chave: "documentos") => void;
 }) {
   const { notificar } = useToast();
   const { usuario } = useUsuarioAtual();
@@ -185,21 +196,29 @@ export function RadarDocumentos({
   // a linha "N de M prontos · P a pedir · Anexar documento" é composta aqui,
   // FORA do `<summary>`, e passamos `resumo={null}` ao bloco para não
   // duplicar a contagem. O radar continua recolhido — só o verbo sai.
-  // `#documentos` já é deep-link conhecido: `CHAVES_EM_GAVETA` (page.tsx)
-  // abre a gaveta certa no `hashchange`, sem prop nova nem fetch novo.
+  //
+  // Fable (achado defeito 1, 16/09/2026): era `<Link href="#documentos">` —
+  // morto (ver doc do prop `aoAbrirGaveta` acima). `<button>`, não âncora:
+  // não há navegação real, o estado da gaveta vive no pai (mesma regra de
+  // `PastaDoCliente.tsx`/`TrilhoDaFicha.tsx`).
   return (
     <div className="flex flex-col gap-1">
       {resumoRecolhido && (
         <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-0.5 text-legenda font-medium text-tinta-fraca">
           <span>{resumoRecolhido}</span>
-          <span aria-hidden="true">·</span>
-          <Link
-            href="#documentos"
-            title="Abrir a gaveta de documentos para anexar"
-            className="inline-flex min-h-11 items-center rounded-controle px-1 text-sm font-semibold text-[color:var(--latao)] transition-colors duration-[var(--transicao-rapida)] hover:underline"
-          >
-            Anexar documento
-          </Link>
+          {aoAbrirGaveta && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                title="Abrir a gaveta de documentos para anexar"
+                onClick={() => aoAbrirGaveta("documentos")}
+                className="inline-flex min-h-11 items-center rounded-controle px-1 text-sm font-semibold text-[color:var(--latao)] transition-colors duration-[var(--transicao-rapida)] hover:underline"
+              >
+                Anexar documento
+              </button>
+            </>
+          )}
         </p>
       )}
       <BlocoRecolhivel titulo="Documentos" resumo={null}>

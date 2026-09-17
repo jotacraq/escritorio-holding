@@ -23,17 +23,30 @@
  * ## T2 — vira a barra de comando (16/09/2026)
  *
  * Pedido literal do Marcio: *"nunca tenho amostra de acesso rápido [...] o
- * admin tem que ter o controle do sistema"*. A fila de atalhos já existia;
- * o que faltava era ficar acessível SEM rolar. `sticky top-[61px] lg:top-0`:
- * 61px é a altura medida do header mobile do `AppShell` (`h-11` = 44px +
- * `py-2` = 16px + borda 1px) — abaixo de `lg` o header do celular já ocupa o
- * topo da viewport, e a barra cola imediatamente abaixo dele, nunca por
- * baixo (por isso o `z-10`, sempre menor que o `z-30` do header).
+ * admin tem que ter o controle do sistema"* — e *"sempre visível"*. A fila de
+ * atalhos já existia; o que faltava era ficar acessível SEM rolar.
+ * `sticky top-[61px] lg:top-0`: 61px é a altura medida do header mobile do
+ * `AppShell` (`h-11` = 44px + `py-2` = 16px + borda 1px) — abaixo de `lg` o
+ * header do celular já ocupa o topo da viewport, e a barra cola imediatamente
+ * abaixo dele, nunca por baixo (por isso o `z-10`, sempre menor que o `z-30`
+ * do header).
  *
  * Uma linha só, rótulo à esquerda do número, número em `tabular-nums` — é
  * literalmente o "acesso rápido" pedido. Abaixo de `sm` a barra rola
  * **dentro de si mesma** (`overflow-x-auto`), nunca a página: o item
  * continua `min-h-11` (público 50+, alvo não encolhe).
+ *
+ * **Fable (achado defeito 2, 16/09/2026):** a T2 original desligava o sticky
+ * a partir de `sm` (`sm:border-none sm:bg-transparent sm:px-0 sm:py-0`) sem
+ * `sm:static` — a barra ficava `position: sticky` **sem** fundo/padding em
+ * telas ≥ 640px: pílulas coladas na borda da viewport, conteúdo rolando por
+ * baixo, faixa de `backdrop-blur` sobrando. "Sempre visível" é o pedido
+ * explícito do dono do produto — a correção é manter sticky+fundo+borda+`py`
+ * em TODO breakpoint, não desligar em `sm`. Só o `-mx-3`/`px-3` de sangria
+ * lateral (que existe para a barra encostar na borda no mobile) deixa de
+ * fazer sentido a partir de `sm`, onde a página já tem `padding` — por isso
+ * `sm:mx-0` continua, e junto dele `sm:px-cartao` (em vez de zerar o
+ * padding) para o conteúdo não colar na borda do cartão que envolve a barra.
  */
 
 export interface ItemResumo {
@@ -74,7 +87,7 @@ export function ResumoDoDia({ itens }: { itens: readonly ItemResumo[] }) {
   return (
     <nav
       aria-label="Resumo de hoje"
-      className="sticky top-[61px] z-10 -mx-3 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-linha bg-papel-fundo/95 px-3 py-2 backdrop-blur sm:mx-0 sm:flex-wrap sm:overflow-visible sm:border-none sm:bg-transparent sm:px-0 sm:py-0 lg:top-0"
+      className="sticky top-[61px] z-10 -mx-3 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-linha bg-papel-fundo/95 px-3 py-2 backdrop-blur sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-cartao lg:top-0"
     >
       {visiveis.map((item) => {
         const vazio = item.valor === null;

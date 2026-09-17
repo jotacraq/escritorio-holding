@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useEtapasOrdem } from "@/hooks/useJornadas";
 import { atualizarEtapa, ApiError, type Briefing, type DesfechoJornada, type Ficha360 } from "@/lib/api";
 import { formatarCidadeUf, formatarTelefone } from "@/lib/formatar";
@@ -468,9 +467,16 @@ export function CabecalhoFicha({
             <SeloStub texto="Busca por dados públicos da pessoa: ainda não existe." className="self-start" />
             <p className="text-legenda text-tinta-suave">
               Até existir, o que se sabe do cliente vem do formulário, do contato da equipe e do que a{" "}
-              <Link href="#briefing" className="font-medium text-[color:var(--latao)] underline underline-offset-2">
+              {/* Fable (achado defeito 1, 16/09/2026): era `<Link href="#briefing">` —
+                  mesmo defeito do Radar (`next/link` + hash não dispara
+                  `hashchange`). `<button>`, mesma regra de `PastaDoCliente.tsx`. */}
+              <button
+                type="button"
+                onClick={() => aoAbrirGaveta("briefing")}
+                className="inline-flex min-h-11 items-center rounded-controle font-medium text-[color:var(--latao)] underline underline-offset-2"
+              >
                 análise da IA
-              </Link>{" "}
+              </button>{" "}
               montou.
             </p>
           </section>
