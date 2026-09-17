@@ -7,6 +7,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirInterno } from "@/server/auth";
 import { erroConflito, erroNaoEncontrado, erroValidacao, registrarErro, respostaErro } from "@/server/erros";
 import { CHAVE_DURACAO_PADRAO_MINUTOS, lerConfiguracaoInt } from "@/server/agenda/config";
+import { iniciarSessaoImediata, SQLSTATE_EXCLUSION_VIOLATION } from "@/server/agenda/iniciar-sessao";
 import type { AgendamentoSessao, SessaoViabilidade } from "@/types/banco";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
@@ -18,6 +19,10 @@ const ParametroSchema = z.object({ id: z.string().uuid() });
  * `inicio_em` (agora) — quem decide a duração é o SERVIDOR, lendo
  * `agenda.duracao_padrao_minutos` (BLOQUEIO B12, o mesmo caminho de
  * `POST /api/disponibilidades`), nunca uma constante duplicada no navegador.
+ *
+ * `modo: "imediato"` (17/09/2026, Fatia 1 "iniciar a sessão quando quiser")
+ * é o segundo uso deste mesmo endpoint pelo botão "Iniciar sessão agora":
+ * ver o comentário sobre idempotência de janela mais abaixo, no POST.
  */
 const CorpoSchema = z
   .object({
@@ -25,14 +30,12 @@ const CorpoSchema = z
     fim_em: z.string().datetime({ offset: true }).optional(),
     advogada_id: z.string().uuid().optional(),
     observacoes: z.string().trim().max(1000).optional(),
+    modo: z.enum(["imediato"]).optional(),
   })
   .refine((v) => !v.fim_em || new Date(v.fim_em) > new Date(v.inicio_em), {
     message: "`fim_em` precisa ser depois de `inicio_em`.",
     path: ["fim_em"],
   });
-
-/** Código de exclusion violation do Postgres — a Dra. Elaine não pode estar em duas salas ao mesmo tempo. */
-const SQLSTATE_EXCLUSION_VIOLATION = "23P01";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -53,6 +56,32 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .maybeSingle();
     if (erroJornada) throw erroJornada;
     if (!jornada) throw erroNaoEncontrado("Jornada não encontrada.");
+
+    /**
+     * `modo: "imediato"` (17/09/2026, Fatia 1 "Iniciar sessão agora") desvia
+     * para `iniciarSessaoImediata` — mesma rota, segundo uso pelo botão
+     * "Iniciar sessão agora" (`IniciarSessaoAgora.tsx`). A idempotência por
+     * JANELA (não por advogada) está documentada no módulo compartilhado;
+     * `POST /api/jornadas/[id]/sessao/iniciar` chama o MESMO módulo.
+     */
+    if (corpo.modo === "imediato") {
+      const resultado = await iniciarSessaoImediata(supabase, {
+        jornadaId,
+        advogadaId: corpo.advogada_id,
+        observacoes: corpo.observacoes,
+      }).catch((erro) => {
+        if ((erro as { code?: string })?.code === SQLSTATE_EXCLUSION_VIOLATION) {
+          throw erroConflito("horario_indisponivel", "Este horário já está ocupado para a advogada selecionada.");
+        }
+        registrarErro("api/jornadas/[id]/agendamentos POST imediato", erro, { jornada_id: jornadaId });
+        throw erro;
+      });
+
+      return NextResponse.json(
+        { agendamento: resultado.agendamento, reaproveitado: resultado.reaproveitado },
+        { status: resultado.reaproveitado ? 200 : 201 },
+      );
+    }
 
     // Sessão de Viabilidade é 1:1 com a jornada — cria na primeira vez que alguém agenda.
     const { data: sessaoExistente, error: erroSessao } = await supabase
@@ -106,7 +135,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       throw error;
     }
 
-    return NextResponse.json({ agendamento: agendamento as AgendamentoSessao }, { status: 201 });
+    return NextResponse.json({ agendamento: agendamento as AgendamentoSessao, reaproveitado: false }, { status: 201 });
   } catch (erro) {
     return respostaErro("api/jornadas/[id]/agendamentos POST", erro);
   }

@@ -13,11 +13,13 @@ import { Gaveta } from "@/components/ui/Gaveta";
 import { Botao } from "@/components/ui/Botao";
 import { LinkBotao } from "@/components/ui/LinkBotao";
 import { BarraAcaoMobile } from "@/components/ui/BarraAcaoMobile";
-import { derivarPasta } from "@/lib/pasta/derivar";
+import { derivarPasta, type ItemPasta } from "@/lib/pasta/derivar";
 import { sinaisDaFicha } from "@/lib/pasta/sinais";
-import { agruparPorSessao, derivarTrilho } from "@/lib/pasta/trilho";
+import { agruparPorSessao, derivarTrilho, type ChaveSessao } from "@/lib/pasta/trilho";
 import { ITENS_EM_GAVETA } from "@/lib/pasta/rotas";
 import type { ChaveItemPasta } from "@/lib/pasta/catalogo";
+import { tabDoItem, interpretarHashFicha, TABS_FICHA, type ChaveTabFicha } from "@/lib/pasta/tabs";
+import { TabsFicha, type PainelTabFicha } from "@/components/ficha360/TabsFicha";
 import { extrasDaFicha, proximoAgendamentoAtivo } from "@/components/ficha360/api-extras";
 import { TrilhoDaFicha, acaoDeAgora } from "@/components/ficha360/TrilhoDaFicha";
 import { PrazosDaFicha } from "@/components/ficha360/PrazosDaFicha";
@@ -30,7 +32,7 @@ import type { SinaisSessaoPasta } from "@/components/pasta/PastaDoCliente";
 import type { Ficha360 } from "@/lib/api";
 
 /**
- * A Ficha do cliente — Fase 6.
+ * A Ficha do cliente — Fase 6, com a Fatia 3 (tabs) por cima.
  *
  * O diagnóstico do João, depois de usar a Fase 5: *"A Pasta do cliente está
  * confusa; as abas (briefing, sessão, análise da sessão) estão confusas. Eu
@@ -43,14 +45,23 @@ import type { Ficha360 } from "@/lib/api";
  *   2. ONDE ESTÁ     — as 3 sessões (`TrilhoDaFicha`), com a atual aberta.
  *   3. A PRÓXIMA AÇÃO— um botão só, `data-acao-agora`, dentro do trilho.
  *   4. O QUE ENVIAR  — a barra "Enviar": os links desta pessoa, 1 clique.
- *   5. O QUE ACONTECEU / O QUE FALTA — a Pasta, agrupada pelas 3 sessões.
+ *   5. O QUE ACONTECEU / O QUE FALTA — a Pasta, agora dividida em 4 TABS.
  *
- * **A barra de abas acabou.** Não há mais "Ver tudo" nem uma fileira de nove
- * nomes: cada artefato é um cartão da Pasta que abre a MESMA tela de antes,
- * agora numa gaveta. O deep-link por hash continua funcionando — inclusive os
- * de fora (`hrefDoPasso`, chips do Painel, `#briefing` do cabeçalho) —, só que
- * agora todo hash conhecido abre gaveta, em vez de uns abrirem gaveta e outros
- * trocarem uma aba.
+ * Fatia 3 (16/09/2026) — pedido literal do João: *"dividir em tabs: sessão ·
+ * croqui · holding · documentos. Não podem ocupar o mesmo espaço."* Correção
+ * do João na mesma rodada: as 4 tabs nascem **sempre visíveis** — "não
+ * preciso ocultar" (sem chave de `configuracoes` para isso). "Foca na sessão
+ * hoje" vira só a tab PADRÃO (a que abre primeiro), não uma tab escondida.
+ * As 4 tabs vivem em `lib/pasta/tabs.ts`; o catálogo de gavetas
+ * (`ITENS_EM_GAVETA`, `CHAVES_EM_GAVETA` logo abaixo) e os deep-links por
+ * hash continuam intocados — abrir uma gaveta agora também troca para a tab
+ * dona dela (`abrir()`), então o hash de fora continua achando o conteúdo
+ * certo.
+ *
+ * **A barra de abas antiga (por artefato) acabou; esta é outra, por
+ * momento.** O deep-link por hash continua funcionando — inclusive os de
+ * fora (`hrefDoPasso`, chips do Painel, `#briefing` do cabeçalho) —, só que
+ * agora todo hash conhecido abre gaveta E seleciona a tab dela.
  *
  * O croqui virou cartão + botão (`CartaoCroqui`): as 19 tabelas moram em
  * `/croquis/[id]`, e eram ~8.600 px de DOM em toda abertura de Ficha.
@@ -219,7 +230,24 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // Um dono só para a gaveta na tela inteira: a Pasta, o trilho, o cabeçalho e
   // o deep-link por hash mexem todos neste estado.
   const [gavetaAberta, setGavetaAberta] = useState<string | null>(null);
-  const abrir = useCallback((chave: ChaveItemPasta | string) => setGavetaAberta(String(chave)), []);
+
+  // Tab ativa (Fatia 3). "Sessão" é o padrão — "foca na sessão hoje" (pedido
+  // literal). As 4 tabs nascem sempre visíveis (correção do João: "não
+  // preciso ocultar") — `TABS_FICHA` é o catálogo inteiro, sem filtro.
+  const [tabAtiva, setTabAtiva] = useState<ChaveTabFicha>("sessao");
+
+  // `abrir()` é o ÚNICO caminho para abrir gaveta na Ficha inteira (chip do
+  // cabeçalho, trilho, cartão da Pasta, hash de fora). Antes de a Fatia 3
+  // existir, isso bastava; agora, se o item mora numa tab diferente da
+  // ativa, a tab tem que trocar junto — senão o usuário abre a gaveta pelo
+  // chip do cabeçalho e, ao fechar, não entende por que o conteúdo "sumiu"
+  // (estava certo, só que na tab que não está selecionada).
+  const abrir = useCallback((chave: ChaveItemPasta | string) => {
+    const chaveTexto = String(chave);
+    const tabDona = tabDoItem(chaveTexto as ChaveItemPasta);
+    if (tabDona) setTabAtiva(tabDona);
+    setGavetaAberta(chaveTexto);
+  }, []);
   const fechar = useCallback(() => setGavetaAberta(null), []);
 
   // Quando o próximo passo é mandar um link, o botão do trilho rola até a barra
@@ -233,43 +261,47 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
     alvo?.focus();
   }, []);
 
-  // Deep-link por hash. Todo hash conhecido abre gaveta; hash de aba antiga
-  // passa pelo alias. `#enviar` rola até a barra em vez de abrir gaveta.
+  // Deep-link por hash. Todo hash conhecido abre gaveta (e troca de tab via
+  // `abrir()`); hash de aba antiga passa pelo alias. `#enviar` rola até a
+  // barra em vez de abrir gaveta — a barra "Enviar" vive fora das tabs.
   useEffect(() => {
     function aplicar() {
       const bruto = window.location.hash.slice(1);
-      if (!bruto) return;
-      const chave = ALIAS_HASH[bruto] ?? bruto;
-      if (chave === "enviar") {
+      // `interpretarHashFicha` (lib/pasta/tabs.ts) é a decisão pura e
+      // testada de mesa; aqui só resta EXECUTAR (mexer no DOM, rolar a
+      // tela). `ALIAS_HASH`/`CHAVES_EM_GAVETA` continuam exatamente aqui —
+      // são o contrato que o plano da Fatia 3 marca como intocado.
+      const acao = interpretarHashFicha(bruto, ALIAS_HASH, CHAVES_EM_GAVETA);
+      if (acao.tipo === "rolar-ate") {
         barraRef.current?.scrollIntoView({ block: "center" });
         return;
       }
-      // O croqui não é gaveta: é cartão + botão para `/croquis/[id]`. Um
-      // `#croqui` vindo da Pasta ou de um link antigo leva ao cartão.
-      // `#conversa` (Fase 9) — vem de Mensagens → Recebidas e das pendências do
-      // agente. Mesmo tratamento do croqui: o bloco é um `<details>` que nasce
-      // fechado, então abrir ANTES de rolar; senão o link leva a um título e o
-      // conteúdo continua escondido.
-      if (chave === "conversa") {
-        const bloco = document.getElementById("conversa");
-        bloco?.querySelector("details")?.setAttribute("open", "");
-        bloco?.scrollIntoView({ block: "center" });
+      if (acao.tipo === "abrir-details-na-tab") {
+        // `#conversa` (Fase 9) e `#croqui` (Fase 7): os dois blocos vivem
+        // dentro de um `<details>` que nasce SEMPRE fechado — abrir ANTES de
+        // rolar, senão o link leva a um título e o conteúdo continua
+        // escondido. As duas tabs (Sessão/Croqui) são sempre visíveis
+        // (Fatia 3), então só falta selecionar e rolar.
+        setTabAtiva(acao.tab);
+        window.setTimeout(() => {
+          const ref = acao.idDoBloco === "conversa" ? null : croquiRef.current;
+          const bloco = ref ?? document.getElementById(acao.idDoBloco);
+          bloco?.querySelector("details")?.setAttribute("open", "");
+          bloco?.scrollIntoView({ block: "center" });
+        }, 0);
         return;
       }
-      if (chave === "croqui") {
-        // O cartao do croqui vive dentro de um `<details>` que nasce SEMPRE
-        // fechado (Fase 7). Abrir antes de rolar, senao o link leva a um
-        // titulo e o cartao continua escondido.
-        croquiRef.current?.querySelector("details")?.setAttribute("open", "");
-        croquiRef.current?.scrollIntoView({ block: "center" });
+      if (acao.tipo === "abrir-gaveta-na-tab") {
+        setTabAtiva(acao.tab);
+        setGavetaAberta(acao.chave);
         return;
       }
-      if (CHAVES_EM_GAVETA.has(chave)) setGavetaAberta(chave);
+      if (acao.tipo === "abrir-gaveta") abrir(acao.chave);
     }
     aplicar();
     window.addEventListener("hashchange", aplicar);
     return () => window.removeEventListener("hashchange", aplicar);
-  }, []);
+  }, [abrir]);
 
   // A MESMA ação do trilho, para a barra do polegar no celular (§C3 M5). Uma
   // derivação só: dois botões dizendo coisas diferentes na mesma tela é o tipo
@@ -296,66 +328,59 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
       {/* O QUE FALTA E QUANDO VENCE. Uma linha, e só quando há prazo aberto. */}
       <PrazosDaFicha tarefas={ficha.tarefasAbertas} />
 
-      {/* O QUE ENVIAR. */}
+      {/* O QUE ENVIAR. Fica fora das tabs — é ação, sobre a pessoa inteira,
+          não conteúdo de um momento específico. */}
       <div ref={barraRef} id="enviar">
         <BarraEnviar jornadaId={id} ficha={ficha} />
       </div>
 
-      {/* O QUE JÁ ACONTECEU / O QUE FALTA. O histórico anda junto: são as duas
-          formas de olhar para trás, e cada uma numa linha própria custava
-          55 px de dobra por nada. */}
-      {/* `items-start`: os dois blocos da esquerda são `<details>` que crescem
-          ao abrir, e com `items-center` o botão Histórico descia junto até o
-          meio da conversa aberta — alvo que muda de lugar conforme o conteúdo. */}
-      <div className="flex flex-wrap items-start gap-item">
-        <div className="flex min-w-0 flex-1 flex-col gap-item">
-          <AutomacoesFicha jornadaId={id} />
-          {/* Fase 9 — o lado do robô na conversa do WhatsApp. Mesmo formato de
-              `AutomacoesFicha`: UMA linha que abre em `<details>`, e que não
-              chega ao DOM quando não há nada acontecendo. */}
-          <div id="conversa">
-            <RecebidasFicha jornadaId={id} />
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => abrir("historico")}
-          className="nao-imprimir inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)]"
-        >
-          Histórico
-        </button>
-      </div>
-      <PastaDoCliente itens={pasta} aoAbrirGaveta={abrir} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} />
-
-      {/* A sessão 2 (Croqui estrutural) é onde IR e contrato social vivem — o
-          radar de documentos e o croqui pertencem a ela, não a blocos soltos
-          no meio da ficha. O radar lê patrimônio e família: fora do recorte,
-          nem é montado (a rota recusaria).
-
-          Fase 7: os dois nascem RECOLHIDOS, um `<details>` cada, com o que há
-          dentro no cabeçalho ("15 de 18 prontos · 3 a pedir", "Croqui
-          Estrutural"). Na Fase 6 eles abriam sozinhos a partir da segunda
-          sessão e a Ficha avançada media 1.503 px — o dobro da dobra útil de
-          quem trabalha a 1440×900. Nada some: espera ser pedido.
-
-          Fase 8 — `[&>*]:min-w-0` na grade: item de grade nasce com
-          `min-width: auto`, então a trilha cresce até o min-content do filho, e
-          o par Documentos/Croqui esticava a Ficha para 489 px de largura num
-          viewport de 360 px (medido, com as gavetas abertas). Com o piso em
-          zero, o conteúdo quebra dentro da coluna em vez de esticá-la. */}
-      {podeVerPatrimonio && (
-        <div className="grid items-start gap-x-cartao gap-y-item [&>*]:min-w-0 sm:grid-cols-2">
-          <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} recolhivel aoAbrirGaveta={abrir} />
-          <div ref={croquiRef} id="croqui">
-            <CartaoCroqui estadoCroqui={estadoCroqui} recolhivel />
-          </div>
-        </div>
-      )}
+      {/* Fatia 3 — as 4 tabs (`lib/pasta/tabs.ts`). Cada painel só monta o
+          conteúdo quando é a tab ativa (`TabsFicha`): `AutomacoesFicha`,
+          `RecebidasFicha` e `RadarDocumentos` buscam dado próprio, e uma tab
+          fechada não pode gerar requisição — a mesma disciplina que
+          `ConduzirSessaoApp.tsx:140` já aplicou aos pollers (achado do
+          Fable, 16/09). */}
+      <TabsFicha
+        tabAtiva={tabAtiva}
+        aoTrocarTab={setTabAtiva}
+        paineis={TABS_FICHA.map((definicao): PainelTabFicha => ({
+          definicao,
+          conteudo:
+            definicao.chave === "sessao" ? (
+              <ConteudoTabSessao id={id} pasta={pasta} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} abrir={abrir} />
+            ) : definicao.chave === "documentos" ? (
+              podeVerPatrimonio ? (
+                <ConteudoTabDocumentos id={id} pasta={pasta} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} recarregar={recarregar} abrir={abrir} />
+              ) : (
+                <p className="text-sm text-tinta-suave">Sem permissão para ver esta seção.</p>
+              )
+            ) : definicao.chave === "croqui" ? (
+              // Croqui é patrimônio (PII) — mesmo gate que o cartão sempre
+              // teve antes das tabs existirem.
+              podeVerPatrimonio ? (
+                <div ref={croquiRef} id="croqui">
+                  <CartaoCroqui estadoCroqui={estadoCroqui} />
+                </div>
+              ) : (
+                <p className="text-sm text-tinta-suave">Sem permissão para ver esta seção.</p>
+              )
+            ) : (
+              // Holding — stub rotulado (CLAUDE.md: "funcionalidade não pronta
+              // aparece como stub rotulado, jamais como dado plausível").
+              <p className="rounded-cartao border border-linha bg-papel-elevado px-4 py-6 text-sm text-tinta-suave">
+                Ainda não há entrega de holding neste sistema.
+              </p>
+            ),
+        }))}
+      />
 
       {/* ---------------------------------------------------------------- */}
       {/* As gavetas. Mesmos componentes das antigas abas, mesmas props,     */}
       {/* mesmos gates de papel — o que mudou é que agora nenhuma delas      */}
-      {/* ocupa a dobra da tela até alguém pedir.                            */}
+      {/* ocupa a dobra da tela até alguém pedir. Ficam fora das tabs de     */}
+      {/* propósito: `Gaveta` já devolve `null` fechada (mesmo contrato de   */}
+      {/* não-montagem), então abrir uma gaveta a partir de QUALQUER tab —   */}
+      {/* inclusive por hash de fora — não depende da árvore da tab.        */}
       {/* ---------------------------------------------------------------- */}
       <Gaveta aberta={gavetaAberta === "formulario"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.formulario} largura="larga">
         <FormularioAba jornadaId={id} />
@@ -426,5 +451,91 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
         </BarraAcaoMobile>
       )}
     </div>
+  );
+}
+
+/** Só os itens da Pasta que pertencem a esta tab — `PastaDoCliente` continua sendo a única a decidir estado/agrupamento visual. */
+function itensDaTab(pasta: ItemPasta[], tab: ChaveTabFicha): ItemPasta[] {
+  return pasta.filter((item) => tabDoItem(item.chave) === tab);
+}
+
+/**
+ * Tab **Sessão** (padrão) — "foca na sessão hoje". Reúne: o registro
+ * discreto do agente de WhatsApp, o botão Histórico e a Pasta filtrada aos
+ * artefatos da Sessão de Viabilidade (`lib/pasta/tabs.ts`).
+ *
+ * Ordem por PESO (a filosofia do João — "o que está pendente e o que fazer
+ * agora primeiro, com peso; o resto é linha"): a Pasta (o que falta/o que
+ * está pronto) vem primeiro, porque é onde a ação mora; o registro do
+ * agente e o histórico vêm depois, como consulta — nunca disputando o
+ * primeiro olhar.
+ */
+function ConteudoTabSessao({
+  id,
+  pasta,
+  sinaisSessao,
+  sessaoAtual,
+  abrir,
+}: {
+  id: string;
+  pasta: ItemPasta[];
+  sinaisSessao: SinaisSessaoPasta;
+  sessaoAtual: ChaveSessao | null;
+  abrir: (chave: ChaveItemPasta | string) => void;
+}) {
+  return (
+    <>
+      <PastaDoCliente itens={itensDaTab(pasta, "sessao")} aoAbrirGaveta={abrir} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} />
+
+      {/* O agente de WhatsApp é REGISTRO, não protagonista (pedido literal do
+          João: "se ele respondeu a confirmação de presença, beleza... tem
+          que ser objetivo, não pode ser redundante"). Uma linha discreta,
+          abaixo do que importa. `items-start`: os dois blocos da esquerda
+          são `<details>` que crescem ao abrir, e com `items-center` o botão
+          Histórico descia junto até o meio da conversa aberta. */}
+      <div className="flex flex-wrap items-start gap-item">
+        <div className="flex min-w-0 flex-1 flex-col gap-item">
+          <AutomacoesFicha jornadaId={id} />
+          <div id="conversa">
+            <RecebidasFicha jornadaId={id} />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => abrir("historico")}
+          className="nao-imprimir inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-controle border border-linha-forte bg-papel-elevado px-3 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:border-[color:var(--latao)]"
+        >
+          Histórico
+        </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Tab **Documentos** — patrimônio e documentos recebidos, mais o radar do
+ * que falta pedir. Só é montada com `podeVerPatrimonio` (a página já faz
+ * esse gate antes de renderizar este componente).
+ */
+function ConteudoTabDocumentos({
+  id,
+  pasta,
+  sinaisSessao,
+  sessaoAtual,
+  recarregar,
+  abrir,
+}: {
+  id: string;
+  pasta: ItemPasta[];
+  sinaisSessao: SinaisSessaoPasta;
+  sessaoAtual: ChaveSessao | null;
+  recarregar: () => void;
+  abrir: (chave: ChaveItemPasta | string) => void;
+}) {
+  return (
+    <>
+      <PastaDoCliente itens={itensDaTab(pasta, "documentos")} aoAbrirGaveta={abrir} sinaisSessao={sinaisSessao} sessaoAtual={sessaoAtual} />
+      <RadarDocumentos jornadaId={id} aoAtualizar={recarregar} aoAbrirGaveta={abrir} />
+    </>
   );
 }
