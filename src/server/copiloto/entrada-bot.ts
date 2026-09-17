@@ -54,6 +54,7 @@ import { extrairDecisoresEsperados } from "./estado";
 interface SessaoPorGravacaoExterna {
   sessao_id: string;
   transcricao_id: string | null;
+  estado: string;
 }
 
 /** Resolve `sessao_id` (+ `transcricao_id`, para o gate de consolidação) a
@@ -61,7 +62,7 @@ interface SessaoPorGravacaoExterna {
 async function resolverSessaoPorBotId(admin: SupabaseClient, botId: string): Promise<SessaoPorGravacaoExterna | null> {
   const { data, error } = await admin
     .from("sessoes_copiloto")
-    .select("sessao_id, transcricao_id")
+    .select("sessao_id, transcricao_id, estado")
     .eq("gravacao_externa_id", botId)
     .maybeSingle<SessaoPorGravacaoExterna>();
   if (error) throw error;
@@ -70,6 +71,41 @@ async function resolverSessaoPorBotId(admin: SupabaseClient, botId: string): Pro
 
 interface ErroPostgrest {
   code?: string;
+}
+
+/**
+ * 🔴 CORRIGIDO 17/09/2026, medido em sessão real (Cláudia, 755d87d7): o bot
+ * gravava a transcrição e a IA NUNCA rodava. 316 segmentos, 0 ciclos.
+ *
+ * Causa: pedir o bot e ATIVAR a sessão são atos independentes. A rota de
+ * segmento MANUAL (`segmentos/route.ts::ativarSessaoCopiloto`) faz a
+ * transição `aguardando`→`ativo`; o caminho do BOT nunca fazia. E
+ * `ciclo.ts` exige `ativo` ESTRITO — então numa sessão conduzida só pelo
+ * bot (o caso normal: ninguém digita durante a reunião) o copiloto ficava
+ * mudo do começo ao fim, sem erro nenhum em log.
+ *
+ * Aqui a primeira fala que o bot transcreve é o sinal de que a reunião
+ * começou de fato — melhor sinal que "o bot foi pedido" (ele pode ficar na
+ * sala de espera) e melhor que a entrada de um participante (pode ser só a
+ * advogada montando a sala).
+ *
+ * `.eq("estado", "aguardando")` é a trava de corrida: dois eventos de
+ * transcrição chegam juntos no início da reunião, os dois tentam, só um
+ * casa. Nunca pisa em 'encerrado'/'erro' — esses o CHAMADOR já recusou
+ * antes de chegar aqui.
+ */
+async function ativarSePrimeiraFalaDoBot(
+  admin: SupabaseClient,
+  sessaoId: string,
+  estadoAtual: string,
+): Promise<void> {
+  if (estadoAtual !== "aguardando") return;
+  const { error } = await admin
+    .from("sessoes_copiloto")
+    .update({ estado: "ativo", iniciado_em: new Date().toISOString() })
+    .eq("sessao_id", sessaoId)
+    .eq("estado", "aguardando");
+  if (error) throw error;
 }
 
 /**
@@ -146,6 +182,8 @@ export async function registrarSegmentoDoBot(
     // (0091) — texto vazio não é erro nosso, é ausência de fala.
     return { situacao: "sem_efeito" };
   }
+
+  await ativarSePrimeiraFalaDoBot(admin, sessaoId, sessao.estado);
 
   for (let tentativa = 0; tentativa < MAX_TENTATIVAS_ORDEM; tentativa++) {
     const { data: ultimo, error: erroUltimo } = await admin

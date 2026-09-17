@@ -75,6 +75,12 @@ function clienteFalso(respostas: {
   /** Espião da RPC `registrar_participantes_copiloto` — chamado com os argumentos exatos
    * (`p_participantes_novos` é o array MERGEADO, o que os testes de papel conferem). */
   onRpcParticipantes?: (args: { p_sessao_id: string; p_participantes_esperados: unknown; p_participantes_novos: unknown }) => void;
+  /** Espião do UPDATE em `sessoes_copiloto` (ativação `aguardando`→`ativo` na
+   * primeira fala do bot, 17/09/2026). Recebe o patch e os filtros `.eq()`
+   * acumulados — é o que prova que a trava de corrida
+   * `.eq("estado","aguardando")` foi de fato aplicada, e não só que um
+   * UPDATE qualquer aconteceu. */
+  onUpdateSessao?: (patch: Record<string, unknown>, filtros: Array<[string, unknown]>) => void;
 }): SupabaseClient {
   let chamadasSessoesCopiloto = 0;
   const estadoFilaInsert = { indice: 0 };
@@ -87,6 +93,34 @@ function clienteFalso(respostas: {
       // a escrita agora é `.rpc(...)`, não mais `.from("sessoes_copiloto").update(...)`.
       if (chamadasSessoesCopiloto === 1) {
         return consultaFalsaFixa(respostas.sessaoLookup ?? { data: null, error: null });
+      }
+      if (respostas.onUpdateSessao) {
+        // Builder que DISTINGUE update de select e acumula os `.eq()` —
+        // `consultaFalsaFixa` devolve `consulta` em tudo e engoliria a
+        // escrita em silêncio (foi assim que o bug do `retention` passou
+        // por 1.371 testes verdes).
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const c: any = {};
+        const filtros: Array<[string, unknown]> = [];
+        let patch: Record<string, unknown> | null = null;
+        c.select = () => c;
+        c.order = () => c;
+        c.limit = () => c;
+        c.eq = (coluna: string, valor: unknown) => {
+          filtros.push([coluna, valor]);
+          if (patch) respostas.onUpdateSessao!(patch, [...filtros]);
+          return c;
+        };
+        c.update = (valores: Record<string, unknown>) => {
+          patch = valores;
+          return c;
+        };
+        c.then = (resolver: (v: Resultado) => unknown) =>
+          Promise.resolve(respostas.participantesLookup ?? { data: null, error: null }).then(resolver);
+        c.maybeSingle = async () => respostas.participantesLookup ?? { data: null, error: null };
+        c.single = async () => respostas.participantesLookup ?? { data: null, error: null };
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+        return c;
       }
       return consultaFalsaFixa(respostas.participantesLookup ?? { data: null, error: null });
     }
@@ -285,6 +319,83 @@ describe("registrarSegmentoDoBot — vínculo pelo botId (§4.2/§6.2)", () => {
       iniciadoMs: null,
     });
     expect(resultado).toEqual({ situacao: "gravado", segmentoId: "seg-4" });
+  });
+});
+
+describe("🔴 ativação pela primeira fala do bot (17/09/2026 — bug medido em sessão real)", () => {
+  /* Regressão do defeito que deixou a sessão da Cláudia com 316 segmentos e
+   * ZERO ciclos: o bot transcrevia, mas `sessoes_copiloto.estado` continuava
+   * 'aguardando' e `ciclo.ts` exige 'ativo' ESTRITO. A ativação só existia na
+   * rota de segmento MANUAL — e numa reunião conduzida pelo bot ninguém digita.
+   * Nenhum erro em log: o copiloto ficava simplesmente mudo. */
+
+  it("sessão em 'aguardando': a primeira fala do bot ativa, com a trava de corrida", async () => {
+    const escritas: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }> = [];
+    const admin = clienteFalso({
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null, estado: "aguardando" }, error: null },
+      ultimoOrdem: { data: null, error: null },
+      filaInsertSegmento: [{ data: { id: "seg-1" }, error: null }],
+      onUpdateSessao: (patch, filtros) => escritas.push({ patch, filtros }),
+    });
+
+    const resultado = await registrarSegmentoDoBot(admin, {
+      botId: "bot_valido",
+      texto: "boa tarde, vamos começar",
+      falante: "cliente",
+      falanteConfianca: null,
+      iniciadoMs: 0,
+    });
+
+    expect(resultado).toEqual({ situacao: "gravado", segmentoId: "seg-1" });
+
+    const ativacao = escritas.at(-1);
+    expect(ativacao?.patch.estado).toBe("ativo");
+    expect(ativacao?.patch.iniciado_em).toEqual(expect.any(String));
+    // A trava: só transiciona quem AINDA está 'aguardando'. Sem este filtro,
+    // dois eventos de transcrição simultâneos no início da reunião poderiam
+    // reescrever `iniciado_em` de uma sessão já ativa.
+    expect(ativacao?.filtros).toContainEqual(["sessao_id", "sessao-real"]);
+    expect(ativacao?.filtros).toContainEqual(["estado", "aguardando"]);
+  });
+
+  it("sessão já 'ativo': não reescreve (não mexe em iniciado_em de reunião em curso)", async () => {
+    const escritas: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }> = [];
+    const admin = clienteFalso({
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: null, estado: "ativo" }, error: null },
+      ultimoOrdem: { data: { ordem: 7 }, error: null },
+      filaInsertSegmento: [{ data: { id: "seg-8" }, error: null }],
+      onUpdateSessao: (patch, filtros) => escritas.push({ patch, filtros }),
+    });
+
+    const resultado = await registrarSegmentoDoBot(admin, {
+      botId: "bot_valido",
+      texto: "continuando a conversa",
+      falante: "cliente",
+      falanteConfianca: null,
+      iniciadoMs: 5000,
+    });
+
+    expect(resultado).toEqual({ situacao: "gravado", segmentoId: "seg-8" });
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("sessão já consolidada: recusa antes de qualquer ativação", async () => {
+    const escritas: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }> = [];
+    const admin = clienteFalso({
+      sessaoLookup: { data: { sessao_id: "sessao-real", transcricao_id: "t-1", estado: "aguardando" }, error: null },
+      onUpdateSessao: (patch, filtros) => escritas.push({ patch, filtros }),
+    });
+
+    const resultado = await registrarSegmentoDoBot(admin, {
+      botId: "bot_valido",
+      texto: "fala atrasada do webhook",
+      falante: null,
+      falanteConfianca: null,
+      iniciadoMs: null,
+    });
+
+    expect(resultado).toEqual({ situacao: "sessao_ja_consolidada" });
+    expect(escritas).toHaveLength(0);
   });
 });
 
