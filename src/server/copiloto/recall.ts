@@ -58,9 +58,24 @@ export function montarWebhookUrlComSegredo(): string | null {
 }
 
 /** O único formato de retenção que este módulo envia — nunca omitido (§4.2.1).
- * `deleção_imediata` não existe como opção do fornecedor na sonda; o valor
- * mais curto medido é `days` com `retention_days` explícito. */
-export type RetencaoBot = { type: "days"; retention_days: number };
+ *
+ * 🔴 CORRIGIDO EM PRODUÇÃO (17/09/2026). O formato anterior era
+ * `{type:"days", retention_days}` na RAIZ do corpo, e a API respondia:
+ *
+ *     {"retention":{"type":["\"days\" is not a valid choice."]}}
+ *
+ * Ou seja: TODO pedido de bot pela rota do sistema falhava com 400. O defeito
+ * não aparecia em teste (os testes usam mock do `fetch`) nem nos bots de
+ * 14/09 (criados por script, fora desta função). Só apareceu ao chamar a API
+ * de verdade, com uma reunião real esperando.
+ *
+ * Os dois erros, segundo `docs.recall.ai/docs/storage-and-playback`:
+ *   1. o tipo é `timed` com `hours`, não `days` com `retention_days`;
+ *   2. o campo mora em `recording_config.retention`, NÃO na raiz do corpo.
+ *
+ * Só existem dois tipos: `timed` (com `hours`) e `forever`. As primeiras 168h
+ * (7 dias) não são cobradas. */
+export type RetencaoBot = { type: "timed"; hours: number };
 
 export interface PedirBotParams {
   sessaoId: string;
@@ -103,7 +118,17 @@ export interface RespostaCriacaoBot {
   id: string;
   status_changes: StatusChangeBot[];
   recordings: unknown[];
-  retention: { type: string; retention_days?: number } | null;
+  /** 🔴 17/09: a resposta devolve a retenção DENTRO de `recording_config`,
+   * não na raiz. Ler da raiz fazia `retencaoEfetiva()` ver `undefined` e
+   * concluir "não é forever" — a trava do §4.2.1 passava sem olhar nada.
+   * O campo de raiz fica declarado como legado, para respostas antigas. */
+  recording_config?: { retention?: { type: string; hours?: number } | null } | null;
+  retention?: { type: string; hours?: number } | null;
+}
+
+/** A retenção REAL da resposta, venha ela de onde vier. */
+export function retencaoEfetiva(corpo: RespostaCriacaoBot): { type: string; hours?: number } | null {
+  return corpo.recording_config?.retention ?? corpo.retention ?? null;
 }
 
 export type ResultadoPedirBot =
@@ -187,10 +212,13 @@ export async function pedirBot(params: PedirBotParams): Promise<ResultadoPedirBo
           events: ["transcript.data", "participant_events.join", "participant_events.leave"],
         },
       ],
+      // §4.2.1 — SEMPRE explícito, nunca omitido: é o que impede o default
+      // `forever` do fornecedor de se aplicar em silêncio.
+      // 🔴 17/09: fica DENTRO de `recording_config`. Na raiz, a API aceitava
+      // o campo calado (era ignorado) ou recusava o corpo inteiro com 400 —
+      // ver o comentário de `RetencaoBot`.
+      retention: params.retention,
     },
-    // §4.2.1 — SEMPRE explícito, nunca omitido: é o que impede o default
-    // `forever` do fornecedor de se aplicar em silêncio.
-    retention: params.retention,
     // §4.2.2 — valores NOSSOS, nunca os defaults (20min de sala de espera e
     // 1h de silêncio são tempo cobrado).
     automatic_leave: {
@@ -236,7 +264,7 @@ export async function pedirBot(params: PedirBotParams): Promise<ResultadoPedirBo
   // §4.2.1 — conferência pós-criação: `forever` (mesmo pedido explicitamente
   // diferente) é defeito nosso se passar batido. Encerra na hora, COM
   // RETENTATIVA (achado 4 do Fable — ver `encerrarBotComRetentativa`).
-  if (corpoResposta.retention?.type === "forever") {
+  if (retencaoEfetiva(corpoResposta)?.type === "forever") {
     const encerramento = await encerrarBotComRetentativa(corpoResposta.id);
     registrarErro(
       "copiloto/recall.pedirBot#retencao_forever",

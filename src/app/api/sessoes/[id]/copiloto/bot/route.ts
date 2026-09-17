@@ -201,9 +201,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // no NOSSO banco, B69) — reusado aqui como teto de retenção no
       // FORNECEDOR também, na ausência de uma chave própria para isso (B76
       // aberto: "valor inicial proposto: o menor que o fornecedor aceitar").
-      // `A MEDIR`: confirmar contra a API viva se `retention_days` aceita
-      // este valor ou exige um mínimo diferente.
-      retention: { type: "days", retention_days: Math.max(1, retencaoDias) },
+      //
+      // 🔴 MEDIDO CONTRA A API VIVA (17/09/2026), resolvendo o `A MEDIR` que
+      // estava aqui: `retention_days` NÃO existe. A API responde
+      // `{"retention":{"type":["\"days\" is not a valid choice."]}}` e o
+      // pedido inteiro falha com 400 — ou seja, o botão "Convidar o bot"
+      // estava quebrado em produção para QUALQUER sala. O formato é `timed`
+      // com `hours`; 168h (7 dias) é o teto gratuito do fornecedor.
+      retention: { type: "timed", hours: Math.max(1, retencaoDias) * 24 },
       automaticLeave: {
         waitingRoomTimeoutS: AUTOMATIC_LEAVE_PADRAO.waitingRoomTimeoutS,
         noOneJoinedTimeoutS: AUTOMATIC_LEAVE_PADRAO.noOneJoinedTimeoutS,

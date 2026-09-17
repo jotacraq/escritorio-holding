@@ -333,7 +333,11 @@ describe("POST /api/sessoes/[id]/copiloto/bot — sucesso e sala inexistente", (
     expect(pedirBotMock).toHaveBeenCalledTimes(1);
     const chamada = pedirBotMock.mock.calls[0][0];
     expect(chamada.retention).toBeDefined();
-    expect(chamada.retention.type).toBe("days");
+    // 🔴 17/09: `days` NÃO existe na API do Recall — o pedido inteiro voltava
+    // 400 e o botão "Convidar o bot" estava quebrado em produção. `timed` com
+    // `hours`; 7 dias de configuração viram 168h.
+    expect(chamada.retention.type).toBe("timed");
+    expect(chamada.retention.hours).toBe(168);
   });
 
   // 🔴 Aceite do §8 — o sub_code TEM de chegar ao corpo da resposta.

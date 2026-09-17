@@ -19,7 +19,7 @@ const PARAMS_BASE = {
   linkSala: "https://zoom.us/j/123",
   nomeBot: "Assistente — Escritório Elaine Montenegro",
   webhookUrl: "https://exemplo.com/api/webhooks/copiloto/transcricao?k=segredo",
-  retention: { type: "days", retention_days: 1 } as const,
+  retention: { type: "timed", hours: 24 } as const,
   automaticLeave: { waitingRoomTimeoutS: 300, noOneJoinedTimeoutS: 300, silenceDetectionS: 600 },
   botDetectionMatches: ["Notetaker", "Outro Assistente"],
 };
@@ -87,7 +87,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
@@ -104,7 +104,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
@@ -122,15 +122,21 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
-    await pedirBot({ ...PARAMS_BASE, retention: { type: "days", retention_days: 3 } });
+    await pedirBot({ ...PARAMS_BASE, retention: { type: "timed", hours: 72 } });
 
     const [, init] = fetchEspiao.mock.calls[0] as [string, RequestInit];
     const corpo = JSON.parse(init.body as string);
-    expect(corpo.retention).toEqual({ type: "days", retention_days: 3 });
+    // 🔴 17/09: DENTRO de `recording_config`, com `timed`/`hours`. O formato
+    // antigo (`retention` na raiz, `type:"days"`) era recusado com 400 pela
+    // API viva — e este teste passava mesmo assim, porque afirmava contra o
+    // mock o mesmo formato errado que o código enviava. Teste que copia a
+    // implementação não prova contrato: prova que os dois concordam.
+    expect(corpo.recording_config.retention).toEqual({ type: "timed", hours: 72 });
+    expect(corpo.retention).toBeUndefined();
   });
 
   // Aceite do plano: "teste provando bot_detection.matches explícito".
@@ -139,7 +145,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
@@ -156,7 +162,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
@@ -176,7 +182,7 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
     const fetchEspiao = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "days", retention_days: 1 } }),
+      json: async () => ({ id: "bot_1", status_changes: [], recordings: [], retention: { type: "timed", hours: 24 } }),
     });
     vi.stubGlobal("fetch", fetchEspiao);
 
@@ -202,6 +208,37 @@ describe("pedirBot — corpo enviado ao fornecedor", () => {
 });
 
 describe("pedirBot — retenção infinita detectada (§4.2.1)", () => {
+  // 🔴 17/09: o caso REAL. A API devolve a retenção dentro de
+  // `recording_config`, não na raiz — e a trava do §4.2.1 lia só a raiz,
+  // então via `undefined`, concluía "não é forever" e deixava passar um bot
+  // com retenção indefinida gravando uma sessão de família. O teste antigo
+  // (abaixo, com o campo na raiz) passava e não provava nada sobre a
+  // resposta de verdade.
+  it("forever DENTRO de recording_config tambem dispara o encerramento", async () => {
+    process.env.RECALL_API_KEY = "chave-teste";
+    const fetchEspiao = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: "bot_aninhado",
+          status_changes: [],
+          recordings: [],
+          recording_config: { retention: { type: "forever" } },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchEspiao);
+
+    const resultado = await pedirBot(PARAMS_BASE);
+
+    expect(resultado).toEqual({
+      situacao: "retencao_infinita_detectada",
+      botId: "bot_aninhado",
+      encerramentoConfirmado: true,
+    });
+  });
+
   it("retention.type==='forever' na resposta encerra o bot com SUCESSO e devolve encerramentoConfirmado:true", async () => {
     process.env.RECALL_API_KEY = "chave-teste";
     const fetchMock = vi
@@ -317,7 +354,7 @@ describe("pedirBot — sala inexistente chega com sub_code (§4.2.2)", () => {
         { code: "fatal", sub_code: "meeting_not_found", created_at: "2026-09-11T10:00:00.2Z" },
       ],
       recordings: [],
-      retention: { type: "days", retention_days: 1 },
+      retention: { type: "timed", hours: 24 },
     });
 
     const resultado = await pedirBot(PARAMS_BASE);
@@ -333,7 +370,7 @@ describe("pedirBot — criado com sucesso", () => {
       id: "bot_ok",
       status_changes: [{ code: "in_call_recording", sub_code: null, created_at: "2026-09-11T10:00:01Z" }],
       recordings: [{ id: "rec_1" }],
-      retention: { type: "days", retention_days: 1 },
+      retention: { type: "timed", hours: 24 },
     });
 
     const resultado = await pedirBot(PARAMS_BASE);
