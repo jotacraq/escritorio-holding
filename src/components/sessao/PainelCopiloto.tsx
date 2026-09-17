@@ -224,14 +224,23 @@ export function PainelCopiloto({
        * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
        * mas a tela não pode quebrar em monitor estreito.
        *
-       * `max-h-[calc(100vh-11rem)]` ancora no VIEWPORT (11rem = cabeçalho +
-       * linha de comando + rodapé de status) e é o TETO de fora; a CONTENÇÃO
-       * de cada célula é responsabilidade de `Coluna` (`copiloto/Coluna.tsx`)
-       * — corrigido 17/09/2026 depois de a transcrição vazar por cima do
-       * rodapé com 31 segmentos (COL 3 era só `min-h-0`, sem `flex`: o
-       * `flex-1` do filho ficava inerte). `min-h-[22rem]` evita que o
-       * mosaico colapse para uma faixa ilegível em tela baixa. */}
-      <div className="grid min-h-[22rem] max-h-[calc(100vh-11rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+       * `max-h-[calc(100vh-14.5rem)]` ancora no VIEWPORT e é o TETO de fora;
+       * a CONTENÇÃO de cada célula é responsabilidade de `Coluna`
+       * (`copiloto/Coluna.tsx`) — corrigido 17/09/2026 depois de a
+       * transcrição vazar por cima do rodapé com 31 segmentos (COL 3 era só
+       * `min-h-0`, sem `flex`: o `flex-1` do filho ficava inerte).
+       *
+       * 🔴 O valor da reserva foi MEDIDO no navegador (17/09, 18:48, viewport
+       * 1536×826, build 8357981), não estimado: cabeçalho + linha de comando
+       * = 142px acima do grid, gap 8px, rodapé de status 61px → 211px + folga
+       * = 13,7rem necessários. A estimativa anterior (11rem, "por tipografia,
+       * não cronometrado", como o executor avisou) deixava o rodapé 34px
+       * abaixo da dobra num laptop; em 1920×1080 cabia e o defeito não
+       * aparecia. 14,5rem dá ~20px de folga e escala com o ajuste "Tamanho
+       * do texto" (rem acompanha o `font-size` da raiz; px não acompanharia).
+       * `min-h-[22rem]` evita que o mosaico colapse para uma faixa ilegível em
+       * tela baixa. */}
+      <div className="grid min-h-[22rem] max-h-[calc(100vh-14.5rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
          * e do "card inteiro clicável muda o contrato do link") — só os

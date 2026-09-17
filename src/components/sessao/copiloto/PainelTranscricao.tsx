@@ -46,9 +46,12 @@ const TAB_INDEX_ROLAVEL = 0;
  * NÃO é fonte confiável hoje (achado 17/09: sessão real tem Marco-Staff
  * gravado como "advogada" — correção de dado pendente, fora desta fatia).
  * Em vez disso usa-se quem está LOGADO, casado por nome normalizado contra
- * `turno.falante`. Sem nome resolvido, ou papel ausente/diferente de
- * "advogada", degrada para NEUTRO: todo turno no mesmo tratamento, sem
- * recuo diferencial — nunca adivinha.
+ * `turno.falante`, desde que o papel do perfil CONDUZA sessão
+ * (`PAPEIS_QUE_CONDUZEM`: `advogada` ou `admin` — a Dra. Elaine é `admin`;
+ * exigir só "advogada" deixou a diferenciação MORTA em produção, 14/14
+ * turnos neutros, medido no navegador em 17/09). Sem nome resolvido, ou papel
+ * fora desse conjunto, degrada para NEUTRO: todo turno no mesmo tratamento,
+ * sem recuo diferencial — nunca adivinha.
  *
  * Correção (Fase 12, Fatia 7 — defeito, não feature): esta folha recebia
  * `usuarioLogado` chamando `useUsuarioAtual()` sozinha, que faz 2 idas à
@@ -186,11 +189,22 @@ function normalizarNome(nome: string | null): string | null {
   return colapsado.length > 0 ? colapsado : null;
 }
 
-/** Quem está logado É a advogada, nome normalizado — ou `null` para degradar
- * para o tratamento neutro (sem papel resolvido como "advogada", ou sem nome
- * cadastrado em `perfis_equipe`). Nunca lê `participantes[].papel`. */
+/** Papéis de `perfis_equipe` que CONDUZEM sessão. 🔴 CORRIGIDO 18/09 à noite,
+ * medido no navegador em produção: a 1ª versão exigia `papel === "advogada"`
+ * e a Dra. Elaine — a única pessoa para quem esta diferenciação existe — está
+ * cadastrada como `admin` (é dona do escritório E conduz). Resultado: 14
+ * turnos na tela, 14 com o recuo de "demais", zero em destaque. A regra
+ * degradava para neutro em silêncio, para sempre, sem dado errado nenhum —
+ * só uma suposição sobre o cadastro. `assistente`/`relacionamento` continuam
+ * fora: quem opera a tela nesses papéis pode aparecer falando no setup
+ * (o "Marco - Staff" de hoje) sem ser quem conduz. */
+const PAPEIS_QUE_CONDUZEM: ReadonlySet<string> = new Set(["advogada", "admin"]);
+
+/** Quem está logado com papel de condução, nome normalizado — ou `null` para
+ * degradar para o tratamento neutro (papel fora de `PAPEIS_QUE_CONDUZEM`, ou
+ * sem nome cadastrado em `perfis_equipe`). Nunca lê `participantes[].papel`. */
 function nomeAdvogadaLogadaOuNulo(usuario: { papel: string | null; nome: string | null } | null): string | null {
-  if (!usuario || usuario.papel !== "advogada") return null;
+  if (!usuario || !usuario.papel || !PAPEIS_QUE_CONDUZEM.has(usuario.papel)) return null;
   return normalizarNome(usuario.nome);
 }
 

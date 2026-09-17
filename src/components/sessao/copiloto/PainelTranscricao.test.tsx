@@ -244,7 +244,26 @@ describe("PainelTranscricao — F3, a transcrição entra na tela", () => {
     expect(itens[1].querySelector(".font-medium")).not.toBeNull();
   });
 
-  it("sem usuário logado resolvido (ou papel diferente de advogada): degrada para neutro — nenhum turno tem recuo diferencial", () => {
+  it("🔴 papel `admin` com nome casando recebe o tratamento de quem conduz — o caso REAL da Dra. Elaine", () => {
+    // Medido em produção (17/09, navegador, build 8357981): a Dra. Elaine está
+    // cadastrada como `admin` em `perfis_equipe`, não como `advogada`. A 1ª
+    // versão exigia `papel === "advogada"` e degradou para neutro em silêncio:
+    // 14 turnos, 14 com recuo, zero em destaque — a diferenciação estava
+    // MORTA para a única pessoa para quem existe. Este teste prende o caso.
+    const usuarioLogado: UsuarioLogadoTeste = { nome: "Dra. Elaine Montenegro", papel: "admin" };
+    const segmentos = [
+      segmento({ id: "s1", ordem: 1, falante: "Elaine Montenegro", texto: "pergunta" }),
+      segmento({ id: "s2", ordem: 2, falante: "Cliente", texto: "resposta" }),
+    ];
+    const { container } = montar(<PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} />);
+    const itens = container.querySelectorAll("li");
+
+    expect(itens[0].classList.contains("border-l")).toBe(false);
+    expect(itens[0].querySelector(".font-semibold")).not.toBeNull();
+    expect(itens[1].classList.contains("border-l")).toBe(true);
+  });
+
+  it("sem usuário logado resolvido (ou papel que NÃO conduz: assistente/relacionamento): degrada para neutro — nenhum turno tem recuo diferencial", () => {
     const usuarioLogado: UsuarioLogadoTeste = { nome: "Alguém", papel: "assistente" };
     const segmentos = [
       segmento({ id: "s1", ordem: 1, falante: "Elaine Montenegro", texto: "pergunta" }),
