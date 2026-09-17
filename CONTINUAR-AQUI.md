@@ -772,3 +772,26 @@ Tema ESCOPADO à rota (`.tema-conducao`); promover ao sistema é decisão dele, 
 Regra que entrou hoje e vale para toda contraprova por mutação: **restaurar por CÓPIA +
 md5, nunca `git checkout --`** numa árvore com trabalho não commitado (o HEAD é o passado;
 um `checkout .` teria apagado 17 arquivos em 17/09).
+
+## 🔴 PRIMEIRA COISA a fazer ao abrir a tela — prova de pixel do `fb1b135` (17/09, 20:01)
+
+O Fable aprovou com a prova de pixel CONDICIONADA e a extensão do Chrome falhou 3× à noite
+(dono ausente). Abrir `https://escritorio.grupoparticipa.app.br/sessoes/2b0ff468-1ac8-476f-847f-f04dbd99840a/conduzir`
+(Nicéas, sessão encerrada, 2.252 segmentos) logado e conferir, anotando no diário:
+1. **Linha de comando:** 13 pílulas CHEIAS num trilho fixo (as antigas eram vazadas, 1,29:1);
+   rótulo "— de 13" em negrito; ações à direita com ícone; "● Bot encerrado" com ponto.
+2. **Rodapé dentro do viewport** em 1536×826 (reserva `14.5rem`, medida em 18:48 para o
+   cabeçalho ANTERIOR — a linha de comando mudou de altura; se o rodapé cair abaixo da dobra,
+   é UM número em `PainelCopiloto.tsx`).
+3. **Tema verde** só nesta rota (`--acento` = `#17443a`); as outras telas continuam laranja.
+4. **Gatilhos:** ao carregar, o último turno da transcrição e os cards têm
+   `anim-decair-destaque`/`anim-entrar-e-decair` por ~5 s e a classe SAI (DevTools → Elements,
+   observar o `class`). O trilho tem `anim-decair-destaque-curta` por 1,5 s. O ponto de
+   "Ouvindo." respira (2 s). Nada fica preso.
+5. **Reduced-motion:** DevTools → Rendering → "Emulate CSS media feature prefers-reduced-motion:
+   reduce" → recarregar: o destaque aparece ESTÁTICO (fundo verde-claro) e some aos 5 s / 1,5 s
+   sem animar; nada permanece pintado depois disso.
+6. **Coluna 1 com UMA rolagem** (a da coluna); o placar ERRO é o último card do fluxo, tintado,
+   com ícone em círculo — sem emoji.
+Se algo divergir: é ajuste de UMA linha na maioria dos casos (número do teto, cor de token);
+gatilho que não toca = voltar em `useRealceUmaVez` e no CSS, nunca em `rAF`.
