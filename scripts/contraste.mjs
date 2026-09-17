@@ -58,9 +58,20 @@ function tokensDoBoco(bloco) {
 const blocoClaro = extrairBloco(css, /:root,\s*\.area-publica\s*\{/);
 // `.dark { ... }` — bloco escuro.
 const blocoEscuro = extrairBloco(css, /\n\.dark\s*\{/);
+// Tema escopado à rota /sessoes/[id]/conduzir (F0, revogação de B71,
+// 17/09/2026) — mesma herança em cascata que o CSS real aplica: o claro
+// herda de `:root`, o escuro herda de `.dark` (que já herda de `:root`).
+const blocoTemaConducaoClaro = extrairBloco(css, /\n\.tema-conducao\s*\{/);
+const blocoTemaConducaoEscuro = extrairBloco(css, /\nhtml\.dark \.tema-conducao\s*\{/);
 
 const CLARO = tokensDoBoco(blocoClaro);
 const ESCURO = new Map([...CLARO, ...tokensDoBoco(blocoEscuro)]); // .dark herda o que não redefine
+// `TEMA_CONDUCAO_CLARO`/`_ESCURO`: os mesmos tokens de superfície/tinta do
+// tema base (`CLARO`/`ESCURO`) com `--acento*` sobrepostos — é exatamente a
+// cascata que o navegador aplica quando `.tema-conducao` está no mesmo
+// elemento que herda de `:root`/`.dark`.
+const TEMA_CONDUCAO_CLARO = new Map([...CLARO, ...tokensDoBoco(blocoTemaConducaoClaro)]);
+const TEMA_CONDUCAO_ESCURO = new Map([...ESCURO, ...tokensDoBoco(blocoTemaConducaoEscuro)]);
 
 function resolverToken(tokens, nome, vistos = new Set()) {
   const valor = tokens.get(nome);
@@ -177,6 +188,15 @@ const PARES = [
     }
     return pares;
   }),
+
+  // Tema escopado /sessoes/[id]/conduzir (F0, 17/09/2026) — `--acento*`
+  // medido nos dois pontos de uso real: texto/ícone sobre `--acento-fraco`
+  // (selo, borda de card) e texto/botão CTA sobre `--acento` (botão
+  // primário, aba ativa). Medidos SÓ no par `tema-conducao` — fora da rota
+  // esses tokens caem no fallback `--latao*`, já coberto acima.
+  { nome: "acento / acento-fraco (tema-conducao)", a: "acento", b: "acento-fraco", tipo: "texto", tema: "tema-conducao" },
+  { nome: "acento-texto / acento (tema-conducao)", a: "acento-texto", b: "acento", tipo: "texto", tema: "tema-conducao" },
+  { nome: "acento / papel-elevado (tema-conducao)", a: "acento", b: "papel-elevado", tipo: "texto", tema: "tema-conducao" },
 ];
 
 /* -------------------------------------------------------------------- main */
@@ -185,6 +205,9 @@ const argTemas = process.argv.find((a) => a.startsWith("--temas="));
 const temasPedidos = argTemas ? argTemas.split("=")[1].split(",").map((t) => t.trim()) : ["claro", "escuro"];
 
 const TEMAS = { claro: CLARO, escuro: ESCURO };
+// `par.tema === "tema-conducao"` usa o mapa com `--acento*` sobrepostos, em
+// vez do mapa base — mesma cascata real do CSS (ver comentário acima).
+const TEMAS_CONDUCAO = { claro: TEMA_CONDUCAO_CLARO, escuro: TEMA_CONDUCAO_ESCURO };
 
 let falhas = 0;
 let excecoesUsadas = 0;
@@ -198,10 +221,11 @@ for (const nomeTema of temasPedidos) {
   }
   linhasSaida.push(`\n=== TEMA ${nomeTema.toUpperCase()} ===`);
   for (const par of PARES) {
+    const tokensDoPar = par.tema === "tema-conducao" ? TEMAS_CONDUCAO[nomeTema] : tokens;
     let hexA, hexB;
     try {
-      hexA = resolverToken(tokens, par.a);
-      hexB = resolverToken(tokens, par.b);
+      hexA = resolverToken(tokensDoPar, par.a);
+      hexB = resolverToken(tokensDoPar, par.b);
     } catch (e) {
       linhasSaida.push(`  ${par.nome.padEnd(34)} ERRO: ${e.message}`);
       falhas++;

@@ -7,13 +7,20 @@ type Tamanho = "normal" | "compacto" | "grande";
    CHAPADO — sem `rounded-pilula`, sem aresta 3D (`shadow-[0_3px_0_0_…]`),
    sem `hover:-translate-y-px`, sem transição de posição. Vira `rounded-
    controle` (`--raio-controle`), como os outros botões — só a cor de fundo
-   distingue o primário agora, não mais a forma. Texto sempre
-   `--latao-cta-texto` (escuro, fixo: 6,41:1 sobre `#ff7400`) — nunca claro.
-   Cada variante carrega seu próprio raio (Tailwind v4 resolve precedência
-   pela ordem do CSS gerado, não pela ordem na string). */
+   distingue o primário agora, não mais a forma. Cada variante carrega seu
+   próprio raio (Tailwind v4 resolve precedência pela ordem do CSS gerado,
+   não pela ordem na string).
+
+   🔴 F2 (17/09) — `primario` passa a ler `var(--acento, var(--latao-cta))`:
+   FALLBACK obrigatório, porque `Botao` é componente GLOBAL (127 chamadores
+   fora da rota de condução). Fora de `/sessoes/[id]/conduzir`, `--acento`
+   não existe → cai no `--latao-cta` de sempre. Dentro da rota (`.tema-
+   conducao`), `--acento` existe → o MESMO componente fica verde, sem `if`
+   nem uma 2ª variante. Texto acompanha o par (`--acento-texto`, fallback
+   `--latao-cta-texto`) — nunca hardcoded claro/escuro. */
 const variantes: Record<Variante, string> = {
   primario:
-    "rounded-controle border-transparent bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)] hover:bg-[color:var(--latao-cta-forte)]",
+    "rounded-controle border-transparent bg-[color:var(--acento,var(--latao-cta))] text-[color:var(--acento-texto,var(--latao-cta-texto))] hover:bg-[color:var(--acento-forte,var(--latao-cta-forte))]",
   secundario:
     "rounded-controle border-linha-controle bg-papel-elevado text-tinta hover:border-[color:var(--latao)] hover:text-[color:var(--latao)] active:bg-papel",
   perigo:

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { SegmentoCopiloto } from "@/types/copiloto";
 import type { PapelEquipe } from "@/types/banco";
@@ -198,27 +198,104 @@ describe("PainelTranscricao — F3, a transcrição entra na tela", () => {
   // -------------------------------------------------------------------------
   // Fase 12, Fatia 7 — realce só no último turno
   // -------------------------------------------------------------------------
+  // `describe` aninhado só para isolar `vi.useFakeTimers()` destes testes —
+  // os demais testes deste arquivo (`fireEvent`, `rerender` sem avançar
+  // relógio) continuam com timers reais.
+  describe("realce do último turno (fake timers)", () => {
+  // F7 (17/09) — `.realce-insight-novo`/`.transicao-realce-insight` saíram:
+  // o gatilho agora é `.anim-decair-destaque` (vocabulário único de F7,
+  // `globals.css`), mesmo hook (`useRealceUmaVez`, extraído para
+  // `copiloto/useRealceUmaVez.ts`).
+  //
+  // 🔴 CORREÇÃO (Fable, 17/09) — a versão anterior deste bloco lia a classe
+  // SINCRONAMENTE, logo após `montar`/`rerender`, sem nunca avançar o
+  // relógio. Isso provava só o estado de MONTAGEM (`comDestaque` inicial em
+  // `true`), nunca o de verdade: no navegador real, o hook antigo soltava a
+  // classe 1 `requestAnimationFrame` depois — e o jsdom não roda `rAF` antes
+  // de uma asserção síncrona, então o teste ficava verde mesmo com a
+  // animação morta por construção (o defeito real do Fable). Com
+  // `vi.useFakeTimers()`, a classe agora é lida DEPOIS de avançar o relógio
+  // — no tempo em que o navegador real estaria pintando o frame — e
+  // confirmada ausente só depois da duração completa (5000ms), provando que
+  // o destaque persiste pelo tempo do `@keyframes`, não 1 frame.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-  it("só o último turno recebe a classe de realce", () => {
+  it("só o último turno recebe a classe de realce, presente após o primeiro frame e ainda presente perto do fim da duração", () => {
     const segmentos = [
       segmento({ id: "s1", ordem: 1, falante: "Cliente", texto: "primeiro turno" }),
       segmento({ id: "s2", ordem: 2, falante: "Elaine Montenegro", texto: "segundo turno" }),
     ];
     const { container } = montar(<PainelTranscricao segmentos={segmentos} />);
-    const itens = container.querySelectorAll("li");
-    expect(itens[0].classList.contains("realce-insight-novo")).toBe(false);
-    expect(itens[1].classList.contains("realce-insight-novo")).toBe(true);
+
+    // Um frame (16ms) depois de montar — é exatamente o instante em que a
+    // versão com `requestAnimationFrame` já teria REMOVIDO a classe; aqui
+    // tem de continuar presente.
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    let itens = container.querySelectorAll("li");
+    expect(itens[0].classList.contains("anim-decair-destaque")).toBe(false);
+    expect(itens[1].classList.contains("anim-decair-destaque")).toBe(true);
+
+    // Perto do fim dos 5000ms (duração de `@keyframes decair-destaque`) —
+    // ainda presente.
+    act(() => {
+      vi.advanceTimersByTime(4900);
+    });
+    itens = container.querySelectorAll("li");
+    expect(itens[1].classList.contains("anim-decair-destaque")).toBe(true);
+  });
+
+  it("a classe de realce sai sozinha após a duração completa (5000ms) — não fica para sempre", () => {
+    const { container } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" })]} />);
+    act(() => {
+      vi.advanceTimersByTime(5001);
+    });
+    const item = container.querySelector("li");
+    expect(item?.classList.contains("anim-decair-destaque")).toBe(false);
   });
 
   it("o realce não se repete: um turno que já recebeu o realce e depois deixa de ser o último não reacende", () => {
     const { container, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" })]} />);
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
     let itens = container.querySelectorAll("li");
-    expect(itens[0].classList.contains("realce-insight-novo")).toBe(true);
+    expect(itens[0].classList.contains("anim-decair-destaque")).toBe(true);
 
     rerender(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" }), segmento({ id: "s2", ordem: 2, falante: "Elaine Montenegro", texto: "b" })]} />);
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
     itens = container.querySelectorAll("li");
-    expect(itens[0].classList.contains("realce-insight-novo")).toBe(false);
-    expect(itens[1].classList.contains("realce-insight-novo")).toBe(true);
+    expect(itens[0].classList.contains("anim-decair-destaque")).toBe(false);
+    expect(itens[1].classList.contains("anim-decair-destaque")).toBe(true);
+  });
+
+  it("nova chave dispara o realce de novo; mesma chave (re-render sem mudar segmento) não repete", () => {
+    const { container, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" })]} />);
+    act(() => {
+      vi.advanceTimersByTime(5001);
+    });
+    expect(container.querySelector("li")?.classList.contains("anim-decair-destaque")).toBe(false);
+
+    // Mesmo segmento, mesmo id — re-render não deve reacender.
+    rerender(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" })]} />);
+    expect(container.querySelector("li")?.classList.contains("anim-decair-destaque")).toBe(false);
+
+    // Segmento novo (chave nova) — reacende.
+    rerender(<PainelTranscricao segmentos={[segmento({ id: "s1", falante: "Cliente", texto: "a" }), segmento({ id: "s2", ordem: 2, falante: "Elaine Montenegro", texto: "b" })]} />);
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+    const itens = container.querySelectorAll("li");
+    expect(itens[1].classList.contains("anim-decair-destaque")).toBe(true);
+  });
   });
 
   // -------------------------------------------------------------------------

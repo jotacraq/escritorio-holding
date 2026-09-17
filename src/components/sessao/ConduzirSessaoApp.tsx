@@ -22,6 +22,7 @@ import { formatarData, formatarHora } from "@/lib/formatar";
 import type { EstadoBotCopiloto } from "@/types/copiloto";
 import type { PapelEquipe } from "@/types/banco";
 import { BarraPartes } from "@/components/sessao/copiloto/BarraPartes";
+import { useRealceUmaVez } from "@/components/sessao/copiloto/useRealceUmaVez";
 
 type EstadoCarga =
   | { fase: "carregando" }
@@ -580,7 +581,13 @@ function AcaoSalaLinhaFina({
 
   return (
     <>
-      <a href={linkSala!} target="_blank" rel="noreferrer" className="min-h-11 items-center text-tinta-suave underline underline-offset-2 hover:text-[color:var(--latao)]">
+      <a
+        href={linkSala!}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex min-h-11 items-center gap-1 text-tinta-suave underline underline-offset-2 hover:text-[color:var(--acento,var(--latao))]"
+      >
+        <IconeLinkExterno />
         Abrir sala
       </a>
       <EstadoBotLinhaFina sessaoId={sessaoId} bot={polling.bot} aoMudarEstadoBot={aoMudarEstadoBot} />
@@ -588,6 +595,7 @@ function AcaoSalaLinhaFina({
         type="button"
         variante="fantasma"
         tamanho="compacto"
+        icone={<IconeTrocarLink />}
         onClick={() => {
           setTexto(linkSala ?? "");
           setErro(null);
@@ -597,6 +605,40 @@ function AcaoSalaLinhaFina({
         Trocar link
       </Botao>
     </>
+  );
+}
+
+/* Ícones como AFFORDANCE em botões/cabeçalhos — pedido do dono (17/09):
+ * "ícones em botões e cabeçalhos são desejados". SVG inline 16px, mesmo
+ * padrão de `IconeAcao`/`IconeAlerta` (`PainelCopiloto.tsx`) — sem
+ * dependência nova (a armadilha do `lucide-react` quebrando build no
+ * Windows não se aplica: zero import de barrel). */
+const IconeLinkExterno = () => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6.5 3H3v10h10V9.5M9 3h4v4M13 3 7 9" />
+  </svg>
+);
+const IconeTrocarLink = () => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6.5 6H4a2 2 0 0 0 0 4h1M9.5 10H12a2 2 0 0 0 0-4h-1M5.5 8h5" />
+  </svg>
+);
+
+/** F7 (17/09) — ponto de status do bot pulsa UMA vez a cada mudança de
+ * `bot.estado` (chave = o próprio estado) — "gatilho visual para auxiliar o
+ * advogado" pedido pelo dono. `useRealceUmaVez` é o mesmo hook do resto da
+ * tela (`copiloto/useRealceUmaVez.ts`); extraído em componente próprio
+ * porque `EstadoBotLinhaFina` tem 4 retornos antecipados (`if`) e hooks não
+ * podem morar depois de um `return` condicional. */
+function PontoStatusBot({ estado, cor }: { estado: string; cor: string }) {
+  // 320 casa com `@keyframes pulsar-uma-vez` (globals.css).
+  const pulsar = useRealceUmaVez(true, estado, 320);
+  return (
+    <span
+      aria-hidden="true"
+      className={`mr-1 inline-block h-2 w-2 rounded-full align-middle ${pulsar ? "anim-pulsar-uma-vez" : ""}`}
+      style={{ backgroundColor: cor }}
+    />
   );
 }
 
@@ -629,7 +671,12 @@ function EstadoBotLinhaFina({
   if (!bot || bot.estado === "encerrado") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        {bot?.estado === "encerrado" && <span className="text-tinta-suave">Bot encerrado</span>}
+        {bot?.estado === "encerrado" && (
+          <span className="text-tinta-suave">
+            <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--tinta-fraca)] align-middle" />
+            Bot encerrado
+          </span>
+        )}
         <PainelBot sessaoId={sessaoId} aoMudarEstado={aoMudarEstadoBot} compacto />
       </div>
     );
@@ -638,7 +685,7 @@ function EstadoBotLinhaFina({
   if (bot.estado === "aguardando") {
     return (
       <p role="status" className="text-tinta-suave">
-        <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--ambar)] align-middle" />
+        <PontoStatusBot estado={bot.estado} cor="var(--ambar)" />
         Bot entrando…
       </p>
     );
@@ -647,7 +694,7 @@ function EstadoBotLinhaFina({
   if (bot.estado === "ativo") {
     return (
       <p role="status" className="text-tinta-suave">
-        <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--verde)] align-middle" />
+        <PontoStatusBot estado={bot.estado} cor="var(--acento,var(--latao))" />
         Bot na sala
       </p>
     );
@@ -664,7 +711,7 @@ function EstadoBotLinhaFina({
   // — um botão aqui seria um CTA morto, clique sem efeito.
   return (
     <p role="alert" className="text-[color:var(--ambar)]">
-      <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--ambar)] align-middle" />
+      <PontoStatusBot estado={bot.estado} cor="var(--ambar)" />
       Bot com pendência de encerramento — remova o participante do bot da sala ou encerre a reunião agora.
     </p>
   );
@@ -795,8 +842,11 @@ function Cabecalho({ ficha, jornadaId, roteiro }: { ficha: Ficha360; jornadaId: 
         <PontoPresenca agendamentos={ficha.agendamentos} />
         {roteiro && (
           <>
+            {/* F6 (17/09) — separador `·` vira `›` (mesmo vocabulário da
+             * referência do dono), sem marca/logo à esquerda do nome
+             * (decisão do plano). */}
             <span aria-hidden="true" className="text-tinta-fraca">
-              ·
+              ›
             </span>
             <span title={avisoGovernanca} className="text-sm font-medium text-tinta-suave">
               {roteiro.titulo} v{roteiro.versao}
@@ -806,10 +856,23 @@ function Cabecalho({ ficha, jornadaId, roteiro }: { ficha: Ficha360; jornadaId: 
         )}
       </h1>
       <Link href={`/jornadas/${jornadaId}`} className="nao-imprimir shrink-0">
-        <Botao variante="secundario" tamanho="compacto">
+        <Botao variante="secundario" tamanho="compacto" icone={<IconeAbrirExterno />}>
           Ver ficha completa
         </Botao>
       </Link>
     </header>
   );
 }
+
+/* ⚠️ DIVERGÊNCIA DO PLANO (F6): o plano pedia ↗ à DIREITA do texto — `Botao`
+ * só tem `icone` (sempre à ESQUERDA, prop única, usada por ~30 chamadores).
+ * Criar uma 2ª prop (`iconeDepois`) só para este botão seria introduzir um
+ * 2º padrão de ícone no componente global por causa de UM caso — optei por
+ * manter o ícone à esquerda (mesma posição de "Abrir sala"/"Trocar link",
+ * F2) em vez de duplicar a API do `Botao`. Reversível se o dono quiser a
+ * posição exata da referência. */
+const IconeAbrirExterno = () => (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6.5 3H3v10h10V9.5M9 3h4v4M13 3 7 9" />
+  </svg>
+);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 /**
  * Toda funcionalidade não pronta carrega este selo. Stub sem selo é
@@ -99,9 +99,29 @@ const TONS: Record<TomSelo, string> = {
  * lado. Antes disso, seis chamadas envolviam o selo num `<span title>` só para
  * conseguir o mesmo efeito (relatório do M3).
  */
-export function Selo({ tom, icone, title, className = "", children }: { tom: TomSelo; icone?: ReactNode; title?: string; className?: string; children: ReactNode }) {
+export function Selo({
+  tom,
+  icone,
+  title,
+  className = "",
+  style,
+  children,
+}: {
+  tom: TomSelo;
+  icone?: ReactNode;
+  title?: string;
+  className?: string;
+  /** F4 (17/09) — escape hatch para cor por `var(--token, fallback)` quando
+   * duas utilities Tailwind da MESMA camada disputariam por ORDEM DE GERAÇÃO
+   * (não por ordem na string — armadilha documentada em `Botao.tsx`).
+   * `style` sempre vence `className` no navegador, sem depender dessa ordem.
+   * Uso raro: só onde o tom precisa variar por tema escopado (`.tema-
+   * conducao`) sem um `TomSelo` novo por variação de tema. */
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
   return (
-    <span title={title} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-legenda font-medium leading-tight ${TONS[tom]} ${className}`}>
+    <span title={title} style={style} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-legenda font-medium leading-tight ${TONS[tom]} ${className}`}>
       {icone}
       {children}
     </span>

@@ -87,4 +87,49 @@ describe("Coluna", () => {
     );
     await semViolacoes(container);
   });
+
+  // ---------------------------------------------------------------------
+  // F3 (17/09) — `rolavel`: achado do dono ("duplo scroll" — `BlocoFaleAgora`
+  // tinha `max-h`/`overflow-y-auto` PRÓPRIO dentro da célula que já cortava
+  // com `overflow-hidden`). `rolavel=true` faz a CÉLULA virar a única
+  // superfície de rolagem (WCAG 2.1.1: `role="region"` + `tabIndex`).
+  // ---------------------------------------------------------------------
+
+  it("F3 — rolavel=false (default) mantém overflow-hidden, sem role/tabIndex de rolagem", () => {
+    const { container } = montar(<Coluna data-testid="col" />);
+    const celula = container.firstElementChild as HTMLElement;
+    expect(celula.className).toContain("overflow-hidden");
+    expect(celula.className).not.toContain("overflow-y-auto");
+    expect(celula.getAttribute("role")).toBeNull();
+    expect(celula.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("F3 — rolavel=true troca overflow-hidden por overflow-y-auto e ganha role=region + tabIndex (WCAG 2.1.1)", () => {
+    const { container } = montar(<Coluna rolavel rotulo="Fale agora" />);
+    const celula = container.firstElementChild as HTMLElement;
+    expect(celula.className).toContain("overflow-y-auto");
+    expect(celula.className).not.toContain("overflow-hidden");
+    expect(celula.getAttribute("role")).toBe("region");
+    expect(celula.getAttribute("tabindex")).toBe("0");
+    expect(celula.getAttribute("aria-label")).toBeTruthy();
+  });
+
+  // 🔴 Fable, 17/09 — `rotulo` era `aria-label="Fale agora"` hardcodado
+  // dentro de `Coluna` (célula GENÉRICA das 3 colunas do mosaico). Agora é
+  // prop explícita, obrigatória (tipo) quando `rolavel`: este teste prende
+  // que o rótulo vem do CHAMADOR, não de um valor fixo do componente.
+  it("F3 — aria-label vem de `rotulo`, não de um valor fixo do componente", () => {
+    const { container } = montar(<Coluna rolavel rotulo="Cuidado" />);
+    const celula = container.firstElementChild as HTMLElement;
+    expect(celula.getAttribute("aria-label")).toBe("Cuidado");
+  });
+
+  it("F3 — rolavel=true não tem violação de acessibilidade", async () => {
+    const { container } = montar(
+      <Coluna rolavel rotulo="Fale agora">
+        <p>conteúdo rolável</p>
+      </Coluna>,
+    );
+    await semViolacoes(container);
+  });
 });

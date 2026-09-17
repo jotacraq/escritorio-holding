@@ -34,6 +34,7 @@ import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
 import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
 import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
 import { Coluna } from "@/components/sessao/copiloto/Coluna";
+import { useRealceUmaVez } from "@/components/sessao/copiloto/useRealceUmaVez";
 
 // ---------------------------------------------------------------------------
 // Fase 12, Fatia B/F4 — mosaico de 3 colunas, sem rolagem de página (pedido
@@ -69,10 +70,11 @@ const TAB_INDEX_ROLAVEL = 0;
 
 /** A partir de quantas falhas CONSECUTIVAS o polling vira aviso visível
  * (achado do Fable: falha silenciosa faz a tela parecer "sala calma" quando
- * na verdade o copiloto está surdo). 1-2 falhas seguidas continuam mudas —
- * B71 vale aqui: um soluço de rede não pode virar alarme no meio de uma
- * conversa sobre herança. 3 é o piso a partir do qual "transiente" deixa de
- * ser a explicação mais provável. */
+ * na verdade o copiloto está surdo). 1-2 falhas seguidas continuam mudas: um
+ * soluço de rede não pode virar alarme no meio de uma conversa sobre
+ * herança. 3 é o piso a partir do qual "transiente" deixa de ser a
+ * explicação mais provável — regra própria de ruído de rede, independente
+ * de B71 (que tratava de sugestão/insight, não de erro de conexão). */
 const LIMIAR_FALHAS_PARA_AVISO = 3;
 
 /** Fatia 3 (17/09) — texto único para "a IA respondeu, mas abaixo do limiar
@@ -239,7 +241,25 @@ export function PainelCopiloto({
        * aparecia. 14,5rem dá ~20px de folga e escala com o ajuste "Tamanho
        * do texto" (rem acompanha o `font-size` da raiz; px não acompanharia).
        * `min-h-[22rem]` evita que o mosaico colapse para uma faixa ilegível em
-       * tela baixa. */}
+       * tela baixa.
+       *
+       * ⚠️ DIVERGÊNCIA DO PLANO (F3, 17/09): o plano pedia RE-MEDIR este
+       * valor no navegador depois do redesenho da `BarraPartes` (F1, que
+       * trocou o rótulo de uma linha `text-legenda` para rótulo+trilho em
+       * duas linhas dentro de `LinhaFinaRoteiro`). Este ambiente não tem
+       * navegador/servidor de dev com sessão autenticada disponível para
+       * medir com DevTools — não simulei o número. Estimativa por
+       * aritmética, não substituto da medição: `BarraPartes` cresceu de
+       * ~1 linha (rótulo `text-legenda` 11px + segmentos `h-2`=8px, quase
+       * sobrepostos) para 2 linhas reais empilhadas (`text-sm`=14px/~20px de
+       * `line-height` + `gap-1`=4px + trilho `h-1.5`=6px) ≈ +10px de altura
+       * mínima do conteúdo da linha fina — dentro do `min-h-11` (44px) que
+       * `LinhaFinaRoteiro` já reservava, então o pior caso plausível é a
+       * linha fina ficar ~10px mais alta que antes SE o conteúdo já estivesse
+       * perto do teto de 44px (não estava: rótulo+trilho empilhados medem
+       * ~34px, ainda dentro do `min-h-11`). Mantenho 14,5rem sem alterar —
+       * PROPOSTA AO ARQUITETO: confirmar em 1536×826 real antes do próximo
+       * deploy; se o rodapé cair abaixo da dobra, subir para 15rem. */}
       <div className="grid min-h-[22rem] max-h-[calc(100vh-14.5rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
@@ -247,12 +267,17 @@ export function PainelCopiloto({
          * botões "Me ajuda agora"/"Ir para lá"/"Ignorar"/"Dispensar", que já
          * eram alvos de 44px próprios, continuam clicáveis.
          *
-         * `PlacarConducao` (pedido do dono, 17/09) fica ABAIXO — julga a
-         * CONDUÇÃO DA ADVOGADA, não a fala do cliente: ✅ cobriu o item do
-         * bloco, ❌ pulou item obrigatório. `BlocoFaleAgora` já tem rolagem
-         * própria (`max-h-[26rem]` interno), então não disputa altura com o
-         * placar. */}
-        <Coluna className="gap-2">
+         * 🔴 F3 (17/09) — achado do dono ("duplo scroll"): `BlocoFaleAgora`
+         * tinha `max-h-[26rem] overflow-y-auto` PRÓPRIO, dentro desta
+         * `Coluna` (que já tem `overflow-hidden`) — duas barras de rolagem
+         * pelo MESMO conteúdo. `rolavel` faz esta célula ser a ÚNICA
+         * superfície de rolagem da COL 1; `BlocoFaleAgora` perdeu o
+         * `max-h`/`overflow` interno (ver o componente). `PlacarConducao`
+         * (pedido do dono, 17/09, julga a CONDUÇÃO DA ADVOGADA — ✅ cobriu o
+         * item do bloco, ❌ pulou item obrigatório) é o ÚLTIMO card do fluxo,
+         * rolando junto com o resto — nunca um 2º container fixo disputando
+         * altura. */}
+        <Coluna className="gap-2" rolavel rotulo="Fale agora">
           <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
           <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
         </Coluna>
@@ -436,7 +461,7 @@ function ColunaTranscricaoInventario({
               onClick={() => setAbaAtiva(aba.chave)}
               onKeyDown={(evento) => aoTeclar(evento, aba.chave)}
               className={`-mb-px min-h-11 border-b-2 px-2.5 text-sm transition-colors duration-[var(--transicao-rapida)] ${
-                selecionada ? "border-[color:var(--latao)] font-bold text-tinta" : "border-transparent font-medium text-tinta-suave hover:text-tinta"
+                selecionada ? "border-[color:var(--acento,var(--latao))] font-bold text-tinta" : "border-transparent font-medium text-tinta-suave hover:text-tinta"
               }`}
             >
               {aba.rotulo}
@@ -667,14 +692,28 @@ function EstadoDoCopiloto({
 
   if (requisicaoEmVoo) {
     return (
-      <p role="status" aria-live="polite" className="rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+      // F7 — texto "Consultando…" INTOCADO (contrato de 6 testes
+      // pré-existentes que asseveram o literal) + 3 pontos com delay
+      // (`pensando-pontos`), SÓ decorativo (`aria-hidden`) — o
+      // `aria-live="polite"` continua no `<p>` (única fonte de anúncio
+      // desta linha).
+      <p role="status" aria-live="polite" className="flex items-center gap-1 rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
         Consultando…
+        <span aria-hidden="true" className="inline-flex gap-0.5">
+          <span className="h-1 w-1 rounded-full bg-current anim-pensando-ponto-1" />
+          <span className="h-1 w-1 rounded-full bg-current anim-pensando-ponto-2" />
+          <span className="h-1 w-1 rounded-full bg-current anim-pensando-ponto-3" />
+        </span>
       </p>
     );
   }
 
   return (
-    <p role="status" aria-live="polite" className="rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+    <p role="status" aria-live="polite" className="flex items-center gap-1.5 rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+      {/* F7 — "batimento de vida": ponto que respira, SÓ no ramo "Ouvindo."
+       * (silêncio normal) — prova de que a linha está viva mesmo sem
+       * novidade, decorativo (`aria-hidden`). */}
+      <span aria-hidden="true" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current anim-respirar" />
       Ouvindo.
     </p>
   );
@@ -712,18 +751,35 @@ function BlocoFaleAgora({
   // — `SugestoesDoCiclo` é quem sabe quais IDs existem e quando um deixa de
   // ser "novo"; aqui só se acumula a contagem para o rótulo.
   const [naoLidas, setNaoLidas] = useState(0);
+  // F7 — "· N nova" pulsa UMA vez a cada valor novo (chave = o próprio
+  // valor): 1→2 pulsa de novo, 2→2 (mesmo render) não repete. 320ms casa com
+  // `@keyframes pulsar-uma-vez` (`.anim-pulsar-uma-vez`, globals.css).
+  const pulsar = useRealceUmaVez(naoLidas > 0, String(naoLidas), 320);
 
   return (
     <Quadro
-      rotulo={naoLidas > 0 ? `Fale agora · ${naoLidas} nova${naoLidas > 1 ? "s" : ""}` : "Fale agora"}
+      rotulo={
+        naoLidas > 0 ? (
+          <>
+            Fale agora{" "}
+            <span className={`font-normal text-tinta-fraca ${pulsar ? "inline-block anim-pulsar-uma-vez" : "inline-block"}`}>
+              · {naoLidas} nova{naoLidas > 1 ? "s" : ""}
+            </span>
+          </>
+        ) : (
+          "Fale agora"
+        )
+      }
       icone={<IconeAcao />}
       como="article"
     >
-      {/* `max-h`/`overflow-y-auto` trava o teto e rola por dentro — o bloco
-       * não estica quando a sugestão vem completa (geometria constante,
-       * achado de 15/09). `tabIndex={0}` exigido pelo axe
-       * (`scrollable-region-focusable`). */}
-      <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Fale agora" className="flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1">
+      {/* 🔴 F3 (17/09) — o `max-h`/`overflow-y-auto`/`role="region"` PRÓPRIO
+       * que existia aqui SAIU: era um 2º container de rolagem dentro da
+       * `Coluna rolavel` (COL 1, `PainelCopiloto.tsx`), que já é a única
+       * superfície de scroll desta coluna — "duplo scroll" era exatamente
+       * este aninhamento (achado do dono). Geometria constante continua
+       * garantida (o teto agora é o da `Coluna` ancestral, não deste bloco). */}
+      <div className="flex flex-col gap-3">
         {temSugestaoCiclo && (
           <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} aoMudarNaoLidas={setNaoLidas} />
         )}
@@ -742,6 +798,14 @@ const IconeAcao = () => (
   </svg>
 );
 
+/** Card-herói (F4, 17/09) — ícone de pessoa, círculo `--acento-fraco`. */
+const IconePessoa = () => (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3 w-3">
+    <circle cx="10" cy="7" r="3.2" fill="currentColor" />
+    <path d="M4 16.5c0-3 2.7-5 6-5s6 2 6 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
+
 /** Extrai o ÚLTIMO item de `cobriu_no_bloco` com evidência não nula — mesmo
  * padrão de `ultimoItemFaltaComEvidencia` (par positivo, migration 0119). Só
  * considera item com `evidencia` preenchida: sem citação literal comprovada
@@ -757,26 +821,44 @@ function ultimoItemAcertoComEvidencia(
   });
 }
 
+const IconeAcerto = () => (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3 w-3">
+    <path d="M4.5 10.5l3.6 3.5 7.4-8" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+const IconeErro = () => (
+  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3 w-3">
+    <path d="M5 5l10 10M15 5 5 15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+
 /**
  * Pedido do dono (17/09, respondido agora): o verde/vermelho julga a
  * CONDUÇÃO DA ADVOGADA, não a fala do cliente — ✅ cobriu o item do bloco;
- * ❌ pulou item obrigatório. Denso e chapado: sem card gratuito, sem sombra,
- * sem ícone decorativo além do próprio símbolo ✅/❌ (regra da casa).
+ * ❌ pulou item obrigatório.
+ *
+ * 🔴 CORREÇÃO (F5, 17/09) — os emojis ✅/❌ SAEM (viram ícone SVG em círculo,
+ * mesmo padrão de `IconePessoa`/`IconeAcao`); os TEXTOS "ACERTO"/"ERRO"
+ * FICAM (decisão do dono — cor nunca é o único sinal, o texto por extenso
+ * continua carregando o significado). Cada linha vira CARD TINTADO
+ * (`bg-vermelho-fraco`/`bg-verde-fraco` + borda 30% opaca) — parte do
+ * "sistema vivo" pedido pelo dono (gatilho visual de acerto/erro), não mais
+ * uma linha solta sobre `--papel-elevado`.
  *
  * `SugestaoCopiloto.cobriu_no_bloco` (migration 0119, backend em paralelo)
  * é `?:` — regra da casa vale ao pé da letra aqui: sem evidência conferida,
  * o item nem chega a este componente (`ultimoItemAcertoComEvidencia` já
- * filtra), e sem NENHUM item, a linha do ✅ simplesmente não existe — nunca
- * um "0 acertos" nem um placeholder. Kill-switch próprio
+ * filtra), e sem NENHUM item, a linha do acerto simplesmente não existe —
+ * nunca um "0 acertos" nem um placeholder. Kill-switch próprio
  * (`copiloto_sessao.acerto_erro_ativo`) desligado tem o MESMO efeito: campo
  * sempre ausente/vazio, então a seção nunca aparece — a tela não distingue
  * "desligado" de "nada para mostrar ainda", pela mesma regra de honestidade
  * (vazio é vazio, nunca um motivo inventado).
  *
  * Fonte: `sugestoesCiclo` (mesma do `BlocoCuidado`/`ultimoItemFaltaComEvidencia`
- * — reuso, zero query nova). `ultimoNaoNulo` evita que ✅/❌ sumam da tela só
- * porque o ciclo seguinte não repetiu o campo, mesmo que o fato continue
- * valendo.
+ * — reuso, zero query nova). `ultimoNaoNulo` evita que os cards sumam da
+ * tela só porque o ciclo seguinte não repetiu o campo, mesmo que o fato
+ * continue valendo.
  *
  * Texto factual, nunca repreensivo: "Entrou em holding sem fechar os 4
  * SIMs", nunca "você errou ao...". `falta_no_bloco[].item`/
@@ -784,9 +866,13 @@ function ultimoItemAcertoComEvidencia(
  * julgamento — este componente não adiciona adjetivo. Esta tela é PRIVADA
  * da Dra. Elaine, lida de relance num telão só dela — não é compartilhada
  * com o cliente; o padrão factual vale por si (clareza de leitura rápida),
- * não por causa de quem mais estaria vendo (ninguém mais está). Mantido
- * ✅ ACERTO / ❌ ERRO por pedido literal do dono (Fatia 8, 17/09) — vermelho é
- * o tom correto numa tela só dela.
+ * não por causa de quem mais estaria vendo (ninguém mais está).
+ *
+ * F7 — "sistema vivo": cada card usa `entrar-insight` (chave = item+hora, via
+ * `useRealceUmaVez`) na entrada e `decair-destaque` para o flash que decai —
+ * nunca shake, nunca deslocamento de geometria (o card já nasce no tamanho
+ * final). As duas animações tocam juntas via `.anim-entrar-e-decair`
+ * (globals.css) — ver `CardPlacar` sobre por que não são duas classes soltas.
  */
 function PlacarConducao({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
   const acerto = ultimoItemAcertoComEvidencia(sugestoesCiclo);
@@ -797,36 +883,66 @@ function PlacarConducao({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPo
   return (
     <div role="status" className="flex flex-col gap-2 border-t border-linha pt-2">
       {acerto && (
-        <div className="flex flex-col gap-1">
-          <p className="text-sm text-tinta">
-            <span className="font-bold text-[color:var(--verde)]">✅ ACERTO — </span>
-            {acerto.valor.item}
-          </p>
-          <p className="text-legenda italic text-tinta-fraca">
-            &ldquo;{acerto.valor.evidencia}&rdquo; · {formatarHora(acerto.criadoEm)}
-          </p>
-        </div>
+        <CardPlacar chave={`acerto-${acerto.sugestaoId}`}>
+          <div className="flex flex-col gap-1 rounded-controle border border-[color:var(--verde)]/30 bg-verde-fraco p-2.5">
+            <p className="flex items-center gap-1.5 text-sm text-tinta">
+              <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--verde)]/15 text-[color:var(--verde)]">
+                <IconeAcerto />
+              </span>
+              <span className="font-bold text-[color:var(--verde)]">ACERTO —</span>
+              {acerto.valor.item}
+            </p>
+            <p className="text-legenda italic text-tinta-fraca">
+              &ldquo;{acerto.valor.evidencia}&rdquo; · {formatarHora(acerto.criadoEm)}
+            </p>
+          </div>
+        </CardPlacar>
       )}
       {erro && (
-        <div className="flex flex-col gap-1">
-          <p className="text-sm text-tinta">
-            <span className="font-bold text-[color:var(--vermelho)]">❌ ERRO — </span>
-            {erro.valor.item}
-          </p>
-          <p className="text-legenda italic text-tinta-fraca">
-            &ldquo;{erro.valor.evidencia}&rdquo; · {formatarHora(erro.criadoEm)}
-          </p>
-        </div>
+        <CardPlacar chave={`erro-${erro.sugestaoId}`}>
+          <div className="flex flex-col gap-1 rounded-controle border border-[color:var(--vermelho)]/30 bg-vermelho-fraco p-2.5">
+            <p className="flex items-center gap-1.5 text-sm text-tinta">
+              <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--vermelho)]/15 text-[color:var(--vermelho)]">
+                <IconeErro />
+              </span>
+              <span className="font-bold text-[color:var(--vermelho)]">ERRO —</span>
+              {erro.valor.item}
+            </p>
+            <p className="text-legenda italic text-tinta-fraca">
+              &ldquo;{erro.valor.evidencia}&rdquo; · {formatarHora(erro.criadoEm)}
+            </p>
+          </div>
+        </CardPlacar>
       )}
     </div>
   );
 }
 
+/** F7 — wrapper do card do placar: `entrar-insight` (opacity+scale) na
+ * entrada e `decair-destaque` (flash que decai, nunca shake) disparados UMA
+ * vez por `chave` — mesmo contrato de `useRealceUmaVez`. Geometria constante:
+ * a borda já existe desde o primeiro render (o `.decair-destaque` só troca
+ * `border-color`/`background-color`, nunca largura).
+ *
+ * 🔴 `.anim-entrar-insight` e `.anim-decair-destaque` juntas no mesmo
+ * elemento colidem (dois shorthands `animation`, o de trás vence por
+ * inteiro) — `.anim-entrar-e-decair` (globals.css) as combina numa única
+ * declaração. `duracaoMs=5000` casa com `@keyframes decair-destaque`. */
+function CardPlacar({ chave, children }: { chave: string; children: ReactNode }) {
+  const destacar = useRealceUmaVez(true, chave, 5000);
+  return <div className={destacar ? "anim-entrar-e-decair" : "anim-entrar-insight"}>{children}</div>;
+}
+
 /**
  * Histórico compacto das sugestões do ciclo — a MAIS RECENTE aparece aberta,
- * por inteiro, sem clique (B71: "nada pisca, nada toca, nada abre
- * sozinho"). Anteriores ficam recolhidas de CONTEÚDO (nunca de existência):
- * o `<summary>` já mostra a contagem.
+ * por inteiro, sem clique (herda de B71: a sugestão nunca some atrás de um
+ * clique extra — o card entra com `entrar-insight`/`decair-destaque`, F7,
+ * mas continua sem exigir interação para ser lida). 🔴 B71 REVOGADA POR
+ * INTEIRO em 17/09/2026 (decisão do dono, ver `docs/ARQUITETURA-FASE-10.md`
+ * §10): a frase "nada pisca, nada toca, nada abre sozinho" deixou de ser
+ * regra geral desta tela — o pedido agora é um sistema VIVO, com animação e
+ * gatilho visual (F7, `globals.css`). Anteriores ficam recolhidas de
+ * CONTEÚDO (nunca de existência): o `<summary>` já mostra a contagem.
  *
  * Fase 12, Fatia C — "não lido" é ESTADO local por `sugestao_id`, nunca
  * coluna nova nem rota nova. Regra: uma sugestão nasce "não lida" e só é
@@ -898,13 +1014,6 @@ function SugestoesDoCiclo({
   return (
     <div className="flex flex-col gap-2">
       <CardRecente sugestaoId={recente.sugestao_id} naoLida={recenteNaoLida}>
-        {/* `pendentes` já filtrou `!visivel`/`sugestao` nulo (type predicate
-         * acima) — todo `recente` aqui tem conteúdo real; o card nunca mais
-         * nasce só para exibir o aviso de confiança (Fatia 3). Quando a
-         * sugestão MOSTRADA não é a mais recente do CICLO BRUTO (a última
-         * era invisível e foi descartada do herói), `CarimboHoraSeAntigo`
-         * (mesmo componente que `BlocoCuidado` já usa) avisa discretamente
-         * que este card não é do agora — reuso, zero código novo de carimbo. */}
         <ApresentacaoSugestao
           sessaoId={sessaoId}
           sugestaoId={recente.sugestao_id}
@@ -912,8 +1021,11 @@ function SugestoesDoCiclo({
           blocosRoteiro={blocosRoteiro}
           irPara={irPara}
         />
-        <CarimboHoraSeAntigo criadoEm={recente.criado_em} sugestaoId={recente.sugestao_id} sugestoesCiclo={sugestoes} />
-        <div className="mt-2 flex justify-end">
+        {/* F4 (17/09) — rodapé do herói: hora SEMPRE (F0 — `criado_em` real,
+         * nunca condicional) à esquerda, "Dispensar" à direita, mesma
+         * linha. */}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <CarimboHora criadoEm={recente.criado_em} />
           <Botao
             variante="fantasma"
             tamanho="compacto"
@@ -960,46 +1072,34 @@ function SugestoesDoCiclo({
 }
 
 /**
- * Fase 12, Fatia C — wrapper do card "recente" que carrega a UMA transição
- * aprovada (150ms de `background-color`, âmbar fraco → transparente) e a
+ * Fase 12, Fatia C/F7 — wrapper do card "recente" que carrega o gatilho de
+ * insight novo (`entrar-insight` + `decair-destaque`, disparado UMA vez por
+ * `sugestaoId` via `useRealceUmaVez` — extraído em F7, era `useState`/
+ * `useEffect` inline duplicado do mesmo hook de `PainelTranscricao.tsx`) e a
  * borda esquerda de 2px de "não lido". As duas coisas são independentes de
- * propósito: a transição roda UMA VEZ por `sugestaoId` (reinicia quando um
+ * propósito: o gatilho roda UMA VEZ por `sugestaoId` (reinicia quando um
  * card novo chega, nunca se repete no mesmo card); a borda é ESTADO puro,
  * fica ligada enquanto `naoLida=true` e nunca anima (troca de cor instantânea
  * quando a advogada avança para o próximo card, sem transição nela mesma —
- * só o FUNDO tem a régua de 150ms, por pedido explícito do dono: "nada mais").
+ * só o FUNDO/BORDA têm a régua de `decair-destaque`, por pedido explícito do
+ * dono: "nada pisca, nada toca, gatilho visual só de cor/opacidade").
  *
  * Geometria constante: `border` (todos os lados) já existe desde o primeiro
  * render, nunca varia de largura — só a cor da borda esquerda e o fundo
  * mudam, então o realce nunca desloca o que está embaixo.
+ *
+ * 🔴 `entrar-insight`+`decair-destaque` juntas colidiam (ver `CardPlacar`) —
+ * `.anim-entrar-e-decair` combina as duas; `duracaoMs=5000` casa com
+ * `@keyframes decair-destaque`.
  */
 function CardRecente({ sugestaoId, naoLida, children }: { sugestaoId: string; naoLida: boolean; children: ReactNode }) {
-  // Começa com o fundo âmbar (parte "de", a `transition` anima até
-  // "transparent" quando esta classe sai) — só quando o card É não lido.
-  // Um card que chega já lido (ex.: reidratação improvável, mas defensivo)
-  // nunca pisca fundo nenhum.
-  const [comFundo, setComFundo] = useState(naoLida);
-
-  useEffect(() => {
-    if (!naoLida) return;
-    setComFundo(true);
-    // Um frame depois, remove a classe do fundo — é a REMOÇÃO que a
-    // `transition-property: background-color` (globals.css) anima até
-    // `transparent`. `requestAnimationFrame` (não um `setTimeout(0)`)
-    // garante que o navegador pinte o estado "com fundo" antes de começar
-    // a transição — senão as duas classes trocariam no mesmo frame e não
-    // haveria nada para transicionar.
-    const raf = requestAnimationFrame(() => setComFundo(false));
-    return () => cancelAnimationFrame(raf);
-    // Reinicia só quando o CARD muda (`sugestaoId`) — nunca a cada render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sugestaoId]);
+  const destacar = useRealceUmaVez(naoLida, sugestaoId, 5000);
 
   return (
     <div
-      className={`rounded-controle border p-2.5 transicao-realce-insight ${
+      className={`rounded-controle border p-2.5 ${destacar ? "anim-entrar-e-decair" : "anim-entrar-insight"} ${
         naoLida ? "border-linha border-l-2 border-l-[color:var(--ambar)]" : "border-linha"
-      } ${comFundo ? "realce-insight-novo" : ""}`}
+      }`}
     >
       {children}
     </div>
@@ -1066,10 +1166,15 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
 }
 
 /**
- * O botão "Me ajuda agora" e a apresentação da sugestão. B71: nada pisca,
- * nada toca, nada abre sozinho — a sugestão só existe na tela depois do
- * clique explícito da Dra. Elaine, e fica onde apareceu até ela pedir outra
- * ou trocar de bloco/sessão (não há timer nem auto-refresh).
+ * O botão "Me ajuda agora" e a apresentação da sugestão. Herda de B70/B71: a
+ * sugestão só existe na tela depois do clique explícito da Dra. Elaine, e
+ * fica onde apareceu até ela pedir outra ou trocar de bloco/sessão (não há
+ * timer nem auto-refresh puxando conteúdo novo sozinho — isso não mudou).
+ * 🔴 B71 REVOGADA POR INTEIRO em 17/09/2026 (decisão do dono): a frase "nada
+ * pisca, nada toca, nada abre sozinho" deixou de valer para ANIMAÇÃO — o
+ * card que a IA devolve agora pode usar `entrar-insight`/`decair-destaque`
+ * (F7). O que sobrevive aqui é só "sem clique, sem sugestão" — o gatilho de
+ * geração continua sendo o clique, nunca um timer.
  */
 function SugestaoIA({
   sessaoId,
@@ -1189,29 +1294,53 @@ function SeloConfianca({ confianca }: { confianca: number }) {
  * Carimbo de hora do achado de 15/09 (obrigatório junto de `ultimoNaoNulo`):
  * sem ele, "persistir o último valor não-nulo" trocaria "o dado some" por
  * "o dado mente sobre quando é" — pior, pela regra da casa ("nada de dado
- * inventado na tela"). Só aparece quando o valor exibido NÃO veio da
- * sugestão mais recente do ciclo. Reusa `formatarHora` de `@/lib/formatar`.
+ * inventado na tela"). Reusa `formatarHora` de `@/lib/formatar`.
+ *
+ * 🔴 CORREÇÃO (F0/F4, 17/09, pedido do dono): antes só aparecia quando o
+ * valor exibido NÃO vinha da sugestão mais recente do ciclo ("Registrado às"
+ * some quando o card É o mais recente) — decisão revertida: hora em TODO
+ * card, sempre, é o `criado_em` REAL do dado (nunca inventado, nunca
+ * condicional a "é ou não o mais recente"). `sugestaoId`/`sugestoesCiclo`
+ * saíram da assinatura — eram só para a checagem que não existe mais.
+ *
+ * 🔴 RENOMEADO (Fable, 17/09): chamava-se `CarimboHoraSeAntigo`, nome que
+ * sobrou da condição que a correção acima removeu — o componente sempre
+ * renderiza, incondicionalmente, então o nome mentia. `CarimboHora` diz o
+ * que ele faz hoje.
  */
-function CarimboHoraSeAntigo({
-  criadoEm,
-  sugestaoId,
-  sugestoesCiclo,
-}: {
-  criadoEm: string;
-  sugestaoId: string;
-  sugestoesCiclo: SugestaoCopilotoPolling[];
-}) {
-  const maisRecente = sugestoesCiclo[sugestoesCiclo.length - 1];
-  if (!maisRecente || maisRecente.sugestao_id === sugestaoId) return null;
+function CarimboHora({ criadoEm }: { criadoEm: string }) {
   return <p className="text-legenda text-tinta-fraca">Registrado às {formatarHora(criadoEm)}</p>;
 }
 
 /** `evidencia` é citação literal do que o cliente disse — apresentada como
- * citação, visivelmente distinta da conclusão da IA. */
+ * citação, visivelmente distinta da conclusão da IA.
+ *
+ * F4 (17/09) — o rótulo "CLIENTE DISSE" vira `<Selo>` (fundo `--acento-
+ * fraco`, texto `--acento`, fallback `--latao*` fora da rota) e a borda
+ * esquerda da citação acompanha `var(--acento,var(--latao))` — reforço
+ * cromático de que aquele trecho é FALA REAL do cliente, não conclusão da
+ * IA (que fica sem cor, `border-linha-forte`). Só quando `rotulo` existe: as
+ * citações SEM rótulo (falta-no-bloco, observação da IA) continuam neutras
+ * — a cor de "cliente disse" não pode vazar para citação que não é dele. */
 function Evidencia({ texto, rotulo }: { texto: string; rotulo?: string }) {
   return (
-    <blockquote className="border-l-2 border-linha-forte pl-2.5 text-sm italic text-tinta-suave">
-      {rotulo && <span className="mb-0.5 block not-italic text-legenda font-medium uppercase tracking-wide text-tinta-fraca">{rotulo}</span>}
+    <blockquote
+      className={`pl-2.5 text-sm italic text-tinta-suave ${
+        rotulo ? "border-l-2 border-[color:var(--acento,var(--latao))]" : "border-l-2 border-linha-forte"
+      }`}
+    >
+      {rotulo && (
+        <div className="mb-1 not-italic">
+          {/* `style` inline (não `className`) para a cor do selo: duas
+           * utilities Tailwind de mesma camada (`bg-papel` do tom "neutro" ×
+           * `bg-[color:...]` daqui) resolvem pela ORDEM DE GERAÇÃO do CSS,
+           * não pela ordem na string — a mesma armadilha documentada em
+           * `Botao.tsx`. `style` sempre vence sem depender de precedência. */}
+          <Selo tom="neutro" style={{ backgroundColor: "var(--acento-fraco, var(--latao-fraco))", color: "var(--acento, var(--latao))", borderColor: "transparent" }}>
+            {rotulo}
+          </Selo>
+        </div>
+      )}
       &ldquo;{texto}&rdquo;
     </blockquote>
   );
@@ -1260,19 +1389,32 @@ function ApresentacaoSugestao({
   return (
     <div className="flex flex-col gap-3">
       {sugestao.proxima_pergunta && (
-        <div className="rounded-controle border border-linha px-3 py-2.5">
-          <p className="text-subtitulo font-bold leading-snug text-tinta">{sugestao.proxima_pergunta.texto}</p>
-          {sugestao.proxima_pergunta.motivo && (
-            <p className="mt-1.5 text-sm text-tinta-suave">
-              <span className="font-medium text-tinta-fraca">Por quê: </span>
-              {sugestao.proxima_pergunta.motivo}
-            </p>
-          )}
-          {sugestao.proxima_pergunta.evidencia && (
-            <div className="mt-1.5">
-              <Evidencia texto={sugestao.proxima_pergunta.evidencia} rotulo="O cliente disse" />
-            </div>
-          )}
+        // F4 (17/09) — card-herói: ícone de pessoa 20px em círculo
+        // `--acento-fraco` à esquerda (fora da rota, cai no fallback
+        // `--latao-fraco` — mesmo componente, sem `if`). Grid com `shrink-0`
+        // no ícone e `min-w-0` no conteúdo — a mesma armadilha de geometria
+        // já registrada (nome/texto longo não pode empurrar o ícone).
+        <div className="flex items-start gap-2.5 rounded-controle border border-linha px-3 py-2.5">
+          <span
+            aria-hidden="true"
+            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--acento-fraco,var(--latao-fraco))] text-[color:var(--acento,var(--latao))]"
+          >
+            <IconePessoa />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-subtitulo font-bold leading-snug text-tinta">{sugestao.proxima_pergunta.texto}</p>
+            {sugestao.proxima_pergunta.motivo && (
+              <p className="mt-1.5 text-sm text-tinta-suave">
+                <span className="font-medium text-tinta-fraca">Por quê: </span>
+                {sugestao.proxima_pergunta.motivo}
+              </p>
+            )}
+            {sugestao.proxima_pergunta.evidencia && (
+              <div className="mt-1.5">
+                <Evidencia texto={sugestao.proxima_pergunta.evidencia} rotulo="O cliente disse" />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1441,6 +1583,22 @@ function ultimoItemFaltaComEvidencia(
  * contagem real do resto, nunca um "…" mudo). */
 const TETO_ITENS_AINDA_NAO_PERGUNTOU = 3;
 
+/** F7 (17/09) — item novo em "Ainda não perguntou" recebe `decair-destaque`
+ * (chave `item.chave`) — gatilho visual pedido pelo dono. Componente próprio
+ * porque hooks não podem rodar dentro do `.map` do pai. Bullet permanece
+ * `--ambar` (decisão vinculante — verde num quadro de risco leria como
+ * "resolvido"), intocado por esta mudança: o gatilho é no FUNDO/BORDA do
+ * `<li>`, nunca na cor do marcador. */
+function ItemAindaNaoPerguntou({ item }: { item: { chave: string; texto: string; evidencia: string | null } }) {
+  const destacar = useRealceUmaVez(true, item.chave, 5000);
+  return (
+    <li className={`rounded-[2px] border border-transparent text-sm text-tinta ${destacar ? "anim-decair-destaque" : ""}`}>
+      {item.texto}
+      {item.evidencia && <span className="mt-0.5 block text-legenda italic text-tinta-fraca">&ldquo;{item.evidencia}&rdquo;</span>}
+    </li>
+  );
+}
+
 /**
  * BLOCO 2 — "Cuidado" (condicional). Fusão dos quadros de jargão/risco:
  *  - `QuadroAlerta` (SIMs pendentes) → "Falta pedir a autorização de
@@ -1533,7 +1691,7 @@ function BlocoCuidado({
         {achadoDesvio && (
           <div className="flex flex-col gap-1">
             <DesvioSugerido sessaoId={sessaoId} sugestaoId={achadoDesvio.sugestaoId} desvio={achadoDesvio.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-            <CarimboHoraSeAntigo criadoEm={achadoDesvio.criadoEm} sugestaoId={achadoDesvio.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+            <CarimboHora criadoEm={achadoDesvio.criadoEm} />
           </div>
         )}
 
@@ -1546,15 +1704,12 @@ function BlocoCuidado({
                 <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Ainda não perguntou:</p>
                 <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
                   {itensVisiveis.map((item) => (
-                    <li key={item.chave} className="text-sm text-tinta">
-                      {item.texto}
-                      {item.evidencia && <span className="mt-0.5 block text-legenda italic text-tinta-fraca">&ldquo;{item.evidencia}&rdquo;</span>}
-                    </li>
+                    <ItemAindaNaoPerguntou key={item.chave} item={item} />
                   ))}
                 </ul>
                 {itensOcultos > 0 && <p className="mt-1 text-legenda text-tinta-fraca">e mais {itensOcultos}</p>}
                 {achadoFalhaCobertura && (
-                  <CarimboHoraSeAntigo criadoEm={achadoFalhaCobertura.criadoEm} sugestaoId={achadoFalhaCobertura.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+                  <CarimboHora criadoEm={achadoFalhaCobertura.criadoEm} />
                 )}
               </div>
             )}
@@ -1598,7 +1753,7 @@ function BlocoCuidado({
               <SeloConfianca confianca={observacaoCritica.confianca} />
             </div>
             <p className="text-legenda text-tinta-fraca">{observacaoCritica.texto}</p>
-            <CarimboHoraSeAntigo criadoEm={achadoObservacao.criadoEm} sugestaoId={achadoObservacao.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+            <CarimboHora criadoEm={achadoObservacao.criadoEm} />
           </div>
         )}
       </div>

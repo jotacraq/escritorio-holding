@@ -965,7 +965,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       expect(container.textContent).toContain("A radiografia patrimonial não depende do decisor ausente.");
     });
 
-    it("carimbo de hora aparece quando o valor exibido vem de uma sugestão que não é a mais recente", async () => {
+    it("F0 (17/09) — carimbo de hora aparece SEMPRE no card do herói, inclusive quando ele É a sugestão mais recente (decisão revertida: hora em TODO card)", async () => {
       const comInsight = {
         sugestao_id: "sug-carimbo-1",
         ordem_evento: 1,
@@ -980,7 +980,9 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         respostaPolling({ sugestoes_novas: [comInsight], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
       ];
       const { container } = await abrirComPolling();
-      expect(container.textContent).not.toContain("Registrado às");
+      // Antes de F0, o card MAIS RECENTE não carimbava hora — decisão
+      // revertida: `criado_em` real aparece sempre, mesmo aqui.
+      expect(container.textContent).toContain("Registrado às");
 
       const sugestaoFato: SugestaoCopiloto = {
         proxima_pergunta: null,
@@ -1816,7 +1818,10 @@ describe("PainelCopiloto — Fatia 3, sugestão invisível do ciclo automático 
     ];
     const { container } = await abrirComPolling();
     expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
-    expect(container.textContent).not.toContain("Registrado às");
+    // F0 (17/09) — hora em TODO card, sempre: o carimbo já aparece aqui,
+    // mesmo sendo o card mais recente (decisão revertida do "só quando não
+    // é a mais recente").
+    expect(container.textContent).toContain("Registrado às");
 
     estado.pollingRespostaPadrao = respostaPolling({
       sugestoes_novas: [sugestaoPollingInvisivel({ ordem_evento: 2, criado_em: "2026-09-17T10:05:00.000Z" })],
@@ -1827,8 +1832,8 @@ describe("PainelCopiloto — Fatia 3, sugestão invisível do ciclo automático 
     await vi.advanceTimersByTimeAsync(0);
 
     // O herói continua mostrando a última sugestão VISÍVEL (não apaga nada),
-    // agora com o carimbo de hora — ela deixou de ser a mais recente do
-    // ciclo bruto.
+    // continua com o carimbo de hora — ela deixou de ser a mais recente do
+    // ciclo bruto, mas o carimbo já era sempre visível.
     expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
     expect(container.textContent).toContain("Registrado às");
     // E o rodapé avisa, separadamente, que a ÚLTIMA resposta do ciclo ficou

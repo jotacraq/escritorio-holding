@@ -740,3 +740,35 @@ registro (cada item com dono e gatilho, como o Fable exigiu):
 Decisões que ficaram com o Marcio (não são dívidas técnicas):
 - "● Bot na sala · **desde HH:MM**" exige coluna nova em `sessoes_copiloto` (não há carimbo).
 - Intervalo do ciclo 20 s → 10 s (~10× o custo de IA por sessão).
+
+## Dívidas nomeadas — 17/09/2026 (noite), identidade verde + "sistema vivo" na tela de condução
+
+Contexto: o dono revogou B71 por inteiro ("quero que o sistema seja vivo") e pediu a
+identidade da referência que ele gerou (verde `#17443a`, pílulas, ícones como affordance).
+Tema ESCOPADO à rota (`.tema-conducao`); promover ao sistema é decisão dele, vendo.
+
+6. **Flaky sob contenção, 4º nome:** `src/server/ligacao-ia/token-cifrado.test.ts` →
+   `adulterar qualquer parte devolve null (GCM autentica)` caiu UMA vez na suíte inteira
+   (17/09 ~19:50), arquivo intocado desde a Fase 7, 16/16 isolado. Mesmo gatilho dos 3 de
+   `ConduzirSessaoApp.test.tsx`: falhar em rodada nomeada de novo → entra na iteração.
+   Dono: `backend-engineer`.
+7. **Modo foco × `NavRecolher`, 1º clique sem efeito:** `NavRecolher.tsx` ~57-65 lê só
+   `data-nav-recolhida`; sem o atributo (nunca clicou), o botão nasce "Recolher menu" com a
+   lateral JÁ recolhida pelo foco; 1º clique grava "1" (nada muda), 2º grava "0" (expande —
+   a regra `html[data-nav-recolhida="0"] body:has(.foco-sessao)` já vence). Correção no shell
+   global: derivar `recolhida` do estado EFETIVO (`attr==="1" || document.querySelector(".foco-sessao")`)
+   ou esconder o botão nesta rota. Dono: `frontend-engineer`, na onda que tocar o shell.
+8. **Validar `prefers-reduced-motion` com o flag do SO (não só emulação):** o bloco em
+   `globals.css` pinta o destaque como ESTADO estático enquanto a classe existir e o hook
+   `useRealceUmaVez` a solta por timer (5 s / 1,5 s / 320 ms). A prova é DevTools →
+   Rendering → "Emulate CSS prefers-reduced-motion" nos dois modos, com um insight novo
+   chegando e uma troca de parte; anotar no diário. jsdom não pinta — foi assim que 6
+   gatilhos ficaram mortos com suíte verde (ver diário 19:55). Dono: quem fizer o próximo
+   deploy com sessão de teste ao vivo.
+9. **Decisões que ficaram com o dono (não são dívidas técnicas):** promover o verde às 7
+   telas (`:root`), trocar a marca (a referência tem folha verde; o shell tem a casa
+   laranja), som em novo insight (fora até ele falar), "desde HH:MM" do bot (coluna nova).
+
+Regra que entrou hoje e vale para toda contraprova por mutação: **restaurar por CÓPIA +
+md5, nunca `git checkout --`** numa árvore com trabalho não commitado (o HEAD é o passado;
+um `checkout .` teria apagado 17 arquivos em 17/09).

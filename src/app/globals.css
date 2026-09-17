@@ -323,6 +323,34 @@ html[data-escala="grande"] {
   }
 }
 
+/* Tema verde ESCOPADO à rota /sessoes/[id]/conduzir (Fase 12, revogação de
+   B71 — pedido do dono, 17/09/2026: "quero que o sistema seja VIVO"). Classe
+   IRMÃ de `.largura-cheia`/`.foco-sessao` no MESMO `<div>` do layout da
+   rota — nunca promovida ao resto do sistema sem decisão do dono. Verde
+   amostrado da referência (11.png) que o dono aprovou. Componentes leem
+   `var(--acento, var(--latao))` (SEMPRE com fallback para o laranja) — o
+   MESMO componente fica laranja fora da rota e verde dentro, sem `if` nem
+   segundo componente. Contraste medido (`scripts/contraste.mjs`, pares
+   acrescentados): branco sobre `#17443a` 10,91:1; `--tinta` sobre
+   `#e3f0e9` 14,91:1 — AAA nas duas pontas.
+   🔴 SEM o bloco `.dark` abaixo, o MESMO verde claro usado no tema escuro
+   sobre papel escuro dá 1,3:1 (ilegível) — o par `.dark .tema-conducao`
+   é obrigatório, não decorativo. */
+.tema-conducao {
+  --acento: #17443a;
+  --acento-forte: #123a2f;
+  --acento-fraco: #e3f0e9;
+  --acento-texto: #ffffff;
+  --acento-trilho: #e8eaea;
+}
+html.dark .tema-conducao {
+  --acento: #8fd3ab;
+  --acento-forte: #a8dfbd;
+  --acento-fraco: #163024;
+  --acento-texto: #14120f;
+  --acento-trilho: #332e29;
+}
+
 /* Tela cheia da condução de sessão (Fase 12, Fatia C — "segundo monitor
    durante a reunião", pedido do Marcio 16/09). O botão em
    `ConduzirSessaoApp.tsx` chama a Fullscreen API E marca
@@ -655,29 +683,80 @@ p, li, dd {
 .anim-deslizar-esquerda { animation: deslizar-da-esquerda var(--transicao-normal) var(--suavizacao) both; }
 .anim-esmaecer { animation: esmaecer var(--transicao-rapida) linear both; }
 
-/* Fase 12, Fatia C — realce do card de insight não lido (decisão B71
-   revogada PARCIALMENTE, docs/ARQUITETURA-FASE-10.md:1379: "nada pisca,
-   nada toca, nada abre sozinho"; a dose mínima aprovada é ESTA transição
-   única, nada mais). UMA transição de 150ms de `background-color`, de âmbar
-   fraco para transparente — sem piscar, sem deslizar, sem pulsar.
-   `.realce-insight-novo` parte já no fundo âmbar fraco (aplicada no MESMO
-   render em que o card nasce); o componente remove essa classe um tick
-   depois (`requestAnimationFrame`), e é a REMOÇÃO que a `transition` anima
-   até `transparent`. A borda esquerda de 2px é ESTADO À PARTE, aplicada
-   direto no componente via classe utilitária Tailwind — fica enquanto não
-   lido, nunca faz parte desta transição, e não desloca geometria (a borda
-   já existe desde o primeiro render, só troca de cor/transparência, nunca
-   de largura). `prefers-reduced-motion` zera isto pela regra GLOBAL já
-   existente abaixo (`transition-duration: 0.001ms !important`) — sem
-   duplicar a media query aqui. */
-.transicao-realce-insight {
-  transition-property: background-color;
-  transition-duration: 150ms;
-  transition-timing-function: linear;
+/* ---------------------------------------------------------------------- */
+/* F7 (17/09) — "sistema vivo": B71 REVOGADA POR INTEIRO (decisão do dono,   */
+/* não mais a revogação PARCIAL da Fatia C — "nada pisca, nada toca, nada   */
+/* abre sozinho" deixou de valer como regra geral desta tela; o pedido      */
+/* agora é "quero que o sistema seja VIVO, tenha animação, notificação      */
+/* visual, cores mudando em novos insights, gatilhos visuais"). Travas que  */
+/* CONTINUAM (não foram revogadas): geometria constante (anima só           */
+/* background-color/border-color/opacity/transform INTERNO — nunca altura/  */
+/* posição que desloque o que está embaixo), prefers-reduced-motion zera    */
+/* tudo pela regra GLOBAL abaixo (nunca duplicada aqui), sem som, nenhuma   */
+/* classe de animação carrega role/aria-live.                              */
+/*                                                                          */
+/* Vocabulário único de movimento — TODO gatilho novo usa uma destas:       */
+/*   entrar-insight     — opacity+scale, card/linha que NASCE.              */
+/*   decair-destaque    — fundo+borda de âmbar/acento até neutro, 5s.       */
+/*   decair-destaque-curta — mesma transição, 1,5s (mudança de PARTE).      */
+/*   preencher-pilula   — background-color, troca de segmento da barra.     */
+/*   pulsar-uma-vez     — scale 1→1.18→1, UMA vez (mudança de estado do bot)*/
+/*   respirar           — opacity .5↔1 infinito (SÓ o ponto de "Ouvindo.")  */
+/*   pensando-pontos    — 3 pontos com delay, enquanto requisicaoEmVoo.     */
+/* ---------------------------------------------------------------------- */
+@keyframes entrar-insight {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
-.realce-insight-novo {
-  background-color: var(--ambar-fraco);
+@keyframes decair-destaque {
+  from { background-color: var(--acento-fraco, var(--ambar-fraco)); border-color: var(--acento, var(--ambar)); }
+  to { background-color: transparent; border-color: var(--linha); }
 }
+@keyframes preencher-pilula {
+  from { background-color: var(--acento-trilho, var(--linha)); }
+  to { background-color: var(--acento, var(--latao)); }
+}
+@keyframes pulsar-uma-vez {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+@keyframes respirar {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+@keyframes pensando-pontos {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+.anim-entrar-insight { animation: entrar-insight 240ms var(--suavizacao) both; }
+/* 🔴 CORREÇÃO (Fable, 17/09) — `.anim-entrar-insight` e `.anim-decair-
+   destaque` eram aplicadas JUNTAS no mesmo elemento (`CardPlacar`/
+   `CardRecente`). Duas propriedades `animation` (shorthand) no mesmo
+   elemento não somam: a que vier depois na ORDEM DE FONTE vence por
+   inteiro enquanto as duas classes estiverem presentes — com `decair`
+   sempre presente durante toda a duração do destaque (ver
+   `useRealceUmaVez.ts`), `entrar` nunca chegava a tocar; o card nascia
+   opaco e só faria o "pop" de opacidade quando `decair` saísse, 5s depois.
+   `.anim-entrar-e-decair` resolve com UM shorthand de duas animações
+   (vírgula), que É a forma suportada pela especificação para tocar duas
+   ao mesmo tempo no mesmo elemento — usar em vez do par de classes onde
+   as duas eram aplicadas juntas. Onde só uma delas é usada (`.anim-
+   decair-destaque` isolada em `TurnoTranscricao`/`ItemAindaNaoPerguntou`,
+   sem `entrar`), a classe simples continua correta. */
+.anim-decair-destaque { animation: decair-destaque 5s linear; }
+.anim-decair-destaque-curta { animation: decair-destaque 1.5s linear; }
+.anim-entrar-e-decair {
+  animation:
+    entrar-insight 240ms var(--suavizacao) both,
+    decair-destaque 5s linear;
+}
+.anim-preencher-pilula { animation: preencher-pilula 300ms var(--suavizacao) both; }
+.anim-pulsar-uma-vez { animation: pulsar-uma-vez 320ms var(--suavizacao); }
+.anim-respirar { animation: respirar 2s ease-in-out infinite alternate; }
+.anim-pensando-ponto-1 { animation: pensando-pontos 1.2s infinite; animation-delay: 0ms; }
+.anim-pensando-ponto-2 { animation: pensando-pontos 1.2s infinite; animation-delay: 160ms; }
+.anim-pensando-ponto-3 { animation: pensando-pontos 1.2s infinite; animation-delay: 320ms; }
 
 /* Esqueleto: bloco de areia com brilho lento passando — "está vindo", não
    "travou". */
@@ -768,6 +847,22 @@ p, li, dd {
   .esqueleto {
     animation: none;
     background: var(--linha);
+  }
+  /* 🔴 CORREÇÃO (Fable, 17/09) — o comentário anterior (removido) descrevia
+     um comportamento que não acontece: com `animation-duration: 0.001ms` e
+     SEM fill-mode, o keyframe é aplicado e desfeito num único microtask —
+     na prática indistinguível de "nada acontece", que contraria o
+     requisito do dono ("a cor troca, nada anima"). Aqui a classe fica
+     ESTÁTICA no valor de destaque pelo tempo em que estiver montada no DOM
+     (os mesmos `duracaoMs` de `useRealceUmaVez`), sem tocar keyframe algum
+     — sai sem transição quando a classe é removida pelo React. Cobre as
+     três classes que carregam `decair-destaque`, isoladas ou combinadas. */
+  .anim-decair-destaque,
+  .anim-decair-destaque-curta,
+  .anim-entrar-e-decair {
+    animation: none;
+    background-color: var(--acento-fraco, var(--ambar-fraco));
+    border-color: var(--acento, var(--ambar));
   }
 }
 

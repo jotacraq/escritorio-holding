@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { SegmentoCopiloto } from "@/types/copiloto";
 import type { PapelEquipe } from "@/types/banco";
 import { formatarHora } from "@/lib/formatar";
+import { useRealceUmaVez } from "@/components/sessao/copiloto/useRealceUmaVez";
 
 /** Mesmo padrão de `PainelCopiloto.tsx`/`RegistroManual.tsx` (WCAG 2.1.1 —
  * container rolável exige foco por teclado). `jsx-a11y/no-noninteractive-
@@ -216,12 +217,14 @@ function nomeAdvogadaLogadaOuNulo(usuario: { papel: string | null; nome: string 
  * (funciona em monocromático e para daltônico), nunca cor.
  */
 function TurnoTranscricao({ turno, ehAdvogada, realce }: { turno: TurnoAgrupado; ehAdvogada: boolean; realce: boolean }) {
-  const comFundo = useRealceUmaVez(realce, turno.idRealce);
+  // 5000 casa com `@keyframes decair-destaque` (globals.css) — ver
+  // `useRealceUmaVez.ts` sobre por que a duração tem de casar com o CSS.
+  const comFundo = useRealceUmaVez(realce, turno.idRealce, 5000);
   const primeiraFala = turno.falas[0];
 
   return (
     <li
-      className={`min-w-0 text-sm text-tinta transicao-realce-insight ${comFundo ? "realce-insight-novo" : ""} ${
+      className={`min-w-0 text-sm text-tinta ${comFundo ? "anim-decair-destaque" : ""} ${
         ehAdvogada ? "" : "border-l border-linha pl-3"
       }`}
     >
@@ -244,35 +247,6 @@ function TurnoTranscricao({ turno, ehAdvogada, realce }: { turno: TurnoAgrupado;
   );
 }
 
-/**
- * Reproduz o padrão de `CardRecente` (`PainelCopiloto.tsx`): a transição de
- * 150ms de `.transicao-realce-insight`/`realce-insight-novo` já aprovada
- * (fundo âmbar fraco → transparente), disparada UMA VEZ por `chave` — nunca
- * se repete no mesmo turno, reinicia só quando a CHAVE muda.
- * `requestAnimationFrame` garante que o navegador pinte o estado "com fundo"
- * antes de a transição começar (senão as duas classes trocariam no mesmo
- * frame e não haveria nada para transicionar). `prefers-reduced-motion` já é
- * global (`globals.css`). Geometria constante: nenhuma borda nem padding
- * muda com o realce, só o fundo.
- */
-function useRealceUmaVez(ativo: boolean, chave: string): boolean {
-  const [comFundo, setComFundo] = useState(ativo);
-  // Guarda a última chave que já disparou a transição — garante "uma vez por
-  // `segmento.id`, nunca repetindo" mesmo que `ativo` oscile (ex.: o turno
-  // deixa de ser o último e volta a ser, o que não acontece hoje mas não deve
-  // reacender o fundo se acontecer).
-  const chaveJaRealcadaRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!ativo || chaveJaRealcadaRef.current === chave) {
-      setComFundo(false);
-      return;
-    }
-    chaveJaRealcadaRef.current = chave;
-    setComFundo(true);
-    const raf = requestAnimationFrame(() => setComFundo(false));
-    return () => cancelAnimationFrame(raf);
-  }, [ativo, chave]);
-
-  return comFundo;
-}
+// `useRealceUmaVez` foi extraído para `copiloto/useRealceUmaVez.ts` (F7,
+// 17/09) — vivia duplicado aqui e inline em `CardRecente`
+// (`PainelCopiloto.tsx`); os dois passam a importar o mesmo hook.

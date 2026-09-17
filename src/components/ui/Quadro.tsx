@@ -22,8 +22,12 @@ const CORES_TOM: Record<TomQuadro, string> = {
 };
 
 interface QuadroProps extends HTMLAttributes<HTMLElement> {
-  /** Rótulo pequeno em caixa alta, cinza — o nome do quadro, não um título de marca. */
-  rotulo: string;
+  /** Rótulo do quadro — nome do bloco, não título de marca. `ReactNode` (não
+   * só `string`) desde F4 (17/09): o mosaico do Copiloto precisa compor
+   * "Fale agora" (peso) + "· 2 novas" (tom mais claro) no MESMO rótulo, sem
+   * duas cores concorrendo por igual — `string` continua funcionando sem
+   * mudança nos ~30 outros chamadores fora do Copiloto. */
+  rotulo: ReactNode;
   /** Ação curta à direita do rótulo (selo, contagem) — nunca um botão decorado. */
   acao?: ReactNode;
   /** `article` para item de uma lista de quadros; `section` (default) para quadro autocontido. */
@@ -58,7 +62,15 @@ interface QuadroProps extends HTMLAttributes<HTMLElement> {
  * (`/sessoes/[id]/conduzir`, pedido do Marcio, 11-14/09: "tela única, todas
  * as informações à mostra, modelo do Juliano" — referência: borda fina,
  * rótulo pequeno maiúsculo cinza, conteúdo direto, sem sombra, sem
- * gradiente, sem `border-l-4` colorida, sem ícone decorativo).
+ * gradiente, sem `border-l-4` colorida).
+ *
+ * 🔴 CORREÇÃO (F4, 17/09) — "sem ícone decorativo" foi REVOGADO pelo dono na
+ * mesma sessão que revogou B71: "ícones como AFFORDANCE em botões/
+ * cabeçalhos são desejados por ele". `icone` deixa de ser proibido — é
+ * SVG 16×16 `aria-hidden`, reforço visual do tipo do quadro, nunca o único
+ * sinal (o rótulo por extenso continua carregando o significado). Denso e
+ * chapado continua valendo para o resto (sem sombra/gradiente/borda
+ * decorativa) — só o veto ao ícone caiu.
  *
  * Deliberadamente DISTINTO de `Cartao`: `Cartao` é a superfície padrão do
  * resto do sistema (sombra marrom, raio grande, realce lateral colorido) —
@@ -81,7 +93,7 @@ export function Quadro({ rotulo, acao, como = "section", numero, icone, tom, rec
         className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-controle border border-l-2 border-linha bg-papel-elevado px-3 py-2 ${corTom} ${className}`}
         {...props}
       >
-        <p className="flex shrink-0 items-center gap-1.5 text-rotulo font-semibold text-tinta-fraca">
+        <p className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-tinta">
           {icone}
           {typeof numero === "number" && <span aria-hidden="true">{numero}.</span>}
           {rotulo}
@@ -98,7 +110,11 @@ export function Quadro({ rotulo, acao, como = "section", numero, icone, tom, rec
       {...props}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-rotulo font-semibold text-tinta-fraca">
+        {/* F4 (17/09) — rótulo sobe para `text-sm font-semibold text-tinta`
+         * (era `text-rotulo font-semibold text-tinta-fraca`, caixa alta
+         * pequena e apagada — o mosaico é a tela principal, não uma seção de
+         * apoio). `icone` 16px é a AFFORDANCE pedida pelo dono. */}
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-tinta">
           {icone}
           {typeof numero === "number" && <span aria-hidden="true">{numero}.</span>}
           {rotulo}

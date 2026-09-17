@@ -41,5 +41,5 @@ import type { ReactNode } from "react";
  * sendo o padrão.
  */
 export default function LayoutConduzirSessao({ children }: { children: ReactNode }) {
-  return <div className="largura-cheia foco-sessao">{children}</div>;
+  return <div className="largura-cheia foco-sessao tema-conducao">{children}</div>;
 }
