@@ -318,3 +318,82 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     expect(insercaoSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("executarCicloCopiloto — timeout_ms/max_tokens configuráveis (migration 0114)", () => {
+  /** `lerConfiguracaoInt` é chamado para VÁRIAS chaves diferentes dentro do
+   * ciclo (duracao_maxima_minutos, intervalo_segundos, timeout_ms,
+   * max_tokens) — este helper decide o valor de retorno PELA CHAVE (2º
+   * argumento), em vez do `mockResolvedValue` único usado nos testes acima
+   * (que serve quando só o "algum número válido" importa). Necessário aqui
+   * porque o valor de timeout_ms/max_tokens PRECISA aparecer, sem se
+   * confundir, nos argumentos passados para `executarIaCopiloto`. */
+  function mockarConfiguracoesPorChave(valores: Record<string, number>) {
+    lerConfiguracaoIntMock.mockImplementation((_admin: unknown, chave: string, padrao: number) => {
+      return Promise.resolve(chave in valores ? valores[chave] : padrao);
+    });
+  }
+
+  it("lê `copiloto_sessao.timeout_ms`/`copiloto_sessao.max_tokens` e REPASSA os valores para executarIaCopiloto", async () => {
+    avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "intervalo" });
+    mockarConfiguracoesPorChave({
+      "copiloto_sessao.duracao_maxima_minutos": 150,
+      "copiloto_sessao.intervalo_segundos": 20,
+      "copiloto_sessao.timeout_ms": 20_000,
+      "copiloto_sessao.max_tokens": 850,
+    });
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
+    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    executarIaMock.mockResolvedValue({ situacao: "timeout" });
+    const { supabase, admin } = clientes({});
+
+    await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
+
+    expect(executarIaMock).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ jornadaId: "j1", timeoutMs: 20_000, maxTokens: 850 }),
+    );
+  });
+
+  it("chave ausente (lerConfiguracaoInt cai no PADRÃO passado por ciclo.ts) → executarIaCopiloto recebe os fallbacks 8000/900, nunca undefined", async () => {
+    avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "intervalo" });
+    // Nenhuma chave mapeada — o mock devolve sempre o `padrao` recebido, que
+    // é exatamente o que `lerConfiguracaoInt` real faz quando a linha não
+    // existe em `configuracoes` (server/ia/configuracao.ts).
+    mockarConfiguracoesPorChave({});
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
+    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    executarIaMock.mockResolvedValue({ situacao: "timeout" });
+    const { supabase, admin } = clientes({});
+
+    await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
+
+    expect(executarIaMock).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ timeoutMs: 8_000, maxTokens: 900 }),
+    );
+  });
+
+  it("valor inválido (não numérico) em `copiloto_sessao.max_tokens` → cai no PADRÃO 900 (mesma regra de `lerConfiguracaoInt`, ciclo.ts não valida de novo)", async () => {
+    avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "intervalo" });
+    // `lerConfiguracaoInt` REAL já devolve o padrão quando `Number(valor)` não
+    // é finito (server/ia/configuracao.ts) — o mock aqui simula esse mesmo
+    // contrato: valor inválido nunca chega ao chamador, só o padrão chega.
+    mockarConfiguracoesPorChave({
+      "copiloto_sessao.duracao_maxima_minutos": 150,
+      "copiloto_sessao.intervalo_segundos": 20,
+      "copiloto_sessao.timeout_ms": 20_000,
+      // "copiloto_sessao.max_tokens" ausente do mapa → devolve o padrão (900)
+    });
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
+    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    executarIaMock.mockResolvedValue({ situacao: "timeout" });
+    const { supabase, admin } = clientes({});
+
+    await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
+
+    expect(executarIaMock).toHaveBeenCalledWith(admin, expect.objectContaining({ maxTokens: 900 }));
+  });
+});

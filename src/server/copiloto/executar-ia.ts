@@ -6,8 +6,8 @@ import type { ContextoCopiloto } from "@/types/copiloto";
 import { CHAVE_PROMPT_COPILOTO } from "./orcamento";
 
 /**
- * Timeout PRÓPRIO do copiloto — 8s (§4.3 do plano, CONFLITO C3: "IA_TIMEOUT_MS
- * global é 300s e isso é veneno aqui"). `IA_TIMEOUT_MS`/os adaptadores de
+ * Timeout PRÓPRIO do copiloto — §4.3 do plano, CONFLITO C3: "IA_TIMEOUT_MS
+ * global é 300s e isso é veneno aqui". `IA_TIMEOUT_MS`/os adaptadores de
  * provedor (`server/ia/provedor/{openrouter,anthropic}.ts`) NÃO mudam — são
  * calibrados para o Briefing (até 100,8s medido em produção) e continuam
  * certos para ele. Este módulo não toca neles em VALOR — mas, desde a Fase
@@ -24,7 +24,7 @@ import { CHAVE_PROMPT_COPILOTO } from "./orcamento";
  * `falhou=0` na telemetria não significava "nada falhou" — significava que a
  * falha não era registrada.
  *
- * AGORA: `AbortController` + `setTimeout` reais. Quando os 8s vencem, o
+ * AGORA: `AbortController` + `setTimeout` reais. Quando o timeout vence, o
  * `controller.abort()` propaga até o `fetch` do adaptador (via
  * `AbortSignal.any`, `openrouter.ts`) — a chamada é interrompida DE VERDADE
  * na rede, não só ignorada. A execução cai no `catch` de `executar.ts`, que
@@ -36,8 +36,34 @@ import { CHAVE_PROMPT_COPILOTO } from "./orcamento";
  * `abortarNoTimeout` é um parâmetro (default `true`) — `warmup.ts` chama com
  * `false`, mantendo o comportamento antigo (a chamada segue em voo, o
  * resultado tardio é descartado) só nesse único caminho.
+ *
+ * 🔴 RECALIBRAÇÃO (17/09/2026, migration 0114) — medido em produção, 14 dias
+ * de `execucoes_ia` (modelo claude-sonnet-5, status='concluida', n=58):
+ * `latencia_ms` p99 = 9.246 ms, MÁXIMO = 9.642 ms. O timeout de 8s citado
+ * acima era MENOR que o próprio máximo real — na sessão de 17/09, 12 de 26
+ * chamadas (48%) falharam com `openrouter_resposta_vazia: corpo nao-JSON ou
+ * vazio apos 8s (status 200)`, todas entre 7.858 e 7.965 ms: o provedor
+ * ainda estava gerando quando os 8s venceram, e o `abort()` cortava a
+ * resposta no meio, sem JSON completo. `corr(tokens_saida, latencia_ms) =
+ * 0.73` — a latência é dominada pela GERAÇÃO (cache já cobre 79% da
+ * entrada), não pela leitura, então aumentar `max_tokens` sem folga no
+ * timeout só trocaria "truncado" por "abortado no meio da geração maior".
+ *
+ * `TIMEOUT_COPILOTO_MS`/`MAX_TOKENS_COPILOTO` ABAIXO SÃO SÓ FALLBACK — o
+ * valor efetivo vem de `configuracoes` (`copiloto_sessao.timeout_ms` /
+ * `copiloto_sessao.max_tokens`, migration 0114), lido por `ciclo.ts` no
+ * MESMO `Promise.all` que já lê orçamento/contexto (zero round-trip novo no
+ * caminho quente) e passado como parâmetro para `executarIaCopiloto`. Chave
+ * ausente ou valor inválido cai nestes literais, nunca crash — mesmo padrão
+ * de `PADRAO_INTERVALO_SEGUNDOS` (`ciclo.ts`). Novo padrão: 20.000 ms (2× o
+ * máximo real de 9.642 ms, ainda 15× menor que os 300s do `IA_TIMEOUT_MS`
+ * global — preserva o CONFLITO C3 acima) e 850 tokens (644 × 1,3 — cobre o
+ * máximo real de tokens de saída com folga, sem reabrir a cauda que o teto
+ * de 900 original tentava conter).
  */
 export const TIMEOUT_COPILOTO_MS = 8_000;
+/** Fallback de `copiloto_sessao.max_tokens` — ver recalibração acima. */
+export const MAX_TOKENS_COPILOTO = 900;
 
 export type ResultadoExecucaoCopiloto =
   | { situacao: "ok"; saida: SugestaoCopilotoIa; execucaoId: string; custoUsd: number | null }
@@ -58,12 +84,26 @@ export type ResultadoExecucaoCopiloto =
  * timer de 8s ainda decide o RETORNO desta função (`situacao: 'timeout'`),
  * mas NÃO dispara `controller.abort()` — a chamada real segue em voo até
  * escrever o cache do provedor, exatamente como antes da Fase 11.
+ *
+ * `timeoutMs`/`maxTokens` (opcionais): valores lidos de `configuracoes`
+ * pelo CHAMADOR (`ciclo.ts`/`warmup.ts`) e passados aqui — esta função não lê
+ * `configuracoes` diretamente (evita round-trip novo dentro do caminho
+ * quente da IA; ver comentário de recalibração acima). Omitidos, caem nos
+ * fallbacks `TIMEOUT_COPILOTO_MS`/`MAX_TOKENS_COPILOTO`.
  */
 export async function executarIaCopiloto(
   admin: SupabaseClient,
-  params: { jornadaId: string; contexto: ContextoCopiloto; abortarNoTimeout?: boolean },
+  params: {
+    jornadaId: string;
+    contexto: ContextoCopiloto;
+    abortarNoTimeout?: boolean;
+    timeoutMs?: number;
+    maxTokens?: number;
+  },
 ): Promise<ResultadoExecucaoCopiloto> {
   const abortarNoTimeout = params.abortarNoTimeout ?? true;
+  const timeoutMs = params.timeoutMs ?? TIMEOUT_COPILOTO_MS;
+  const maxTokens = params.maxTokens ?? MAX_TOKENS_COPILOTO;
   const controller = new AbortController();
 
   const chamada = executarComAuditoria(admin, {
@@ -74,7 +114,7 @@ export async function executarIaCopiloto(
     entrada: params.contexto,
     schema: SugestaoCopilotoIaSchema,
     nomeSchema: "copiloto_sugestao",
-    maxTokens: 900,
+    maxTokens,
     isentoCooldown: true,
     // Só propaga o signal quando o abort de verdade é desejado — para o
     // warm-up (abortarNoTimeout=false), NENHUM signal chega ao adaptador,
@@ -83,7 +123,7 @@ export async function executarIaCopiloto(
     signal: abortarNoTimeout ? controller.signal : undefined,
   });
 
-  // O RETORNO desta função nunca espera além de 8s, com ou sem
+  // O RETORNO desta função nunca espera além de `timeoutMs`, com ou sem
   // `abortarNoTimeout` — é o mesmo contrato de antes da Fase 11 (a rota
   // nunca segura a resposta). O que muda é só se a CHAMADA REAL é
   // interrompida (`abortarNoTimeout=true`) ou segue em voo por conta própria
@@ -97,7 +137,7 @@ export async function executarIaCopiloto(
     timer = setTimeout(() => {
       if (abortarNoTimeout) controller.abort();
       resolve("venceu_timeout");
-    }, TIMEOUT_COPILOTO_MS);
+    }, timeoutMs);
   });
 
   try {

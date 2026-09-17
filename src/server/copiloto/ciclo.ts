@@ -102,6 +102,16 @@ const CHAVE_CONFIANCA_MINIMA = "copiloto_sessao.confianca_minima";
 const PADRAO_CONFIANCA_MINIMA = 0.6;
 const CHAVE_DURACAO_MAXIMA_MINUTOS = "copiloto_sessao.duracao_maxima_minutos";
 const PADRAO_DURACAO_MAXIMA_MINUTOS = 150;
+// 17/09/2026 (migration 0114) — timeout/max_tokens da chamada de IA do
+// copiloto viram configuráveis (eram literais em executar-ia.ts). Fallbacks
+// aqui são só o segundo escudo (o primeiro é dentro de `executarIaCopiloto`,
+// para quem a chama sem ler config, como os testes) — mesmo padrão de
+// `PADRAO_INTERVALO_SEGUNDOS` acima. Ver comentário de recalibração no topo
+// de `executar-ia.ts` para as medições que justificam 20000/850.
+const CHAVE_TIMEOUT_MS = "copiloto_sessao.timeout_ms";
+const PADRAO_TIMEOUT_MS = 8_000;
+const CHAVE_MAX_TOKENS = "copiloto_sessao.max_tokens";
+const PADRAO_MAX_TOKENS = 900;
 
 interface SessaoParaCiclo {
   jornada_id: string;
@@ -270,20 +280,25 @@ export async function executarCicloCopiloto(
     return { situacao: "bloqueado_pelo_gate", motivo: gate.motivo ?? "falha_ao_conferir_gate" };
   }
 
-  // Orçamento + contexto NÃO dependem um do outro — Fase 11: paralelizados
-  // com `Promise.all` (eram sequenciais). Custo aceito: se o orçamento
-  // estourar, o contexto foi montado à toa (no máximo 1× por sessão — o
-  // orçamento raramente estoura no MEIO de uma sessão, e mesmo quando
-  // estoura o desperdício é 1 leitura extra, não 1 chamada de IA).
-  const [orcamento, contexto] = await Promise.all([
+  // Orçamento + contexto + timeout/max_tokens da IA NÃO dependem um do outro
+  // — Fase 11 paralelizou orçamento+contexto com `Promise.all` (eram
+  // sequenciais); 17/09/2026 (migration 0114) as duas leituras de
+  // `configuracoes` da calibração da IA entram no MESMO `Promise.all` —
+  // zero round-trip novo no caminho quente. Custo aceito: se o orçamento
+  // estourar, contexto/timeout/max_tokens foram lidos à toa (no máximo 1×
+  // por sessão — o orçamento raramente estoura no MEIO de uma sessão, e
+  // mesmo quando estoura o desperdício é leitura extra, não chamada de IA).
+  const [orcamento, contexto, timeoutMs, maxTokens] = await Promise.all([
     conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs }),
     montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice) as Promise<ContextoCopiloto>,
+    lerConfiguracaoInt(admin, CHAVE_TIMEOUT_MS, PADRAO_TIMEOUT_MS),
+    lerConfiguracaoInt(admin, CHAVE_MAX_TOKENS, PADRAO_MAX_TOKENS),
   ]);
   if (!orcamento.dentro) {
     return { situacao: "orcamento_estourado", motivo: orcamento.motivo ?? "falha_ao_contar_orcamento" };
   }
 
-  const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto });
+  const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto, timeoutMs, maxTokens });
 
   if (execucao.situacao === "timeout") return { situacao: "timeout" };
   if (execucao.situacao === "indisponivel") return { situacao: "indisponivel", motivo: execucao.motivo };

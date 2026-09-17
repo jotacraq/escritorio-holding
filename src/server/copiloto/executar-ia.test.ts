@@ -13,7 +13,7 @@ import type { ContextoCopiloto } from "@/types/copiloto";
 const executarComAuditoriaMock = vi.fn();
 vi.mock("@/server/ia/executar", () => ({ executarComAuditoria: (...args: unknown[]) => executarComAuditoriaMock(...args) }));
 
-const { executarIaCopiloto, TIMEOUT_COPILOTO_MS } = await import("./executar-ia");
+const { executarIaCopiloto, TIMEOUT_COPILOTO_MS, MAX_TOKENS_COPILOTO } = await import("./executar-ia");
 
 afterEach(() => {
   executarComAuditoriaMock.mockReset();
@@ -113,5 +113,68 @@ describe("executarIaCopiloto — timeout de 8s (nunca o IA_TIMEOUT_MS global de 
     if (resultado.situacao === "indisponivel") {
       expect(resultado.motivo).toContain("prompt_ativo_nao_encontrado");
     }
+  });
+});
+
+describe("executarIaCopiloto — timeout/maxTokens configuráveis (migration 0114)", () => {
+  it("sem timeoutMs/maxTokens (chamador não leu configuracoes, ex.: warmup/testes antigos) → usa os FALLBACKS do módulo (8000 ms / 900 tokens)", async () => {
+    let maxTokensRecebido: number | undefined;
+    executarComAuditoriaMock.mockImplementation((_admin: unknown, params: { maxTokens?: number }) => {
+      maxTokensRecebido = params.maxTokens;
+      return Promise.resolve({
+        execucaoId: "exec-1",
+        saida: { proxima_pergunta: null, falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8 },
+        custoUsd: 0.01,
+        promptVersao: 1,
+      });
+    });
+
+    await executarIaCopiloto(clienteFalso(), { jornadaId: "j1", contexto: contextoVazio });
+
+    expect(maxTokensRecebido).toBe(MAX_TOKENS_COPILOTO);
+    expect(MAX_TOKENS_COPILOTO).toBe(900);
+    expect(TIMEOUT_COPILOTO_MS).toBe(8_000);
+  });
+
+  it("timeoutMs=20000 explícito (valor de `copiloto_sessao.timeout_ms` lido por ciclo.ts) → só estoura 'timeout' DEPOIS de 20s, não mais em 8s", async () => {
+    vi.useFakeTimers();
+    executarComAuditoriaMock.mockReturnValue(new Promise(() => {})); // nunca resolve
+
+    const promessa = executarIaCopiloto(clienteFalso(), {
+      jornadaId: "j1",
+      contexto: contextoVazio,
+      timeoutMs: 20_000,
+    });
+
+    // Nos 8s do fallback antigo, a chamada AINDA NÃO estourou.
+    await vi.advanceTimersByTimeAsync(TIMEOUT_COPILOTO_MS + 1);
+    let resolvida = false;
+    promessa.then(() => {
+      resolvida = true;
+    });
+    await Promise.resolve();
+    expect(resolvida).toBe(false);
+
+    // Só depois de 20s o timeout local dispara.
+    await vi.advanceTimersByTimeAsync(20_000 - TIMEOUT_COPILOTO_MS);
+    await expect(promessa).resolves.toEqual({ situacao: "timeout" });
+  });
+
+  it("maxTokens=850 explícito (valor de `copiloto_sessao.max_tokens` lido por ciclo.ts) → é REPASSADO para executarComAuditoria, não o fallback 900", async () => {
+    let paramsRecebidos: { maxTokens?: number } | undefined;
+    executarComAuditoriaMock.mockImplementation((_admin: unknown, params: { maxTokens?: number }) => {
+      paramsRecebidos = params;
+      return Promise.resolve({
+        execucaoId: "exec-1",
+        saida: { proxima_pergunta: null, falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8 },
+        custoUsd: 0.01,
+        promptVersao: 1,
+      });
+    });
+
+    await executarIaCopiloto(clienteFalso(), { jornadaId: "j1", contexto: contextoVazio, maxTokens: 850 });
+
+    expect(paramsRecebidos?.maxTokens).toBe(850);
+    expect(paramsRecebidos?.maxTokens).not.toBe(600); // 🔴 600 truncaria o p99 real (637) — nunca usar
   });
 });
