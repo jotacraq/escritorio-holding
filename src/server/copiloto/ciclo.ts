@@ -8,7 +8,7 @@ import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
 import { acumularInventarioNaSessao } from "./inventario";
 import { avaliarGatilho, type OrigemBlocoParaGatilho, type TipoGatilhoCopiloto } from "./gatilho";
 import { encerrarSePassouDoTempo } from "./encerrar";
-import { lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
+import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { ContextoCopiloto, SugestaoCopiloto } from "@/types/copiloto";
 
 /**
@@ -112,6 +112,14 @@ const CHAVE_TIMEOUT_MS = "copiloto_sessao.timeout_ms";
 const PADRAO_TIMEOUT_MS = 8_000;
 const CHAVE_MAX_TOKENS = "copiloto_sessao.max_tokens";
 const PADRAO_MAX_TOKENS = 900;
+// 17/09/2026 (migration 0119) — kill-switch do ACERTO/ERRO da condução
+// (`cobriu_no_bloco`/`falta_no_bloco` como veredito da advogada, não da IA).
+// Nasce `true`: é feature nova, mas o par negativo (`falta_no_bloco`) já
+// roda em produção sem interruptor próprio — este existe porque o dono pediu
+// (e porque o ERRO vermelho ACUSA a advogada, então precisa de reversão sem
+// deploy caso o comportamento em produção se revele injusto/ruidoso demais).
+const CHAVE_ACERTO_ERRO_ATIVO = "copiloto_sessao.acerto_erro_ativo";
+const PADRAO_ACERTO_ERRO_ATIVO = true;
 
 interface SessaoParaCiclo {
   jornada_id: string;
@@ -288,11 +296,12 @@ export async function executarCicloCopiloto(
   // estourar, contexto/timeout/max_tokens foram lidos à toa (no máximo 1×
   // por sessão — o orçamento raramente estoura no MEIO de uma sessão, e
   // mesmo quando estoura o desperdício é leitura extra, não chamada de IA).
-  const [orcamento, contexto, timeoutMs, maxTokens] = await Promise.all([
+  const [orcamento, contexto, timeoutMs, maxTokens, acertoErroAtivo] = await Promise.all([
     conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs }),
     montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice) as Promise<ContextoCopiloto>,
     lerConfiguracaoInt(admin, CHAVE_TIMEOUT_MS, PADRAO_TIMEOUT_MS),
     lerConfiguracaoInt(admin, CHAVE_MAX_TOKENS, PADRAO_MAX_TOKENS),
+    lerConfiguracaoBool(admin, CHAVE_ACERTO_ERRO_ATIVO, PADRAO_ACERTO_ERRO_ATIVO),
   ]);
   if (!orcamento.dentro) {
     return { situacao: "orcamento_estourado", motivo: orcamento.motivo ?? "falha_ao_contar_orcamento" };
@@ -303,7 +312,7 @@ export async function executarCicloCopiloto(
   if (execucao.situacao === "timeout") return { situacao: "timeout" };
   if (execucao.situacao === "indisponivel") return { situacao: "indisponivel", motivo: execucao.motivo };
 
-  const validado = validarSugestaoCopiloto(execucao.saida, contexto);
+  const validado = validarSugestaoCopiloto(execucao.saida, contexto, acertoErroAtivo);
   if (!validado.sugestao) {
     return { situacao: "conteudo_recusado" };
   }

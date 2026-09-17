@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ErroSessao, buscarPollingCopiloto } from "@/components/sessao/api";
-import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, InfoCicloCopiloto, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, InfoCicloCopiloto, InventarioParaPainel, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
 
 /** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
  * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
@@ -115,6 +115,15 @@ export interface EstadoPollingCopiloto {
    * `EstadoDoCopiloto` usa isto para mostrar "Consultando…" na mesma linha
    * de status da Fatia A, só enquanto a requisição não voltou. */
   requisicaoEmVoo: boolean;
+  /** Pedido do dono (17/09) — aba "Inventário" da coluna 3. Snapshot mais
+   * recente de `EstadoCopilotoComPolling.inventario`, já no payload deste
+   * MESMO poller desde bcd3050 (zero rota/query nova). Mesma regra de
+   * substituição de `comparacaoDecisores`: SUBSTITUI sempre, nunca acumula —
+   * é o resumo consolidado no servidor, não um delta. `null`/ausente
+   * (kill-switch desligado, ou resposta sem o campo) faz a aba desaparecer —
+   * nunca um objeto com contagens zeradas fingindo "0 itens" (regra da
+   * casa). */
+  inventario: InventarioParaPainel | null;
 }
 
 /** Pedido de FIXAÇÃO MANUAL para o próximo ciclo (Fase 12, Fatia B — o
@@ -153,6 +162,7 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
     blocoAtualResolvido: null,
     indiceFixacaoPendente: null,
     requisicaoEmVoo: false,
+    inventario: null,
   };
   const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
   const cursorSegmentoRef = useRef(0);
@@ -301,6 +311,11 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             blocoAtualResolvido: blocoResolvidoNovo ?? atual.blocoAtualResolvido,
             indiceFixacaoPendente,
             requisicaoEmVoo: false,
+            // Idem `comparacaoDecisores`: substitui sempre pelo resumo mais
+            // atual do servidor. `?? null` cobre tanto o campo ausente
+            // (contrato antigo) quanto `null` explícito (kill-switch
+            // desligado) — as duas coisas somem da aba do mesmo jeito.
+            inventario: resposta.inventario ?? null,
           };
         });
       } catch (e) {

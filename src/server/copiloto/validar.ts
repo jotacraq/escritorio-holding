@@ -1,14 +1,17 @@
 import type { ContextoCopiloto, SugestaoCopiloto, TipoObservacaoCopiloto } from "@/types/copiloto";
 import type { SugestaoCopilotoIa } from "./schema";
 import {
+  MAX_ITENS_COBRIU_NO_BLOCO,
   MAX_ITENS_FALTA_NO_BLOCO,
   MAX_ITENS_INVENTARIO_POR_CHAMADA,
   TETO_DESCRICAO_INVENTARIO,
   TETO_EVIDENCIA_BLOCO_INFERIDO,
+  TETO_EVIDENCIA_COBRIU,
   TETO_EVIDENCIA_FALTA,
   TETO_EVIDENCIA_INVENTARIO,
   TETO_EVIDENCIA_OBSERVACAO,
   TETO_EVIDENCIA_PERGUNTA,
+  TETO_ITEM_COBRIU,
   TETO_ITEM_FALTA,
   TETO_MOTIVO_DESVIO,
   TETO_MOTIVO_PERGUNTA,
@@ -80,6 +83,9 @@ function contemTermoDeValor(saida: SugestaoCopilotoIa): boolean {
   for (const item of saida.falta_no_bloco) {
     textos.push(item.item, item.evidencia);
   }
+  for (const item of saida.cobriu_no_bloco) {
+    textos.push(item.item, item.evidencia);
+  }
   if (saida.observacao) {
     textos.push(saida.observacao.texto, saida.observacao.evidencia);
   }
@@ -146,10 +152,23 @@ export interface ResultadoValidacao {
 /**
  * Valida e monta o `SugestaoCopiloto` final. NUNCA lança — toda recusa vira
  * `sugestao: null` ou campo anulado, para a rota decidir o que gravar/expor.
+ *
+ * `acertoErroAtivo` (17/09/2026, migration 0119) — `copiloto_sessao.
+ * acerto_erro_ativo`, LIDO PELO CHAMADOR (mesma disciplina desta função:
+ * `validarSugestaoCopiloto` é pura, zero I/O — ver comentário de topo do
+ * arquivo; `ciclo.ts` lê a config junto das outras leituras de
+ * `configuracoes` do ciclo e repassa aqui). `true` por padrão (parâmetro
+ * opcional) para não quebrar os testes/chamadas existentes que não conhecem
+ * este parâmetro ainda. Desligado (`false`): `cobriu_no_bloco` sai sempre
+ * `[]`, mesmo que a IA tenha proposto itens — mesmo padrão fail-CLOSED de
+ * `falta_no_bloco`/`bloco_inferido` para dado que ACUSA/AVALIA a advogada
+ * (diferente do fail-OPEN de `dossieClienteEstaAtivo`, que é sobre dado
+ * CADASTRAL, não avaliação de condução).
  */
 export function validarSugestaoCopiloto(
   saidaIa: SugestaoCopilotoIa,
   contexto: ContextoCopiloto,
+  acertoErroAtivo = true,
 ): ResultadoValidacao {
   if (contemTermoDeValor(saidaIa)) {
     return { sugestao: null, motivoRecusaTotal: "termo_proibido" };
@@ -171,7 +190,14 @@ export function validarSugestaoCopiloto(
   }
 
   // -- falta_no_bloco (máx. 4 — §4.3 do plano) ---------------------------
-  const faltaNoBloco: SugestaoCopiloto["falta_no_bloco"] = saidaIa.falta_no_bloco
+  // 🔴 O interruptor vale para os DOIS lados do placar, não só para o verde.
+  // A versão anterior desta fatia desligava apenas `cobriu_no_bloco`, com o
+  // argumento de que `falta_no_bloco` já rodava desde a 0094 — mas isso
+  // deixava o kill-switch com o escopo invertido: desligava o ELOGIO e
+  // mantinha a ACUSAÇÃO. O vermelho é justamente a metade que aponta o erro
+  // da advogada numa tela que ela pode estar compartilhando com o cliente;
+  // se há um lado que precisa ser desligável em segundos, é esse.
+  const faltaNoBloco: SugestaoCopiloto["falta_no_bloco"] = (acertoErroAtivo ? saidaIa.falta_no_bloco : [])
     .slice(0, MAX_ITENS_FALTA_NO_BLOCO)
     .map((item, indice) => {
       const evidenciaOk = evidenciaConferida(item.evidencia, contexto);
@@ -181,6 +207,31 @@ export function validarSugestaoCopiloto(
         evidencia: evidenciaOk ? cortar(item.evidencia, TETO_EVIDENCIA_FALTA) : null,
       };
     });
+
+  // -- cobriu_no_bloco (17/09/2026, migration 0119): mesmo teto de itens de
+  // `falta_no_bloco`, mas regra de evidência MAIS SEVERA — mesmo raciocínio
+  // de `inventario_mencionado` abaixo, não o de `falta_no_bloco` acima. Um
+  // "acerto" sem citação comprovada é a IA fabricando elogio à advogada; o
+  // ITEM INTEIRO é descartado (nunca só a evidência anulada), e — DIFERENTE
+  // de `inventario_mencionado` — o item descartado por evidência fraca
+  // TAMBÉM entra em `camposNaoConferidos`, para telemetria mostrar que a IA
+  // tentou propor um acerto que não se sustentou (§ pedido do dono: "na
+  // dúvida, não marque — ausência de acerto NÃO é erro" é sobre o VERMELHO;
+  // aqui o registro serve para auditar se a IA está inflando acertos).
+  // `acertoErroAtivo=false` zera a lista inteira ANTES de processar — mesmo
+  // efeito de a IA nunca ter proposto nada, sem gastar ciclo de validação.
+  const cobriuNoBloco: NonNullable<SugestaoCopiloto["cobriu_no_bloco"]> = acertoErroAtivo
+    ? saidaIa.cobriu_no_bloco
+        .slice(0, MAX_ITENS_COBRIU_NO_BLOCO)
+        .map((item, indice) => {
+          const evidenciaOk = evidenciaConferida(item.evidencia, contexto);
+          if (!evidenciaOk) camposNaoConferidos.push(`cobriu_no_bloco[${indice}].evidencia`);
+          return evidenciaOk
+            ? { item: cortar(item.item, TETO_ITEM_COBRIU), evidencia: cortar(item.evidencia, TETO_EVIDENCIA_COBRIU) }
+            : null;
+        })
+        .filter((item): item is { item: string; evidencia: string } => item !== null)
+    : [];
 
   // -- observacao ---------------------------------------------------------
   let observacao: SugestaoCopiloto["observacao"] = null;
@@ -262,6 +313,7 @@ export function validarSugestaoCopiloto(
     sugestao: {
       proxima_pergunta: proximaPergunta,
       falta_no_bloco: faltaNoBloco,
+      cobriu_no_bloco: cobriuNoBloco,
       observacao,
       desvio_sugerido: desvioSugerido,
       confianca_geral: clampConfianca(saidaIa.confianca_geral),

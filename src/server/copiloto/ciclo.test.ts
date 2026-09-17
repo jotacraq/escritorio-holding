@@ -19,6 +19,7 @@ const validarSugestaoMock = vi.fn();
 const sugestaoEVisivelMock = vi.fn();
 const lerConfiguracaoIntMock = vi.fn();
 const lerConfiguracaoJsonMock = vi.fn();
+const lerConfiguracaoBoolMock = vi.fn();
 const encerrarSePassouDoTempoMock = vi.fn();
 
 vi.mock("./gatilho", () => ({ avaliarGatilho: (...a: unknown[]) => avaliarGatilhoMock(...a) }));
@@ -39,6 +40,7 @@ vi.mock("./encerrar", () => ({ encerrarSePassouDoTempo: (...a: unknown[]) => enc
 vi.mock("@/server/ia/configuracao", () => ({
   lerConfiguracaoInt: (...a: unknown[]) => lerConfiguracaoIntMock(...a),
   lerConfiguracaoJson: (...a: unknown[]) => lerConfiguracaoJsonMock(...a),
+  lerConfiguracaoBool: (...a: unknown[]) => lerConfiguracaoBoolMock(...a),
 }));
 
 const { executarCicloCopiloto } = await import("./ciclo");
@@ -48,6 +50,9 @@ beforeEach(() => {
   // arquivo testa gatilho/gate/orçamento/IA, não duração máxima. O teste
   // dedicado de "sessao_encerrada_por_duracao_maxima" sobrescreve isto.
   encerrarSePassouDoTempoMock.mockResolvedValue(false);
+  // Default: kill-switch do acerto/erro (0119) ligado — mesmo padrão "nasce
+  // true" da migration. O teste dedicado de "acerto_erro_ativo=false" sobrescreve.
+  lerConfiguracaoBoolMock.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -274,6 +279,37 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
       visivel: true,
       confiancaGeral: 0.8,
     });
+  });
+
+  it("0119 — lê copiloto_sessao.acerto_erro_ativo e repassa como 3º argumento de validarSugestaoCopiloto", async () => {
+    avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "virada_bloco" });
+    lerConfiguracaoIntMock.mockResolvedValue(45);
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
+    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
+    validarSugestaoMock.mockReturnValue({
+      sugestao: {
+        proxima_pergunta: null,
+        falta_no_bloco: [],
+        cobriu_no_bloco: [],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.8,
+        campos_evidencia_nao_conferida: [],
+      },
+      motivoRecusaTotal: null,
+    });
+    lerConfiguracaoJsonMock.mockResolvedValue(0.6);
+    sugestaoEVisivelMock.mockReturnValue(true);
+    // Kill-switch DESLIGADO nesta chamada — sobrescreve o default do beforeEach.
+    lerConfiguracaoBoolMock.mockResolvedValue(false);
+    const { supabase, admin } = clientes({});
+
+    await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
+
+    expect(lerConfiguracaoBoolMock).toHaveBeenCalledWith(admin, "copiloto_sessao.acerto_erro_ativo", true);
+    expect(validarSugestaoMock).toHaveBeenCalledWith(expect.anything(), expect.anything(), false);
   });
 
   it("caminho feliz, mas confiança abaixo do mínimo → sugestao_gravada com visivel:false e sugestao:null na resposta (a linha AINDA é gravada)", async () => {

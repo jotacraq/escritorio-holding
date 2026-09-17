@@ -35,6 +35,20 @@ const ItemFaltaSchema = z.object({
   evidencia: z.string(),
 });
 
+/**
+ * 17/09/2026 — ACERTO da condução (migration 0119). Mesmo shape de
+ * `ItemFaltaSchema` (item + evidência) de propósito: são o par positivo/
+ * negativo da MESMA pergunta ("a advogada cobriu isto?") — `falta_no_bloco`
+ * é o que falta, `cobriu_no_bloco` é o que já foi feito. Decisão do dono: o
+ * verde/vermelho julga a CONDUÇÃO DA ADVOGADA, não a qualidade da IA —
+ * "cobriu" significa que ela FEZ a pergunta do bloco, mesmo sem resposta
+ * ainda (a resposta em si não é o que este campo mede).
+ */
+const ItemCobriuSchema = z.object({
+  item: z.string(),
+  evidencia: z.string(),
+});
+
 const ObservacaoSchema = z
   .object({
     tipo: TipoObservacaoSchema,
@@ -115,6 +129,7 @@ const ItemInventarioMencionadoSchema = z.object({
 export const SugestaoCopilotoIaSchema = z.object({
   proxima_pergunta: ProximaPerguntaSchema,
   falta_no_bloco: z.array(ItemFaltaSchema),
+  cobriu_no_bloco: z.array(ItemCobriuSchema),
   observacao: ObservacaoSchema,
   desvio_sugerido: DesvioSugeridoSchema,
   confianca_geral: z.number(),
@@ -137,6 +152,18 @@ export const TETO_MOTIVO_DESVIO = 240;
 
 /** Máximo de itens em `falta_no_bloco` (§4.3 do plano: "lista de no máximo 4 objetos"). */
 export const MAX_ITENS_FALTA_NO_BLOCO = 4;
+
+/** 17/09/2026 — mesmo teto de `falta_no_bloco` (migration 0119): o bloco
+ * atual não tem mais que 8 itens de apuração no maior caso medido (parte_03,
+ * 8 campos) — 4 é generoso o bastante para cobrir a MAIORIA coberta numa
+ * janela de ~90s sem custear itens que o servidor descartaria sem usar
+ * (mesmo raciocínio de `MAX_ITENS_FALTA_NO_BLOCO`, reforçado no prompt v7). */
+export const MAX_ITENS_COBRIU_NO_BLOCO = 4;
+
+/** Mesmo teto de caractere de `TETO_ITEM_FALTA`/`TETO_EVIDENCIA_FALTA` — par
+ * positivo/negativo da mesma pergunta, mesmo orçamento de byte. */
+export const TETO_ITEM_COBRIU = 120;
+export const TETO_EVIDENCIA_COBRIU = 160;
 
 /** Fase 12, Fatia 1 — mesmo teto de evidência de `desvio_sugerido` (não há
  * teto próprio no plano; reusa o valor mais próximo em espírito: uma citação

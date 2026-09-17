@@ -9,9 +9,13 @@ import {
   registrarDesfechoSugestaoCopiloto,
 } from "@/components/sessao/api";
 import type {
+  CategoriaInventarioMencionado,
   DesfechoCopiloto,
   InfoCicloCopiloto,
+  InventarioParaPainel,
+  ItemInventarioRecentePainel,
   RespostaSugestaoCopiloto,
+  SegmentoCopiloto,
   SugestaoCopiloto,
   SugestaoCopilotoPolling,
   TipoObservacaoCopiloto,
@@ -192,22 +196,37 @@ export function PainelCopiloto({
        * não tem contra o que se medir e a coluna cresce até caberem os 60
        * segmentos.
        *
-       * `max-h-[calc(100vh-18rem)]` ancora no VIEWPORT, não na cadeia de
-       * pais — funciona independentemente do que exista acima. As 18rem são
-       * o cabeçalho da página + a linha de comando + o rodapé de status; o
-       * `min-h-[22rem]` impede que em tela baixa (ou com o cabeçalho
-       * aberto) o mosaico colapse para uma faixa ilegível.
+       * `max-h-[calc(100vh-11rem)]` ancora no VIEWPORT, não na cadeia de
+       * pais — funciona independentemente do que exista acima. As 11rem são
+       * o cabeçalho da página + a linha de comando + o rodapé de status.
+       *
+       * 🔴 Pedido 17/09 ("economizar espaço aí em cima"): o cabeçalho de
+       * `ConduzirSessaoApp.tsx` (`Cabecalho`) colapsou de ~150px (4 linhas:
+       * rótulo/h1/descrição/meta) para UMA linha (~40px, `text-subtitulo`).
+       * As 18rem antigas encolheram na mesma proporção — 7rem a menos, valor
+       * medido pela diferença de tipografia entre as duas versões (não
+       * cronometrado no navegador; se o olho mostrar folga sobrando ou
+       * faltando, ajustar aqui é 1 número). `min-h-[22rem]` impede que em
+       * tela baixa (ou com o cabeçalho quebrando em 2 linhas por nome longo)
+       * o mosaico colapse para uma faixa ilegível.
        *
        * A lição desta base: `min-h-0` sozinho não segura nada — a pergunta
        * é sempre "qual elemento define a altura?". */}
-      <div className="grid min-h-[22rem] max-h-[calc(100vh-18rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+      <div className="grid min-h-[22rem] max-h-[calc(100vh-11rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
          * e do "card inteiro clicável muda o contrato do link") — só os
          * botões "Me ajuda agora"/"Ir para lá"/"Ignorar"/"Dispensar", que já
-         * eram alvos de 44px próprios, continuam clicáveis. */}
-        <div className="min-h-0">
+         * eram alvos de 44px próprios, continuam clicáveis.
+         *
+         * `PlacarConducao` (pedido do dono, 17/09) fica ABAIXO — julga a
+         * CONDUÇÃO DA ADVOGADA, não a fala do cliente: ✅ cobriu o item do
+         * bloco, ❌ pulou item obrigatório. `BlocoFaleAgora` já tem rolagem
+         * própria (`max-h-[26rem]` interno), então não disputa altura com o
+         * placar. */}
+        <div className="flex min-h-0 flex-col gap-2">
           <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+          <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
         </div>
 
         {/* COL 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
@@ -225,10 +244,13 @@ export function PainelCopiloto({
           />
         </div>
 
-        {/* COL 3 — Transcrição (F3): a mesma lista que `usePollingCopiloto`
-         * já acumula com teto de 60 segmentos — nenhuma rota nova. */}
+        {/* COL 3 — Transcrição | Inventário, em abas (pedido do dono, 17/09).
+         * Transcrição: a mesma lista que `usePollingCopiloto` já acumula com
+         * teto de 60 segmentos — nenhuma rota nova. Inventário: `polling.
+         * inventario`, já no payload desde bcd3050 — mesmo poller, zero
+         * query nova. */}
         <div className="min-h-0">
-          <PainelTranscricao segmentos={sessaoEncerrada ? [] : polling.segmentos} />
+          <ColunaTranscricaoInventario segmentos={sessaoEncerrada ? [] : polling.segmentos} inventario={polling.inventario} />
         </div>
       </div>
 
@@ -282,6 +304,159 @@ export function PainelCopiloto({
         </div>
       )}
     </div>
+  );
+}
+
+const ROTULO_CATEGORIA_INVENTARIO: Record<CategoriaInventarioMencionado, string> = {
+  imovel: "Imóveis",
+  empresa: "Empresas",
+  investimento: "Investimentos",
+  outro: "Outros",
+};
+
+/**
+ * COL 3 — Transcrição | Inventário (pedido do dono, 17/09). Duas abas
+ * LOCAIS a esta coluna (não usam `ChaveTabFicha`/`tabs.ts` — aquele catálogo
+ * é da Ficha 360, este componente é da tela ao vivo). Mesmo padrão de
+ * `TabsFicha.tsx` (`role="tablist"`/`"tab"`/`"tabpanel"`, setas de teclado):
+ * a aba inativa DESMONTA o conteúdo (`{ativa ? conteudo : null}`), nunca só
+ * `hidden` — é o padrão já estabelecido nesta base para não manter pollers/
+ * scroll de uma aba fora de vista consumindo ciclo à toa.
+ *
+ * A aba Inventário só aparece quando `inventario` não é `null` (kill-switch
+ * `copiloto_sessao.inventario_mencionado` desligado, ou sessão sem item
+ * ainda) — sem ela, só a Transcrição existe, sem aba nenhuma para não
+ * sugerir uma escolha que não leva a lugar nenhum.
+ */
+function ColunaTranscricaoInventario({ segmentos, inventario }: { segmentos: SegmentoCopiloto[]; inventario: InventarioParaPainel | null }) {
+  const [abaAtiva, setAbaAtiva] = useState<"transcricao" | "inventario">("transcricao");
+  const totalInventario = inventario ? inventario.resumo.total_itens_proprios : null;
+
+  // Sem inventário, não há por que existir aba nenhuma — a Transcrição some
+  // do papel de "aba" e volta a ser o conteúdo direto da coluna, como antes
+  // desta entrega (geometria idêntica: mesmo `min-h-0`/`flex-1` interno de
+  // `PainelTranscricao`).
+  if (!inventario) return <PainelTranscricao segmentos={segmentos} />;
+
+  const abas: { chave: "transcricao" | "inventario"; rotulo: string }[] = [
+    { chave: "transcricao", rotulo: "Transcrição" },
+    { chave: "inventario", rotulo: `Inventário (${totalInventario})` },
+  ];
+
+  function aoTeclar(evento: React.KeyboardEvent, atual: "transcricao" | "inventario") {
+    const indice = abas.findIndex((a) => a.chave === atual);
+    let proximo: number | null = null;
+    if (evento.key === "ArrowRight") proximo = (indice + 1) % abas.length;
+    else if (evento.key === "ArrowLeft") proximo = (indice - 1 + abas.length) % abas.length;
+    if (proximo === null) return;
+    evento.preventDefault();
+    const chave = abas[proximo].chave;
+    setAbaAtiva(chave);
+    document.getElementById(`tab-copiloto-${chave}`)?.focus();
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+      <div role="tablist" aria-label="Transcrição e inventário" className="flex shrink-0 gap-0.5 border-b border-linha">
+        {abas.map((aba) => {
+          const selecionada = aba.chave === abaAtiva;
+          return (
+            <button
+              key={aba.chave}
+              type="button"
+              role="tab"
+              id={`tab-copiloto-${aba.chave}`}
+              aria-selected={selecionada}
+              aria-controls={`painel-copiloto-${aba.chave}`}
+              tabIndex={selecionada ? 0 : -1}
+              onClick={() => setAbaAtiva(aba.chave)}
+              onKeyDown={(evento) => aoTeclar(evento, aba.chave)}
+              className={`-mb-px min-h-11 border-b-2 px-2.5 text-sm transition-colors duration-[var(--transicao-rapida)] ${
+                selecionada ? "border-[color:var(--latao)] font-bold text-tinta" : "border-transparent font-medium text-tinta-suave hover:text-tinta"
+              }`}
+            >
+              {aba.rotulo}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="painel-copiloto-transcricao"
+        aria-labelledby="tab-copiloto-transcricao"
+        hidden={abaAtiva !== "transcricao"}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        {/* A aba inativa não monta o conteúdo — mesma regra de `TabsFicha.tsx`. */}
+        {abaAtiva === "transcricao" ? <PainelTranscricao segmentos={segmentos} /> : null}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="painel-copiloto-inventario"
+        aria-labelledby="tab-copiloto-inventario"
+        hidden={abaAtiva !== "inventario"}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        {abaAtiva === "inventario" ? <PainelInventario inventario={inventario} /> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Contagens por categoria (`IMÓVEIS · 6`) + os 5 itens mais recentes com a
+ * citação literal que os prova — layout do pedido do dono, 17/09. `posse:
+ * "incerta"` nunca soma no total da categoria (regra do tipo: "a confirmar",
+ * nunca somado) — aparece só como contagem separada, mesmo padrão do resumo
+ * que já vai para a IA (`ResumoInventarioAcumulado`).
+ */
+function PainelInventario({ inventario }: { inventario: InventarioParaPainel }) {
+  const categorias = inventario.resumo.por_categoria.filter((c) => c.contagem_propria > 0 || c.contagem_incerta > 0);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-controle border border-linha bg-papel-elevado px-3 py-2">
+      {categorias.length === 0 ? (
+        <p className="text-sm text-tinta-suave">Nenhum item de patrimônio mencionado ainda nesta sessão.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {categorias.map((c) => (
+            <li key={c.categoria} className="flex items-baseline justify-between text-sm text-tinta">
+              <span className="font-medium uppercase tracking-wide text-tinta-fraca">{ROTULO_CATEGORIA_INVENTARIO[c.categoria]}</span>
+              <span className="font-bold tabular-nums">
+                {c.contagem_propria}
+                {c.contagem_incerta > 0 && <span className="ml-1.5 font-normal text-tinta-fraca">· {c.contagem_incerta} a confirmar</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {inventario.recentes.length > 0 && (
+        <div className="flex flex-col gap-2 border-t border-dashed border-linha pt-2.5">
+          <p className="text-legenda font-medium uppercase text-tinta-fraca">Mencionados recentemente</p>
+          <ul className="flex flex-col gap-2">
+            {inventario.recentes.map((item, i) => (
+              <ItemInventarioRecente key={i} item={item} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemInventarioRecente({ item }: { item: ItemInventarioRecentePainel }) {
+  return (
+    <li className="flex flex-col gap-0.5">
+      <p className="text-sm text-tinta">
+        {item.descricao}
+        {item.posse === "incerta" && <span className="ml-1.5 text-legenda text-tinta-fraca">(a confirmar)</span>}
+        {item.posse === "terceiro" && <span className="ml-1.5 text-legenda text-tinta-fraca">(de terceiro)</span>}
+      </p>
+      <p className="text-legenda italic text-tinta-fraca">&ldquo;{item.evidencia}&rdquo;</p>
+    </li>
   );
 }
 
@@ -454,6 +629,81 @@ const IconeAcao = () => (
     <path d="M8 1.5 3 9h4.5L7 14.5 13 7H8.5L8 1.5Z" />
   </svg>
 );
+
+/** Extrai o ÚLTIMO item de `cobriu_no_bloco` com evidência não nula — mesmo
+ * padrão de `ultimoItemFaltaComEvidencia` (par positivo, migration 0119). Só
+ * considera item com `evidencia` preenchida: sem citação literal comprovada
+ * não é um acerto apresentável (regra do tipo — ver comentário de
+ * `cobriu_no_bloco` em `types/copiloto.ts`, "a IA fabricando elogio sem
+ * lastro é o mesmo risco que o vermelho corre ao acusar sem prova"). */
+function ultimoItemAcertoComEvidencia(
+  sugestoes: SugestaoCopilotoPolling[],
+): { valor: { item: string; evidencia: string }; sugestaoId: string; criadoEm: string } | null {
+  return ultimoNaoNulo(sugestoes, (s) => {
+    const item = s.sugestao?.cobriu_no_bloco?.find((c) => c.evidencia);
+    return item && item.evidencia ? { item: item.item, evidencia: item.evidencia } : null;
+  });
+}
+
+/**
+ * Pedido do dono (17/09, respondido agora): o verde/vermelho julga a
+ * CONDUÇÃO DA ADVOGADA, não a fala do cliente — ✅ cobriu o item do bloco;
+ * ❌ pulou item obrigatório. Denso e chapado: sem card gratuito, sem sombra,
+ * sem ícone decorativo além do próprio símbolo ✅/❌ (regra da casa).
+ *
+ * `SugestaoCopiloto.cobriu_no_bloco` (migration 0119, backend em paralelo)
+ * é `?:` — regra da casa vale ao pé da letra aqui: sem evidência conferida,
+ * o item nem chega a este componente (`ultimoItemAcertoComEvidencia` já
+ * filtra), e sem NENHUM item, a linha do ✅ simplesmente não existe — nunca
+ * um "0 acertos" nem um placeholder. Kill-switch próprio
+ * (`copiloto_sessao.acerto_erro_ativo`) desligado tem o MESMO efeito: campo
+ * sempre ausente/vazio, então a seção nunca aparece — a tela não distingue
+ * "desligado" de "nada para mostrar ainda", pela mesma regra de honestidade
+ * (vazio é vazio, nunca um motivo inventado).
+ *
+ * Fonte: `sugestoesCiclo` (mesma do `BlocoCuidado`/`ultimoItemFaltaComEvidencia`
+ * — reuso, zero query nova). `ultimoNaoNulo` evita que ✅/❌ sumam da tela só
+ * porque o ciclo seguinte não repetiu o campo, mesmo que o fato continue
+ * valendo.
+ *
+ * Texto factual, nunca repreensivo (regra do dono — o cliente pode estar
+ * vendo a tela): "Entrou em holding sem fechar os 4 SIMs", nunca "você errou
+ * ao...". `falta_no_bloco[].item`/`cobriu_no_bloco[].item` já vêm da IA como
+ * frase de fato, não de julgamento — este componente não adiciona adjetivo.
+ */
+function PlacarConducao({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
+  const acerto = ultimoItemAcertoComEvidencia(sugestoesCiclo);
+  const erro = ultimoItemFaltaComEvidencia(sugestoesCiclo);
+
+  if (!acerto && !erro) return null;
+
+  return (
+    <div role="status" className="flex flex-col gap-2 border-t border-linha pt-2">
+      {acerto && (
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-tinta">
+            <span className="font-bold text-[color:var(--verde)]">✅ ACERTO — </span>
+            {acerto.valor.item}
+          </p>
+          <p className="text-legenda italic text-tinta-fraca">
+            &ldquo;{acerto.valor.evidencia}&rdquo; · {formatarHora(acerto.criadoEm)}
+          </p>
+        </div>
+      )}
+      {erro && (
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-tinta">
+            <span className="font-bold text-[color:var(--vermelho)]">❌ ERRO — </span>
+            {erro.valor.item}
+          </p>
+          <p className="text-legenda italic text-tinta-fraca">
+            &ldquo;{erro.valor.evidencia}&rdquo; · {formatarHora(erro.criadoEm)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Histórico compacto das sugestões do ciclo — a MAIS RECENTE aparece aberta,

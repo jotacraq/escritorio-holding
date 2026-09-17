@@ -333,6 +333,22 @@ export type TipoObservacaoCopiloto = "fato" | "hipotese" | "inferencia" | "recom
 export interface SugestaoCopiloto {
   proxima_pergunta: { texto: string; motivo: string; evidencia: string | null } | null;
   falta_no_bloco: Array<{ item: string; evidencia: string | null }>;
+  /** 17/09/2026 (migration 0119) — o PAR POSITIVO de `falta_no_bloco`: itens
+   * do bloco atual que a advogada JÁ cobriu (fez a pergunta, mesmo sem
+   * resposta ainda). Decisão do dono: o verde/vermelho da tela julga a
+   * CONDUÇÃO DA ADVOGADA, não a qualidade da IA — "acerto" é ter perguntado,
+   * "erro" é ter pulado. DIFERENTE de `falta_no_bloco` na severidade da
+   * regra de evidência: aqui a evidência não conferida descarta o ITEM
+   * INTEIRO (nunca só anula o campo evidência, ver `validar.ts`) — um item
+   * de "cobriu" sem citação comprovada não é "um acerto com prova fraca", é
+   * a IA fabricando elogio à advogada sem lastro, o mesmo risco que o
+   * vermelho corre ao acusar sem prova. `?:` (não obrigatório): contrato
+   * novo por composição, sem quebrar literais de teste do front que ainda
+   * não conhecem este campo — ausência e `[]` significam a mesma coisa aqui
+   * ("nada de novo coberto nesta chamada, ou a feature está desligada").
+   * Kill-switch próprio: `copiloto_sessao.acerto_erro_ativo` (0119, nasce
+   * `true`) — desligado, este campo vem sempre ausente/vazio. */
+  cobriu_no_bloco?: Array<{ item: string; evidencia: string | null }>;
   observacao: {
     tipo: TipoObservacaoCopiloto;
     texto: string;

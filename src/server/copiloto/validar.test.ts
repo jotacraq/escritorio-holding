@@ -54,6 +54,7 @@ function saidaBase(): SugestaoCopilotoIa {
   return {
     proxima_pergunta: null,
     falta_no_bloco: [],
+    cobriu_no_bloco: [],
     observacao: null,
     desvio_sugerido: null,
     confianca_geral: 0.8,
@@ -156,6 +157,108 @@ describe("validarSugestaoCopiloto — evidência não conferida", () => {
     };
     const resultado = validarSugestaoCopiloto(saida, contextoBase());
     expect(resultado.sugestao?.falta_no_bloco).toHaveLength(4);
+  });
+});
+
+describe("validarSugestaoCopiloto — cobriu_no_bloco (0119, o VERDE da condução)", () => {
+  it("item com evidência conferida (casa por substring na janela) ENTRA em cobriu_no_bloco", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [{ item: "Confirmar filho ausente", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.cobriu_no_bloco).toEqual([
+      { item: "Confirmar filho ausente", evidencia: "meu filho não conseguiu entrar hoje" },
+    ]);
+  });
+
+  it("REGRA MAIS SEVERA que falta_no_bloco: evidência NÃO conferida descarta o ITEM INTEIRO (não vira {evidencia:null})", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [{ item: "Regime de casamento", evidencia: "isso nunca foi dito na sessão real" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.cobriu_no_bloco).toEqual([]);
+    expect(resultado.sugestao?.campos_evidencia_nao_conferida).toContain("cobriu_no_bloco[0].evidencia");
+  });
+
+  it("evidência é conferida item a item — um item cai, o outro sobrevive", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [
+        { item: "Filho ausente confirmado", evidencia: "meu filho não conseguiu entrar hoje" },
+        { item: "Regime de casamento", evidencia: "inventado sem lastro nenhum" },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.cobriu_no_bloco).toHaveLength(1);
+    expect(resultado.sugestao?.cobriu_no_bloco?.[0]?.item).toBe("Filho ausente confirmado");
+  });
+
+  it("lista cobriu_no_bloco é cortada em 4 itens (mesmo teto de falta_no_bloco)", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: Array.from({ length: 7 }, (_, i) => ({
+        item: `item ${i}`,
+        evidencia: "meu filho não conseguiu entrar hoje",
+      })),
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.cobriu_no_bloco?.length).toBeLessThanOrEqual(4);
+  });
+
+  it("kill-switch DESLIGADO (acertoErroAtivo=false): cobriu_no_bloco sai SEMPRE vazio, mesmo com evidência boa", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [{ item: "Filho ausente confirmado", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase(), false);
+    expect(resultado.sugestao?.cobriu_no_bloco).toEqual([]);
+  });
+
+  it("🔴 kill-switch DESLIGADO zera TAMBÉM falta_no_bloco — o vermelho é o lado que acusa", () => {
+    // A 1ª versão desta fatia desligava só o VERDE (`cobriu_no_bloco`), com o
+    // argumento de que o vermelho já rodava desde a 0094. Isso deixava o
+    // interruptor com o escopo invertido: removia o elogio e mantinha a
+    // acusação. `falta_no_bloco` é o que aponta a falha da advogada numa tela
+    // que ela pode estar compartilhando com o cliente — se um lado tem de ser
+    // desligável em segundos, é esse.
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      falta_no_bloco: [{ item: "Não confirmou os 4 SIMs", evidencia: "meu filho não conseguiu entrar hoje" }],
+      cobriu_no_bloco: [{ item: "Filho ausente confirmado", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase(), false);
+    expect(resultado.sugestao?.falta_no_bloco).toEqual([]);
+    expect(resultado.sugestao?.cobriu_no_bloco).toEqual([]);
+  });
+
+  it("kill-switch LIGADO: falta_no_bloco continua saindo normalmente (o padrão não muda nada)", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      falta_no_bloco: [{ item: "Não confirmou os 4 SIMs", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.falta_no_bloco).toHaveLength(1);
+  });
+
+  it("kill-switch LIGADO por padrão (parâmetro omitido) — mesmo comportamento de sempre", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [{ item: "Filho ausente confirmado", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.sugestao?.cobriu_no_bloco).toHaveLength(1);
+  });
+
+  it("termo de valor em cobriu_no_bloco recusa a sugestão INTEIRA (mesma regra de qualquer outro campo)", () => {
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      cobriu_no_bloco: [{ item: "Discutiu o valor de R$ 4.500,00", evidencia: "meu filho não conseguiu entrar hoje" }],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contextoBase());
+    expect(resultado.motivoRecusaTotal).toBe("termo_proibido");
+    expect(resultado.sugestao).toBeNull();
   });
 });
 

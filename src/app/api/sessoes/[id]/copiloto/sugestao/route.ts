@@ -15,7 +15,7 @@ import { conferirGateCopiloto } from "@/server/copiloto/gate";
 import { executarIaCopiloto } from "@/server/copiloto/executar-ia";
 import { sugestaoEVisivel, validarSugestaoCopiloto } from "@/server/copiloto/validar";
 import { acumularInventarioNaSessao } from "@/server/copiloto/inventario";
-import { lerConfiguracaoJson } from "@/server/ia/configuracao";
+import { lerConfiguracaoBool, lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { RespostaSugestaoCopiloto } from "@/types/copiloto";
 
 const ParametroSchema = z.object({ id: z.string().uuid() });
@@ -37,6 +37,13 @@ const CorpoSchema = z.object({}).passthrough().transform(() => ({}));
 
 const CHAVE_CONFIANCA_MINIMA = "copiloto_sessao.confianca_minima";
 const PADRAO_CONFIANCA_MINIMA = 0.6;
+/** 🔴 17/09/2026 — o MESMO interruptor que `ciclo.ts` lê (0119). Sem isto, o
+ * botão "Me ajuda agora" continuaria emitindo acerto/erro depois de o
+ * interruptor ser desligado: um kill-switch que não desliga tudo é pior que
+ * nenhum, porque dá falsa sensação de reversão. Achado reportado pelo próprio
+ * executor do back, que não tinha esta rota no escopo dele. */
+const CHAVE_ACERTO_ERRO_ATIVO = "copiloto_sessao.acerto_erro_ativo";
+const PADRAO_ACERTO_ERRO_ATIVO = true;
 
 interface SessaoParaOrcamento {
   jornada_id: string;
@@ -187,13 +194,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       throw new ErroApi(502, "saida_invalida", "A saída da IA não pôde ser validada.");
     }
 
-    const validado = validarSugestaoCopiloto(execucao.saida, contexto);
+    // Uma ida só ao banco para as duas chaves (o padrão do `Promise.all` de
+    // `ciclo.ts:299`) — a leitura de confiança já existia logo abaixo e foi
+    // subida para cá, não acrescentada.
+    const [confiancaMinima, acertoErroAtivo] = await Promise.all([
+      lerConfiguracaoJson<number>(supabase, CHAVE_CONFIANCA_MINIMA, PADRAO_CONFIANCA_MINIMA),
+      lerConfiguracaoBool(supabase, CHAVE_ACERTO_ERRO_ATIVO, PADRAO_ACERTO_ERRO_ATIVO),
+    ]);
+
+    const validado = validarSugestaoCopiloto(execucao.saida, contexto, acertoErroAtivo);
     if (!validado.sugestao) {
       // Termo proibido na saída (B61) — nada é gravado, nada é exposto.
       throw new ErroApi(502, "conteudo_proibido", "A resposta da IA continha conteúdo não permitido e foi descartada.");
     }
 
-    const confiancaMinima = await lerConfiguracaoJson<number>(supabase, CHAVE_CONFIANCA_MINIMA, PADRAO_CONFIANCA_MINIMA);
     const visivel = sugestaoEVisivel(validado.sugestao.confianca_geral, confiancaMinima);
 
     // INSERT por service_role — RLS de 0091 não dá gaveta de escrita a

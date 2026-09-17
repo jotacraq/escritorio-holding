@@ -11,7 +11,6 @@ import type { PrecoCroqui } from "@/types/cenario";
 import { EstadoErro, EstadoVazio } from "@/components/ui/Estado";
 import { EsqueletoFicha } from "@/components/ui/Esqueleto";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
-import { Selo } from "@/components/ui/Selo";
 import { Botao } from "@/components/ui/Botao";
 import { Entrada } from "@/components/ui/Campo";
 import { PainelCopiloto } from "@/components/sessao/PainelCopiloto";
@@ -45,25 +44,36 @@ function agendamentoRelevante(agendamentos: Agendamento[]): AgendamentoComPresen
   return lista[0] as AgendamentoComPresenca;
 }
 
-function SeloPresenca({ agendamentos }: { agendamentos: Agendamento[] }) {
+/**
+ * Pedido 3 (17/09): "economizar espaço aí em cima" — o selo com chip+data
+ * saiu; vira um PONTO discreto na mesma linha do nome, com o detalho inteiro
+ * só no `title` (mesmo padrão que `Selo` já documenta: "o detalhe longo vive
+ * aqui, nunca num `<p>` ao lado"). Cor é reforço, nunca o único sinal — por
+ * isso o `title` carrega a frase por extenso para quem não distingue cor.
+ */
+function PontoPresenca({ agendamentos }: { agendamentos: Agendamento[] }) {
   const ag = agendamentoRelevante(agendamentos);
   if (!ag || ag.presenca_confirmada_em === undefined) return null;
   if (ag.presenca_confirmada_em) {
     const via = ag.presenca_confirmada_via === "equipe" ? " pela equipe" : ag.presenca_confirmada_via === "link" ? " pelo cliente" : "";
+    const detalhe = `Presença confirmada${via} · ${formatarData(ag.presenca_confirmada_em)}`;
     return (
-      <Selo
-        tom="verde"
-        icone={
-          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4.5 10.5l3.6 3.5 7.4-8" />
-          </svg>
-        }
-      >
-        Presença confirmada{via} · {formatarData(ag.presenca_confirmada_em)}
-      </Selo>
+      <span title={detalhe} className="inline-flex items-center gap-1 text-legenda text-[color:var(--verde)]">
+        <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4.5 10.5l3.6 3.5 7.4-8" />
+        </svg>
+        <span className="sr-only">{detalhe}</span>
+      </span>
     );
   }
-  return <Selo tom="neutro">Aguardando confirmação de presença</Selo>;
+  return (
+    <span title="Aguardando confirmação de presença" className="inline-flex items-center gap-1 text-legenda text-tinta-fraca">
+      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="currentColor">
+        <circle cx="10" cy="10" r="4" />
+      </svg>
+      <span className="sr-only">Aguardando confirmação de presença</span>
+    </span>
+  );
 }
 
 export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
@@ -626,35 +636,50 @@ function CorrigirParte({
 }
 
 /**
- * O script existe em 4 versões no material da Dra. Elaine e nenhuma foi
- * carimbada como oficial (BLOQUEIO B15, ARQUITETURA-FASE-2 §7). A versão 4
- * está ativa por escolha técnica, não por decisão dela — a tela precisa
- * dizer isso, sóbrio, sem alarme.
+ * Pedido do dono (17/09, captura de tela em produção): "economizar espaço aí
+ * em cima [...] muito direta [...] o sistema não precisa ficar botando esses
+ * comentários a mais". O cabeçalho antigo (`CabecalhoPagina` com rótulo + h1
+ * + descrição + meta) gastava ~150px em 4 linhas antes de qualquer conteúdo
+ * útil. Aqui é UMA linha: nome + roteiro à esquerda, "Ver ficha completa" à
+ * direita — `<h1>` continua existindo (único da tela, regra de a11y), só que
+ * dentro da mesma linha visual, sem rótulo acima nem descrição abaixo.
+ *
+ * O aviso de governança (BLOQUEIO B15, ARQUITETURA-FASE-2 §7: nenhuma das 4
+ * versões do material foi carimbada como oficial pela Dra. Elaine) NÃO some —
+ * é fato real, não enfeite. Não há hoje, na Ficha 360, um lugar que já exiba
+ * a versão do roteiro (`grep` confirma: este era o único ponto da UI que a
+ * mostrava) e este componente é o único de que sou dono nesta tarefa — mover
+ * para dentro da Ficha exigiria tocar `ficha360/**`, fora do escopo. Optei
+ * pelo mecanismo que `Selo.tsx` já documenta como padrão da casa ("o detalhe
+ * longo vive aqui, nunca num `<p>` ao lado"): o `title` do próprio selo do
+ * roteiro carrega a frase inteira — continua consultável (hover/foco), só
+ * não ocupa mais uma linha permanente na tela ao vivo. Divergência do plano
+ * registrada aqui; ver relatório de entrega para a proposta ao arquiteto.
  */
 function Cabecalho({ ficha, jornadaId, roteiro }: { ficha: Ficha360; jornadaId: string; roteiro?: RoteiroVersao }) {
+  const avisoGovernanca = "Nenhuma das 4 versões do material foi carimbada como oficial pela Dra. Elaine; esta é a mais extensa e está ativa por escolha do time técnico.";
   return (
-    <CabecalhoPagina
-      rotulo="Conduzir sessão"
-      titulo={ficha.pessoa.nome}
-      descricao="Roteiro da Sessão de Viabilidade, uma parte por vez. Fala, ação, o que nunca dizer e o que observar."
-      acoes={
-        <Link href={`/jornadas/${jornadaId}`} className="nao-imprimir">
-          <Botao variante="secundario">Ver ficha completa</Botao>
-        </Link>
-      }
-      meta={
-        <>
-          <SeloPresenca agendamentos={ficha.agendamentos} />
-          {roteiro && (
-            <>
-              <Selo tom="neutro">
-                Roteiro: {roteiro.titulo} · versão {roteiro.versao}
-              </Selo>
-              <span className="nao-imprimir">Nenhuma das 4 versões do material foi carimbada como oficial pela Dra. Elaine; esta é a mais extensa e está ativa por escolha do time técnico.</span>
-            </>
-          )}
-        </>
-      }
-    />
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-subtitulo font-bold text-tinta">
+        <span className="truncate">{ficha.pessoa.nome}</span>
+        <PontoPresenca agendamentos={ficha.agendamentos} />
+        {roteiro && (
+          <>
+            <span aria-hidden="true" className="text-tinta-fraca">
+              ·
+            </span>
+            <span title={avisoGovernanca} className="text-sm font-medium text-tinta-suave">
+              {roteiro.titulo} v{roteiro.versao}
+            </span>
+            <span className="sr-only">{avisoGovernanca}</span>
+          </>
+        )}
+      </h1>
+      <Link href={`/jornadas/${jornadaId}`} className="nao-imprimir shrink-0">
+        <Botao variante="secundario" tamanho="compacto">
+          Ver ficha completa
+        </Botao>
+      </Link>
+    </header>
   );
 }
