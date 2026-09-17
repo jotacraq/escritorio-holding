@@ -98,6 +98,15 @@ export async function GET(request: NextRequest) {
       {
         id: 1,
         recall_credential_id: resultado.credentialId,
+        // 🔴 17/09: este é o e-mail de quem clicou no botão DESTE sistema, NÃO
+        // a conta Zoom que concedeu a permissão. São quase sempre pessoas
+        // diferentes: a advogada opera o sistema, e a conta dedicada
+        // (apoio@csmholding.com.br) é quem autoriza no Zoom — justamente para
+        // o bot não herdar o nome dela na sala.
+        // Ler este campo como "a conta Zoom que autorizou" já causou um
+        // diagnóstico errado (17/09): concluí que a autorização tinha sido
+        // feita pela conta errada quando estava correta. O nome da coluna
+        // mente; o comentário fica até a coluna ser renomeada.
         autorizado_por_email: usuario.email,
         autorizado_em: new Date().toISOString(),
       },
