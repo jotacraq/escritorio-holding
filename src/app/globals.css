@@ -607,6 +607,30 @@ p, li, dd {
 .anim-deslizar-esquerda { animation: deslizar-da-esquerda var(--transicao-normal) var(--suavizacao) both; }
 .anim-esmaecer { animation: esmaecer var(--transicao-rapida) linear both; }
 
+/* Fase 12, Fatia C — realce do card de insight não lido (decisão B71
+   revogada PARCIALMENTE, docs/ARQUITETURA-FASE-10.md:1379: "nada pisca,
+   nada toca, nada abre sozinho"; a dose mínima aprovada é ESTA transição
+   única, nada mais). UMA transição de 150ms de `background-color`, de âmbar
+   fraco para transparente — sem piscar, sem deslizar, sem pulsar.
+   `.realce-insight-novo` parte já no fundo âmbar fraco (aplicada no MESMO
+   render em que o card nasce); o componente remove essa classe um tick
+   depois (`requestAnimationFrame`), e é a REMOÇÃO que a `transition` anima
+   até `transparent`. A borda esquerda de 2px é ESTADO À PARTE, aplicada
+   direto no componente via classe utilitária Tailwind — fica enquanto não
+   lido, nunca faz parte desta transição, e não desloca geometria (a borda
+   já existe desde o primeiro render, só troca de cor/transparência, nunca
+   de largura). `prefers-reduced-motion` zera isto pela regra GLOBAL já
+   existente abaixo (`transition-duration: 0.001ms !important`) — sem
+   duplicar a media query aqui. */
+.transicao-realce-insight {
+  transition-property: background-color;
+  transition-duration: 150ms;
+  transition-timing-function: linear;
+}
+.realce-insight-novo {
+  background-color: var(--ambar-fraco);
+}
+
 /* Esqueleto: bloco de areia com brilho lento passando — "está vindo", não
    "travou". */
 .esqueleto {

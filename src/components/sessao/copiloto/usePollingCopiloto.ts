@@ -88,6 +88,15 @@ export interface EstadoPollingCopiloto {
    * sem confirmação (erro de rede, sessão encerrada) — nunca fica pendurado
    * para sempre. */
   indiceFixacaoPendente: number | null;
+  /** Fase 12, Fatia B — `true` do instante em que o `GET` do ciclo é
+   * disparado até a resposta (sucesso ou falha) voltar. O ciclo automático é
+   * SÍNCRONO dentro do próprio GET (`route.ts`): a resposta HTTP já espera o
+   * ciclo inteiro (até 20s de timeout de IA). Não existe uma 2ª rota nem um
+   * campo novo no payload — é o único jeito de a tela saber "há uma
+   * consulta em voo agora" sem inventar estado que o servidor não confirma.
+   * `EstadoDoCopiloto` usa isto para mostrar "Consultando…" na mesma linha
+   * de status da Fatia A, só enquanto a requisição não voltou. */
+  requisicaoEmVoo: boolean;
 }
 
 /** Pedido de FIXAÇÃO MANUAL para o próximo ciclo (Fase 12, Fatia B — o
@@ -124,6 +133,7 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
     comparacaoDecisores: null,
     blocoAtualResolvido: null,
     indiceFixacaoPendente: null,
+    requisicaoEmVoo: false,
   };
   const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
   const cursorSegmentoRef = useRef(0);
@@ -187,6 +197,11 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
       // duplicar o envio.
       const fixacao = fixacaoPendenteRef.current;
       fixacaoPendenteRef.current = null;
+      // Fatia B: o GET fica em voo até a resposta (sucesso ou falha) voltar
+      // — o ciclo automático é síncrono dentro da própria rota (até 20s de
+      // timeout de IA). `setEstado` aqui é o único jeito de "Consultando…"
+      // aparecer sem 2ª rota nem campo novo no payload.
+      setEstado((atual) => (atual.requisicaoEmVoo ? atual : { ...atual, requisicaoEmVoo: true }));
       try {
         const resposta = await buscarPollingCopiloto(sessaoId, {
           bloco: fixacao ? fixacao.indice : indiceAtualRef.current,
@@ -257,6 +272,7 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             // inferência x indisponível) — a tela só reflete, nunca deriva.
             blocoAtualResolvido: blocoResolvidoNovo ?? atual.blocoAtualResolvido,
             indiceFixacaoPendente,
+            requisicaoEmVoo: false,
           };
         });
       } catch (e) {
@@ -279,6 +295,7 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
           // atual, não é sobrescrito a cada nova falha da mesma sequência.
           falhasConsecutivas: paraDeVezPorKillSwitch ? atual.falhasConsecutivas : atual.falhasConsecutivas + 1,
           falhandoDesde: paraDeVezPorKillSwitch ? atual.falhandoDesde : (atual.falhandoDesde ?? new Date()),
+          requisicaoEmVoo: false,
         }));
       } finally {
         if (vivo && !encerradoNestaResposta && !paraDeVezPorKillSwitch) {

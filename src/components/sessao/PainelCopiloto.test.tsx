@@ -1490,6 +1490,219 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       await semViolacoes(container);
     });
   });
+
+  /**
+   * Fase 12, Fatia A — linha de status permanente (`EstadoDoCopiloto`).
+   * Estende o `GateBloqueado` de antes para as 5 situações que
+   * `route.ts::paraInfoCiclo` já traduzia e a tela descartava. `role="status"`
+   * + `aria-live="polite"` em tudo, exceto o gate (`role="alert"`, herdado
+   * sem mudança).
+   */
+  describe("Fase 12, Fatia A — EstadoDoCopiloto: estende o status além do gate", () => {
+    it("sem ciclo ainda: 'Ouvindo.' — a linha nunca fica muda em silêncio normal", async () => {
+      const { container } = await abrirComPolling();
+      expect(container.textContent).toContain("Ouvindo.");
+    });
+
+    it("timeout: 'A IA não respondeu desta vez. Continua tentando.' — NUNCA a palavra 'erro'", async () => {
+      estado.pollingRespostas = [respostaPolling({ ciclo: { avaliado: true, resultado: "timeout", motivo_bloqueio: null } })];
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("A IA não respondeu desta vez. Continua tentando.");
+      expect(container.textContent?.toLowerCase()).not.toContain("erro");
+    });
+
+    it("indisponivel: mesma frase transiente de timeout — é a mesma família de situação para a advogada", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "indisponivel", motivo_bloqueio: "provedor_fora" } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("A IA não respondeu desta vez. Continua tentando.");
+    });
+
+    it("conteudo_recusado: mesma frase transiente — nunca 'recusado' cru na tela", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "conteudo_recusado", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("A IA não respondeu desta vez. Continua tentando.");
+    });
+
+    it("orcamento_estourado: aviso PERMANENTE distinto do transiente — 'virou só transcrição'", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "orcamento_estourado", motivo_bloqueio: "teto_sessao" } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      expect(container.textContent).toContain("Limite de consultas da sessão atingido");
+      expect(container.textContent).toContain("O copiloto virou só transcrição.");
+    });
+
+    it("bloqueado_pelo_gate continua com role=\"alert\" — é a única situação que pede ação da advogada", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "bloqueado_pelo_gate", motivo_bloqueio: "sem_consentimento_titular" } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Copiloto de IA parado nesta sessão");
+    });
+
+    it("timeout/indisponivel/conteudo_recusado/orcamento_estourado usam role=\"status\" + aria-live=\"polite\" — NUNCA assertive", async () => {
+      estado.pollingRespostas = [respostaPolling({ ciclo: { avaliado: true, resultado: "timeout", motivo_bloqueio: null } })];
+      const { container } = await abrirComPolling();
+
+      const status = Array.from(container.querySelectorAll('[role="status"]')).find((el) =>
+        el.textContent?.includes("A IA não respondeu desta vez"),
+      );
+      expect(status).toBeTruthy();
+      expect(status?.getAttribute("aria-live")).toBe("polite");
+      expect(container.querySelector('[aria-live="assertive"]')).toBeNull();
+    });
+
+    it("axe limpo: orcamento_estourado", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ ciclo: { avaliado: true, resultado: "orcamento_estourado", motivo_bloqueio: "teto_sessao" } }),
+      ];
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+
+    it("axe limpo: timeout (transiente)", async () => {
+      estado.pollingRespostas = [respostaPolling({ ciclo: { avaliado: true, resultado: "timeout", motivo_bloqueio: null } })];
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+  });
+
+  /**
+   * Fase 12, Fatia B — "Consultando…" enquanto a requisição do ciclo está em
+   * voo. O ciclo automático é SÍNCRONO dentro do próprio GET — a tela só sabe
+   * que há consulta em andamento pela requisição que ainda não voltou.
+   */
+  describe("Fase 12, Fatia B — 'Consultando…' enquanto o GET está em voo", () => {
+    it("mostra 'Consultando…' assim que o ciclo dispara, antes da resposta voltar", async () => {
+      // 1ª resposta (a de dentro de `abrirComPolling`, silêncio normal)
+      // segue o fluxo padrão; a 2ª nunca resolve dentro deste teste — só
+      // interessa capturar o estado ENQUANTO ela está em voo.
+      estado.pollingRespostas = [
+        respostaPolling({}),
+        (() => new Promise(() => {})) as unknown as () => EstadoCopilotoComPolling,
+      ];
+      const { container } = await abrirComPolling();
+      expect(container.textContent).not.toContain("Consultando…");
+
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(container.textContent).toContain("Consultando…");
+    });
+
+    it("'Consultando…' some assim que a resposta volta — dá lugar a 'Ouvindo.' em silêncio normal", async () => {
+      const { container } = await abrirComPolling();
+      // `abrirComPolling` já espera o 1º ciclo completar (silêncio normal).
+      expect(container.textContent).not.toContain("Consultando…");
+      expect(container.textContent).toContain("Ouvindo.");
+    });
+
+    it("não introduz 2º poller: só existe UMA chamada em voo por vez, mesmo com 'Consultando…' visível", async () => {
+      const { container } = await abrirComPolling();
+      const chamadasAntes = estado.pollingChamadas.length;
+
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(estado.pollingChamadas.length).toBe(chamadasAntes + 1);
+      void container;
+    });
+  });
+
+  /**
+   * Fase 12, Fatia C — contador de não-lido no rótulo do quadro ("Fale
+   * agora · N novas") + realce do card não lido. Estado 100% local por
+   * `sugestao_id` — zero coluna nova, zero rota nova.
+   */
+  describe("Fase 12, Fatia C — contador de não-lido e realce do card novo", () => {
+    function sugestaoPollingDe(id: string, ordem: number) {
+      return {
+        sugestao_id: id,
+        ordem_evento: ordem,
+        gatilho: "intervalo" as const,
+        confianca_geral: 0.8,
+        visivel: true,
+        sugestao: SUGESTAO_COMPLETA,
+        desfecho: null,
+        criado_em: new Date().toISOString(),
+      };
+    }
+
+    it("1ª sugestão do ciclo: nasce NÃO LIDA — rótulo mostra '1 nova'", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      await vi.waitFor(() => expect(container.textContent).toContain("Fale agora · 1 nova"));
+    });
+
+    it("2ª sugestão chega: a 1ª vira 'anterior' (lida) e some da contagem; a 2ª (recente) mantém '1 nova'", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s2", 2)], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(container.textContent).toContain("Fale agora · 1 nova");
+
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // A 1ª virou "anterior": não conta mais. A 2ª é a "recente" atual,
+      // não lida — o contador converge para "1", nunca soma as duas.
+      // `vi.waitFor` (fake-timer-aware) porque a convergência atravessa 2
+      // `setState` ENCADEADOS (1º efeito marca `vistos.s1=true`; 2º efeito
+      // reage à nova referência de `vistos` e só então recalcula o total) —
+      // cada um pede o próprio ciclo de commit do React.
+      await vi.waitFor(() => expect(container.textContent).toContain("Fale agora · 1 nova"));
+      expect(container.textContent).not.toContain("2 novas");
+    });
+
+    it("borda de 2px de 'não lido' aplicada no card recente, some quando ele é superado", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+
+      const card = container.querySelector(".border-l-\\[color\\:var\\(--ambar\\)\\]");
+      expect(card).toBeTruthy();
+    });
+
+    it("geometria constante: o card 'anterior' recolhido NUNCA carrega a borda de não-lido (ela é só do card recente)", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s2", 2)], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container, getByText } = await abrirComPolling();
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Expande o `<details>` de "sugestões anteriores" e confere que o
+      // `<li>` do item antigo não tem a classe de borda de não-lido.
+      const resumo = getByText(/1 sugestão anterior/i);
+      fireEvent.click(resumo);
+      const item = resumo.closest("details")?.querySelector("li");
+      expect(item?.className).not.toContain("--ambar");
+    });
+
+    it("axe limpo: card recente com realce de não-lido", async () => {
+      estado.pollingRespostas = [
+        respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+      ];
+      const { container } = await abrirComPolling();
+      vi.useRealTimers();
+      await semViolacoes(container);
+    });
+  });
 });
 
 /**

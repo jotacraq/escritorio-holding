@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   ErroSessao,
   buscarEstadoCopiloto,
@@ -188,18 +188,17 @@ export function PainelCopiloto({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Avisos de topo — estado transitório, nunca um "quadro" de conteúdo
-       * permanente. Empilhados, full-width, acima dos 3 blocos (B71: nada
-       * disto pisca nem desloca o que já está embaixo — cada um só
-       * aparece/some por mudança de estado real, nunca por timer).
-       *
-       * Decisão de 15/09 (mantida): `AvisoPollingFalhando` entra/sai do
-       * fluxo normal na 3ª falha consecutiva de rede — `min-h-[3.25rem]`
-       * reserva o espaço sempre; o aviso aparece DENTRO dele quando existe.
-       * Não usa `position:sticky` — tapar o bloco "Fale agora" seria pior
-       * que o reflow que está sendo corrigido. */}
+      {/* Fase 12, Fatia A — linha de status PERMANENTE, sempre no mesmo
+       * pixel: `min-h-[3.25rem]` reserva o espaço mesmo com a sessão
+       * encerrada (o `<EstadoDoCopiloto>` some, o espaço fica). Full-width,
+       * acima dos 3 blocos (B71: nada disto pisca nem desloca o que já está
+       * embaixo — cada estado só troca por mudança de fato real, nunca por
+       * timer). Não usa `position:sticky` — tapar o bloco "Fale agora" seria
+       * pior que o reflow que está sendo corrigido. */}
       <div className="min-h-[3.25rem]">
-        {!sessaoEncerrada && <AvisoPollingFalhando falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />}
+        {!sessaoEncerrada && (
+          <EstadoDoCopiloto ciclo={polling.ciclo} requisicaoEmVoo={polling.requisicaoEmVoo} falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />
+        )}
       </div>
 
       {encerradaPorDuracaoMaxima && (
@@ -213,8 +212,6 @@ export function PainelCopiloto({
           Copiloto encerrado — transcrição consolidada, sem novas sugestões.
         </p>
       )}
-
-      {!sessaoEncerrada && <GateBloqueado ciclo={polling.ciclo} />}
 
       {/* BLOCO 1 — "Fale agora". Único com peso visual: é a próxima frase
        * dela. Nunca clicável por inteiro (a lição do "link de 11px" e do
@@ -247,53 +244,109 @@ export function PainelCopiloto({
 }
 
 /**
- * (i)+(iii) do achado do Fable: falha PERSISTENTE do polling vira aviso
- * visível — nunca as duas primeiras (B71: um soluço de rede não é alarme no
- * meio de uma conversa sobre herança), sempre a partir da 3ª seguida (o
- * limiar em que "transiente" deixa de ser a explicação mais provável).
+ * Fase 12, Fatia A — linha de status PERMANENTE, sempre no mesmo pixel
+ * (`min-h-[3.25rem]` do container em `PainelCopiloto`). Antes desta fatia a
+ * tela só distinguia "silêncio normal" de "gate bloqueado" — as outras 5
+ * situações que `route.ts::paraInfoCiclo` já traduz (`timeout`,
+ * `indisponivel`, `conteudo_recusado`, `orcamento_estourado`, falha de rede
+ * do polling) chegavam e eram DESCARTADAS: 12 de 26 chamadas de IA medidas
+ * em produção (48%) falhavam e SUMIAM da tela, sem a advogada distinguir
+ * "sala calma" de "IA quebrada".
  *
- * A frase tem DOIS avisos, de propósito: "sem conexão" (o quê) e "a sessão
- * segue normalmente pelo roteiro" (o que NÃO aconteceu) — sem o segundo
- * período a advogada pode entender que perdeu a sessão inteira, quando só
- * perdeu o assistente.
+ * PRIORIDADE (de cima para baixo — só uma linha aparece por vez):
+ *  1. Falha de REDE do próprio polling, persistente (3+ falhas seguidas) —
+ *     é a infraestrutura entre a tela e o servidor, mais grave que qualquer
+ *     resultado de ciclo que o servidor tenha ou não conseguido mandar.
+ *  2. `bloqueado_pelo_gate` — decisão jurídica/consentimento revogados no
+ *     meio da sessão. É a ÚNICA condição que pede AÇÃO da advogada:
+ *     `role="alert"`, herdado sem mudança do `GateBloqueado` anterior.
+ *  3. `orcamento_estourado` — PERMANENTE para o resto da sessão (o teto não
+ *     se refaz sozinho): ela precisa saber que o copiloto virou transcrição.
+ *  4. `timeout`/`indisponivel`/`conteudo_recusado` — TRANSIENTE: a próxima
+ *     janela tenta de novo sozinha. Nunca a palavra "erro" (pedido do dono)
+ *     — para a advogada isto é "a IA não respondeu desta vez", não uma
+ *     falha do sistema que ela precise reportar.
+ *  5. `requisicaoEmVoo` (Fatia B) — o GET desta janela ainda não voltou
+ *     (pode levar até 20s, timeout de IA). Só aparece se nenhuma das 4
+ *     situações acima já estiver ocupando a linha.
+ *  6. Nada do que precede: "Ouvindo." — neutro, prova de que a linha está
+ *     viva mesmo em silêncio normal (nunca um espaço em branco mudo).
  *
- * `role="status"` (não `alert`): é informação sobre a INFRAESTRUTURA, não
- * um bloqueio jurídico — `GateBloqueado` usa `alert` porque aquilo é uma
- * decisão que precisa de ação; isto aqui é "seguimos tentando", sem pedir
- * nada da advogada. Some sozinho no próximo sucesso (o hook zera a contagem).
+ * `role="status"` + `aria-live="polite"` em toda situação exceto o gate:
+ * nunca `assertive` — não pode interromper o leitor de tela no meio de uma
+ * frase da advogada (regra do dono, Fatia A).
+ *
+ * Sobre o anúncio da MUDANÇA (ex.: "Ouvindo." → "Consultando…"): quem
+ * garante isso é o próprio texto mudar — o React não repinta nó de texto
+ * idêntico, então o leitor de tela só re-anuncia quando o ESTADO muda, nunca
+ * a cada tick de polling em silêncio. Não há (nem é preciso) `key` nos `<p>`
+ * daqui: uma versão anterior deste comentário prometia uma `key` que nunca
+ * existiu no JSX (achado do pentester, 17/09) — o comportamento estava certo,
+ * a explicação é que mentia.
  */
-function AvisoPollingFalhando({ falhasConsecutivas, falhandoDesde }: { falhasConsecutivas: number; falhandoDesde: Date | null }) {
-  if (falhasConsecutivas < LIMIAR_FALHAS_PARA_AVISO || !falhandoDesde) return null;
-  return (
-    <p role="status" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
-      <span className="mb-0.5 block font-bold text-[color:var(--ambar)]">Copiloto sem conexão desde {formatarHora(falhandoDesde.toISOString())}</span>
-      A sessão segue pelo roteiro. Retoma sozinho.
-    </p>
-  );
-}
+function EstadoDoCopiloto({
+  ciclo,
+  requisicaoEmVoo,
+  falhasConsecutivas,
+  falhandoDesde,
+}: {
+  ciclo: InfoCicloCopiloto | null;
+  requisicaoEmVoo: boolean;
+  falhasConsecutivas: number;
+  falhandoDesde: Date | null;
+}) {
+  if (falhasConsecutivas >= LIMIAR_FALHAS_PARA_AVISO && falhandoDesde) {
+    return (
+      <p role="status" aria-live="polite" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
+        <span className="mb-0.5 block font-bold text-[color:var(--ambar)]">Copiloto sem conexão desde {formatarHora(falhandoDesde.toISOString())}</span>
+        A sessão segue pelo roteiro. Retoma sozinho.
+      </p>
+    );
+  }
 
-/**
- * `ciclo.resultado === "bloqueado_pelo_gate"` (Fatia 3, §6.2.2/B71) — o gate
- * jurídico fechou NO MEIO da sessão (decisão jurídica ou consentimento
- * revogados). É DISTINTO de silêncio normal (`ciclo.resultado === null`,
- * que é o caso comum e não gera nenhum aviso): a advogada nunca pode
- * confundir "a sala está calma, nada para sugerir" com "o copiloto foi
- * calado por revogação". Aviso sóbrio, sempre visível enquanto durar —
- * não é um toast que some sozinho, porque a condição continua verdadeira a
- * cada novo polling até alguém religar a trava.
- */
-function GateBloqueado({ ciclo }: { ciclo: InfoCicloCopiloto | null }) {
-  if (!ciclo || ciclo.resultado !== "bloqueado_pelo_gate") return null;
-  const motivo =
-    ciclo.motivo_bloqueio === "sem_decisao_juridica"
-      ? "O copiloto de IA está bloqueado por configuração no servidor."
-      : ciclo.motivo_bloqueio === "sem_consentimento_titular"
-        ? "O copiloto de IA está bloqueado por configuração no servidor para esta sessão."
-        : "A trava jurídica do copiloto está fechada para esta sessão.";
+  if (ciclo?.resultado === "bloqueado_pelo_gate") {
+    const motivo =
+      ciclo.motivo_bloqueio === "sem_decisao_juridica"
+        ? "O copiloto de IA está bloqueado por configuração no servidor."
+        : ciclo.motivo_bloqueio === "sem_consentimento_titular"
+          ? "O copiloto de IA está bloqueado por configuração no servidor para esta sessão."
+          : "A trava jurídica do copiloto está fechada para esta sessão.";
+    return (
+      <p role="alert" className="rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm text-tinta">
+        <span className="mb-0.5 block font-bold text-[color:var(--vermelho)]">Copiloto de IA parado nesta sessão</span>
+        {motivo} A transcrição por texto continua normal.
+      </p>
+    );
+  }
+
+  if (ciclo?.resultado === "orcamento_estourado") {
+    return (
+      <p role="status" aria-live="polite" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
+        <span className="mb-0.5 block font-bold text-[color:var(--ambar)]">Limite de consultas da sessão atingido</span>
+        O copiloto virou só transcrição.
+      </p>
+    );
+  }
+
+  if (ciclo?.resultado === "timeout" || ciclo?.resultado === "indisponivel" || ciclo?.resultado === "conteudo_recusado") {
+    return (
+      <p role="status" aria-live="polite" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
+        A IA não respondeu desta vez. Continua tentando.
+      </p>
+    );
+  }
+
+  if (requisicaoEmVoo) {
+    return (
+      <p role="status" aria-live="polite" className="rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+        Consultando…
+      </p>
+    );
+  }
+
   return (
-    <p role="alert" className="rounded-controle border border-[color:var(--vermelho)] bg-vermelho-fraco px-3.5 py-2.5 text-sm text-tinta">
-      <span className="mb-0.5 block font-bold text-[color:var(--vermelho)]">Copiloto de IA parado nesta sessão</span>
-      {motivo} A transcrição por texto continua normal.
+    <p role="status" aria-live="polite" className="rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+      Ouvindo.
     </p>
   );
 }
@@ -324,16 +377,26 @@ function BlocoFaleAgora({
   irPara?: (indice: number) => void;
 }) {
   const temSugestaoCiclo = sugestoesCiclo.length > 0;
+  // Fase 12, Fatia C — contador de não-lido NO PRÓPRIO RÓTULO do quadro
+  // ("Fale agora · 2 novas"), sem badge circular nem número flutuante
+  // (pedido do dono: denso e chapado). Estado local por `sugestao_id` visto
+  // — `SugestoesDoCiclo` é quem sabe quais IDs existem e quando um deixa de
+  // ser "novo"; aqui só se acumula a contagem para o rótulo.
+  const [naoLidas, setNaoLidas] = useState(0);
 
   return (
-    <Quadro rotulo="Fale agora" icone={<IconeAcao />} como="article">
+    <Quadro
+      rotulo={naoLidas > 0 ? `Fale agora · ${naoLidas} nova${naoLidas > 1 ? "s" : ""}` : "Fale agora"}
+      icone={<IconeAcao />}
+      como="article"
+    >
       {/* `max-h`/`overflow-y-auto` trava o teto e rola por dentro — o bloco
        * não estica quando a sugestão vem completa (geometria constante,
        * achado de 15/09). `tabIndex={0}` exigido pelo axe
        * (`scrollable-region-focusable`). */}
       <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Fale agora" className="flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1">
         {temSugestaoCiclo && (
-          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} aoMudarNaoLidas={setNaoLidas} />
         )}
 
         <div className={temSugestaoCiclo ? "border-t border-dashed border-linha pt-3" : undefined}>
@@ -355,29 +418,69 @@ const IconeAcao = () => (
  * por inteiro, sem clique (B71: "nada pisca, nada toca, nada abre
  * sozinho"). Anteriores ficam recolhidas de CONTEÚDO (nunca de existência):
  * o `<summary>` já mostra a contagem.
+ *
+ * Fase 12, Fatia C — "não lido" é ESTADO local por `sugestao_id`, nunca
+ * coluna nova nem rota nova. Regra: uma sugestão nasce "não lida" e só é
+ * marcada como lida quando DEIXA de ser a card "recente" — enquanto ela é o
+ * herói do bloco, ainda está na frente da advogada, então ainda não foi
+ * "vista e superada"; no instante em que uma sugestão mais nova a empurra
+ * para "anteriores", ela já cumpriu o papel de "bater o olho" e sai da
+ * contagem. Isso também cobre o "some ao ver" pedido: a mudança de estado
+ * que marca como lida é a MESMA que move o card, nunca um timer arbitrário.
  */
 function SugestoesDoCiclo({
   sessaoId,
   sugestoes,
   blocosRoteiro,
   irPara,
+  aoMudarNaoLidas,
 }: {
   sessaoId: string;
   sugestoes: SugestaoCopilotoPolling[];
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
+  aoMudarNaoLidas?: (n: number) => void;
 }) {
   const [dispensadas, setDispensadas] = useState<Record<string, boolean>>({});
+  const [vistos, setVistos] = useState<Record<string, boolean>>({});
 
   const pendentes = sugestoes.filter((s) => !dispensadas[s.sugestao_id]);
-  if (pendentes.length === 0) return null;
 
   const recente = pendentes[pendentes.length - 1];
   const anteriores = pendentes.slice(0, -1);
 
+  // Marca como visto todo item que deixou de ser "recente" (agora está em
+  // `anteriores`) — roda a cada render em que a lista muda, sem efeito
+  // colateral de rede. `useEffect` para não disparar `setState` do pai
+  // (`aoMudarNaoLidas`) durante o render deste componente.
+  useEffect(() => {
+    setVistos((atual) => {
+      let mudou = false;
+      const novo = { ...atual };
+      for (const s of anteriores) {
+        if (!novo[s.sugestao_id]) {
+          novo[s.sugestao_id] = true;
+          mudou = true;
+        }
+      }
+      return mudou ? novo : atual;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    });
+  }, [anteriores.map((s) => s.sugestao_id).join(",")]);
+
+  useEffect(() => {
+    const total = pendentes.filter((s) => !vistos[s.sugestao_id]).length;
+    aoMudarNaoLidas?.(total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendentes.map((s) => s.sugestao_id).join(","), vistos]);
+
+  if (pendentes.length === 0) return null;
+
+  const recenteNaoLida = Boolean(recente) && !vistos[recente.sugestao_id];
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="rounded-controle border border-linha p-2.5">
+      <CardRecente sugestaoId={recente.sugestao_id} naoLida={recenteNaoLida}>
         {!recente.visivel || !recente.sugestao ? (
           <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
             Confiança abaixo do mínimo configurado — nada mostrado.
@@ -400,7 +503,7 @@ function SugestoesDoCiclo({
             Dispensar
           </Botao>
         </div>
-      </div>
+      </CardRecente>
 
       {anteriores.length > 0 && (
         <details className="mt-1">
@@ -435,6 +538,53 @@ function SugestoesDoCiclo({
           </div>
         </details>
       )}
+    </div>
+  );
+}
+
+/**
+ * Fase 12, Fatia C — wrapper do card "recente" que carrega a UMA transição
+ * aprovada (150ms de `background-color`, âmbar fraco → transparente) e a
+ * borda esquerda de 2px de "não lido". As duas coisas são independentes de
+ * propósito: a transição roda UMA VEZ por `sugestaoId` (reinicia quando um
+ * card novo chega, nunca se repete no mesmo card); a borda é ESTADO puro,
+ * fica ligada enquanto `naoLida=true` e nunca anima (troca de cor instantânea
+ * quando a advogada avança para o próximo card, sem transição nela mesma —
+ * só o FUNDO tem a régua de 150ms, por pedido explícito do dono: "nada mais").
+ *
+ * Geometria constante: `border` (todos os lados) já existe desde o primeiro
+ * render, nunca varia de largura — só a cor da borda esquerda e o fundo
+ * mudam, então o realce nunca desloca o que está embaixo.
+ */
+function CardRecente({ sugestaoId, naoLida, children }: { sugestaoId: string; naoLida: boolean; children: ReactNode }) {
+  // Começa com o fundo âmbar (parte "de", a `transition` anima até
+  // "transparent" quando esta classe sai) — só quando o card É não lido.
+  // Um card que chega já lido (ex.: reidratação improvável, mas defensivo)
+  // nunca pisca fundo nenhum.
+  const [comFundo, setComFundo] = useState(naoLida);
+
+  useEffect(() => {
+    if (!naoLida) return;
+    setComFundo(true);
+    // Um frame depois, remove a classe do fundo — é a REMOÇÃO que a
+    // `transition-property: background-color` (globals.css) anima até
+    // `transparent`. `requestAnimationFrame` (não um `setTimeout(0)`)
+    // garante que o navegador pinte o estado "com fundo" antes de começar
+    // a transição — senão as duas classes trocariam no mesmo frame e não
+    // haveria nada para transicionar.
+    const raf = requestAnimationFrame(() => setComFundo(false));
+    return () => cancelAnimationFrame(raf);
+    // Reinicia só quando o CARD muda (`sugestaoId`) — nunca a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sugestaoId]);
+
+  return (
+    <div
+      className={`rounded-controle border p-2.5 transicao-realce-insight ${
+        naoLida ? "border-linha border-l-2 border-l-[color:var(--ambar)]" : "border-linha"
+      } ${comFundo ? "realce-insight-novo" : ""}`}
+    >
+      {children}
     </div>
   );
 }
