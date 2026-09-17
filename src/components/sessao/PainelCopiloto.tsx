@@ -179,12 +179,28 @@ export function PainelCopiloto({
     // cada coluna é o que permite `overflow-y-auto` funcionar dentro de um
     // grid — sem ele, a coluna cresce com o conteúdo em vez de rolar por
     // dentro (armadilha de geometria já registrada nesta base).
-    <div className="grid min-h-0 flex-1 grid-rows-[1fr_auto_auto] gap-2">
+    <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto] gap-2">
       {/* LINHA 1 — as 3 colunas do mosaico. `lg:grid-cols-[40%_32%_28%]`
        * (Fale agora / Cuidado / Transcrição); abaixo de `lg` empilha em
        * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
        * mas a tela não pode quebrar em monitor estreito. */}
-      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+      {/* 🔴 CORRIGIDO 17/09/2026 (reportado pelo dono com captura de tela): a
+       * transcrição descia a página inteira. `min-h-0` + `overflow-y-auto`
+       * nas colunas estava certo, mas SÓ FUNCIONA se algum ancestral tiver
+       * altura definida — e `ConduzirSessaoApp` não define nenhuma (a página
+       * é um fluxo normal que cresce com o conteúdo). Sem teto, `flex-1`
+       * não tem contra o que se medir e a coluna cresce até caberem os 60
+       * segmentos.
+       *
+       * `max-h-[calc(100vh-18rem)]` ancora no VIEWPORT, não na cadeia de
+       * pais — funciona independentemente do que exista acima. As 18rem são
+       * o cabeçalho da página + a linha de comando + o rodapé de status; o
+       * `min-h-[22rem]` impede que em tela baixa (ou com o cabeçalho
+       * aberto) o mosaico colapse para uma faixa ilegível.
+       *
+       * A lição desta base: `min-h-0` sozinho não segura nada — a pergunta
+       * é sempre "qual elemento define a altura?". */}
+      <div className="grid min-h-[22rem] max-h-[calc(100vh-18rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
          * e do "card inteiro clicável muda o contrato do link") — só os

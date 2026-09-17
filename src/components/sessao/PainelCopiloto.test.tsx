@@ -1721,6 +1721,40 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 });
 
 /**
+ * 🔴 GEOMETRIA DO MOSAICO — regressão reportada pelo dono com captura de tela
+ * (17/09/2026, poucos minutos depois de a F4 subir): a coluna da transcrição
+ * descia a página inteira.
+ *
+ * Causa: `min-h-0` + `overflow-y-auto` nas colunas estava correto, mas só
+ * funciona se ALGUM ancestral tiver altura definida — e `ConduzirSessaoApp`
+ * não define nenhuma. Sem isso, `flex-1` não tem contra o que se medir e a
+ * coluna cresce até caberem os 60 segmentos do teto.
+ *
+ * A lição desta base (já registrada para `sticky`): `min-h-0` sozinho não
+ * segura nada; a pergunta é sempre "QUAL elemento define a altura?". O teto
+ * passou a ancorar no VIEWPORT (`max-h-[calc(100vh-…)]`), que independe da
+ * cadeia de pais.
+ *
+ * Este teste prende a classe no DOM. É teste de geometria por classe, com a
+ * limitação honesta de que jsdom não calcula layout: ele prova que o teto
+ * FOI DECLARADO, não que a altura resultante é a desejada — isso só o olho
+ * no navegador confirma (foi assim que o defeito apareceu). Ainda assim
+ * prende a regressão exata: apagar o `max-h` derruba este teste.
+ */
+describe("mosaico — teto de altura ancorado no viewport", () => {
+  it("a linha das 3 colunas declara max-h de viewport e um piso mínimo", async () => {
+    const { container } = await abrir();
+    const linha = container.querySelector('[class*="lg:grid-cols-"]');
+    expect(linha).not.toBeNull();
+    const classe = linha!.getAttribute("class") ?? "";
+    // Teto: sem ele, a transcrição desce a página (o defeito reportado).
+    expect(classe).toMatch(/max-h-\[calc\(100vh/);
+    // Piso: sem ele, em tela baixa o mosaico colapsa numa faixa ilegível.
+    expect(classe).toMatch(/min-h-\[/);
+  });
+});
+
+/**
  * `ultimoNaoNulo` — função pura (achado de 15/09, obrigatória para o bloco
  * "Cuidado" não apagar dado sozinho). Testes puros movidos para
  * `copiloto/ultimoNaoNulo.test.ts` junto com a extração da função; este
