@@ -45,15 +45,15 @@ const ROTULO_LIGACAO_IA: Record<string, { rotulo: string; tom: "azul" | "latao" 
  * uma vez.
  *
  * Redesenho visual (pedido do Marcio, 04/09/2026 — "reorganize esses cards,
- * não ficou muito visual"): a grade uniforme de cartões idênticos virou uma
- * LINHA DE JORNADA vertical. Os 3 momentos são nós numerados numa espinha à
- * esquerda (verde+check = concluído · laranja da marca = há trabalho aqui
- * agora · fantasma = futuro), cada item tem um ícone de identidade próprio
- * num selo tingido pelo estado, e o peso visual varia com a urgência:
- * `falta` ganha borda de destaque âmbar e texto de ação forte, `pronto` fica
- * compacto e calmo, `ainda_nao` vira cartão-fantasma tracejado — presente e
- * legível (nada é escondido), mas visivelmente "ainda não materializado".
- * Estado NUNCA é só cor: sempre glifo + texto (daltonismo/leitor de tela).
+ * não ficou muito visual"; revisto em 16/09 — direção "clean e convencional",
+ * ver `docs/DESIGN-SYSTEM.md` nota T1): os itens acionáveis (`pronto` /
+ * `em_revisao` / `falta`) formam a grade de cartões, e o peso visual varia com
+ * a urgência: `falta` ganha borda de destaque âmbar e texto de ação forte,
+ * `pronto` fica compacto e calmo. Os itens `ainda_nao` SAÍRAM do grid: viram
+ * uma linha de texto só, por grupo ("3 itens ainda não — Patrimônio,
+ * Documentos, Croqui"), com a razão no `title` — nada some, só deixa de
+ * ocupar espaço de cartão acionável. Estado NUNCA é só cor: sempre glifo +
+ * texto (daltonismo/leitor de tela).
  *
  * Reforço da regra de segurança (não é redundância, é a garantia de que a
  * camada visual não reabre o que `derivarPasta` já fechou): este componente
@@ -100,135 +100,26 @@ const ROTULO_ESTADO: Record<EstadoItemPasta, string> = {
  *   esquerda + texto de ação em tinta forte.
  * - `em_revisao`: âmbar, sem o destaque de borda — atenção, não alarme.
  * - `pronto`: verde, calmo e compacto (sem descrição redundante).
- * - `ainda_nao`: cartão-fantasma — borda tracejada, sem elevação, tinta
- *   rebaixada mas legível (contraste preservado; nada de `opacity` no texto).
+ * - `ainda_nao`: não entra mais nesta grade — vira linha de texto no grupo
+ *   (ver `LinhaAindaNao` mais abaixo).
  */
-const ESTILO_ESTADO: Record<EstadoItemPasta, { cartao: string; selo: string; texto: string; titulo: string }> = {
+const ESTILO_ESTADO: Record<Exclude<EstadoItemPasta, "ainda_nao">, { cartao: string; texto: string; titulo: string }> = {
   pronto: {
     cartao: "border-linha bg-papel-elevado",
-    selo: "bg-verde-fraco text-[color:var(--verde)]",
     texto: "text-[color:var(--verde)]",
     titulo: "text-tinta",
   },
   em_revisao: {
     cartao: "border-linha-forte bg-papel-elevado",
-    selo: "bg-ambar-fraco text-[color:var(--ambar)]",
     texto: "text-[color:var(--ambar)]",
     titulo: "text-tinta",
   },
   falta: {
     cartao: "border-linha-forte border-l-[3px] border-l-ambar-borda bg-papel-elevado",
-    selo: "bg-ambar-fraco text-[color:var(--ambar)]",
     texto: "text-[color:var(--ambar)]",
     titulo: "text-tinta",
   },
-  ainda_nao: {
-    cartao: "border-dashed border-linha bg-transparent",
-    selo: "border border-dashed border-linha-forte bg-transparent text-tinta-fraca",
-    texto: "text-tinta-fraca",
-    titulo: "text-tinta-suave",
-  },
 };
-
-/**
- * Ícone de identidade por artefato — o que quebra a monotonia de 14 caixas
- * idênticas. Decorativo (`aria-hidden` no `<svg>` que os envolve): o nome do
- * item continua sendo o texto do cartão, o ícone nunca é o único sinal.
- */
-const TRACOS_ITEM: Record<ChaveItemPasta, ReactNode> = {
-  formulario: (
-    <>
-      <rect x="5" y="2.75" width="10" height="14.5" rx="1.5" />
-      <path d="M7.5 7h5M7.5 10h5M7.5 13h3" />
-    </>
-  ),
-  ligacao: (
-    <path
-      fill="currentColor"
-      stroke="none"
-      d="M6.8 3.1c.6-.6 1.6-.5 2 .2l1.1 1.7c.4.6.3 1.4-.2 1.9l-.7.7c.6 1.2 1.6 2.2 2.8 2.8l.7-.7c.5-.5 1.3-.6 1.9-.2l1.7 1.1c.7.4.8 1.4.2 2l-.8.8c-.6.6-1.5.9-2.3.6-4-1.2-6.2-3.4-7.4-7.4-.3-.8 0-1.7.6-2.3l.4-.3z"
-    />
-  ),
-  briefing: (
-    <>
-      <path d="M10 3.5l1.3 3.7 3.7 1.3-3.7 1.3L10 13.5 8.7 9.8 5 8.5l3.7-1.3L10 3.5z" />
-      <path d="M15 13l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6L15 13z" />
-    </>
-  ),
-  sessao: (
-    <>
-      <rect x="3.5" y="4.5" width="13" height="12" rx="1.5" />
-      <path d="M3.5 8.5h13M7 2.75v3M13 2.75v3" />
-    </>
-  ),
-  transcricao: <path d="M4.5 5.5h11M4.5 9h11M4.5 12.5h7M4.5 16h4" />,
-  analise_sessao: (
-    <>
-      <path d="M4 16.5h12" />
-      <path d="M6.5 13.5V10M10 13.5V6.5M13.5 13.5V8.5" />
-    </>
-  ),
-  diagnostico_sv: (
-    <>
-      <rect x="4.5" y="4" width="11" height="13.5" rx="1.5" />
-      <rect x="8" y="2.5" width="4" height="3" rx="1" />
-      <path d="M7 11.5h1.6l1.2-2.4 1.6 4.4 1.2-2H14" />
-    </>
-  ),
-  relatorio_sv: (
-    <>
-      <rect x="5" y="2.75" width="10" height="14.5" rx="1.5" />
-      <path d="M7.5 10.5l1.8 1.8 3.2-3.6" />
-    </>
-  ),
-  croqui: (
-    <>
-      <path d="M4 16l.9-3.2 7.9-7.9a1.55 1.55 0 012.3 2.3l-7.9 7.9L4 16z" />
-      <path d="M11.6 6.1l2.3 2.3" />
-    </>
-  ),
-  material: (
-    <path d="M3.5 6.5V5.5A1.5 1.5 0 015 4h3.2l1.6 2H15a1.5 1.5 0 011.5 1.5V14A1.5 1.5 0 0115 15.5H5A1.5 1.5 0 013.5 14V6.5z" />
-  ),
-  patrimonio: (
-    <>
-      <path d="M3.5 8L10 3.75 16.5 8" />
-      <path d="M5.5 8.5v5M10 8.5v5M14.5 8.5v5" />
-      <path d="M4 16.25h12" />
-    </>
-  ),
-  familiares: (
-    <>
-      <circle cx="7.5" cy="6.75" r="2.25" />
-      <path d="M3.5 15.5a4 4 0 018 0" />
-      <circle cx="13.75" cy="8" r="1.75" />
-      <path d="M12.9 12.9a3.3 3.3 0 013.6 2.6" />
-    </>
-  ),
-  documentos: (
-    <>
-      <rect x="7" y="5.5" width="8.5" height="11.5" rx="1.5" />
-      <path d="M4.5 14V4.5A1.5 1.5 0 016 3h6" />
-    </>
-  ),
-};
-
-function IconeItem({ chave }: { chave: ChaveItemPasta }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {TRACOS_ITEM[chave]}
-    </svg>
-  );
-}
 
 /** Glifo por estado — forma distinta por estado, nunca só cor. */
 const TRACOS_ESTADO: Record<EstadoItemPasta, ReactNode> = {
@@ -261,13 +152,12 @@ function IconeEstado({ estado }: { estado: EstadoItemPasta }) {
 }
 
 /**
- * Status visual do nó de cada momento na espinha da jornada:
- * - `concluido`: todos os acionáveis do momento estão prontos (e existe ao
- *   menos um acionável) — nó verde com check.
- * - `atual`: há trabalho acionável aqui agora — nó laranja da marca. Pode
- *   haver mais de um momento "atual" ao mesmo tempo (ex.: Patrimônio pode
- *   ser preenchido antes da sessão) — é sinal honesto, não posição única.
- * - `futuro`: tudo ainda é `ainda_nao` — nó fantasma.
+ * Status de cada momento — usado só para decidir qual `<details>` abre
+ * sozinho (T3, 16/09/2026 removeu o nó visual da espinha; `TrilhoDaFicha`,
+ * sticky no topo, já é quem desenha posição e estado dos 3 momentos):
+ * - `concluido`: todos os acionáveis do momento estão prontos.
+ * - `atual`: há trabalho acionável aqui agora.
+ * - `futuro`: tudo ainda é `ainda_nao`.
  */
 function statusDoMomento(itensDoMomento: ItemPasta[]): "concluido" | "atual" | "futuro" {
   const acionaveis = itensDoMomento.filter((i) => i.estado !== "ainda_nao");
@@ -276,17 +166,22 @@ function statusDoMomento(itensDoMomento: ItemPasta[]): "concluido" | "atual" | "
   return "atual";
 }
 
-const ESTILO_NO: Record<ReturnType<typeof statusDoMomento>, string> = {
-  concluido: "border-transparent bg-[color:var(--verde)] text-[color:var(--papel)]",
-  atual: "border-transparent bg-[color:var(--latao-cta)] text-[color:var(--latao-cta-texto)]",
-  futuro: "border-linha-forte bg-papel-elevado text-tinta-fraca",
-};
-
-function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; aoAbrirGaveta: (chave: ChaveItemPasta) => void; sinaisSessao?: SinaisSessaoPasta }) {
+/**
+ * `CartaoItem` só recebe itens ACIONÁVEIS (`pronto` / `em_revisao` / `falta`)
+ * — `ainda_nao` saiu do grid e virou `LinhaAindaNao` (ver abaixo).
+ */
+function CartaoItem({
+  item,
+  aoAbrirGaveta,
+  sinaisSessao,
+}: {
+  item: ItemPasta & { estado: Exclude<EstadoItemPasta, "ainda_nao"> };
+  aoAbrirGaveta: (chave: ChaveItemPasta) => void;
+  sinaisSessao?: SinaisSessaoPasta;
+}) {
   const estilo = ESTILO_ESTADO[item.estado];
-  const clicavel = item.estado !== "ainda_nao";
   const emGaveta = ITENS_EM_GAVETA.has(item.chave);
-  const href = clicavel && !emGaveta ? caminhoItemPasta(item.chave) : undefined;
+  const href = !emGaveta ? caminhoItemPasta(item.chave) : undefined;
   const acao = ACAO_POR_ITEM_PASTA[item.chave];
   // O nome inteiro do artefato e a frase inteira do verbo saíram do fluxo
   // (§2/§9.2, `catalogo.ts` e `rotas.ts`) — reaparecem aqui, e só aqui, como
@@ -298,38 +193,26 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
   // `pronto` sem nota fica sem descrição de propósito: "Pronto · Concluído."
   // é redundância — cartão feito merece ser compacto, não ocupar o mesmo
   // espaço de um cartão que ainda pede trabalho.
-  //
-  // Fase 5 (lei de texto §2): cartão `ainda_nao` não é acionável, então a nota
-  // que explica POR QUE ainda não é hora sai do fluxo e vira `title`. Eram até
-  // 3 linhas de prosa por cartão-fantasma, e são 9 desses numa jornada nova —
-  // a maior fonte de texto da Ficha. O estado ("Ainda não é hora") continua
-  // escrito, com glifo próprio: nada de informação se perde de relance.
-  const descricao = item.estado === "ainda_nao" ? undefined : (item.nota ?? (item.estado === "pronto" ? undefined : acao));
-  const explicacao = item.estado === "ainda_nao" ? item.nota ?? undefined : undefined;
+  const descricao = item.nota ?? (item.estado === "pronto" ? undefined : acao);
 
   const conteudo = (
     <>
-      <div className="flex items-start gap-item" title={explicacao ?? tituloDoCartao}>
-        <span aria-hidden="true" className={`grid h-9 w-9 shrink-0 place-items-center rounded-controle ${estilo.selo}`}>
-          <IconeItem chave={item.chave} />
-        </span>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className={`text-sm font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
-            {item.rotulo}
+      <div className="flex min-w-0 flex-col gap-0.5" title={tituloDoCartao}>
+        <p className={`text-sm font-bold leading-snug ${estilo.titulo}`} title={item.titulo}>
+          {item.rotulo}
+        </p>
+        <p className={`inline-flex items-center gap-1.5 text-legenda font-bold ${estilo.texto}`}>
+          <IconeEstado estado={item.estado} />
+          {ROTULO_ESTADO[item.estado]}
+        </p>
+        {descricao && (
+          <p
+            className={`text-sm leading-snug ${item.estado === "falta" ? "font-medium text-tinta" : "text-tinta-suave"}`}
+            title={descricao === acao ? TITULO_ACAO_ITEM_PASTA[item.chave] : undefined}
+          >
+            {descricao}
           </p>
-          <p className={`inline-flex items-center gap-1.5 text-legenda font-bold ${estilo.texto}`}>
-            <IconeEstado estado={item.estado} />
-            {ROTULO_ESTADO[item.estado]}
-          </p>
-          {descricao && (
-            <p
-              className={`text-sm leading-snug ${item.estado === "falta" ? "font-medium text-tinta" : "text-tinta-suave"}`}
-              title={descricao === acao ? TITULO_ACAO_ITEM_PASTA[item.chave] : undefined}
-            >
-              {descricao}
-            </p>
-          )}
-        </div>
+        )}
       </div>
       {/* Fase 5: a frase inteira do `SeloIA` ("Gerado por IA — insumo do
           advogado, não parecer") aparecia CINCO vezes nesta tela — 45 das 222
@@ -355,15 +238,6 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
   );
 
   const classeBase = `flex min-h-11 flex-col gap-1 rounded-controle border px-3 py-2 text-left transition-all ${estilo.cartao}`;
-
-  if (!clicavel) {
-    // `ainda_nao`: não navega — mas continua no DOM como elemento estático,
-    // não como link/botão morto (regra de teclado: nada focável que não faz
-    // nada). A nota já explica o "porquê" (`derivar.ts` sempre popula `nota`
-    // para os itens que ficam em `ainda_nao`).
-    return <div className={`${classeBase} cursor-default`}>{conteudo}</div>;
-  }
-
   const classeClicavel = `${classeBase} hover:-translate-y-0.5 hover:border-[color:var(--latao)] hover:shadow-[var(--sombra-cartao)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--latao)]`;
 
   if (emGaveta) {
@@ -403,12 +277,33 @@ function CartaoItem({ item, aoAbrirGaveta, sinaisSessao }: { item: ItemPasta; ao
   );
 }
 
-/** Cor de cada segmento da barra de progresso (decorativa — a frase ao lado carrega a mesma informação). */
-const COR_SEGMENTO: Record<Exclude<EstadoItemPasta, "ainda_nao">, string> = {
-  pronto: "bg-[color:var(--verde)]",
-  em_revisao: "bg-[color:var(--ambar)]",
-  falta: "bg-linha-forte",
-};
+/**
+ * Item 4 (T3, 16/09/2026): cartão `ainda_nao` deixou de ser cartão. Numa
+ * jornada nova são até 9 cartões-fantasma tracejados — ~650px de tela só
+ * para dizer "ainda não é hora". Vira uma linha de texto por grupo: "3 itens
+ * ainda não — Patrimônio, Documentos, Croqui", com a razão de cada um no
+ * `title` (mesma cirurgia de `painel/Bloco.tsx` — hierarquia por posição).
+ * Continua visível e legível: nada de `opacity` reduzindo contraste, só
+ * deixa de ocupar espaço de cartão acionável.
+ */
+function LinhaAindaNao({ itens }: { itens: ItemPasta[] }) {
+  if (itens.length === 0) return null;
+  const titulo = itens.length === 1 ? `${itens.length} item ainda não` : `${itens.length} itens ainda não`;
+  return (
+    <p className="flex min-h-11 flex-wrap items-center gap-1.5 px-1 text-sm text-tinta-fraca">
+      <IconeEstado estado="ainda_nao" />
+      <span>
+        {titulo} —{" "}
+        {itens.map((item, indice) => (
+          <span key={item.chave} title={item.nota ?? undefined}>
+            {item.rotulo}
+            {indice < itens.length - 1 ? ", " : ""}
+          </span>
+        ))}
+      </span>
+    </p>
+  );
+}
 
 export function PastaDoCliente({
   itens,
@@ -453,7 +348,9 @@ export function PastaDoCliente({
     <div className="flex flex-col gap-bloco">
       <div className="flex flex-col gap-1 rounded-controle border border-linha-forte bg-papel-elevado px-3 py-2">
         {/* Número primeiro (§2): "3 de 7 prontos", não "Você já tem 3 de 7
-            itens desta fase". */}
+            itens desta fase". A barra segmentada decorativa saiu (T3,
+            16/09/2026): dizia, com cor, exatamente o que esta frase já diz
+            com texto — duas representações do mesmo fato na mesma dobra. */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <p className="text-sm font-medium text-tinta">
             <span className="font-bold">{prontos}</span> de <span className="font-bold">{total}</span> prontos
@@ -464,70 +361,47 @@ export function PastaDoCliente({
             </p>
           )}
         </div>
-        {/* Barra segmentada: um segmento por item acionável, na ordem da
-            jornada — verde pronto, âmbar em revisão, trilho vazio falta.
-            Decorativa (`aria-hidden`): a frase acima já diz o mesmo. */}
-        {total > 0 && (
-          <div aria-hidden="true" className="flex gap-1">
-            {itensAcionaveis.map((item) => (
-              <span
-                key={item.chave}
-                title={`${item.rotulo} — ${ROTULO_ESTADO[item.estado]}`}
-                className={`h-1.5 min-w-2 flex-1 rounded-full ${COR_SEGMENTO[item.estado as Exclude<EstadoItemPasta, "ainda_nao">]}`}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* A espinha da jornada: 3 momentos como nós numa linha vertical. */}
-      <ol className="flex flex-col">
-        {momentosVisiveis.map((momento, indice) => {
-          const ultimo = indice === momentosVisiveis.length - 1;
-          const status = statusDoMomento(momento.itens);
-          const acionaveisDoMomento = momento.itens.filter((i) => i.estado !== "ainda_nao");
+      {/* Os 3 momentos da jornada, cada um recolhível (`<details>`). A espinha
+          vertical + nó numerado saiu (T3, 16/09/2026): o `TrilhoDaFicha`
+          sticky no topo da página já desenha os 3 momentos com posição e
+          estado — repeti-los aqui, 200px abaixo, era a mesma informação
+          duas vezes. Sem o `pl-10` da espinha, a grade ganha largura útil. */}
+      <div className="flex flex-col gap-bloco">
+        {momentosVisiveis.map((momento) => {
+          const acionaveisDoMomento = momento.itens.filter((i): i is ItemPasta & { estado: Exclude<EstadoItemPasta, "ainda_nao"> } => i.estado !== "ainda_nao");
+          const aindaNaoDoMomento = momento.itens.filter((i) => i.estado === "ainda_nao");
           const prontosDoMomento = acionaveisDoMomento.filter((i) => i.estado === "pronto").length;
-          const aberta = sessaoAtual ? momento.id === sessaoAtual : indice === indicePrimeiraComTrabalho;
+          const aberta = sessaoAtual ? momento.id === sessaoAtual : momento.id === momentosVisiveis[indicePrimeiraComTrabalho]?.id;
           const resumo =
             acionaveisDoMomento.length === 0
               ? "mais adiante"
               : `${prontosDoMomento} de ${acionaveisDoMomento.length} ${acionaveisDoMomento.length === 1 ? "pronto" : "prontos"}`;
           return (
-            <li key={momento.id} aria-labelledby={`momento-${momento.id}`} className={`relative pl-10 ${ultimo ? "" : "pb-item"}`}>
-              {!ultimo && <span aria-hidden="true" className="absolute bottom-0 left-[15px] top-9 w-px bg-linha-forte" />}
-              <span
-                aria-hidden="true"
-                className={`absolute left-0 top-0 grid h-8 w-8 place-items-center rounded-full border text-sm font-bold ${ESTILO_NO[status]}`}
-              >
-                {status === "concluido" ? (
-                  <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4.5 10.5l3.6 3.5 7.4-8" />
-                  </svg>
-                ) : (
-                  indice + 1
-                )}
-              </span>
-              <details open={aberta} className="group">
-                <summary className="mb-item flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 marker:content-none">
-                  <h2 id={`momento-${momento.id}`} className="text-subtitulo font-bold leading-tight text-tinta">
-                    {momento.titulo}
-                  </h2>
-                  <span className="flex items-center gap-item text-legenda font-medium text-tinta-fraca">
-                    {resumo}
-                    <span aria-hidden="true" className="group-open:hidden">ver</span>
-                    <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
-                  </span>
-                </summary>
+            <details key={momento.id} open={aberta} aria-labelledby={`momento-${momento.id}`} className="group">
+              <summary className="mb-item flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-item gap-y-0.5 marker:content-none">
+                <h2 id={`momento-${momento.id}`} className="text-subtitulo font-bold leading-tight text-tinta">
+                  {momento.titulo}
+                </h2>
+                <span className="flex items-center gap-item text-legenda font-medium text-tinta-fraca">
+                  {resumo}
+                  <span aria-hidden="true" className="group-open:hidden">ver</span>
+                  <span aria-hidden="true" className="hidden group-open:inline">esconder</span>
+                </span>
+              </summary>
+              {acionaveisDoMomento.length > 0 && (
                 <div className="grid gap-item pb-item sm:grid-cols-2 xl:grid-cols-3">
-                  {momento.itens.map((item) => (
+                  {acionaveisDoMomento.map((item) => (
                     <CartaoItem key={item.chave} item={item} aoAbrirGaveta={aoAbrirGaveta} sinaisSessao={sinaisSessao} />
                   ))}
                 </div>
-              </details>
-            </li>
+              )}
+              <LinhaAindaNao itens={aindaNaoDoMomento} />
+            </details>
           );
         })}
-      </ol>
+      </div>
     </div>
   );
 }

@@ -188,11 +188,14 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
   // `#links` continua chegando aqui: `ALIAS_HASH` o manda para a barra.
   const pasta = derivarPasta(ficha, podeVerPatrimonio);
 
-  // Qual das 3 sessoes esta acesa — a mesma derivacao do trilho, para a Pasta
-  // abrir o grupo certo. `sinaisDaFicha` e puro e ja e chamado pelo trilho;
-  // repetir a chamada e barato e mantem UMA fonte de verdade (nao ha estado
-  // compartilhado que possa dessincronizar).
-  const sessaoAtual = agruparPorSessao(derivarTrilho(sinaisDaFicha(ficha))).find((b) => b.estado === "atual")?.chave ?? null;
+  // Qual das 3 sessoes esta acesa — a mesma derivacao do trilho (sem dados de
+  // execucao), para a Pasta abrir o grupo certo. `TrilhoDaFicha` chama
+  // `derivarTrilho(sinaisDaFicha(ficha))` de novo internamente (ele soma a
+  // execucao via `sinaisComExecucao`, que so ele busca) — nao ha como
+  // eliminar as duas chamadas sem tocar naquele componente, fora do escopo
+  // desta rodada (T3). `useMemo` aqui evita, ao menos, recalcular esta metade
+  // a cada render deste componente.
+  const sessaoAtual = useMemo(() => agruparPorSessao(derivarTrilho(sinaisDaFicha(ficha))).find((b) => b.estado === "atual")?.chave ?? null, [ficha]);
 
   // Link cruzado Briefing <-> Análise da Sessão: a existência da análise vem do
   // evento `analise_sessao` que o trigger 0043 grava na timeline — já

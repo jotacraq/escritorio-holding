@@ -54,17 +54,25 @@ function rotuloDoDesfecho(desfecho: string): string {
 const ROTULOS_NIVEL_PAGO = ["Nada pago", "Pago: sessão", "Pago: croqui", "Pago: holding"];
 
 /**
- * O cabeçalho da Ficha, Fase 6.
+ * O cabeçalho da Ficha, Fase 6 — reduzido a UMA LINHA DE IDENTIDADE na T3
+ * (16/09/2026, `docs/DESIGN-SYSTEM.md` nota T1/T3).
  *
  * O João, depois de usar a Fase 5: *"eu não consigo reunir os dados e ver:
  * esse cara, a situação dele é essa"* e *"quero ver os dados do aluno: uma
  * aba/ficha só com todos os dados dele (pode ser pop-up/gaveta)"*.
  *
- * O que mudou: o cabeçalho virou **uma faixa** — nome, contato, cidade e os
- * selos de situação, tudo em uma linha de leitura. A grade de quatro campos, o
- * bloco de alterar desfecho e o stub da Pesquisa pública (que ocupava uma aba
- * inteira só para dizer que não existe) desceram para a gaveta **"Ficha
- * completa"**, a um clique. Nenhuma requisição nova: todo esse dado já vem no
+ * O Marcio, na T3: *"na ficha eu não sei o que preciso fazer [...] é muito
+ * confusa, muito enfeitada, tão enfeitada que falta tamanho na tela pra
+ * exibir tudo."*
+ *
+ * O que mudou: nome · telefone · e-mail · UM selo de situação (o desfecho da
+ * jornada) · botão "Ficha completa" — alvo ≤ 2 linhas de altura, sem cartão em
+ * volta. Cidade, Profissão, Origem, Turma, Caminho, Patrimônio, "Já pagou" e
+ * "Arquivar processo" foram para dentro da gaveta "Ficha completa", que já
+ * existia. A `FaixaVital` (Patrimônio/Familiares/DISC/Objeção) e os selos de
+ * fase/croqui/pagamento/prazo — que antes formavam uma segunda faixa de
+ * status — viraram uma FRASE CORRIDA no rodapé da gaveta, com os mesmos
+ * destinos de clique. Nenhuma requisição nova: todo esse dado já vem no
  * payload da Ficha.
  */
 
@@ -78,12 +86,16 @@ interface ItemFaixa {
 }
 
 /**
- * O que o trilho NÃO sabe: faixa de patrimônio declarada, quantos familiares
- * mapeados, perfil de decisão e objeção provável. Todos dado do cliente, todos
- * com destino de clique. "Etapa" e "Próxima ação" não moram aqui — quem
- * responde as duas é o trilho das 3 sessões, logo abaixo.
+ * "Sobre o cliente" — o que o trilho NÃO sabe: faixa de patrimônio declarada,
+ * quantos familiares mapeados, perfil de decisão e objeção provável. Todos
+ * dado do cliente, todos com destino de clique. "Etapa" e "Próxima ação" não
+ * moram aqui — quem responde as duas é o trilho das 3 sessões.
+ *
+ * T3 (16/09/2026): saiu do cabeçalho da página e virou uma FRASE CORRIDA no
+ * rodapé da gaveta "Ficha completa" — mesmos dados, mesmos destinos de
+ * clique, sem ocupar altura da dobra principal.
  */
-function FaixaVital({
+function FraseSobreOCliente({
   ficha,
   briefing,
   podeVerPatrimonio,
@@ -108,7 +120,7 @@ function FaixaVital({
     });
   }
   if (familiares && familiares.length > 0) {
-    itens.push({ rotulo: "Familiares", valor: String(familiares.length), href: "#patrimonio" });
+    itens.push({ rotulo: "Familiares", valor: `${familiares.length} familiares`, href: "#patrimonio" });
   }
   if (disc) {
     itens.push({
@@ -120,37 +132,34 @@ function FaixaVital({
     });
   }
   if (objecao) {
-    itens.push({ rotulo: "Objeção provável", valor: objecao.objecao, href: "#briefing" });
+    itens.push({ rotulo: "Objeção provável", valor: `"${objecao.objecao}"`, href: "#briefing" });
   }
 
   if (itens.length === 0) return null;
 
   const CLASSE_VALOR =
-    "-my-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]";
+    "-my-2 inline-flex min-h-11 items-center rounded-controle font-medium text-tinta underline decoration-tinta-fraca decoration-dotted underline-offset-2 hover:text-[color:var(--latao-forte)] hover:decoration-[color:var(--latao)]";
 
   return (
-    <dl className="nao-imprimir flex flex-wrap items-center gap-x-cartao gap-y-0.5 text-legenda">
-      {itens.map((item) => (
-        <div key={item.rotulo} className="flex items-center gap-1.5">
-          <dt title={item.title} className="text-tinta-fraca">
-            {item.rotulo}
-          </dt>
-          <dd>
-            {item.onClick ? (
-              <button type="button" onClick={item.onClick} className={CLASSE_VALOR}>
-                {item.valor}
-              </button>
-            ) : item.href ? (
-              <a href={item.href} className={CLASSE_VALOR}>
-                {item.valor}
-              </a>
-            ) : (
-              <span className="font-medium text-tinta">{item.valor}</span>
-            )}
-          </dd>
-        </div>
+    <p className="text-sm text-tinta-suave">
+      <span className="font-medium text-tinta-fraca">Sobre o cliente: </span>
+      {itens.map((item, indice) => (
+        <span key={item.rotulo}>
+          {item.onClick ? (
+            <button type="button" title={item.title ?? item.rotulo} onClick={item.onClick} className={CLASSE_VALOR}>
+              {item.valor}
+            </button>
+          ) : item.href ? (
+            <a href={item.href} title={item.title ?? item.rotulo} className={CLASSE_VALOR}>
+              {item.valor}
+            </a>
+          ) : (
+            <span title={item.rotulo}>{item.valor}</span>
+          )}
+          {indice < itens.length - 1 ? " · " : ""}
+        </span>
       ))}
-    </dl>
+    </p>
   );
 }
 
@@ -266,16 +275,16 @@ export function CabecalhoFicha({
 
   return (
     <header className="flex flex-col gap-1 border-b border-linha-forte pb-item">
+      {/* Uma linha de identidade (T3, 16/09/2026): nome · telefone · e-mail ·
+          UM selo de situação · botão "Ficha completa". Tudo o que era uma
+          segunda faixa de status (fase/croqui/pagamento/prazo) e a
+          `FaixaVital` (Patrimônio/Familiares/DISC/Objeção) foram para dentro
+          da gaveta — nada some, só deixa de disputar a dobra principal. */}
       <div className="flex flex-wrap items-center justify-between gap-x-cartao gap-y-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-item gap-y-0.5">
           <h1 className="text-display font-bold text-tinta">{pessoa.nome}</h1>
           {jornada.origem_dado === "exemplo" && <SeloDadoExemplo />}
-          {/* Identidade em UMA linha: quem é e como falar com ele. Antes isso
-              era uma grade de 4 campos abaixo do título — 3 linhas de altura
-              para dado que quase nunca se lê, empurrando a ação para fora da
-              dobra. O resto está na gaveta "Ficha completa". */}
           <p className="flex flex-wrap items-baseline gap-x-item text-legenda text-tinta-suave">
-            {cidade && <span>{cidade}</span>}
             <a href={`tel:${pessoa.telefone}`} className="-my-2 inline-flex min-h-11 items-center font-mono text-tinta hover:text-[color:var(--latao)]">
               {formatarTelefone(pessoa.telefone)}
             </a>
@@ -288,51 +297,16 @@ export function CabecalhoFicha({
         </div>
 
         <div className="nao-imprimir flex flex-wrap items-center gap-1.5 gap-alvo">
+          {/* UM selo de situação: o desfecho da jornada (aberta/ganha/perdida/
+              arquivada) — é o que responde "onde este processo está" antes de
+              qualquer outra coisa. Fase, croqui, pagamento e prazo foram para
+              a gaveta (ver abaixo). */}
+          <SeloEstado dominio="processo" estado={jornada.desfecho} />
           <Botao variante="secundario" tamanho="compacto" onClick={() => setFichaCompleta(true)}>
             Ficha completa
           </Botao>
-          {/* "Arquivar processo" é o verbo que a Dra. Elaine usa; até a Fase 8
-              a ação existia só como um valor ("Congelada") dentro de um combo
-              chamado "Situação", dois cliques abaixo. Processo já arquivado
-              mostra o inverso — reabrir, no mesmo lugar. */}
-          {arquivado ? (
-            <Botao variante="secundario" tamanho="compacto" carregando={salvandoArquivo} onClick={reabrir}>
-              Reabrir processo
-            </Botao>
-          ) : (
-            podeArquivar && (
-              <Botao variante="secundario" tamanho="compacto" onClick={() => setArquivarAberto(true)}>
-                Arquivar processo
-              </Botao>
-            )
-          )}
         </div>
       </div>
-
-      {/* ------------------------------------------------------------------
-          A BARRA DE STATUS (Fase 8, D21). É a primeira coisa que o advogado
-          procura ao abrir um processo, e é o padrão de Astrea/Clio: fase ·
-          situação · pagamento · próximo prazo, sempre no mesmo lugar, antes
-          das abas.
-
-          Todo selo vem do CATÁLOGO (`SeloEstado`) — nenhuma cor é escolhida
-          aqui. O prazo tem componente próprio e tom próprio: "em dia" e "no
-          prazo" são coisas diferentes, e misturar os dois foi o que fez a
-          data-limite sumir no meio dos status.
-          ------------------------------------------------------------------ */}
-      <div className="nao-imprimir flex flex-wrap items-center gap-1.5 gap-alvo">
-        <Selo tom="neutro" title={etapaNaTela.title ?? `Em que ${rotulo("fase")} da esteira este processo está`}>
-          {etapaNaTela.rotulo}
-        </Selo>
-        <SeloEstado dominio="processo" estado={jornada.desfecho} />
-        <SeloEstado dominio="croqui" estado={fase} mostrarDesconhecido={false} />
-        <Selo tom="neutro" title="Até onde o cliente já pagou">
-          {ROTULOS_NIVEL_PAGO[jornada.nivel_pago]}
-        </Selo>
-        {proximoPrazo && <Prazo vence={proximoPrazo.vence_em} rotulo={proximoPrazo.titulo} />}
-      </div>
-
-      <FaixaVital ficha={ficha} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} aoAbrirGaveta={aoAbrirGaveta} />
 
       <GavetaArquivar
         aberta={arquivarAberto}
@@ -352,6 +326,25 @@ export function CabecalhoFicha({
         largura="larga"
       >
         <div className="flex flex-col gap-bloco">
+          {/* A faixa de status (fase · croqui · próximo prazo) e a frase
+              "Sobre o cliente" (Patrimônio/Familiares/DISC/Objeção) — antes
+              uma segunda faixa no cabeçalho da página, agora aqui dentro
+              (T3, 16/09/2026). "Já pagou" e "Situação" continuam como
+              `Campo` na seção "Como ele chegou", abaixo. */}
+          <section aria-labelledby="ficha-situacao-atual" className="nao-imprimir flex flex-col gap-item">
+            <h3 id="ficha-situacao-atual" className="text-subtitulo font-bold text-tinta">
+              Situação atual
+            </h3>
+            <div className="flex flex-wrap items-center gap-1.5 gap-alvo">
+              <Selo tom="neutro" title={etapaNaTela.title ?? `Em que ${rotulo("fase")} da esteira este processo está`}>
+                {etapaNaTela.rotulo}
+              </Selo>
+              <SeloEstado dominio="croqui" estado={fase} mostrarDesconhecido={false} />
+              {proximoPrazo && <Prazo vence={proximoPrazo.vence_em} rotulo={proximoPrazo.titulo} />}
+            </div>
+            <FraseSobreOCliente ficha={ficha} briefing={briefing} podeVerPatrimonio={podeVerPatrimonio} aoAbrirGaveta={aoAbrirGaveta} />
+          </section>
+
           <section aria-labelledby="ficha-contato" className="flex flex-col gap-item">
             <h3 id="ficha-contato" className="text-subtitulo font-bold text-tinta">
               Contato
@@ -390,10 +383,27 @@ export function CabecalhoFicha({
               Mudar a situação
             </h3>
             {!editandoDesfecho ? (
-              <div>
+              <div className="flex flex-wrap items-center gap-1.5 gap-alvo">
                 <Botao variante="secundario" tamanho="compacto" onClick={() => setEditandoDesfecho(true)}>
                   Mudar a situação
                 </Botao>
+                {/* "Arquivar processo" é o verbo que a Dra. Elaine usa; até a
+                    Fase 8 a ação existia só como um valor ("Congelada") dentro
+                    de um combo chamado "Situação". T3 (16/09/2026): saiu do
+                    cabeçalho da página para cá, junto das outras ações de
+                    situação. Processo já arquivado mostra o inverso —
+                    reabrir, no mesmo lugar. */}
+                {arquivado ? (
+                  <Botao variante="secundario" tamanho="compacto" carregando={salvandoArquivo} onClick={reabrir}>
+                    Reabrir processo
+                  </Botao>
+                ) : (
+                  podeArquivar && (
+                    <Botao variante="secundario" tamanho="compacto" onClick={() => setArquivarAberto(true)}>
+                      Arquivar processo
+                    </Botao>
+                  )
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-item rounded-controle border border-linha bg-papel-fundo p-3">
