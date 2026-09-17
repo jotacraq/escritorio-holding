@@ -14,7 +14,7 @@ import { LinkBotao } from "@/components/ui/LinkBotao";
 import { ConfirmarAcao } from "@/components/ui/ConfirmarAcao";
 import { Gaveta } from "@/components/ui/Gaveta";
 import { SeloEstado } from "@/components/ui/SeloEstado";
-import { Trilho } from "@/components/ui/Trilho";
+import { resumoDoTrilho } from "@/components/ui/Trilho";
 import { ChipProximoPasso } from "@/components/esteira/ChipProximoPasso";
 import { confirmarPresencaPelaEquipe } from "./api-agendamentos";
 import { FormularioAgendamento } from "./FormularioAgendamento";
@@ -84,6 +84,7 @@ export function LinhaAgendamento({
   const sinais = useMemo(() => sinaisDaSessaoDoDia({ ...agendamento, status: agendamento.status }), [agendamento]);
   const proximo = useMemo(() => derivarProximoPasso(sinais), [sinais]);
   const passos = useMemo(() => derivarTrilho(sinais), [sinais]);
+  const resumoTrilho = useMemo(() => resumoDoTrilho(passos), [passos]);
 
   function mensagemErro(e: unknown, padrao: string): string {
     if (e instanceof ApiError) return e.status === 409 ? `Conflito: ${e.message}` : e.message;
@@ -158,7 +159,7 @@ export function LinhaAgendamento({
               )}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5" title={resumoTrilho ? `Trilho da jornada: ${resumoTrilho}` : undefined}>
             {ativo ? (
               <>
                 <SeloPresenca presencaConfirmadaEm={agendamento.presenca_confirmada_em} inicioEm={agendamento.inicio_em} via={agendamento.presenca_confirmada_via} />
@@ -168,7 +169,13 @@ export function LinhaAgendamento({
               <SeloEstado dominio="presenca" estado={agendamento.status} />
             )}
           </div>
-          {ativo && <Trilho passos={passos} variante="compacto" rotulo={`Trilho de ${agendamento.pessoa_nome ?? "cliente"}`} className="max-w-sm" />}
+          {/* T5 (16/09/2026): o `Trilho` (posição entre 9 passos da jornada)
+              saiu da linha — na Agenda a advogada não age sobre ONDE a
+              jornada está, só sobre O QUE fazer agora, e isso já é o Chip
+              abaixo. A régua dos 30 segundos: o que não muda a próxima ação
+              vira `title` (§2.2 do DS), aqui no bloco de presença/estado
+              acima (`resumoDoTrilho`); a leitura completa continua na Ficha
+              (`Trilho` intocado lá). */}
           {ativo && <ChipProximoPasso proximo={proximo} jornadaId={agendamento.jornada_id} tamanho="compacto" />}
         </div>
 

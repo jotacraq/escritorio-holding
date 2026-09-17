@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { CabecalhoPagina } from "@/components/ui/CabecalhoPagina";
 import { Abas, type DefinicaoAba } from "@/components/ui/Abas";
 import { ListaSessoes } from "@/components/agenda/ListaSessoes";
@@ -70,9 +71,16 @@ export default function PaginaAgenda() {
             <LinkBotao href="/clientes" variante="secundario" className="max-md:hidden">
               Marcar sessão
             </LinkBotao>
-            <LinkBotao href="/agenda#disponibilidade" variante="secundario">
+            {/* T5 (16/09/2026): "Disponibilidade da equipe" é navegação para
+                uma aba desta própria tela, não uma ação — 3 botões era o
+                limite do DS e só um pode ser primário (§9 do DS). Vira link
+                de texto, mesmo padrão do "← Todas as importações". */}
+            <Link
+              href="/agenda#disponibilidade"
+              className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-[color:var(--latao)] underline-offset-4 hover:underline"
+            >
               Disponibilidade da equipe
-            </LinkBotao>
+            </Link>
           </>
         }
       />
