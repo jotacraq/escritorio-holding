@@ -120,9 +120,25 @@ export async function trocarCodigoPorCredencialRecall(code: string): Promise<Res
     return { situacao: "falha_provedor", detalhe: erro instanceof Error ? erro.message : String(erro) };
   }
 
-  const corpoResposta = (await resposta.json().catch(() => null)) as { id?: string } | null;
+  // 🔴 17/09: o corpo da resposta É o diagnóstico. A Recall devolve, em texto,
+  // QUAL das três causas ocorreu — credencial errada no painel dela, código já
+  // usado/expirado, ou redirect_uri divergente — e repassa a mensagem original
+  // do Zoom junto. Registrar só o status (`recall_400`) descartava exatamente
+  // a informação que resolve o problema, e deixou o dono tentando às cegas.
+  const bruto = await resposta.text().catch(() => "");
+  let corpoResposta: { id?: string } | null = null;
+  try {
+    corpoResposta = bruto ? (JSON.parse(bruto) as { id?: string }) : null;
+  } catch {
+    corpoResposta = null;
+  }
+
   if (!resposta.ok || !corpoResposta?.id) {
-    registrarErro("integracoes/zoom.trocarCodigoPorCredencialRecall#http", new Error(`recall_${resposta.status}`));
+    registrarErro("integracoes/zoom.trocarCodigoPorCredencialRecall#http", new Error(`recall_${resposta.status}`), {
+      // Truncado: a resposta de erro da Recall é curta (uma frase), mas o
+      // teto evita que um HTML de proxy encha a tabela de erros.
+      resposta_recall: bruto.slice(0, 600),
+    });
     return { situacao: "falha_provedor", detalhe: `recall_${resposta.status}` };
   }
 

@@ -91,7 +91,7 @@ describe("trocarCodigoPorCredencialRecall", () => {
 
   it("envia oauth_app e authorization_code{code,redirect_uri} exatamente como a doc da Recall", async () => {
     configurarEnvsCompletas();
-    const fetchEspiao = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "cred_1" }) });
+    const fetchEspiao = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ id: "cred_1" }) });
     vi.stubGlobal("fetch", fetchEspiao);
 
     await trocarCodigoPorCredencialRecall("code-123");
@@ -109,7 +109,7 @@ describe("trocarCodigoPorCredencialRecall", () => {
 
   it("devolve criada com o credential_id da resposta", async () => {
     configurarEnvsCompletas();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "cred_abc" }) }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ id: "cred_abc" }) }));
 
     const resultado = await trocarCodigoPorCredencialRecall("code-123");
 
@@ -118,7 +118,7 @@ describe("trocarCodigoPorCredencialRecall", () => {
 
   it("falha_provedor quando a Recall responde erro", async () => {
     configurarEnvsCompletas();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => JSON.stringify(["Received error from Zoom while retrieving refresh token."]) }));
 
     const resultado = await trocarCodigoPorCredencialRecall("code-123");
 
