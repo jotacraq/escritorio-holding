@@ -19,7 +19,9 @@ import { resumoAusentesLinhaFina } from "@/components/sessao/copiloto/Apresentac
 import { PainelBot } from "@/components/sessao/copiloto/PainelBot";
 import { useTelaCheia } from "@/components/sessao/copiloto/useTelaCheia";
 import { formatarData, formatarHora } from "@/lib/formatar";
-import type { BlocoAtualResolvido } from "@/types/copiloto";
+import type { EstadoBotCopiloto } from "@/types/copiloto";
+import type { PapelEquipe } from "@/types/banco";
+import { BarraPartes } from "@/components/sessao/copiloto/BarraPartes";
 
 type EstadoCarga =
   | { fase: "carregando" }
@@ -76,7 +78,20 @@ function PontoPresenca({ agendamentos }: { agendamentos: Agendamento[] }) {
   );
 }
 
-export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
+export function ConduzirSessaoApp({
+  jornadaId,
+  usuarioLogado = null,
+}: {
+  jornadaId: string;
+  /** Fase 12, Fatia 7 — resolvido pelo SERVER COMPONENT (`page.tsx`,
+   * `usuarioAtual()`), nunca buscado aqui: descer por prop até
+   * `PainelTranscricao` evita a query dupla por montagem que rodava a cada
+   * troca de aba Transcrição↔Inventário. Só os 2 campos que a folha precisa
+   * (nome, papel) — nunca a linha inteira de `perfis_equipe`. `null` no
+   * default cobre o fallback de testes unitários que montam este componente
+   * sem passar a prop (ela nasce opcional de propósito). */
+  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
+}) {
   const [estado, setEstado] = useState<EstadoCarga>({ fase: "carregando" });
   const [indiceLocal, setIndice] = useState(0);
   const [tentativa, setTentativa] = useState(0);
@@ -314,6 +329,7 @@ export function ConduzirSessaoApp({ jornadaId }: { jornadaId: string }) {
         polling={polling}
         sessaoEncerrada={sessaoEncerrada}
         aoEncerrar={() => setEncerradaManualmente(true)}
+        usuarioLogado={usuarioLogado}
       />
     </div>
   );
@@ -367,10 +383,23 @@ function LinhaFinaRoteiro({
   telaCheiaAtiva: boolean;
   aoAlternarTelaCheia: () => void;
 }) {
-  const [codigoErroBot, setCodigoErroBot] = useState<string | undefined>(undefined);
+  const [codigoErroBotClique, setCodigoErroBotClique] = useState<string | undefined>(undefined);
+  // 🔴 CORREÇÃO (Fable, achado 1): `codigoErroBotClique` só existe quando um
+  // CLIQUE nesta montagem falhou de verdade (`PainelBot`, via
+  // `aoMudarEstadoBot`) — cobre "sala_invalida" e qualquer outro código que
+  // a rota devolva ao pedir o bot. `polling.bot.estado === "erro"` é OUTRO
+  // FATO, sem relação de causa com "não entrou na sala": olhe
+  // `bot/route.ts` (~285-330) e `estado.ts` — o servidor só grava
+  // `estado: "erro"` depois que o bot JÁ ESTÁ NA SALA e a retentativa de
+  // encerrá-lo falhou (retenção indefinida ou vínculo órfão). Deduzir
+  // "sala_invalida" a partir disso seria dado inventado (CLAUDE.md) na
+  // situação de maior risco: o bot pode estar gravando com retenção
+  // indefinida enquanto a tela diz "não entrou". Os dois fatos nunca se
+  // misturam: `codigoErroBotClique` para o erro de CLIQUE, `polling.bot`
+  // lido direto (sem tradução) para a pendência de encerramento.
+  const codigoErroBot = codigoErroBotClique;
 
   const resolvido = polling.blocoAtualResolvido;
-  const rotuloAgora = rotuloBlocoAtual(resolvido);
   const ausentes = resumoAusentesLinhaFina(polling.comparacaoDecisores);
   // Defeito 2 do Fable: "Fixado até" só existe enquanto o SERVIDOR confirmar
   // `origem === "fixado_manualmente"` com uma `fixacao_expira_em` — nada de
@@ -381,16 +410,21 @@ function LinhaFinaRoteiro({
 
   return (
     <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-controle border border-linha bg-papel-elevado px-3 py-1.5 text-sm">
-      <p className="text-tinta">
-        <span className="font-bold">Agora:</span> {rotuloAgora}
-        {ausentes && <span className="text-tinta-suave"> · {ausentes}</span>}
-        {fixadoAte && <span className="text-tinta-fraca"> · Fixado por você até {formatarHora(fixadoAte)}</span>}
-      </p>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        {/* Fase 12, Fatia 4 — substitui o antigo "Agora: <título>" solto por
+         * andamento das partes (posição, nunca "cobertura"; ver comentário
+         * de topo de `BarraPartes.tsx`). */}
+        <BarraPartes resolvido={resolvido} totalBlocos={blocosRoteiro.length} />
+        <p className="text-tinta">
+          {ausentes && <span className="text-tinta-suave">{ausentes}</span>}
+          {fixadoAte && <span className="text-tinta-fraca">{ausentes ? " · " : ""}Fixado por você até {formatarHora(fixadoAte)}</span>}
+        </p>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <AvisoSalaInvalidaLinhaFina codigoErro={codigoErroBot} />
 
-        <AcaoSalaLinhaFina linkSala={linkSala} aoAtualizarLinkSala={aoAtualizarLinkSala} sessaoId={sessaoId} aoMudarEstadoBot={setCodigoErroBot} />
+        <AcaoSalaLinhaFina linkSala={linkSala} aoAtualizarLinkSala={aoAtualizarLinkSala} sessaoId={sessaoId} polling={polling} aoMudarEstadoBot={setCodigoErroBotClique} />
 
         <BotaoTelaCheia ativa={telaCheiaAtiva} aoAlternar={aoAlternarTelaCheia} />
 
@@ -401,28 +435,63 @@ function LinhaFinaRoteiro({
 }
 
 /**
- * Pedido 1 (16/09) — "o botão de inserir o link do meet esteja visível [...]
- * caso não tenha o link [...] informe para enviar, para o bot solicitar
- * entrada". Três estados, na mesma linha:
+ * Fase 12, Fatia 5b — "Convidar o bot" vira ESTADO. Antes desta fatia, a
+ * linha fina delegava cegamente ao eco otimista de `PainelBot` (o `resposta`
+ * daquele componente é só "eu cliquei e o POST desta aba respondeu 200") —
+ * reabrir a tela ou o próprio `PainelBot` desmontando perdia essa memória, e
+ * não existia distinção entre "bot ainda entrando" e "bot já está na sala",
+ * que é fato do SERVIDOR (`polling.bot`, `EstadoBotCopiloto`, já elevado ao
+ * mesmo `usePollingCopiloto` único desta tela — zero rota/query nova).
  *
- *  1. Sem `linkSala`: aviso + "Colar link da sala" — abre um campo inline
- *     compacto (sem navegar para a Ficha 360). `linkSalaValido`/
- *     `gravarLinkSala` são os MESMOS de `SessaoSala.tsx` — zero regra nova.
- *  2. Com `linkSala`, bot ainda não pedido: `PainelBot` REVELADO
- *     (`compacto`) — "Convidar o bot" de verdade, mesma lógica de sempre.
- *     Link discreto "Abrir sala" ao lado (a sala às vezes é aberta à parte).
- *  3. Bot já pedido/erro tratado pelo próprio `PainelBot` (idempotência
- *     `bot_ja_pedido`, estados normais de áudio desligado etc.).
+ * Mapa de estados (mesma posição da linha, nunca dois controles concorrendo):
+ *
+ *   `bot` nulo + link       → `[Convidar o bot]` — delega a `PainelBot`
+ *                              REVELADO (compacto); é o único caminho que
+ *                              ainda faz o POST de verdade.
+ *   `bot.estado==="aguardando"` → "● Bot entrando…" (texto, sem CTA — já foi
+ *                              pedido, novo clique duplicaria o pedido).
+ *   `bot.estado==="ativo"`      → "● Bot na sala" (texto + ponto verde, token
+ *                              que o projeto já usa para presença/OK).
+ *   `bot.estado==="erro"`       → 🔴 CORREÇÃO (Fable, achado 1): este estado
+ *                              só existe quando o bot JÁ ESTÁ NA SALA e o
+ *                              servidor NÃO CONSEGUIU tirá-lo de lá
+ *                              (`bot/route.ts` ~285-330, `estado.ts`
+ *                              ~114-130) — nunca "não entrou na sala". Texto
+ *                              âmbar de pendência, `role="alert"` (único
+ *                              estado do bot que exige ação dela AGORA), SEM
+ *                              CTA "Convidar o bot"/"Tentar de novo": a rota
+ *                              recusa qualquer novo pedido nesta sessão com
+ *                              409 `sessao_ja_encerrada` (~154) — um botão
+ *                              aqui seria um CTA morto.
+ *   `bot.estado==="encerrado"`  → "Bot encerrado" + `[Convidar o bot]` de novo
+ *                              se ainda houver link (decisão do dono, aberta:
+ *                              cobre o caso comum de reabrir a tela depois do
+ *                              fim; um servidor que recuse pedido duplicado
+ *                              devolveria `bot_ja_pedido`, que `PainelBot` já
+ *                              trata como estado sóbrio).
+ *
+ * 🔴 NÃO desenha "desde HH:MM": `EstadoBotCopiloto` não carrega carimbo de
+ * hora nenhum — inventar a partir do primeiro tick em que a tela viu
+ * `aguardando`/`ativo` mentiria ao recarregar a página no meio da sessão
+ * (decisão em aberto com o dono).
+ *
+ * O eco otimista do PRÓPRIO clique (`PainelBot`, `useState` local "eu acabei
+ * de pedir") só aparece enquanto `polling.bot` ainda não tem opinião sobre
+ * ESTE pedido (`null`, ou `encerrado` de um bot anterior) — assim que o
+ * servidor confirma `aguardando`/`ativo`/`erro`, a linha passa a mostrar
+ * SÓ a leitura do servidor, nunca as duas fontes ao mesmo tempo.
  */
 function AcaoSalaLinhaFina({
   linkSala,
   aoAtualizarLinkSala,
   sessaoId,
+  polling,
   aoMudarEstadoBot,
 }: {
   linkSala: string | null;
   aoAtualizarLinkSala: (linkNovo: string) => Promise<void>;
   sessaoId: string;
+  polling: ReturnType<typeof usePollingCopiloto>;
   aoMudarEstadoBot: (codigoErro: string | undefined) => void;
 }) {
   const [editando, setEditando] = useState(false);
@@ -514,7 +583,7 @@ function AcaoSalaLinhaFina({
       <a href={linkSala!} target="_blank" rel="noreferrer" className="min-h-11 items-center text-tinta-suave underline underline-offset-2 hover:text-[color:var(--latao)]">
         Abrir sala
       </a>
-      <PainelBot sessaoId={sessaoId} aoMudarEstado={aoMudarEstadoBot} compacto />
+      <EstadoBotLinhaFina sessaoId={sessaoId} bot={polling.bot} aoMudarEstadoBot={aoMudarEstadoBot} />
       <Botao
         type="button"
         variante="fantasma"
@@ -528,6 +597,76 @@ function AcaoSalaLinhaFina({
         Trocar link
       </Botao>
     </>
+  );
+}
+
+/**
+ * Resolve o mapa de estados do bot (Fatia 5b) — a MESMA posição da linha,
+ * nunca dois controles concorrendo. `bot` é sempre a leitura mais recente do
+ * SERVIDOR (`polling.bot`, `EstadoPollingCopiloto.bot` já usa `??` para não
+ * apagar um `ativo` visto por um tick isolado sem opinião — ver comentário
+ * do campo em `usePollingCopiloto.ts`).
+ *
+ * `null`/`"encerrado"` são os dois ÚNICOS casos em que ainda faz sentido
+ * oferecer o CTA de pedir o bot — delegado a `PainelBot` (compacto), que
+ * segue sendo o único lugar que faz o POST de verdade e carrega o próprio
+ * eco otimista do clique (`resposta`/`erro`/`pedindo`). Esse eco só fica
+ * visível enquanto o SERVIDOR não tem opinião ainda sobre o pedido — assim
+ * que o próximo tick do polling confirma `aguardando`/`ativo`, esta função
+ * para de renderizar `PainelBot` e passa a mostrar só a leitura do servidor.
+ * `"erro"` NUNCA delega a `PainelBot` (ver comentário no próprio `if`
+ * abaixo) — a rota recusa qualquer novo pedido nesta sessão.
+ */
+function EstadoBotLinhaFina({
+  sessaoId,
+  bot,
+  aoMudarEstadoBot,
+}: {
+  sessaoId: string;
+  bot: EstadoBotCopiloto | null;
+  aoMudarEstadoBot: (codigoErro: string | undefined) => void;
+}) {
+  if (!bot || bot.estado === "encerrado") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {bot?.estado === "encerrado" && <span className="text-tinta-suave">Bot encerrado</span>}
+        <PainelBot sessaoId={sessaoId} aoMudarEstado={aoMudarEstadoBot} compacto />
+      </div>
+    );
+  }
+
+  if (bot.estado === "aguardando") {
+    return (
+      <p role="status" className="text-tinta-suave">
+        <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--ambar)] align-middle" />
+        Bot entrando…
+      </p>
+    );
+  }
+
+  if (bot.estado === "ativo") {
+    return (
+      <p role="status" className="text-tinta-suave">
+        <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--verde)] align-middle" />
+        Bot na sala
+      </p>
+    );
+  }
+
+  // 🔴 CORREÇÃO (Fable, achado 1): `estado === "erro"` NUNCA significa "não
+  // entrou na sala" — significa o oposto: o bot ENTROU e o servidor NÃO
+  // CONSEGUIU tirá-lo de lá (retenção indefinida ou vínculo órfão;
+  // `bot/route.ts` ~285-330). Texto factual, na redação do próprio 409 do
+  // servidor ("encerre a reunião agora ou remova manualmente o
+  // participante"), `role="alert"` (é o único estado do bot que exige ação
+  // dela AGORA). SEM `PainelBot`/CTA "Convidar o bot": a rota recusa
+  // qualquer novo pedido nesta sessão com 409 `sessao_ja_encerrada` (~154)
+  // — um botão aqui seria um CTA morto, clique sem efeito.
+  return (
+    <p role="alert" className="text-[color:var(--ambar)]">
+      <span aria-hidden="true" className="mr-1 inline-block h-2 w-2 rounded-full bg-[color:var(--ambar)] align-middle" />
+      Bot com pendência de encerramento — remova o participante do bot da sala ou encerre a reunião agora.
+    </p>
   );
 }
 
@@ -559,24 +698,15 @@ function BotaoTelaCheia({ ativa, aoAlternar }: { ativa: boolean; aoAlternar: () 
 }
 
 /**
- * 🔴 Trava do plano: `origem === "indisponivel"` ou `bloco_id === null`
- * NUNCA vira "Parte 0" — índice inválido virando 0 seria dado inventado
- * (CLAUDE.md). Isolada nesta função para trocar em 1 linha se o dono um dia
- * preferir "manter a última parte conhecida" em vez de "ainda
- * identificando…".
- */
-function rotuloBlocoAtual(resolvido: BlocoAtualResolvido | null): string {
-  if (!resolvido || resolvido.origem === "indisponivel" || resolvido.bloco_id === null || !resolvido.titulo) {
-    return "ainda identificando…";
-  }
-  return resolvido.titulo;
-}
-
-/**
  * Erro de sala (`sala_invalida`, ex. `meeting_not_found`) não pode ficar
  * mudo só porque `PainelBot` saiu da vista (comentário do plano) —
  * `role="alert"` sóbrio, sem duplicar a mensagem completa de `PainelBot`
  * (que seria vista de novo se a advogada abrir a Ficha 360).
+ *
+ * 🔴 CORREÇÃO (Fable, achado 1): só lê `codigoErroBotClique` (erro de um
+ * CLIQUE nesta montagem) — nunca `polling.bot.estado`. O caso do bot
+ * `estado==="erro"` vindo do servidor é outro fato (bot preso na sala, não
+ * fora dela) e tem aviso próprio em `EstadoBotLinhaFina`, nunca este.
  */
 function AvisoSalaInvalidaLinhaFina({ codigoErro }: { codigoErro: string | undefined }) {
   if (codigoErro !== "sala_invalida") return null;

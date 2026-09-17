@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ErroSessao, buscarPollingCopiloto } from "@/components/sessao/api";
-import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, InfoCicloCopiloto, InventarioParaPainel, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoBotCopiloto, InfoCicloCopiloto, InventarioParaPainel, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
 
 /** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
  * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
@@ -124,6 +124,22 @@ export interface EstadoPollingCopiloto {
    * nunca um objeto com contagens zeradas fingindo "0 itens" (regra da
    * casa). */
   inventario: InventarioParaPainel | null;
+  /** 🔴 Fatia 5a (achado do Fable, 17/09): o payload já trazia
+   * `resposta.bot: EstadoBotCopiloto | null` a cada tick — MESMO defeito de
+   * `segmentos_novos` (pedido e descartado). Regra de substituição: `??`
+   * (NUNCA substituição pura), ao contrário de `comparacaoDecisores` (que
+   * substitui sempre, inclusive por `null` — "se a sala esvaziar, o alerta
+   * deve sumir"). Aqui `null` do servidor significa "esta chamada não trouxe
+   * opinião sobre o bot" — nunca "o bot saiu da sala" —, então um único tick
+   * `null` por corrida (ex.: erro transiente na leitura de `sessoes_copiloto`
+   * dentro de `montarBotEComparacaoDecisores`) não pode fazer o botão "Bot na
+   * sala" (Fatia 5b, outro agente) piscar de volta para "Convidar o bot".
+   * `blocoAtualResolvido` já usa a mesma regra `??`, pelo mesmo motivo. Zero
+   * rota/query nova: `bot` vem da MESMA leitura de `sessoes_copiloto` por
+   * `sessao_id` que `montarEstadoCopiloto` já fazia para `comparacaoDecisores`
+   * (`server/copiloto/estado.ts::montarBotEComparacaoDecisores`, chamada
+   * única em `route.ts`). */
+  bot: EstadoBotCopiloto | null;
 }
 
 /** Pedido de FIXAÇÃO MANUAL para o próximo ciclo (Fase 12, Fatia B — o
@@ -163,6 +179,7 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
     indiceFixacaoPendente: null,
     requisicaoEmVoo: false,
     inventario: null,
+    bot: null,
   };
   const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
   const cursorSegmentoRef = useRef(0);
@@ -316,6 +333,11 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             // (contrato antigo) quanto `null` explícito (kill-switch
             // desligado) — as duas coisas somem da aba do mesmo jeito.
             inventario: resposta.inventario ?? null,
+            // Fatia 5a: `??`, NUNCA substituição pura (ver comentário do
+            // campo em `EstadoPollingCopiloto.bot`) — `null` do servidor não
+            // apaga um `ativo` já visto, ele só significa "nada de novo para
+            // dizer sobre o bot nesta chamada".
+            bot: resposta.bot ?? atual.bot,
           };
         });
       } catch (e) {

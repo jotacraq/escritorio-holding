@@ -5,7 +5,7 @@ import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { Ficha360 } from "@/lib/api";
 import type { RoteiroVersao } from "@/types/roteiro";
 import type { EstadoSims } from "@/components/sessao/api";
-import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoCopilotoComPolling } from "@/types/copiloto";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoBotCopiloto, EstadoCopilotoComPolling } from "@/types/copiloto";
 import { ErroSessao } from "@/components/sessao/api";
 
 /**
@@ -25,7 +25,10 @@ import { ErroSessao } from "@/components/sessao/api";
  *  4. `· Falta <nome> na sala` só aparece com decisor ausente; some por
  *     completo sem ausência.
  *  5. Erro de sala (`sala_invalida`) do bot aparece na linha fina mesmo com
- *     `PainelBot` fora da vista.
+ *     `PainelBot` fora da vista — só para o erro de CLIQUE. `bot.estado===
+ *     "erro"` vindo do polling é outro fato (bot preso na sala, não fora
+ *     dela) e nunca usa o texto "não entrou na sala" (achado 1 do Fable,
+ *     17/09).
  *  6. `[Corrigir parte]` é um `<select>`, alvo `min-h-11` (44px).
  *  7. `PainelBriefingSessao`/`PainelSims`/`PainelOferta`/`BarraProgresso`/
  *     `AtalhosTeclado`/`PainelVigilanciaAoVivo`/`PainelPerfilConsulta` NÃO
@@ -131,6 +134,12 @@ function respostaComBlocoResolvido(
   };
 }
 
+/** Fase 12, Fatia 5b — resposta de polling variando só `bot`, com link já
+ * cadastrado (pré-requisito para a ação da linha fina aparecer). */
+function respostaComBot(bot: EstadoBotCopiloto | null): EstadoCopilotoComPolling {
+  return { ...RESPOSTA_POLLING_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot };
+}
+
 const ROTEIRO: RoteiroVersao = {
   id: "r1",
   chave: "sessao_viabilidade",
@@ -207,17 +216,25 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
   });
 
-  it("sem bloco resolvido ainda: mostra 'ainda identificando…', nunca 'Parte 0' (nada de dado inventado)", async () => {
-    const { container } = await abrir();
-    expect(container.textContent).toContain("Agora:");
-    expect(container.textContent).toContain("ainda identificando…");
+  /**
+   * Fase 12, Fatia 4 — o texto solto "Agora: <título>"/"ainda
+   * identificando…" foi substituído pelo andamento das partes
+   * (`BarraPartes`): "— de 13" + `sr-only` explicando a ausência, nunca uma
+   * posição inventada tipo "Parte 0" ou "01 de 13".
+   */
+  it("sem bloco resolvido ainda: mostra '— de N', nunca 'Parte 0' nem uma posição inventada (nada de dado inventado)", async () => {
+    const { container, getByText } = await abrir();
+    expect(container.textContent).toContain("— de 2");
+    expect(getByText("posição na sessão ainda não identificada")).toBeTruthy();
     expect(container.textContent).not.toContain("Parte 0");
+    expect(container.textContent).not.toContain("01 de 2");
   });
 
   it("bloco resolvido pelo SERVIDOR: usa o título dele, nunca deriva do índice local", async () => {
     estado.pollingRespostaPadrao = respostaComBlocoResolvido({});
     const { container } = await abrir();
     await avancarPrimeiroCicloDoPolling();
+    expect(container.textContent).toContain("02 de 2");
     expect(container.textContent).toContain("PARTE 01 — Os 4 SIMs");
   });
 
@@ -229,7 +246,7 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     // nada (prova indireta: o `bloco_atual_resolvido` do payload é quem
     // decide, e aqui ele vem `indisponivel` mesmo com a chave antiga em "1").
     const { container } = await abrir();
-    expect(container.textContent).toContain("ainda identificando…");
+    expect(container.textContent).toContain("— de 2");
   });
 
   it("decisor ausente: '· Falta <nome> na sala' aparece; sem ausência, some por completo", async () => {
@@ -425,6 +442,89 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
       fireEvent.click(getByRole("button", { name: /convidar o bot/i }));
       await waitFor(() => expect(container.textContent).toContain("Bot já pedido"));
       expect(queryByRole("button", { name: /convidar o bot/i })).toBeNull();
+    });
+  });
+
+  /**
+   * Fase 12, Fatia 5b — "Convidar o bot" vira ESTADO. `polling.bot`
+   * (`EstadoBotCopiloto | null`) resolve na MESMA posição da linha fina, sem
+   * dois controles concorrendo. Link sempre cadastrado nestes testes — sem
+   * link, a ação nem chega a existir (já coberto na seção anterior).
+   */
+  describe("mapa de estados do bot (Fatia 5b)", () => {
+    beforeEach(() => {
+      FICHA.sessao = { id: "s1", jornada_id: "j1", link_sala: "https://meet.example.com/sala" } as unknown as Ficha360["sessao"];
+    });
+
+    it("bot nulo: mostra '[Convidar o bot]', único CTA da linha", async () => {
+      const { getByRole } = await abrir();
+      expect(getByRole("button", { name: /convidar o bot/i })).toBeTruthy();
+    });
+
+    it("bot 'aguardando': mostra 'Bot entrando…', sem CTA de convidar de novo", async () => {
+      estado.pollingRespostaPadrao = respostaComBot({ estado: "aguardando", erro_provedor: null, retencao_infinita_detectada: false });
+      const { container, queryByRole } = await abrir();
+      await avancarPrimeiroCicloDoPolling();
+      await waitFor(() => expect(container.textContent).toContain("Bot entrando…"));
+      expect(queryByRole("button", { name: /convidar o bot/i })).toBeNull();
+    });
+
+    it("bot 'ativo': mostra 'Bot na sala', sem CTA de convidar de novo", async () => {
+      estado.pollingRespostaPadrao = respostaComBot({ estado: "ativo", erro_provedor: null, retencao_infinita_detectada: false });
+      const { container, queryByRole } = await abrir();
+      await avancarPrimeiroCicloDoPolling();
+      await waitFor(() => expect(container.textContent).toContain("Bot na sala"));
+      expect(queryByRole("button", { name: /convidar o bot/i })).toBeNull();
+    });
+
+    /**
+     * 🔴 CORREÇÃO (Fable, achado 1 — 17/09/2026): `bot.estado==="erro"`
+     * vindo do PRÓPRIO POLLING NUNCA significa "não entrou na sala" — o
+     * servidor só grava este estado depois que o bot JÁ ESTÁ NA SALA e a
+     * retentativa de tirá-lo de lá falhou (`bot/route.ts` ~285-330). O
+     * teste ANTERIOR travava o comportamento errado (afirmava a causa
+     * contrária à verdade E oferecia "Convidar o bot", que a rota recusa
+     * com 409 `sessao_ja_encerrada` — CTA morto). Agora: SEM botão de
+     * convidar, texto neutro de pendência de encerramento, "Não entrou na
+     * sala" NUNCA aparece.
+     */
+    it("bot 'erro' vindo do PRÓPRIO polling: sem CTA de convidar, aviso de pendência de encerramento — nunca 'não entrou na sala'", async () => {
+      estado.pollingRespostaPadrao = respostaComBot({
+        estado: "erro",
+        erro_provedor: { codigo: "fatal", sub_codigo: "meeting_not_found" },
+        retencao_infinita_detectada: false,
+      });
+      const { container, queryByRole } = await abrir();
+      await avancarPrimeiroCicloDoPolling();
+      await waitFor(() => expect(container.textContent).toContain("pendência de encerramento"));
+      expect(container.textContent).not.toContain("Não entrou na sala");
+      expect(queryByRole("button", { name: /convidar o bot/i })).toBeNull();
+    });
+
+    it("bot 'encerrado': mostra 'Bot encerrado' + '[Convidar o bot]' de novo (link ainda existe)", async () => {
+      estado.pollingRespostaPadrao = respostaComBot({ estado: "encerrado", erro_provedor: null, retencao_infinita_detectada: false });
+      const { container, getByRole } = await abrir();
+      await avancarPrimeiroCicloDoPolling();
+      await waitFor(() => expect(container.textContent).toContain("Bot encerrado"));
+      expect(getByRole("button", { name: /convidar o bot/i })).toBeTruthy();
+    });
+
+    /**
+     * 🔴 Trava do plano: este teste PRÉ-EXISTIA (bloco "ação do link da
+     * sala/bot" acima) e TEM de continuar verde mesmo depois da Fatia 5b —
+     * clica no CTA com `polling` SEM `bot` (→ `null`, nunca avança o
+     * polling) e espera o aviso "Não entrou na sala" pelo caminho do CLIQUE
+     * local (`aoMudarEstadoBot`), não pelo caminho do servidor.
+     */
+    it("erro de sala por CLIQUE (sem bot no polling ainda) continua funcionando — não regride com o mapa de estados novo", async () => {
+      estado.erroPedirBot = new ErroSessao("Não foi possível entrar na sala.", 409, "sala_invalida", {
+        codigo: "fatal",
+        sub_codigo: "meeting_not_found",
+      });
+      const { getByRole, container } = await abrir();
+      const botao = getByRole("button", { name: /convidar o bot/i });
+      fireEvent.click(botao);
+      await waitFor(() => expect(container.textContent).toContain("Não entrou na sala"));
     });
   });
 

@@ -705,3 +705,38 @@ para testar sem supervisão, mas nenhum destes pontos teve olho humano em cima:
 | `brain/04 - Tecnico/Deploy na Hostinger.md` | o deploy e por que está travado |
 | `brain/06 - Materiais/` | os documentos originais da Dra. Elaine |
 | `brain/Diário/` | o que aconteceu em cada dia, com o porquê |
+
+## Dívidas nomeadas pelo `fable-orchestrator` — 17/09/2026, redesenho da tela de condução
+
+Aprovado nos 5 critérios em 3 rodadas. O que NÃO bloqueou o merge mas não pode sumir do
+registro (cada item com dono e gatilho, como o Fable exigiu):
+
+1. **4 testes flaky em `src/components/sessao/ConduzirSessaoApp.test.tsx`** — `'Corrigir
+   parte' é um <select>…`, `escolher 'Corrigir parte' dispara a fixação…`, `escolher a parte
+   0…`, `erro de sala (meeting_not_found)…`. Verdes isolados (28/28), vermelhos sob contenção
+   da suíte inteira (poluição de timers entre `it`s). **`npm test` do CI roda a suíte inteira
+   → fica vermelho.** Gatilho: falhar em rodada nomeada de novo → sai do registro e entra na
+   iteração (mesmo precedente dos 2 testes de a11y). Dono: `frontend-engineer`.
+2. **`npm run lint` sai com 2 erros no HEAD** — `PainelCopiloto.tsx` ~865/~976,
+   `react-hooks/set-state-in-effect` em `CardRecente`/histórico. CI de lint vermelho ANTES
+   deste diff. `useRealceUmaVez` em `copiloto/PainelTranscricao.tsx` já usa o padrão que
+   passa — modelo pronto para a correção. Dono: `frontend-engineer`.
+3. **F9 (modo foco): 1º clique do `NavRecolher` sem efeito na rota** — `NavRecolher.tsx`
+   ~57-65 lê só `data-nav-recolhida`; sem o atributo (nunca clicou), o botão nasce "Recolher
+   menu"/`aria-pressed=false` com a lateral JÁ recolhida pelo foco; 1º clique grava "1" (nada
+   muda), 2º grava "0" (expande). Correção no shell global (`NavRecolher`), fora do diff:
+   derivar `recolhida` do estado EFETIVO (`attr==="1" || document.querySelector(".foco-sessao")`)
+   ou esconder o botão nesta rota. Dono: `frontend-engineer`, na próxima onda que tocar o shell.
+4. **Prova de pixel do `Coluna`** — `Coluna.test.tsx` NÃO mede contenção (jsdom não calcula
+   layout; o executor tentou `scrollHeight/clientHeight` e `getComputedStyle`, falhou de
+   verdade, e caiu para prova estrutural por classe). A trava dura é `overflow-hidden`. A
+   única prova real é a captura no navegador com 31+ segmentos sem vazar — entra no diário
+   de 17/09 como **Medido** depois do deploy (a jornada da Nicéas, `2b0ff468…`, tem 2.252).
+5. **`usuarioAtual()` faz `select("*")` em `perfis_equipe`** (`src/server/auth.ts` ~31) —
+   pré-existente; agora está no caminho de `sessoes/[id]/conduzir/page.tsx` (server component
+   que resolve o usuário uma vez e desce só `{nome, papel}`). Listar colunas na próxima onda
+   que tocar `server/auth`. Dono: `backend-engineer`.
+
+Decisões que ficaram com o Marcio (não são dívidas técnicas):
+- "● Bot na sala · **desde HH:MM**" exige coluna nova em `sessoes_copiloto` (não há carimbo).
+- Intervalo do ciclo 20 s → 10 s (~10× o custo de IA por sessão).

@@ -187,7 +187,11 @@ function respostaPolling(overrides: Partial<EstadoCopilotoComPolling> = {}): Est
   };
 }
 
-const { PainelCopiloto, ultimoNaoNulo } = await import("./PainelCopiloto");
+// `MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR` entra pelo MESMO caminho que o componente:
+// os 5 testes que a asseveram usam a constante exportada, nunca um literal —
+// a 1ª rodada do Fable pegou exatamente a divergência entre literal do teste e
+// frase do componente (3 pré-existentes + 2 novos vermelhos).
+const { PainelCopiloto, ultimoNaoNulo, MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR } = await import("./PainelCopiloto");
 
 const ESTADO_BASE: EstadoCopiloto = {
   sessao_id: "s1",
@@ -421,7 +425,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
+    await waitFor(() => expect(container.textContent).toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR));
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).not.toContain("Próxima pergunta");
   });
@@ -431,7 +435,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
 
-    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
+    await waitFor(() => expect(container.textContent).toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR));
     expect(container.textContent).not.toContain("Quem mais participa das decisões financeiras");
   });
 
@@ -684,7 +688,7 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.3, visivel: false, sugestao: null };
     const { getByRole, container } = await abrirComRoteiro();
     fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
-    await waitFor(() => expect(container.textContent).toContain("Confiança abaixo do mínimo"));
+    await waitFor(() => expect(container.textContent).toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR));
     await semViolacoes(container);
   });
 
@@ -1717,6 +1721,140 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
       vi.useRealTimers();
       await semViolacoes(container);
     });
+  });
+});
+
+/**
+ * Fatia 3 (17/09/2026) — achado do arquiteto pela captura de tela do dono:
+ * uma sugestão `visivel:false` do CICLO AUTOMÁTICO virava card no herói
+ * ("Fale agora"), mostrando "Confiança abaixo do mínimo configurado — nada
+ * mostrado." no espaço mais nobre da tela, ao vivo, para quem não configura
+ * nada. Correção: sugestão invisível nunca vira card; o fato vira linha fina
+ * no rodapé (`EstadoDoCopiloto`), entre `timeout` e `requisicaoEmVoo`.
+ */
+describe("PainelCopiloto — Fatia 3, sugestão invisível do ciclo automático não ocupa o herói", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function abrirComPolling() {
+    const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} />);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+    return montado;
+  }
+
+  function sugestaoPollingInvisivel(overrides: Partial<SugestaoCopilotoPolling> = {}): SugestaoCopilotoPolling {
+    return {
+      sugestao_id: "sug-invisivel-1",
+      ordem_evento: 1,
+      gatilho: "intervalo",
+      confianca_geral: 0.3,
+      visivel: false,
+      sugestao: null,
+      desfecho: null,
+      criado_em: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("sugestão invisível do ciclo NÃO vira card no herói — 'Fale agora' nunca mostra 'Confiança abaixo'", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({
+      sugestoes_novas: [sugestaoPollingInvisivel()],
+      proximo_cursor_sugestao: 1,
+      ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+    });
+    const { container, queryByText } = await abrirComPolling();
+
+    // 🔴 Escopo do HERÓI, não do `container` (achado do Fable): desde a
+    // Fatia 3 a MESMA frase aparece de propósito no rodapé
+    // (`EstadoDoCopiloto`). Asseverar ausência no documento inteiro ou
+    // falharia sempre, ou — com uma string que não existe mais — passaria
+    // VAZIO sem provar nada. A prova é: dentro da região "Fale agora" o
+    // aviso NÃO existe; fora dela, pode e deve.
+    const heroi = container.querySelector('[role="region"][aria-label="Fale agora"]');
+    expect(heroi).not.toBeNull();
+    expect(heroi!.textContent).not.toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR);
+    // "Fale agora" continua existindo (o quadro, sempre presente) — só sem
+    // card de sugestão dentro dele.
+    expect(queryByText("Fale agora")).toBeTruthy();
+  });
+
+  it("o fato 'abaixo do limiar' aparece como linha fina no rodapé, não some de vez", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({
+      sugestoes_novas: [sugestaoPollingInvisivel()],
+      proximo_cursor_sugestao: 1,
+      ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+    });
+    const { container } = await abrirComPolling();
+
+    expect(container.textContent).toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR);
+    // Continua sendo `role="status"`/`aria-live="polite"` — nunca `alert`
+    // (a advogada não precisa agir sobre isto).
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("sugestão invisível mais recente com uma VISÍVEL anterior: herói mostra a anterior + carimbo de hora, rodapé avisa o limiar", async () => {
+    const visivel = {
+      sugestao_id: "sug-visivel-1",
+      ordem_evento: 1,
+      gatilho: "intervalo" as const,
+      confianca_geral: 0.8,
+      visivel: true,
+      sugestao: SUGESTAO_COMPLETA,
+      desfecho: null,
+      criado_em: "2026-09-17T10:00:00.000Z",
+    };
+    estado.pollingRespostas = [
+      respostaPolling({ sugestoes_novas: [visivel], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
+    ];
+    const { container } = await abrirComPolling();
+    expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
+    expect(container.textContent).not.toContain("Registrado às");
+
+    estado.pollingRespostaPadrao = respostaPolling({
+      sugestoes_novas: [sugestaoPollingInvisivel({ ordem_evento: 2, criado_em: "2026-09-17T10:05:00.000Z" })],
+      proximo_cursor_sugestao: 2,
+      ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // O herói continua mostrando a última sugestão VISÍVEL (não apaga nada),
+    // agora com o carimbo de hora — ela deixou de ser a mais recente do
+    // ciclo bruto.
+    expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
+    expect(container.textContent).toContain("Registrado às");
+    // E o rodapé avisa, separadamente, que a ÚLTIMA resposta do ciclo ficou
+    // abaixo do limiar.
+    expect(container.textContent).toContain(MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR);
+  });
+
+  it("'Dispensar' só existe em card com conteúdo — sem card visível, não há botão para dispensar", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({
+      sugestoes_novas: [sugestaoPollingInvisivel()],
+      proximo_cursor_sugestao: 1,
+      ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+    });
+    const { queryByRole } = await abrirComPolling();
+    expect(queryByRole("button", { name: /dispensar/i })).toBeNull();
+  });
+
+  it("axe limpo: linha fina de limiar no rodapé", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({
+      sugestoes_novas: [sugestaoPollingInvisivel()],
+      proximo_cursor_sugestao: 1,
+      ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+    });
+    const { container } = await abrirComPolling();
+    vi.useRealTimers();
+    await semViolacoes(container);
   });
 });
 

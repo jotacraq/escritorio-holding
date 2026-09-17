@@ -20,6 +20,7 @@ import type {
   SugestaoCopilotoPolling,
   TipoObservacaoCopiloto,
 } from "@/types/copiloto";
+import type { PapelEquipe } from "@/types/banco";
 import { useRecurso } from "@/hooks/useRecurso";
 import { Quadro } from "@/components/ui/Quadro";
 import { Selo } from "@/components/ui/Selo";
@@ -32,6 +33,7 @@ import { ultimoNaoNulo } from "@/components/sessao/copiloto/ultimoNaoNulo";
 import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
 import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
 import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
+import { Coluna } from "@/components/sessao/copiloto/Coluna";
 
 // ---------------------------------------------------------------------------
 // Fase 12, Fatia B/F4 — mosaico de 3 colunas, sem rolagem de página (pedido
@@ -73,6 +75,23 @@ const TAB_INDEX_ROLAVEL = 0;
  * ser a explicação mais provável. */
 const LIMIAR_FALHAS_PARA_AVISO = 3;
 
+/** Fatia 3 (17/09) — texto único para "a IA respondeu, mas abaixo do limiar
+ * de confiança configurado". Estava DUPLICADO em 3 lugares (herói do ciclo
+ * automático, histórico de anteriores, resposta de "Me ajuda agora") com o
+ * risco já registrado nesta base (`traduzirErroBanco` casa por igualdade
+ * EXATA — duas frases quase iguais para a mesma situação divergem e uma cai
+ * no genérico). Constante nomeada para não nascer uma 2ª versão do texto —
+ * 🔴 CORREÇÃO (Fable, 2 rodadas): o mesmo diff que criou esta constante tinha
+ * criado a 2ª versão mesmo assim, no aviso do ciclo automático
+ * (`EstadoDoCopiloto`, ramo `ultimaSugestaoAbaixoDoLimiar`). A 1ª tentativa
+ * de unificar TROCOU a frase — e quebrou 3 testes pré-existentes que a
+ * asseveravam por literal, mais 2 novos escritos em desacordo com ela. A
+ * frase ORIGINAL fica (tem histórico com a advogada e era a string de 3
+ * testes verdes); é reusada nos DOIS lugares e EXPORTADA para os testes
+ * asseverarem a constante, nunca um literal — literal em teste é uma 3ª
+ * cópia do texto, e foi exatamente isso que quebrou. */
+export const MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR = "Confiança abaixo do mínimo configurado — nada mostrado.";
+
 /**
  * Copiloto ao vivo — Fase 12, Fatia B: 2 blocos permanentes ("Fale agora",
  * único com peso visual) + 2 condicionais ("Cuidado" só com risco; "O
@@ -92,6 +111,7 @@ export function PainelCopiloto({
   polling: pollingProp,
   sessaoEncerrada: sessaoEncerradaProp,
   aoEncerrar: aoEncerrarProp,
+  usuarioLogado = null,
 }: {
   sessaoId: string;
   indiceAtual: number;
@@ -121,6 +141,13 @@ export function PainelCopiloto({
    * sem prop, o componente guarda esse estado sozinho (fallback do teste
    * unitário). */
   aoEncerrar?: () => void;
+  /** Fase 12, Fatia 7 — resolvido pelo SERVER COMPONENT (`page.tsx`) e
+   * descido por `ConduzirSessaoApp` até aqui, e daqui até
+   * `ColunaTranscricaoInventario`/`PainelTranscricao` (a única folha que usa
+   * isto, para saber qual turno da transcrição é da advogada). Nunca
+   * buscado de novo neste nível — só repassado. `null` default cobre o
+   * teste unitário deste componente, que monta `PainelCopiloto` sozinho. */
+  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
 }) {
   const buscarEstado = useCallback(() => buscarEstadoCopiloto(sessaoId, indiceAtual), [sessaoId, indiceAtual]);
   const { dados: estado, carregando, erro, recarregar } = useRecurso(buscarEstado, [sessaoId, indiceAtual]);
@@ -172,6 +199,14 @@ export function PainelCopiloto({
   if (polling.desligadoPeloKillSwitch) return <CopilotoDesligado />;
 
   const sugestoesCiclo = sessaoEncerrada ? [] : polling.sugestoes;
+  // Fatia 3 (17/09) — o fato "a última sugestão do ciclo respondeu abaixo do
+  // limiar de confiança" não pode desaparecer só porque saiu do herói: vira
+  // UMA LINHA FINA no rodapé (decisão do orquestrador — nunca some de vez,
+  // continua avisando que o limiar está mal calibrado). Olha só a ÚLTIMA do
+  // ciclo bruto: se ELA (a mais nova) é invisível, mesmo que o herói ainda
+  // mostre uma anterior visível com o carimbo de hora.
+  const ultimaSugestaoDoCicloAbaixoDoLimiar =
+    sugestoesCiclo.length > 0 && !sugestoesCiclo[sugestoesCiclo.length - 1].visivel;
 
   return (
     // F4 — mosaico de 3 colunas, SEM rolagem de página (pedido do Marcio,
@@ -187,31 +222,15 @@ export function PainelCopiloto({
       {/* LINHA 1 — as 3 colunas do mosaico. `lg:grid-cols-[40%_32%_28%]`
        * (Fale agora / Cuidado / Transcrição); abaixo de `lg` empilha em
        * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
-       * mas a tela não pode quebrar em monitor estreito. */}
-      {/* 🔴 CORRIGIDO 17/09/2026 (reportado pelo dono com captura de tela): a
-       * transcrição descia a página inteira. `min-h-0` + `overflow-y-auto`
-       * nas colunas estava certo, mas SÓ FUNCIONA se algum ancestral tiver
-       * altura definida — e `ConduzirSessaoApp` não define nenhuma (a página
-       * é um fluxo normal que cresce com o conteúdo). Sem teto, `flex-1`
-       * não tem contra o que se medir e a coluna cresce até caberem os 60
-       * segmentos.
+       * mas a tela não pode quebrar em monitor estreito.
        *
-       * `max-h-[calc(100vh-11rem)]` ancora no VIEWPORT, não na cadeia de
-       * pais — funciona independentemente do que exista acima. As 11rem são
-       * o cabeçalho da página + a linha de comando + o rodapé de status.
-       *
-       * 🔴 Pedido 17/09 ("economizar espaço aí em cima"): o cabeçalho de
-       * `ConduzirSessaoApp.tsx` (`Cabecalho`) colapsou de ~150px (4 linhas:
-       * rótulo/h1/descrição/meta) para UMA linha (~40px, `text-subtitulo`).
-       * As 18rem antigas encolheram na mesma proporção — 7rem a menos, valor
-       * medido pela diferença de tipografia entre as duas versões (não
-       * cronometrado no navegador; se o olho mostrar folga sobrando ou
-       * faltando, ajustar aqui é 1 número). `min-h-[22rem]` impede que em
-       * tela baixa (ou com o cabeçalho quebrando em 2 linhas por nome longo)
-       * o mosaico colapse para uma faixa ilegível.
-       *
-       * A lição desta base: `min-h-0` sozinho não segura nada — a pergunta
-       * é sempre "qual elemento define a altura?". */}
+       * `max-h-[calc(100vh-11rem)]` ancora no VIEWPORT (11rem = cabeçalho +
+       * linha de comando + rodapé de status) e é o TETO de fora; a CONTENÇÃO
+       * de cada célula é responsabilidade de `Coluna` (`copiloto/Coluna.tsx`)
+       * — corrigido 17/09/2026 depois de a transcrição vazar por cima do
+       * rodapé com 31 segmentos (COL 3 era só `min-h-0`, sem `flex`: o
+       * `flex-1` do filho ficava inerte). `min-h-[22rem]` evita que o
+       * mosaico colapse para uma faixa ilegível em tela baixa. */}
       <div className="grid min-h-[22rem] max-h-[calc(100vh-11rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
@@ -224,16 +243,16 @@ export function PainelCopiloto({
          * bloco, ❌ pulou item obrigatório. `BlocoFaleAgora` já tem rolagem
          * própria (`max-h-[26rem]` interno), então não disputa altura com o
          * placar. */}
-        <div className="flex min-h-0 flex-col gap-2">
+        <Coluna className="gap-2">
           <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
           <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
-        </div>
+        </Coluna>
 
         {/* COL 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
          * (nunca um card vazio dizendo "nada"). Funde os 3 antigos quadros
          * que eram jargão/risco: Alerta (SIMs pendentes) + O que aconteceu
          * (falta no bloco) + Pode pular pra (desvio sugerido). */}
-        <div className="min-h-0">
+        <Coluna>
           <BlocoCuidado
             pendentes={estado.sims_pendentes}
             falta={estado.falta_no_bloco}
@@ -242,55 +261,76 @@ export function PainelCopiloto({
             blocosRoteiro={blocosRoteiro}
             irPara={irPara}
           />
-        </div>
+        </Coluna>
 
         {/* COL 3 — Transcrição | Inventário, em abas (pedido do dono, 17/09).
          * Transcrição: a mesma lista que `usePollingCopiloto` já acumula com
          * teto de 60 segmentos — nenhuma rota nova. Inventário: `polling.
          * inventario`, já no payload desde bcd3050 — mesmo poller, zero
          * query nova. */}
-        <div className="min-h-0">
-          <ColunaTranscricaoInventario segmentos={sessaoEncerrada ? [] : polling.segmentos} inventario={polling.inventario} />
-        </div>
+        <Coluna>
+          <ColunaTranscricaoInventario segmentos={sessaoEncerrada ? [] : polling.segmentos} inventario={polling.inventario} usuarioLogado={usuarioLogado} />
+        </Coluna>
       </div>
 
       {/* LINHA 2 — rodapé PERMANENTE, sempre no mesmo pixel, fora do espaço
        * nobre. `EstadoDoCopiloto` é o ÚNICO `aria-live="polite"` desta tela
        * (dois disparando no mesmo tick seria ruído) — o resto do rodapé é
-       * ação, não anúncio. */}
+       * ação, não anúncio.
+       *
+       * Fatia 10 (17/09) — famílias separadas: à ESQUERDA, leitura/registro
+       * do que está acontecendo na sessão (`EstadoDoCopiloto` + "O cliente
+       * disse", que é registro manual do mesmo tipo de fato); à DIREITA,
+       * sozinho, "Encerrar copiloto desta sessão" — a única ação DESTRUTIVA
+       * do rodapé, com separador vertical para nunca ser confundida com um
+       * botão de leitura ao lado. `min-h-[3.25rem]` (intocado — já reserva
+       * a altura certa) continua só em volta de `EstadoDoCopiloto`. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-linha pt-2">
-        <div className="min-h-[3.25rem] flex-1">
-          {!sessaoEncerrada && (
-            <EstadoDoCopiloto ciclo={polling.ciclo} requisicaoEmVoo={polling.requisicaoEmVoo} falhasConsecutivas={polling.falhasConsecutivas} falhandoDesde={polling.falhandoDesde} />
-          )}
-          {encerradaPorDuracaoMaxima && (
-            <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-              Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
-            </p>
-          )}
-          {encerradaManualmente && !encerradaPorDuracaoMaxima && (
-            <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-              Copiloto encerrado — transcrição consolidada, sem novas sugestões.
-            </p>
-          )}
-        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="min-h-[3.25rem] min-w-0 flex-1">
+            {!sessaoEncerrada && (
+              <EstadoDoCopiloto
+                ciclo={polling.ciclo}
+                requisicaoEmVoo={polling.requisicaoEmVoo}
+                falhasConsecutivas={polling.falhasConsecutivas}
+                falhandoDesde={polling.falhandoDesde}
+                ultimaSugestaoAbaixoDoLimiar={ultimaSugestaoDoCicloAbaixoDoLimiar}
+              />
+            )}
+            {encerradaPorDuracaoMaxima && (
+              <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
+              </p>
+            )}
+            {encerradaManualmente && !encerradaPorDuracaoMaxima && (
+              <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                Copiloto encerrado — transcrição consolidada, sem novas sugestões.
+              </p>
+            )}
+          </div>
 
-        <div className="flex shrink-0 items-center gap-2">
           {/* `[O cliente disse ▸]` — o registro manual é AÇÃO ocasional
            * (digitar/colar um trecho perdido), não leitura permanente: sai
            * do espaço nobre e fica recolhido aqui. `RegistroManual` é
            * exatamente o mesmo componente (campo + lista); só o CONTAINER
            * muda de lugar/estado. Estado local puro de apresentação — o
            * CONTEÚDO continua vindo do servidor via `listarSegmentosCopiloto`
-           * dentro de `RegistroManual`, nunca duplicado aqui. */}
-          <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto}>
+           * dentro de `RegistroManual`, nunca duplicado aqui. Mesma família
+           * de `EstadoDoCopiloto`: leitura/registro do que está acontecendo,
+           * nunca ação destrutiva — por isso mora à esquerda, com ele. */}
+          <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto} className="shrink-0">
             O cliente disse
             <span aria-hidden="true" className={`ml-1 inline-block transition-transform ${registroAberto ? "rotate-90" : ""}`}>
               ▸
             </span>
           </Botao>
-          {!sessaoEncerrada && <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />}
         </div>
+
+        {!sessaoEncerrada && (
+          <div className="flex shrink-0 items-center gap-2 border-l border-linha pl-2">
+            <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />
+          </div>
+        )}
       </div>
 
       {/* LINHA 3 — conteúdo de "O cliente disse", fora do grid nobre e fora
@@ -328,19 +368,34 @@ const ROTULO_CATEGORIA_INVENTARIO: Record<CategoriaInventarioMencionado, string>
  * ainda) — sem ela, só a Transcrição existe, sem aba nenhuma para não
  * sugerir uma escolha que não leva a lugar nenhum.
  */
-function ColunaTranscricaoInventario({ segmentos, inventario }: { segmentos: SegmentoCopiloto[]; inventario: InventarioParaPainel | null }) {
+function ColunaTranscricaoInventario({
+  segmentos,
+  inventario,
+  usuarioLogado,
+}: {
+  segmentos: SegmentoCopiloto[];
+  inventario: InventarioParaPainel | null;
+  /** Fase 12, Fatia 7 — só repassado a `PainelTranscricao`, nunca lido aqui. */
+  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
+}) {
   const [abaAtiva, setAbaAtiva] = useState<"transcricao" | "inventario">("transcricao");
-  const totalInventario = inventario ? inventario.resumo.total_itens_proprios : null;
+  // Fatia 2 (17/09) — achado do arquiteto: `total_itens_proprios` E
+  // `total_itens_incertos` JÁ vêm no payload (`ResumoInventarioAcumulado`),
+  // zero backend novo. O rótulo da aba usava só o próprio ("Inventário (0)")
+  // e mentia por omissão com 31 itens captados, ainda não confirmados — o
+  // rótulo passa a somar os dois: responde "tem coisa aqui?", não "já bati o
+  // olho nisso?" (essa segunda pergunta é a linha densa dentro do painel).
+  const totalCaptado = inventario ? inventario.resumo.total_itens_proprios + inventario.resumo.total_itens_incertos : null;
 
   // Sem inventário, não há por que existir aba nenhuma — a Transcrição some
   // do papel de "aba" e volta a ser o conteúdo direto da coluna, como antes
   // desta entrega (geometria idêntica: mesmo `min-h-0`/`flex-1` interno de
   // `PainelTranscricao`).
-  if (!inventario) return <PainelTranscricao segmentos={segmentos} />;
+  if (!inventario) return <PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} />;
 
   const abas: { chave: "transcricao" | "inventario"; rotulo: string }[] = [
     { chave: "transcricao", rotulo: "Transcrição" },
-    { chave: "inventario", rotulo: `Inventário (${totalInventario})` },
+    { chave: "inventario", rotulo: `Inventário · ${totalCaptado}` },
   ];
 
   function aoTeclar(evento: React.KeyboardEvent, atual: "transcricao" | "inventario") {
@@ -389,7 +444,7 @@ function ColunaTranscricaoInventario({ segmentos, inventario }: { segmentos: Seg
         className="flex min-h-0 flex-1 flex-col"
       >
         {/* A aba inativa não monta o conteúdo — mesma regra de `TabsFicha.tsx`. */}
-        {abaAtiva === "transcricao" ? <PainelTranscricao segmentos={segmentos} /> : null}
+        {abaAtiva === "transcricao" ? <PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} /> : null}
       </div>
 
       <div
@@ -410,13 +465,30 @@ function ColunaTranscricaoInventario({ segmentos, inventario }: { segmentos: Seg
  * citação literal que os prova — layout do pedido do dono, 17/09. `posse:
  * "incerta"` nunca soma no total da categoria (regra do tipo: "a confirmar",
  * nunca somado) — aparece só como contagem separada, mesmo padrão do resumo
- * que já vai para a IA (`ResumoInventarioAcumulado`).
+ * que já vai para a IA (`ResumoInventarioAcumulado`). A REGRA de contagem não
+ * muda na Fatia 2 — só a apresentação (linha de resumo + qual número fica em
+ * negrito quando `contagem_propria` é 0).
  */
 function PainelInventario({ inventario }: { inventario: InventarioParaPainel }) {
   const categorias = inventario.resumo.por_categoria.filter((c) => c.contagem_propria > 0 || c.contagem_incerta > 0);
+  const { total_itens_proprios: proprios, total_itens_incertos: incertos } = inventario.resumo;
 
   return (
     <div className="flex flex-col gap-3 rounded-controle border border-linha bg-papel-elevado px-3 py-2">
+      {/* Fatia 2 — a mentira por omissão era "Inventário (0)" com 31 itens
+       * captados: o rótulo da aba já soma próprios+incertos (responde "tem
+       * coisa aqui?"), e esta linha responde a segunda pergunta, densa:
+       * quanto já foi captado vs. quanto ainda precisa de confirmação da
+       * titularidade. Some sozinha se não há nada captado ainda (mesma regra
+       * de "vazio é vazio" — nunca "0 captados · 0 confirmados"). */}
+      {proprios + incertos > 0 && (
+        <p className="text-sm text-tinta">
+          <span className="font-bold tabular-nums">{proprios + incertos}</span> captados ·{" "}
+          <span className="font-bold tabular-nums">{proprios}</span> confirmados ·{" "}
+          <span className="font-bold tabular-nums">{incertos}</span> a confirmar
+        </p>
+      )}
+
       {categorias.length === 0 ? (
         <p className="text-sm text-tinta-suave">Nenhum item de patrimônio mencionado ainda nesta sessão.</p>
       ) : (
@@ -424,10 +496,20 @@ function PainelInventario({ inventario }: { inventario: InventarioParaPainel }) 
           {categorias.map((c) => (
             <li key={c.categoria} className="flex items-baseline justify-between text-sm text-tinta">
               <span className="font-medium uppercase tracking-wide text-tinta-fraca">{ROTULO_CATEGORIA_INVENTARIO[c.categoria]}</span>
-              <span className="font-bold tabular-nums">
-                {c.contagem_propria}
-                {c.contagem_incerta > 0 && <span className="ml-1.5 font-normal text-tinta-fraca">· {c.contagem_incerta} a confirmar</span>}
-              </span>
+              {/* Quando nada está confirmado ainda (`contagem_propria === 0`),
+               * o destaque nunca pode ser um "0" em negrito ao lado de itens
+               * reais captados — inverte a ênfase para o número que importa
+               * agora: o captado, ainda a confirmar. */}
+              {c.contagem_propria > 0 ? (
+                <span className="font-bold tabular-nums">
+                  {c.contagem_propria}
+                  {c.contagem_incerta > 0 && <span className="ml-1.5 font-normal text-tinta-fraca">· {c.contagem_incerta} a confirmar</span>}
+                </span>
+              ) : (
+                <span className="font-normal tabular-nums text-tinta-suave">
+                  <span className="font-bold text-tinta">{c.contagem_incerta}</span> a confirmar
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -483,10 +565,18 @@ function ItemInventarioRecente({ item }: { item: ItemInventarioRecentePainel }) 
  *     janela tenta de novo sozinha. Nunca a palavra "erro" (pedido do dono)
  *     — para a advogada isto é "a IA não respondeu desta vez", não uma
  *     falha do sistema que ela precise reportar.
- *  5. `requisicaoEmVoo` (Fatia B) — o GET desta janela ainda não voltou
- *     (pode levar até 20s, timeout de IA). Só aparece se nenhuma das 4
+ *  5. `ultimaSugestaoAbaixoDoLimiar` (Fatia 3, 17/09) — a sugestão mais
+ *     recente do ciclo respondeu, mas ficou abaixo do limiar de confiança
+ *     configurado (kill-switch de qualidade, não de rede/servidor). Achado
+ *     do arquiteto: antes disto o texto "Confiança abaixo do mínimo
+ *     configurado — nada mostrado." ocupava o espaço nobre do herói ("Fale
+ *     agora") — decisão do orquestrador foi rebaixar para linha fina aqui,
+ *     nunca sumir de vez: a advogada não age sobre isto, mas alguém precisa
+ *     saber que o limiar está mal calibrado.
+ *  6. `requisicaoEmVoo` (Fatia B) — o GET desta janela ainda não voltou
+ *     (pode levar até 20s, timeout de IA). Só aparece se nenhuma das 5
  *     situações acima já estiver ocupando a linha.
- *  6. Nada do que precede: "Ouvindo." — neutro, prova de que a linha está
+ *  7. Nada do que precede: "Ouvindo." — neutro, prova de que a linha está
  *     viva mesmo em silêncio normal (nunca um espaço em branco mudo).
  *
  * `role="status"` + `aria-live="polite"` em toda situação exceto o gate:
@@ -506,11 +596,16 @@ function EstadoDoCopiloto({
   requisicaoEmVoo,
   falhasConsecutivas,
   falhandoDesde,
+  ultimaSugestaoAbaixoDoLimiar,
 }: {
   ciclo: InfoCicloCopiloto | null;
   requisicaoEmVoo: boolean;
   falhasConsecutivas: number;
   falhandoDesde: Date | null;
+  /** Fatia 3 (17/09) — a sugestão mais recente do ciclo respondeu, mas
+   * `visivel=false` (confiança abaixo do limiar configurado). Prioridade 5:
+   * depois de rede/gate/orçamento/timeout, antes de `requisicaoEmVoo`. */
+  ultimaSugestaoAbaixoDoLimiar: boolean;
 }) {
   if (falhasConsecutivas >= LIMIAR_FALHAS_PARA_AVISO && falhandoDesde) {
     return (
@@ -549,6 +644,14 @@ function EstadoDoCopiloto({
     return (
       <p role="status" aria-live="polite" className="rounded-controle border border-[color:var(--ambar)] bg-ambar-fraco px-3.5 py-2.5 text-sm text-tinta">
         A IA não respondeu desta vez. Continua tentando.
+      </p>
+    );
+  }
+
+  if (ultimaSugestaoAbaixoDoLimiar) {
+    return (
+      <p role="status" aria-live="polite" className="rounded-controle border border-linha px-3.5 py-2.5 text-sm text-tinta-suave">
+        {MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR}
       </p>
     );
   }
@@ -666,10 +769,15 @@ function ultimoItemAcertoComEvidencia(
  * porque o ciclo seguinte não repetiu o campo, mesmo que o fato continue
  * valendo.
  *
- * Texto factual, nunca repreensivo (regra do dono — o cliente pode estar
- * vendo a tela): "Entrou em holding sem fechar os 4 SIMs", nunca "você errou
- * ao...". `falta_no_bloco[].item`/`cobriu_no_bloco[].item` já vêm da IA como
- * frase de fato, não de julgamento — este componente não adiciona adjetivo.
+ * Texto factual, nunca repreensivo: "Entrou em holding sem fechar os 4
+ * SIMs", nunca "você errou ao...". `falta_no_bloco[].item`/
+ * `cobriu_no_bloco[].item` já vêm da IA como frase de fato, não de
+ * julgamento — este componente não adiciona adjetivo. Esta tela é PRIVADA
+ * da Dra. Elaine, lida de relance num telão só dela — não é compartilhada
+ * com o cliente; o padrão factual vale por si (clareza de leitura rápida),
+ * não por causa de quem mais estaria vendo (ninguém mais está). Mantido
+ * ✅ ACERTO / ❌ ERRO por pedido literal do dono (Fatia 8, 17/09) — vermelho é
+ * o tom correto numa tela só dela.
  */
 function PlacarConducao({ sugestoesCiclo }: { sugestoesCiclo: SugestaoCopilotoPolling[] }) {
   const acerto = ultimoItemAcertoComEvidencia(sugestoesCiclo);
@@ -736,7 +844,15 @@ function SugestoesDoCiclo({
   const [dispensadas, setDispensadas] = useState<Record<string, boolean>>({});
   const [vistos, setVistos] = useState<Record<string, boolean>>({});
 
-  const pendentes = sugestoes.filter((s) => !dispensadas[s.sugestao_id]);
+  // Fatia 3 (17/09) — achado do arquiteto: uma sugestão `!visivel` (IA
+  // respondeu abaixo do limiar de confiança) virava card no herói mesmo
+  // assim, mostrando "Confiança abaixo do mínimo configurado — nada
+  // mostrado." no espaço mais nobre da tela. Sugestão invisível NUNCA vira
+  // card aqui — o fato "a IA respondeu abaixo do limiar" passou a viver como
+  // linha fina no rodapé (`EstadoDoCopiloto`, em `PainelCopiloto`).
+  const pendentes = sugestoes.filter(
+    (s): s is SugestaoCopilotoPolling & { sugestao: SugestaoCopiloto } => !dispensadas[s.sugestao_id] && s.visivel && s.sugestao !== null,
+  );
 
   const recente = pendentes[pendentes.length - 1];
   const anteriores = pendentes.slice(0, -1);
@@ -773,19 +889,21 @@ function SugestoesDoCiclo({
   return (
     <div className="flex flex-col gap-2">
       <CardRecente sugestaoId={recente.sugestao_id} naoLida={recenteNaoLida}>
-        {!recente.visivel || !recente.sugestao ? (
-          <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-            Confiança abaixo do mínimo configurado — nada mostrado.
-          </p>
-        ) : (
-          <ApresentacaoSugestao
-            sessaoId={sessaoId}
-            sugestaoId={recente.sugestao_id}
-            sugestao={recente.sugestao}
-            blocosRoteiro={blocosRoteiro}
-            irPara={irPara}
-          />
-        )}
+        {/* `pendentes` já filtrou `!visivel`/`sugestao` nulo (type predicate
+         * acima) — todo `recente` aqui tem conteúdo real; o card nunca mais
+         * nasce só para exibir o aviso de confiança (Fatia 3). Quando a
+         * sugestão MOSTRADA não é a mais recente do CICLO BRUTO (a última
+         * era invisível e foi descartada do herói), `CarimboHoraSeAntigo`
+         * (mesmo componente que `BlocoCuidado` já usa) avisa discretamente
+         * que este card não é do agora — reuso, zero código novo de carimbo. */}
+        <ApresentacaoSugestao
+          sessaoId={sessaoId}
+          sugestaoId={recente.sugestao_id}
+          sugestao={recente.sugestao}
+          blocosRoteiro={blocosRoteiro}
+          irPara={irPara}
+        />
+        <CarimboHoraSeAntigo criadoEm={recente.criado_em} sugestaoId={recente.sugestao_id} sugestoesCiclo={sugestoes} />
         <div className="mt-2 flex justify-end">
           <Botao
             variante="fantasma"
@@ -809,21 +927,19 @@ function SugestoesDoCiclo({
            * e violando `aria-allowed-role` (`<ul>` não aceita `role="region"`). */}
           <div tabIndex={TAB_INDEX_ROLAVEL} role="region" aria-label="Sugestões anteriores" className="mt-2 max-h-48 overflow-y-auto pr-1">
             <ul className="flex flex-col gap-2">
+              {/* `anteriores` vem de `pendentes`, que já filtrou
+               * `!visivel`/`sugestao` nulo (Fatia 3) — o branch "Confiança
+               * abaixo do mínimo" nunca foi alcançável aqui depois do
+               * filtro; código morto removido, não só simplificado. */}
               {anteriores.map((s) => (
                 <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
-                  {!s.visivel || !s.sugestao ? (
-                    <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-                      Confiança abaixo do mínimo configurado — nada mostrado.
-                    </p>
-                  ) : (
-                    <ApresentacaoSugestao
-                      sessaoId={sessaoId}
-                      sugestaoId={s.sugestao_id}
-                      sugestao={s.sugestao}
-                      blocosRoteiro={blocosRoteiro}
-                      irPara={irPara}
-                    />
-                  )}
+                  <ApresentacaoSugestao
+                    sessaoId={sessaoId}
+                    sugestaoId={s.sugestao_id}
+                    sugestao={s.sugestao}
+                    blocosRoteiro={blocosRoteiro}
+                    irPara={irPara}
+                  />
                 </li>
               ))}
             </ul>
@@ -913,7 +1029,11 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-linha pt-3">
+    // Fatia 10 (17/09) — `border-t` interno removido: o rodapé de
+    // `PainelCopiloto` já tem `border-t` (linha do topo do rodapé inteiro) e
+    // agora também `border-l` (separador do bloco de ações destrutivas) —
+    // manter os dois era borda dupla no mesmo canto.
+    <div className="flex flex-col gap-2">
       <Botao variante="secundario" tamanho="compacto" onClick={() => setConfirmando(true)} className="self-start">
         Encerrar copiloto desta sessão
       </Botao>
@@ -1002,7 +1122,7 @@ function SugestaoIA({
 
       {!pedindo && !erro && resposta && !resposta.visivel && (
         <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-          Confiança abaixo do mínimo configurado — nada mostrado.
+          {MENSAGEM_CONFIANCA_ABAIXO_DO_LIMIAR}
         </p>
       )}
 
@@ -1304,6 +1424,14 @@ function ultimoItemFaltaComEvidencia(
   });
 }
 
+/** Fase 12, Fatia 6 — teto de itens em "Ainda não perguntou" dentro de
+ * "Cuidado". O roteiro v5 (30 campos) está ativo e a lista de pendências por
+ * bloco pode crescer além do que cabe numa coluna de 32% sem virar rolagem
+ * disputando espaço com o resto do bloco — decisão do dono, reversível:
+ * mostra os 3 primeiros + "e mais N", nunca trunca calado (o "e mais N" É a
+ * contagem real do resto, nunca um "…" mudo). */
+const TETO_ITENS_AINDA_NAO_PERGUNTOU = 3;
+
 /**
  * BLOCO 2 — "Cuidado" (condicional). Fusão dos quadros de jargão/risco:
  *  - `QuadroAlerta` (SIMs pendentes) → "Falta pedir a autorização de
@@ -1318,6 +1446,26 @@ function ultimoItemFaltaComEvidencia(
  * Regra dura: **sem nenhum dos quatro, o bloco inteiro não existe no DOM** —
  * nunca um card vazio dizendo "nada". Prova por `offsetParent`, nunca por
  * `e.hidden` (filho "visível" dentro de pai `display:none` dá verde falso).
+ *
+ * Fase 12, Fatia 6 — hierarquia por ORDEM + degrau tipográfico, nunca por
+ * rótulo de seção ("AÇÃO/ALERTA/LEITURA" seriam 3 enfeites numa coluna de
+ * 32%, achado do dono). A ordem antiga (pendentes → falta → falha →
+ * observação → desvio, o único item com BOTÃO por último) escondia a única
+ * ação clicável no fim de uma rolagem. Nova ordem:
+ *
+ *  1. AÇÃO AGORA — desvio sugerido (tem botão), topo, `text-sm`.
+ *  2. ALERTA — "Ainda não perguntou" (campos do bloco + falha de cobertura
+ *     da IA, unificados no MESMO `<li>` — eram dois tratamentos visuais para
+ *     a mesma frase, achado desta fatia) + SIMs pendentes + "Observar",
+ *     meio, `text-sm`.
+ *  3. LEITURA — hipótese/observação + `SeloConfianca`, base, `text-legenda
+ *     text-tinta-fraca`, separada pelo `border-t dashed` que já existia.
+ *
+ * LIMPEZA desta fatia: o `<li>` com marcador âmbar de `falta.campos`
+ * (`marker:text-[color:var(--ambar)]`) e a linha solta de
+ * `achadoFalhaCobertura` (cor vermelha, sem marcador) eram dois vocabulários
+ * para a mesma ideia ("isto ainda não foi perguntado") — unificados numa
+ * única lista com um único tratamento de marcador.
  */
 function BlocoCuidado({
   pendentes,
@@ -1356,37 +1504,67 @@ function BlocoCuidado({
   // (não CSS `hidden`) é o que o teste precisa provar.
   if (!temRisco) return null;
 
+  // ALERTA unificado — campos do bloco (determinístico) + a falha de
+  // cobertura mais recente da IA, no MESMO `<li>`/mesmo marcador. A falha de
+  // cobertura NUNCA duplica um campo que já está na lista de `falta.campos`
+  // (mesmo texto), então só entra quando é uma frase distinta.
+  const itensAindaNaoPerguntou = [
+    ...falta.campos.map((campo) => ({ chave: campo.id, texto: campo.rotulo, evidencia: null as string | null })),
+    ...(achadoFalhaCobertura && !falta.campos.some((c) => c.rotulo === achadoFalhaCobertura.valor.item)
+      ? [{ chave: `falha-${achadoFalhaCobertura.sugestaoId}`, texto: achadoFalhaCobertura.valor.item, evidencia: achadoFalhaCobertura.valor.evidencia }]
+      : []),
+  ];
+  const itensVisiveis = itensAindaNaoPerguntou.slice(0, TETO_ITENS_AINDA_NAO_PERGUNTOU);
+  const itensOcultos = itensAindaNaoPerguntou.length - itensVisiveis.length;
+
   return (
     <Quadro rotulo="Cuidado" icone={<IconeAlerta />} tom="vermelho" como="article">
       <div className="flex flex-col gap-2.5">
-        {pendentes.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {pendentes.map((p) => (
-              <li key={p.sim} className="text-sm text-tinta">
-                {/* Tradução do jargão obrigatória: "SIMs pendentes" → a
-                 * pendência por extenso. `p.rotulo` já vem da API como frase
-                 * humana ("Decisores presentes", "Próximo passo") — o rótulo
-                 * genérico "N de 4 SIMs" fica de fora da tela ao vivo. */}
-                Falta: {p.rotulo}
-              </li>
-            ))}
-          </ul>
+        {/* 1. AÇÃO AGORA — desvio sugerido, único item com botão, no topo. */}
+        {achadoDesvio && (
+          <div className="flex flex-col gap-1">
+            <DesvioSugerido sessaoId={sessaoId} sugestaoId={achadoDesvio.sugestaoId} desvio={achadoDesvio.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+            <CarimboHoraSeAntigo criadoEm={achadoDesvio.criadoEm} sugestaoId={achadoDesvio.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+          </div>
         )}
 
-        {temFaltaNoBloco && (
-          <div className="flex flex-col gap-2">
-            {falta.campos.length > 0 && (
+        {/* 2. ALERTA — "Ainda não perguntou" (campos + falha de cobertura,
+         * unificados) + SIMs pendentes + "Observar". */}
+        {(itensVisiveis.length > 0 || pendentes.length > 0 || falta.observar.length > 0) && (
+          <div className={`flex flex-col gap-2 ${achadoDesvio ? "border-t border-dashed border-linha pt-2.5" : ""}`}>
+            {itensVisiveis.length > 0 && (
               <div>
                 <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Ainda não perguntou:</p>
                 <ul className="ml-4 flex list-disc flex-col gap-1 marker:text-[color:var(--ambar)]">
-                  {falta.campos.map((campo) => (
-                    <li key={campo.id} className="text-sm text-tinta">
-                      {campo.rotulo}
+                  {itensVisiveis.map((item) => (
+                    <li key={item.chave} className="text-sm text-tinta">
+                      {item.texto}
+                      {item.evidencia && <span className="mt-0.5 block text-legenda italic text-tinta-fraca">&ldquo;{item.evidencia}&rdquo;</span>}
                     </li>
                   ))}
                 </ul>
+                {itensOcultos > 0 && <p className="mt-1 text-legenda text-tinta-fraca">e mais {itensOcultos}</p>}
+                {achadoFalhaCobertura && (
+                  <CarimboHoraSeAntigo criadoEm={achadoFalhaCobertura.criadoEm} sugestaoId={achadoFalhaCobertura.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
+                )}
               </div>
             )}
+
+            {pendentes.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {pendentes.map((p) => (
+                  <li key={p.sim} className="text-sm text-tinta">
+                    {/* Tradução do jargão obrigatória: "SIMs pendentes" → a
+                     * pendência por extenso. `p.rotulo` já vem da API como
+                     * frase humana ("Decisores presentes", "Próximo passo")
+                     * — o rótulo genérico "N de 4 SIMs" fica de fora da tela
+                     * ao vivo. */}
+                    Falta: {p.rotulo}
+                  </li>
+                ))}
+              </ul>
+            )}
+
             {falta.observar.length > 0 && (
               <div>
                 <p className="mb-1 text-rotulo font-medium uppercase text-tinta-fraca">Observar</p>
@@ -1402,37 +1580,16 @@ function BlocoCuidado({
           </div>
         )}
 
-        {achadoFalhaCobertura && (
-          <div className="flex flex-col gap-0.5 border-t border-dashed border-linha pt-2.5">
-            {/* Linha, não card — a falha ainda aberta mais recente, com a
-             * citação literal que a valida (§ pedido do dono, 17/09: "os
-             * acertos e os erros", "conforme a banda toca"). Acertos NUNCA
-             * aparecem aqui: não mudam a próxima frase; ver comentário de
-             * `ultimoItemFaltaComEvidencia`. */}
-            <p className="text-sm text-tinta">
-              <span className="font-medium text-[color:var(--vermelho)]">Ainda não perguntou: </span>
-              {achadoFalhaCobertura.valor.item}
-            </p>
-            <p className="text-legenda italic text-tinta-fraca">&ldquo;{achadoFalhaCobertura.valor.evidencia}&rdquo;</p>
-            <CarimboHoraSeAntigo criadoEm={achadoFalhaCobertura.criadoEm} sugestaoId={achadoFalhaCobertura.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-          </div>
-        )}
-
+        {/* 3. LEITURA — hipótese/observação, base, degrau tipográfico menor,
+         * separada pelo `border-t dashed` que já existia. */}
         {observacaoCritica && achadoObservacao && (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 border-t border-dashed border-linha pt-2.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <Selo tom={TOM_TIPO[observacaoCritica.tipo]}>{ROTULO_TIPO[observacaoCritica.tipo]}</Selo>
               <SeloConfianca confianca={observacaoCritica.confianca} />
             </div>
-            <p className="text-sm text-tinta">{observacaoCritica.texto}</p>
+            <p className="text-legenda text-tinta-fraca">{observacaoCritica.texto}</p>
             <CarimboHoraSeAntigo criadoEm={achadoObservacao.criadoEm} sugestaoId={achadoObservacao.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
-          </div>
-        )}
-
-        {achadoDesvio && (
-          <div className="flex flex-col gap-1 border-t border-dashed border-linha pt-2.5">
-            <DesvioSugerido sessaoId={sessaoId} sugestaoId={achadoDesvio.sugestaoId} desvio={achadoDesvio.valor} blocosRoteiro={blocosRoteiro} irPara={irPara} />
-            <CarimboHoraSeAntigo criadoEm={achadoDesvio.criadoEm} sugestaoId={achadoDesvio.sugestaoId} sugestoesCiclo={sugestoesCiclo} />
           </div>
         )}
       </div>

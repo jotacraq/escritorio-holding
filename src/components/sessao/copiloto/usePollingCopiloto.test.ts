@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EstadoCopilotoComPolling, SegmentoCopiloto } from "@/types/copiloto";
+import type { EstadoBotCopiloto, EstadoCopilotoComPolling, SegmentoCopiloto } from "@/types/copiloto";
 
 /**
  * F3 — 🔴 achado do Fable (17/09): `usePollingCopiloto.ts` pedia
@@ -15,6 +15,16 @@ import type { EstadoCopilotoComPolling, SegmentoCopiloto } from "@/types/copilot
  *     numa sessão real).
  *  3. Resposta vazia (`segmentos_novos: []`) não substitui a lista por uma
  *     vazia — mesma regra de `sugestoes`.
+ *
+ * F5a — 🔴 mesmo defeito confirmado para `resposta.bot`: recebido a cada
+ * tick e jogado fora (zero ocorrência de `bot` no hook antes desta fatia).
+ * Trava, com regra `??` (nunca substituição pura — ver comentário do campo
+ * em `EstadoPollingCopiloto.bot`):
+ *
+ *  4. `bot` do payload chega ao estado.
+ *  5. Tick posterior com `bot: null` NÃO apaga um `ativo` já visto.
+ *  6. `bot` muda de estado (`aguardando` → `ativo`) quando o payload muda.
+ *  7. Troca de `sessaoId` zera `bot` para `null`.
  */
 
 const { estado } = vi.hoisted(() => ({
@@ -54,6 +64,10 @@ function RESPOSTA_VAZIA(parametros: { desdeSegmento: number; desdeSugestao: numb
     bot: null,
     comparacao_decisores: null,
   };
+}
+
+function botDe(estado: EstadoBotCopiloto["estado"]): EstadoBotCopiloto {
+  return { estado, erro_provedor: null, retencao_infinita_detectada: false };
 }
 
 function segmentosDe(quantidade: number, offset: number): SegmentoCopiloto[] {
@@ -147,5 +161,67 @@ describe("usePollingCopiloto — F3, acumulação de segmentos com teto", () => 
 
     rerender({ sessaoId: "s2" });
     expect(result.current.segmentos).toHaveLength(0);
+  });
+});
+
+describe("usePollingCopiloto — F5a, estado do bot com `??`", () => {
+  it("`bot` do payload chega ao estado", async () => {
+    estado.respostas = [{ ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: botDe("aguardando") }];
+    const { result } = renderHook(() => usePollingCopiloto("s1", 0, false));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    await waitFor(() => expect(result.current.bot).toEqual(botDe("aguardando")));
+  });
+
+  it("tick posterior com `bot: null` NÃO apaga um `ativo` já visto", async () => {
+    estado.respostas = [
+      { ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: botDe("ativo") },
+      { ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: null },
+    ];
+    const { result } = renderHook(() => usePollingCopiloto("s1", 0, false));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await waitFor(() => expect(result.current.bot).toEqual(botDe("ativo")));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(result.current.bot).toEqual(botDe("ativo"));
+  });
+
+  it("`bot` muda de `aguardando` para `ativo` quando o payload muda", async () => {
+    estado.respostas = [
+      { ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: botDe("aguardando") },
+      { ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: botDe("ativo") },
+    ];
+    const { result } = renderHook(() => usePollingCopiloto("s1", 0, false));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await waitFor(() => expect(result.current.bot).toEqual(botDe("aguardando")));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await waitFor(() => expect(result.current.bot).toEqual(botDe("ativo")));
+  });
+
+  it("troca de `sessaoId` zera `bot` para `null`", async () => {
+    estado.respostas = [{ ...RESPOSTA_VAZIA({ desdeSegmento: 0, desdeSugestao: 0 }), bot: botDe("ativo") }];
+    const { result, rerender } = renderHook(({ sessaoId }) => usePollingCopiloto(sessaoId, 0, false), { initialProps: { sessaoId: "s1" } });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await waitFor(() => expect(result.current.bot).toEqual(botDe("ativo")));
+
+    rerender({ sessaoId: "s2" });
+    expect(result.current.bot).toBeNull();
   });
 });

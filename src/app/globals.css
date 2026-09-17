@@ -257,6 +257,54 @@ html[data-escala="grande"] {
   }
 }
 
+/* Modo foco da condução de sessão (Fase 12, Fatia 9 — 17/09/2026). Classe
+   IRMÃ de `.largura-cheia` no MESMO `<div>` de `sessoes/[id]/conduzir/
+   layout.tsx`: `:has()` a partir do `<body>` recolhe a `.nav-lateral` para a
+   MESMA largura só-ícone que `NavRecolher.tsx`/`data-nav-recolhida="1"` já
+   usa (`4.5rem`, reuso do valor — não um segundo padrão de largura) enquanto
+   a rota está montada. `.nav-so-icone` some do mesmo jeito, mesmo motivo:
+   texto que só cabe com a lateral cheia.
+
+   Diferente de `.modo-tela-cheia-sessao` (abaixo: `display:none` na lateral
+   inteira, foco do teclado alcançaria links ocultos) — aqui a lateral NÃO
+   some, só encolhe: o `<nav>` continua no DOM, visível, só-ícone, alcançável
+   por teclado e mouse, exatamente como o recolhimento manual de
+   `NavRecolher`. Zero `localStorage`: nasce e morre com a montagem da rota,
+   nunca grava em `CHAVE_NAV_RECOLHIDA` (chave GLOBAL aos 7 sistemas —
+   persistir isto faria a advogada achar o menu sumido em outra tela depois,
+   o que seria bug, não modo foco). O atributo `data-nav-recolhida="1"`
+   gravado por um clique manual no `NavRecolher` continua valendo por cima
+   (mesma largura, mesma regra, não há conflito a resolver).
+
+   🔴 CORREÇÃO (Fable, achado F9 — 17/09/2026): a frase acima ("continua
+   funcionando por cima") era FALSA até esta correção. `NavRecolher.tsx`
+   grava `data-nav-recolhida` no `<html>` (`document.documentElement`,
+   nunca `<body>`) e alterna ícone/rótulo/`aria-pressed`, mas a regra
+   `body:has(.foco-sessao) .nav-lateral { width: 4.5rem }` abaixo não tinha
+   NENHUMA condição sobre esse atributo — valia sempre nesta rota,
+   independente do clique. Controle que muda de estado sem efeito na tela
+   (lição já registrada nesta base: "revalidatePath ≠ tela repintada").
+   Decisão: o `data-nav-recolhida="0"` EXPLÍCITO vence o foco — regra mais
+   específica abaixo, mesmo token de largura (`lg:w-64` = 16rem, ver
+   `AppShell.tsx`) e mesmo `display` de `.nav-so-icone` que a lateral usa
+   fora do modo foco. Contrato: foco recolhe por padrão; um `data-nav-
+   recolhida="0"` explícito (clique manual em `NavRecolher` PARA expandir)
+   expande mesmo dentro do foco. */
+@media (min-width: 1024px) {
+  body:has(.foco-sessao) .nav-lateral {
+    width: 4.5rem;
+  }
+  body:has(.foco-sessao) .nav-so-icone {
+    display: none;
+  }
+  html[data-nav-recolhida="0"] body:has(.foco-sessao) .nav-lateral {
+    width: 16rem;
+  }
+  html[data-nav-recolhida="0"] body:has(.foco-sessao) .nav-so-icone {
+    display: revert;
+  }
+}
+
 /* Largura cheia por rota (14/09/2026). O `<main>` do `AppShell` centraliza o
    conteúdo em `max-w-7xl` — linha de leitura confortável, que é o certo para
    as ~30 telas de cadastro e relatório. A tela de conduzir sessão é exceção:
