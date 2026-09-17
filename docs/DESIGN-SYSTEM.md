@@ -15,6 +15,26 @@ Fonte de verdade: `src/app/globals.css` (tokens) e `src/components/ui/*` (compon
 > de 44 px e a `.area-publica` (o cliente de 60+ continua com 17 px e 44 px).
 > Isto é substituição consciente da escala da Fase 4, não regressão dela.
 
+> **T1 — repaginação de densidade (16/09/2026).** Mudança de DIREÇÃO, registrada
+> em `05 Decisoes/2026-09-16 - Direcao de UI validada pelo Marcio (clean e
+> convencional).md` (vault): a Fase 7 pedia "mais visual"; esta rodada pede
+> **clean e convencional, denso como sistema tradicional (ERP)** — Fiori, Atlassian,
+> Salesforce Lightning como referência, não mais o seminário. Motivo do Marcio:
+> *"a visualização é muito grande [...] tenho que escrolar demais. Nunca tenho
+> amostra de acesso rápido. Se para mim [...] é difícil, imagina uma pessoa de 50
+> anos."* Maior alavancagem do sistema: **2 arquivos** (`globals.css` + `Cartao.tsx`),
+> **176 componentes afetados** por herança de token. O que mudou: `Cartao normal`
+> 20-24px→**16px** (sem salto em `sm:` — o `sm:p-6` fazia o desktop, onde o
+> advogado trabalha, ser o mais folgado; inversão de propósito), `Cartao compacto`
+> 16px→**12px**, `--espaco-secao` 26px→**20px**, `--espaco-bloco` 18px→**14px**,
+> `--espaco-cartao` 16px→**12px**, `--raio-cartao` 12px→**8px** (coincide agora com
+> `--raio-controle`: retângulo chapado, não bolha). O que **NÃO** mudou, e é
+> trava: `--espaco-item`/`--alvo-gap` (8px — densidade não come folga entre
+> alvos, público 50+), `--alvo-minimo` (44px), toda a escala tipográfica, e
+> nenhuma cor (contraste AAA confirmado por `scripts/contraste.mjs`, números
+> idênticos aos da Fase 8). `src/components/sessao/**` e `/sessoes/**` ficaram
+> de fora por decisão explícita — tela em produção com sessão real.
+
 ## 1. Tokens — quando usar cada um
 
 | Token | Tailwind | Uso |
@@ -50,14 +70,18 @@ Causa: cartão com 1,5rem de padding separado por 1,5rem de gap não lê como bl
 
 **Regra: o degrau de fora é sempre maior que o de dentro.**
 
-| Degrau | Token (V2) | V1 | Classe | Onde |
-|---|---|---|---|---|
-| Seção | `--espaco-secao` **1.625rem / 26px** | 40px | `gap-secao` | entre seções de uma página |
-| Bloco | `--espaco-bloco` **1.125rem / 18px** | 28px | `gap-bloco` | entre cartões de uma mesma seção; é o degrau raiz da maioria das telas na V2 |
-| Cartão | `--espaco-cartao` **1rem / 16px** | 24px | `gap-cartao` / `p-cartao` | dentro do cartão: entre grupos, entre KPIs de uma faixa |
-| Item | `--espaco-item` **0.5rem / 8px** | 12px | `gap-item` | entre chips, entre linhas de uma lista densa, entre rótulo e valor |
+| Degrau | Token (T1, 16/09/2026) | V2 | V1 | Classe | Onde |
+|---|---|---|---|---|---|
+| Seção | `--espaco-secao` **1.25rem / 20px** | 26px | 40px | `gap-secao` | entre seções de uma página |
+| Bloco | `--espaco-bloco` **0.875rem / 14px** | 18px | 28px | `gap-bloco` | entre cartões de uma mesma seção; é o degrau raiz da maioria das telas |
+| Cartão | `--espaco-cartao` **0.75rem / 12px** | 16px | 24px | `gap-cartao` / `p-cartao` | dentro do cartão: entre grupos, entre KPIs de uma faixa |
+| Item | `--espaco-item` **0.5rem / 8px — NÃO MUDA** | 8px | 12px | `gap-item` | entre chips, entre linhas de uma lista densa, entre rótulo e valor. Mesmo valor de `--alvo-gap` (§6): densidade não come o piso de folga entre alvos de toque |
 
-`--raio-cartao` **1rem** (era 1.25rem): cartão compacto com raio de 20 px vira bolha.
+`--raio-cartao` **0.5rem / 8px** (T1; era 0.75rem/12px na V2, 1.25rem/20px na V1):
+padrão ERP denso (Fiori, Atlassian) pedido pelo Marcio em 16/09 — "sistema convencional"
+é retângulo, e com o padding do `Cartao` caído a 16px um raio de 12px voltava a ler como
+bolha. Passa a coincidir com `--raio-controle` (mesma geometria chapada em cartão e
+controle).
 
 Tipografia: entrelinha de título é `1.22` (display) e `1.30` (título) — na V2 os títulos
 encolheram, então a entrelinha SUBIU: título menor precisa de proporcionalmente mais folga para
@@ -287,7 +311,7 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
 ## 9. Checklist de migração de uma tela (10 itens)
 
 1. `CabecalhoPagina` com rótulo da área, título, descrição e ações — único `h1`.
-2. Todo bloco em `Cartao` (raio 1.25rem, sombra) ou grade de `Cartao`; nada de `border rounded-sm bg-papel-elevado` solto.
+2. Todo bloco em `Cartao` (raio 0.5rem — T1, 16/09/2026 — sombra) ou grade de `Cartao`; nada de `border rounded-sm bg-papel-elevado` solto.
 3. Zero `text-[10px]`/`text-[11px]`/hex fixo — grep antes de fechar. `font-semibold` é peso válido desde a migração GPS-THB (§2).
 4. Todo botão é `Botao`; um `primario` por tela; todos com `carregando` na ação assíncrona.
 5. Todo input dentro de `Campo` (rótulo, ajuda, erro); alvo ≥ 44px; erro humano com o que fazer.
@@ -302,6 +326,11 @@ Campo sem dado mostra "—" ou nada, nunca 0; `Kpi` sem `valor` mostra travessã
     Medido na Fase 7 (`document.body.scrollHeight`, 1440×900, jornada de exemplo em `croqui_apresentado`):
     Hoje 900 · Clientes 900 · Agenda 900 · Mensagens 900 · Admin 900 · **Ficha 1.503 → 917** ·
     **`/admin#repertorio` 1.684 → 959** · `/p/m` 1.259 · `/p/d` 1.212. Rolagem horizontal a 390 px: 0 em todas.
+    **T1 (16/09/2026) reduz estes números de novo** (`Cartao`/`gap-*` mais densos, ver nota
+    de topo do arquivo) mas não foi possível remedir no navegador nesta rodada (sem
+    `.env.local` na máquina de execução) — só a aritmética por contagem de token × delta
+    foi entregue (diário de 16/09). **Pendência: remedir com `next dev` de verdade antes de
+    considerar o número acima como atual.**
     **Lista longa não usa "ver tudo": usa página.** Botão que despeja a base inteira faz o teto
     da tela depender do tamanho do banco (52 casos = 4.900 px, e cresce a cada reunião). Com
     paginação o teto é constante; o rodapé diz onde se está (`11–20 de 52 casos · página 2 de 6`),

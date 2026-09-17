@@ -137,8 +137,12 @@
   /* Migração GPS-THB (14/09/2026): raio do GPS, retângulo mais fechado que a
      "bolha" da Fase 6. `--raio-pilula` fica — ainda serve o CTA da área
      pública (§CF4/área pública, `globals.css` mais abaixo) — mas o botão
-     primário do sistema interno deixa de usá-lo (Onda 5, B2). */
-  --raio-cartao: 0.75rem;
+     primário do sistema interno deixa de usá-lo (Onda 5, B2).
+     T1 (16/09/2026): 0.75rem → 0.5rem. Com o padding do `Cartao` normal
+     caindo para 16px, um raio de 12px voltava a ler como bolha — "sistema
+     convencional" pedido pelo Marcio é retângulo. Passa a COINCIDIR com
+     `--raio-controle`: cartão e controle usam a mesma geometria chapada. */
+  --raio-cartao: 0.5rem;
   --raio-controle: 0.5rem;
   --raio-pilula: 2.625rem;
 
@@ -148,10 +152,20 @@
      que escrolar muito") encolheu a escala inteira em ~35 %, preservando a
      ordem: seção (1,625) > bloco (1,125) > cartão (1) > item (0,5).
      Não é regressão da identidade da Fase 4: cor, tipo, sombra e selo ficam
-     intactos — o que encolheu foi a ESCALA. */
-  --espaco-secao: 1.625rem;
-  --espaco-bloco: 1.125rem;
-  --espaco-cartao: 1rem;
+     intactos — o que encolheu foi a ESCALA.
+
+     T1 — repaginação de densidade (16/09/2026, decisão do Marcio "clean e
+     convencional", ver vault 05 Decisoes/2026-09-16). A Fase 7 pedia "mais
+     visual"; esta rodada inverte a direção para ERP denso (Fiori/SAP,
+     Atlassian, Salesforce Lightning): "os cards muito grandes, as grids
+     muito grandes, tenho que escrolar demais". Escala nova, mesma ordem:
+     seção 20 > bloco 14 > cartão 12 > item 8 — `--espaco-item` FICA em
+     8px porque também é `--alvo-gap` (piso de folga entre alvos
+     adjacentes, WCAG/Fase 8, público 50+); densidade não come alvo de
+     clique. */
+  --espaco-secao: 1.25rem;
+  --espaco-bloco: 0.875rem;
+  --espaco-cartao: 0.75rem;
   --espaco-item: 0.5rem;
   /* TRAVA: 44px é o alvo mínimo de toque (WCAG 2.5.8 / DS §6) e NÃO encolhe
      com a compactação. `min-h-11` é rem sobre a raiz do documento — por isso

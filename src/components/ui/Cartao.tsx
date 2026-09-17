@@ -29,8 +29,14 @@ interface CartaoProps extends HTMLAttributes<HTMLElement> {
 }
 
 const PREENCHIMENTO = {
-  normal: "p-5 sm:p-6",
-  compacto: "p-4",
+  /* Densidade T1 (16/09/2026, decisão do Marcio "clean e convencional",
+     ver 05 Decisoes/2026-09-16). O `sm:p-6` fazia o DESKTOP — onde o
+     advogado trabalha — ser o mais folgado dos dois: inversão de
+     propósito. 16px fixo, sem salto em breakpoint, é o piso de padding de
+     cartão denso (Fiori/Atlassian). */
+  normal: "p-4",
+  /* Mantém um degrau abaixo do `normal` (Salesforce Lightning denso). */
+  compacto: "p-3",
   sem: "",
 } as const;
 
