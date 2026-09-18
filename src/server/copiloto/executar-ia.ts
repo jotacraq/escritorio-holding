@@ -90,6 +90,14 @@ export type ResultadoExecucaoCopiloto =
  * `configuracoes` diretamente (evita round-trip novo dentro do caminho
  * quente da IA; ver comentário de recalibração acima). Omitidos, caem nos
  * fallbacks `TIMEOUT_COPILOTO_MS`/`MAX_TOKENS_COPILOTO`.
+ *
+ * `versaoPrompt`/`variante` (18/09/2026, opcionais — mesmo padrão de
+ * `effortOverride`): só `scripts/bancada-copiloto.ts` usa isto, para medir
+ * uma versão de `prompts_versoes` ainda não promovida (ex.: v8 `ativo=false`)
+ * lado a lado com a v7 ativa, e para carimbar `execucoes_ia.variante`.
+ * Repassados sem alteração a `executarComAuditoria`, que já suporta os dois
+ * campos (usados hoje por `scripts/bancada-ia.ts` no Briefing) — nenhuma rota
+ * HTTP do copiloto aceita nenhum dos dois campos do cliente.
  */
 export async function executarIaCopiloto(
   admin: SupabaseClient,
@@ -99,6 +107,8 @@ export async function executarIaCopiloto(
     abortarNoTimeout?: boolean;
     timeoutMs?: number;
     maxTokens?: number;
+    versaoPrompt?: number;
+    variante?: string | null;
   },
 ): Promise<ResultadoExecucaoCopiloto> {
   const abortarNoTimeout = params.abortarNoTimeout ?? true;
@@ -108,6 +118,7 @@ export async function executarIaCopiloto(
 
   const chamada = executarComAuditoria(admin, {
     chavePrompt: CHAVE_PROMPT_COPILOTO,
+    versaoPrompt: params.versaoPrompt,
     jornadaId: params.jornadaId,
     criadoPor: null,
     prefixoUsuario: "Contexto da sessão em curso (JSON):",
@@ -116,6 +127,7 @@ export async function executarIaCopiloto(
     nomeSchema: "copiloto_sugestao",
     maxTokens,
     isentoCooldown: true,
+    variante: params.variante ?? null,
     // Só propaga o signal quando o abort de verdade é desejado — para o
     // warm-up (abortarNoTimeout=false), NENHUM signal chega ao adaptador,
     // então `AbortSignal.any` nem entra em jogo lá (openrouter.ts se

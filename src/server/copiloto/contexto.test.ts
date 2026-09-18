@@ -129,7 +129,7 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
   return { from } as unknown as SupabaseClient;
 }
 
-const { montarContextoCopiloto } = await import("./contexto");
+const { montarContextoCopiloto, montarJanelaTranscricaoDeSegmentos, montarMapaDePapeis, rotuloFalante } = await import("./contexto");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -511,5 +511,65 @@ describe("montarContextoCopiloto — bloco G: resumo do inventário mencionado (
 
     const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.inventario_resumo).toBeNull();
+  });
+});
+
+/**
+ * `montarJanelaTranscricaoDeSegmentos` — núcleo PURO do bloco D, extraído de
+ * `buscarJanelaTranscricao` em 18/09/2026 para reuso em
+ * `scripts/bancada-copiloto.ts` (REPLAY de sessão real). Estes casos replicam
+ * a regra de produção operação a operação: filtro por `criado_em >= agora -
+ * janela`, corte em `MAX_SEGMENTOS_JANELA`, e troca de nome por papel via
+ * `rotuloFalante` — na MESMA ordem da query (`gte` → `order by ordem` →
+ * `limit`). Isto é a "função que reconstrói a janela a partir dos segmentos"
+ * exigida pela tarefa: ela replica regra de produção, não pode ficar sem
+ * teste.
+ */
+describe("montarJanelaTranscricaoDeSegmentos — núcleo puro do bloco D", () => {
+  const AGORA = new Date("2026-09-18T12:00:00Z").getTime();
+
+  function seg(segundosAtras: number, falante: string | null, texto: string): { falante: string | null; texto: string; criado_em: string } {
+    return { falante, texto, criado_em: new Date(AGORA - segundosAtras * 1000).toISOString() };
+  }
+
+  it("descarta segmento mais velho que a janela (90s) e mantém o resto, na ordem recebida", () => {
+    const segmentos = [seg(120, "advogada", "fala antiga, fora da janela"), seg(60, "advogada", "fala dentro da janela"), seg(10, "cliente", "fala mais recente")];
+
+    const janela = montarJanelaTranscricaoDeSegmentos(segmentos, null, { agora: AGORA });
+
+    expect(janela).toEqual(["advogada: fala dentro da janela", "cliente: fala mais recente"]);
+  });
+
+  it("segmento EXATAMENTE no limite da janela (>=) entra — mesmo operador `gte` da query em produção", () => {
+    const segmentos = [seg(90, "advogada", "no limite exato")];
+    const janela = montarJanelaTranscricaoDeSegmentos(segmentos, null, { agora: AGORA, janelaSegundos: 90 });
+    expect(janela).toEqual(["advogada: no limite exato"]);
+  });
+
+  it("respeita o teto de segmentos (MAX_SEGMENTOS_JANELA) mesmo com mais linhas dentro da janela de tempo", () => {
+    const segmentos = Array.from({ length: 5 }, (_, i) => seg(10 - i, "advogada", `fala ${i}`));
+    const janela = montarJanelaTranscricaoDeSegmentos(segmentos, null, { agora: AGORA, maxSegmentos: 2 });
+    expect(janela).toEqual(["advogada: fala 0", "advogada: fala 1"]);
+  });
+
+  it("troca nome próprio por papel via mapaDePapeis (§7 — nome nunca sai desta função)", () => {
+    const mapa = montarMapaDePapeis([
+      { nome: "João CSM", entrou_em: "2026-09-18T11:00:00Z", saiu_em: null, papel: "decisor_1" },
+    ]);
+    const segmentos = [seg(5, "João CSM", "eu queria proteger o imóvel")];
+
+    const janela = montarJanelaTranscricaoDeSegmentos(segmentos, mapa, { agora: AGORA });
+
+    expect(janela).toEqual(["decisor_1: eu queria proteger o imóvel"]);
+  });
+
+  it("sem mapa de papéis, cai no fallback conhecido (advogada/cliente) ou 'participante' — nunca o nome próprio", () => {
+    expect(rotuloFalante("advogada", null)).toBe("advogada");
+    expect(rotuloFalante("Terezinha Alves", null)).toBe("participante");
+    expect(rotuloFalante(null, null)).toBe("participante");
+  });
+
+  it("array vazio devolve janela vazia, sem lançar", () => {
+    expect(montarJanelaTranscricaoDeSegmentos([], null, { agora: AGORA })).toEqual([]);
   });
 });

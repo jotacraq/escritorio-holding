@@ -72,8 +72,8 @@ import { resumirInventario } from "@/server/copiloto/inventario";
  * nunca apaga o que já foi acumulado.
  */
 
-const JANELA_TRANSCRICAO_SEGUNDOS = 90;
-const MAX_SEGMENTOS_JANELA = 40; // teto defensivo: ~90s de fala não passa disto em ritmo humano
+export const JANELA_TRANSCRICAO_SEGUNDOS = 90;
+export const MAX_SEGMENTOS_JANELA = 40; // teto defensivo: ~90s de fala não passa disto em ritmo humano
 
 const CHAVE_ROTEIRO_SESSAO_VIABILIDADE = "sessao_viabilidade";
 
@@ -92,7 +92,7 @@ interface SessaoParaContexto {
   } | null;
 }
 
-interface SegmentoJanela {
+export interface SegmentoJanela {
   falante: string | null;
   texto: string;
   criado_em: string;
@@ -460,7 +460,7 @@ function normalizarParticipantes(bruto: unknown): string[] {
  * leitura cai em `false` — mesma regra dura de todo interruptor do copiloto. */
 const CHAVE_PAPEIS_DE_FALA = "copiloto_sessao.papeis_de_fala";
 
-async function papeisDeFalaEstaoAtivos(supabase: SupabaseClient): Promise<boolean> {
+export async function papeisDeFalaEstaoAtivos(supabase: SupabaseClient): Promise<boolean> {
   try {
     return await lerConfiguracaoBool(supabase, CHAVE_PAPEIS_DE_FALA, true);
   } catch {
@@ -479,7 +479,7 @@ async function papeisDeFalaEstaoAtivos(supabase: SupabaseClient): Promise<boolea
  * da MESMA pessoa (join/leave/join) têm nomes com grafia levemente diferente
  * mas mesmo `id`, todas caem na MESMA chave normalizada aqui — o mapa não
  * perde a herança de papel que `aplicarEventoParticipante` já garantiu. */
-function montarMapaDePapeis(bruto: unknown): Map<string, string> {
+export function montarMapaDePapeis(bruto: unknown): Map<string, string> {
   const lista: ParticipanteRegistrado[] = normalizarParticipantesBrutos(bruto);
   const mapa = new Map<string, string>();
   for (const p of lista) {
@@ -525,7 +525,34 @@ async function buscarJanelaTranscricao(
     .returns<SegmentoJanela[]>();
   if (error) throw error;
 
-  return (data ?? []).map((s) => `${rotuloFalante(s.falante, mapaDePapeis)}: ${s.texto}`);
+  return montarJanelaTranscricaoDeSegmentos(data ?? [], mapaDePapeis);
+}
+
+/**
+ * Núcleo PURO do bloco D, extraído de `buscarJanelaTranscricao` (18/09/2026)
+ * para reuso em `scripts/bancada-copiloto.ts`: a bancada faz REPLAY de uma
+ * sessão real (`sessoes_copiloto_segmentos` já carregados por inteiro) e
+ * precisa reconstruir a MESMA janela deslizante que o runtime monta a partir
+ * do banco — sem duplicar a regra (`gte(criado_em)` + `order by ordem` +
+ * `limit` + troca de nome por papel). Esta função assume que `segmentos` já
+ * vem ORDENADO por `ordem` ascendente (contrato idêntico ao `order by ordem`
+ * da query acima) — filtra pela janela de tempo, corta no teto e rotula,
+ * exatamente na mesma ordem de operações da query em produção.
+ */
+export function montarJanelaTranscricaoDeSegmentos(
+  segmentosOrdenados: SegmentoJanela[],
+  mapaDePapeis: Map<string, string> | null,
+  opts?: { agora?: number; janelaSegundos?: number; maxSegmentos?: number },
+): string[] {
+  const agora = opts?.agora ?? Date.now();
+  const janelaSegundos = opts?.janelaSegundos ?? JANELA_TRANSCRICAO_SEGUNDOS;
+  const maxSegmentos = opts?.maxSegmentos ?? MAX_SEGMENTOS_JANELA;
+  const desdeMs = agora - janelaSegundos * 1000;
+
+  return segmentosOrdenados
+    .filter((s) => new Date(s.criado_em).getTime() >= desdeMs)
+    .slice(0, maxSegmentos)
+    .map((s) => `${rotuloFalante(s.falante, mapaDePapeis)}: ${s.texto}`);
 }
 
 /** Rótulos que o caminho MANUAL já usa há mais tempo (`RegistroManual`
@@ -551,7 +578,7 @@ const PAPEIS_CONHECIDOS = new Set(["advogada", "cliente"]);
  *      rótulo que não casa com nenhum dos dois caminhos acima. Degradação
  *      graciosa, comportamento IDÊNTICO ao de antes desta correção — nenhuma
  *      migration de dados. */
-function rotuloFalante(bruto: string | null, mapaDePapeis: Map<string, string> | null): string {
+export function rotuloFalante(bruto: string | null, mapaDePapeis: Map<string, string> | null): string {
   if (!bruto) return "participante";
 
   if (mapaDePapeis) {
