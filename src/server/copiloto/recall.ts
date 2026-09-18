@@ -351,6 +351,13 @@ export async function encerrarBot(botId: string): Promise<ResultadoEncerrarBot> 
   // não havia chamada da qual sair. Tratar todo 400 como `ja_tinha_saido` é
   // o que o comentário de topo da função já prometia; o `code` era uma
   // condição a mais que a API não cumpre.
+  //
+  // CONFIRMADO CONTRA A API REAL (18/09/2026, conta nova): um bot que nunca
+  // entrou devolve `400 {"code":"cannot_command_unstarted_bot"}` — ou seja, a
+  // resposta às vezes TEM corpo (a doc diz "No response body") e o `code` NÃO
+  // é `bot_command_error`. São pelo menos dois códigos diferentes para a mesma
+  // situação operacional; exigir um deles nominalmente era frágil por
+  // construção, e é por isso que a classificação aqui é pelo STATUS.
   if (resposta.status === 400) {
     // Estado esperado — NÃO registrarErro (comentário de topo do tipo).
     // O corpo é drenado e ignorado: pode não existir.

@@ -453,6 +453,26 @@ describe("encerrarBot — 400 bot_command_error é estado esperado (§4.2.2)", (
     expect(registrarErroMock).not.toHaveBeenCalled();
   });
 
+  it("🔴 400 `cannot_command_unstarted_bot` (código REAL da API, medido 18/09) também é 'já saiu'", async () => {
+    process.env.RECALL_API_KEY = "chave-teste";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        // Corpo real capturado contra a API em 18/09/2026 — note que o `code`
+        // NÃO é `bot_command_error`: são pelo menos dois códigos distintos
+        // para a mesma situação, e é por isso que classificamos pelo STATUS.
+        json: async () => ({ code: "cannot_command_unstarted_bot", detail: "Cannot send a command to a bot which has not been started." }),
+      }),
+    );
+
+    const resultado = await encerrarBot("bot_nunca_entrou");
+
+    expect(resultado).toEqual({ situacao: "ja_tinha_saido" });
+    expect(registrarErroMock).not.toHaveBeenCalled();
+  });
+
   it("500 do provedor continua sendo falha real e registra erro", async () => {
     process.env.RECALL_API_KEY = "chave-teste";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
