@@ -271,6 +271,7 @@ describe("etapaExpurgoSegmentosCopiloto", () => {
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
       sessoesComFalhaDeRedacaoInventario: 0,
+      sessoesComFalhaDeRedacaoFicha: 0,
       pulada: "expurgo_desligado",
     });
   });

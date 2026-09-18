@@ -126,6 +126,30 @@ const ItemInventarioMencionadoSchema = z.object({
   evidencia: z.string(),
 });
 
+/**
+ * 18/09/2026 — FICHA DO CLIENTE: retrato humano do decisor, acumulado na
+ * sessão (`server/copiloto/ficha.ts`, `sessoes_copiloto.ficha_acumulada`,
+ * migration 0122). Substitui a col. 3 de transcrição+inventário em ABAS que
+ * a advogada nunca clicava (medido: `observacao` da IA é 74% navegação, mas
+ * a EVIDÊNCIA por trás é ouro — "eu vou perder qualidade de vida" (dor),
+ * "imposto de renda é 30 por 100" (objeção), "40 40 10 e 10" (desejo)).
+ *
+ * 4 categorias fechadas (`rank_categoria` em `ficha.ts` decide a ORDEM de
+ * exibição, nunca este schema — regra de negócio vive no acumulador, não na
+ * gramática da IA). MESMA ARMADILHA de todo schema deste arquivo: NENHUM
+ * `.max()`/`.min()` de string — vira `minLength`/`maxLength` no JSON Schema
+ * e o `strict:true` do OpenRouter recusa. Os tetos de caractere (90/120) são
+ * regra de PROMPT (0123) + corte defensivo no `validarSugestaoCopiloto`
+ * (`validar.ts`), nunca do Zod.
+ */
+export const CategoriaFichaClienteSchema = z.enum(["dor", "objecao", "desejo", "fato_decisor"]);
+
+const ItemFichaClienteSchema = z.object({
+  categoria: CategoriaFichaClienteSchema,
+  texto: z.string(),
+  evidencia: z.string(),
+});
+
 export const SugestaoCopilotoIaSchema = z.object({
   proxima_pergunta: ProximaPerguntaSchema,
   falta_no_bloco: z.array(ItemFaltaSchema),
@@ -135,6 +159,7 @@ export const SugestaoCopilotoIaSchema = z.object({
   confianca_geral: z.number(),
   bloco_inferido: BlocoInferidoSchema,
   inventario_mencionado: z.array(ItemInventarioMencionadoSchema),
+  ficha_cliente: z.array(ItemFichaClienteSchema),
 });
 
 export type SugestaoCopilotoIa = z.infer<typeof SugestaoCopilotoIaSchema>;
@@ -187,3 +212,19 @@ export const TETO_EVIDENCIA_INVENTARIO = 200;
  * `MAX_ITENS_FALTA_NO_BLOCO` — teto defensivo de payload por chamada, não
  * de negócio. */
 export const MAX_ITENS_INVENTARIO_POR_CHAMADA = 6;
+
+/** 18/09/2026 — tetos de `ficha_cliente[]` (FICHA DO CLIENTE, migration
+ * 0122). 🔴 90/120, NÃO 120/160: o arquiteto reduziu porque a altura do
+ * card em 768p × escala de 18px não fechava com os tetos maiores. A maior
+ * evidência medida na sessão real tem 89 caracteres — 120 não corta nenhuma
+ * citação real. Regra de PROMPT (0123) + corte defensivo no validador,
+ * nunca no Zod (ver ARMADILHA no topo do arquivo). */
+export const TETO_TEXTO_FICHA = 90;
+export const TETO_EVIDENCIA_FICHA = 120;
+
+/** Máximo de itens de `ficha_cliente[]` que a IA pode propor POR CHAMADA —
+ * mesmo espírito de `MAX_ITENS_INVENTARIO_POR_CHAMADA`: quantos itens NOVOS
+ * uma janela de ~90s de fala pode plausivelmente render, não o total
+ * acumulado da sessão (isso não tem teto — `server/copiloto/ficha.ts`
+ * acumula por toda a sessão, com poda por bytes). */
+export const MAX_ITENS_FICHA_POR_CHAMADA = 2;

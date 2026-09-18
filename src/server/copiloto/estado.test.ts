@@ -354,9 +354,8 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
 
     // `from` só é chamado para 'sessoes_viabilidade', as leituras de config
     // (Fase 12, Fatia 1: `configuracoes` ×4 — `inferencia_bloco_ativa` + as 3
-    // chaves de histerese da 0117 — mais 1× `configuracoes` do kill-switch
-    // `inventario_mencionado` da Fatia 5a + 1× `configuracoes` do
-    // kill-switch da MEMÓRIA do copiloto (18/09/2026, achado do Fable),
+    // chaves de histerese da 0117 — mais 1× `configuracoes` do LOTE ÚNICO
+    // que resolve bool+json+int (18/09/2026, 3ª rodada, achado do Fable),
     // todas lidas em paralelo pelo MESMO `Promise.all`), `copiloto_sugestoes`
     // e 'consentimentos' — se algum código chamasse `.from('briefings')`
     // separadamente, o mock lançaria "tabela não mockada: briefings" e este
@@ -370,17 +369,15 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
-      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
-      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
-      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
-      // booleanas do `Promise.all` final (`inventario_mencionado` e
-      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
-      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
-      //
-      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
-      // mesmo assim o caminho terminou com MENOS ida ao banco do que
-      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
-      // leitura em lote.
+      // 5 `configuracoes` no total (correção da 3ª rodada, achado do Fable:
+      // a 2ª rodada tinha deixado 7, 2 A MAIS que o HEAD anterior). As 4
+      // leituras de `resolverBlocoAtual` (histerese, unitárias) + 1 ÚNICA
+      // chamada de `lerConfiguracoesEmLote` — que resolve as 5 flags
+      // booleanas (inclui `rodape_transcricao`/`realce_insight_novo`),
+      // `ficha_teto_fixos` (json) e as 2 chaves de silêncio (int) na MESMA
+      // `select ... in(...)` — TODAS no MESMO `Promise.all`, nenhuma
+      // sequencial em relação às outras. Se este teste subir para 6+
+      // `configuracoes`, alguma leitura saiu do lote único.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -427,12 +424,12 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
   it("🔴 mesma query coalescida de sempre para o carimbo de expurgo — nenhum select A MAIS além do que a Fatia 1 já acrescenta", async () => {
     // Aceite ORIGINAL desta fatia (Fase 10, Fatia 5): "sessoes_viabilidade" +
     // "consentimentos", sem nada a mais para ler o expurgo. Fase 12
-    // ACRESCENTA deliberadamente 7 chamadas (6× configuracoes — 1 do
-    // interruptor de inferência + 3 da histerese da 0117 + 1 do kill-switch
-    // do inventário da Fatia 5a + 1 do kill-switch da MEMÓRIA do copiloto,
-    // 18/09/2026 (achado do Fable: `falta_no_bloco` nunca esvaziava) — +
-    // copiloto_sugestoes) à lista — é o custo aceito da inferência do bloco
-    // atual + do inventário + da memória no painel
+    // ACRESCENTA deliberadamente 5 chamadas (4× configuracoes da histerese —
+    // interruptor de inferência + 3 da 0117 — + 1× o LOTE ÚNICO que resolve
+    // os kill-switches de inventário/memória/ficha/rodapé/realce/silêncio,
+    // 18/09/2026, 3ª rodada, achado do Fable — + copiloto_sugestoes) à
+    // lista — é o custo aceito da inferência do bloco atual + do inventário
+    // + da memória no painel
     // (resolverBlocoAtual/montarInventarioParaPainel/`falta_no_bloco.campos`),
     // documentado no comentário de `montarSupabase` acima. Este teste prova
     // que o EXPURGO em si não soma nada ALÉM disso — não que a fatia inteira
@@ -457,17 +454,12 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
-      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
-      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
-      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
-      // booleanas do `Promise.all` final (`inventario_mencionado` e
-      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
-      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
-      //
-      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
-      // mesmo assim o caminho terminou com MENOS ida ao banco do que
-      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
-      // leitura em lote.
+      // 5 `configuracoes` no total (correção da 3ª rodada, achado do Fable).
+      // As 4 leituras de `resolverBlocoAtual` (histerese, unitárias) + 1
+      // ÚNICA chamada de `lerConfiguracoesEmLote` (bool + json + int juntos)
+      // — TODAS no MESMO `Promise.all`, nenhuma sequencial em relação às
+      // outras. Se este teste subir para 6+ `configuracoes`, alguma leitura
+      // saiu do lote único.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -977,11 +969,11 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
     );
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
     // Mesma lista de sempre (sessoes_viabilidade + 4x configuracoes da
-    // histerese + 1x configuracoes do kill-switch do inventário + 1x
-    // configuracoes do kill-switch da MEMÓRIA do copiloto (18/09/2026,
-    // achado do Fable) + copiloto_sugestoes + consentimentos) — nenhuma
-    // tabela nova chamada só para o inventário, porque ele já veio no embed
-    // principal.
+    // histerese + 1x o LOTE ÚNICO que resolve os kill-switches de
+    // inventário/memória/ficha/rodapé/realce/silêncio (18/09/2026, 3ª
+    // rodada, achado do Fable) + copiloto_sugestoes + consentimentos) —
+    // nenhuma tabela nova chamada só para o inventário, porque ele já veio
+    // no embed principal.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
       // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
@@ -991,17 +983,12 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
-      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
-      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
-      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
-      // booleanas do `Promise.all` final (`inventario_mencionado` e
-      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
-      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
-      //
-      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
-      // mesmo assim o caminho terminou com MENOS ida ao banco do que
-      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
-      // leitura em lote.
+      // 5 `configuracoes` no total (correção da 3ª rodada, achado do Fable).
+      // As 4 leituras de `resolverBlocoAtual` (histerese, unitárias) + 1
+      // ÚNICA chamada de `lerConfiguracoesEmLote` — TODAS no MESMO
+      // `Promise.all`, nenhuma sequencial em relação às outras. Se este
+      // teste subir para 6+ `configuracoes`, alguma leitura saiu do lote
+      // único.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -1010,6 +997,181 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
       "copiloto_sugestoes",
       "consentimentos",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FICHA DO CLIENTE (18/09/2026, migration 0122) — combina `ficha_acumulada`
+// com o inventário próprio já resolvido acima, numa lista só e ordenada.
+// Kill-switch `copiloto_sessao.ficha_cliente` nasce `false` (padrão de
+// fábrica): estes testes provam o comportamento nos dois estados.
+// ---------------------------------------------------------------------------
+function itemFichaAcumulada(overrides: Record<string, unknown> = {}) {
+  return {
+    categoria: "objecao",
+    texto: "imposto de renda é 30 por 100",
+    evidencia: "imposto de renda é 30 por 100",
+    chave: "objecao:imposto de renda e 30 por 100",
+    primeira_mencao_em: "2026-09-18T15:00:00.000Z",
+    ultima_mencao_em: "2026-09-18T15:00:00.000Z",
+    n: 1,
+    ...overrides,
+  };
+}
+
+describe("montarEstadoCopiloto — ficha do cliente no payload (migration 0122)", () => {
+  it("kill-switch DESLIGADO (padrão de fábrica): ficha é null MESMO com itens já acumulados", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          ficha_acumulada: [itemFichaAcumulada()],
+        },
+      }),
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha).toBeNull();
+  });
+
+  it("kill-switch LIGADO mas sem nenhum item (ficha vazia, sem inventário): ficha é objeto com lista vazia, NUNCA null (null é reservado ao kill-switch desligado — achado do Fable, rodada B4: geometria constante da tela)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], ficha_acumulada: [] },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.ficha_cliente": true } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha).not.toBeNull();
+    expect(resultado.ficha).toEqual({ itens: [], teto_fixos: null });
+  });
+
+  it("kill-switch LIGADO com itens: ficha combina ficha_acumulada + inventário próprio, ordenados por rank_categoria", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          ficha_acumulada: [
+            itemFichaAcumulada({ categoria: "dor", texto: "vai perder qualidade de vida", chave: "dor:vai perder qualidade de vida" }),
+            itemFichaAcumulada({ categoria: "objecao" }),
+          ],
+          inventario_acumulado: [itemInventario()],
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.ficha_cliente": true } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha).not.toBeNull();
+    // objecao > dor > patrimonio (rank_categoria, decisão do dono).
+    expect(resultado.ficha!.itens.map((i) => i.categoria)).toEqual(["objecao", "dor", "patrimonio"]);
+  });
+
+  it("ficha combinada reusa o MESMO corte de 5 recentes que a célula de inventário já expõe (nenhuma 2ª derivação do array bruto)", async () => {
+    const itensInventario = Array.from({ length: 8 }, (_, i) =>
+      itemInventario({ descricao: `imóvel ${i}`, chave: `imovel:imovel ${i}`, ultima_mencao_em: `2026-09-17T15:0${i}:00.000Z` }),
+    );
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          ficha_acumulada: [],
+          inventario_acumulado: itensInventario,
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.ficha_cliente": true } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha!.itens).toHaveLength(5);
+  });
+
+  it("teto_fixos vem null quando copiloto_sessao.ficha_teto_fixos não está configurado (a tela deriva do viewport)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], ficha_acumulada: [itemFichaAcumulada()] },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.ficha_cliente": true } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha!.teto_fixos).toBeNull();
+  });
+
+  it("teto_fixos VENCE quando copiloto_sessao.ficha_teto_fixos está configurado com um número", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        sessoes_copiloto: { estado: "ativo", gravacao_externa_id: null, participantes: [], ficha_acumulada: [itemFichaAcumulada()] },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.ficha_cliente": true, "copiloto_sessao.ficha_teto_fixos": 3 } },
+    );
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.ficha!.teto_fixos).toBe(3);
+  });
+
+  it("kill-switch DESLIGADO: LÊ copiloto_sessao.ficha_teto_fixos no MESMO lote único, mas DESCARTA o valor (correção da 3ª rodada: a leitura acontece sempre, dentro da 1 única chamada de configuracoes, nunca como ida extra)", async () => {
+    const configuracoesSpy = vi.fn();
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const fromOriginal = supabase.from as unknown as (t: string) => unknown;
+    (supabase.from as unknown) = vi.fn((t: string) => {
+      if (t === "configuracoes") configuracoesSpy();
+      return fromOriginal(t);
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    // 5 chamadas a `configuracoes` no caminho de sempre (correção da 3ª
+    // rodada, achado do Fable) — histerese ×4 (unitárias) + 1 ÚNICA chamada
+    // de `lerConfiguracoesEmLote`, que resolve bool + `ficha_teto_fixos`
+    // (json) + silêncio (int) na MESMA `select ... in(...)` — dentro do
+    // mesmo `Promise.all` (nenhuma delas espera outra terminar).
+    // `ficha.teto_fixos` continua `null` porque `ficha` inteiro é `null`
+    // (kill-switch desligado) — a leitura aconteceu, só o USO é descartado.
+    expect(configuracoesSpy).toHaveBeenCalledTimes(5);
+    expect(resultado.ficha).toBeNull();
+  });
+
+  it("realce_insight_novo/rodape_transcricao vêm no payload (achado do Fable: o front já lia estas 2 chaves, o servidor nunca as enviava)", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }), undefined, {
+      configuracoes: {
+        "copiloto_sessao.realce_insight_novo": false,
+        "copiloto_sessao.rodape_transcricao": false,
+      },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.realce_insight_novo).toBe(false);
+    expect(resultado.rodape_transcricao).toBe(false);
+  });
+
+  it("realce_insight_novo/rodape_transcricao caem no padrão de fábrica (true) quando a chave não está configurada", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.realce_insight_novo).toBe(true);
+    expect(resultado.rodape_transcricao).toBe(true);
+  });
+
+  it("silencio_atencao_s/silencio_alerta_s vêm no payload com os valores configurados", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }), undefined, {
+      configuracoes: {
+        "copiloto_sessao.silencio_atencao_s": 20,
+        "copiloto_sessao.silencio_alerta_s": 40,
+      },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.silencio_atencao_s).toBe(20);
+    expect(resultado.silencio_alerta_s).toBe(40);
+  });
+
+  it("silencio_atencao_s/silencio_alerta_s caem no padrão de fábrica (12/25) quando a chave não está configurada", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.silencio_atencao_s).toBe(12);
+    expect(resultado.silencio_alerta_s).toBe(25);
   });
 });
 

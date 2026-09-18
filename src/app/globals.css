@@ -323,6 +323,29 @@ html[data-escala="grande"] {
   }
 }
 
+/* F-2 (18/09/2026, rodada 2 do Fable): o `<main>` do `AppShell` mantém
+   `px-3 py-4 … lg:py-6` mesmo dentro desta rota — só `.modo-tela-cheia-sessao`
+   zerava o padding (abaixo), e só quando a Fullscreen API estava ativa. No
+   modo NORMAL, `ConduzirSessaoApp.tsx` já declara `h-[100dvh]` (a tela
+   inteira) MAIS o padding do `<main>` por cima: a soma estoura a viewport e
+   a página rola ~48px no desktop, mais no mobile (cabeçalho `sticky` +
+   `py-4`) — o dono foi explícito ("vai ficar fixa, travada ali", "não posso
+   deixar coisa de fora ou algo quebrado"). `/conduzir` já é dedicada e
+   travada (`.largura-cheia` marca EXCLUSIVAMENTE esta rota) — o padding do
+   `<main>` não tem função aqui em nenhum dos dois modos.
+
+   `min-height: 0` no `<main>` (não tocado nas outras ~30 rotas — `flex-1`
+   sozinho, sem isto, deixa o item crescer pelo CONTEÚDO em vez de pelo
+   espaço disponível, o bug clássico do flexbox) é o que permite ao filho
+   usar `h-full` (ver `ConduzirSessaoApp.tsx`) e caber exatamente no espaço
+   que sobra da coluna `flex-col` do `AppShell` no mobile (viewport menos o
+   cabeçalho `sticky`) — sem precisar de um número mágico de altura de
+   cabeçalho recalculado à mão. */
+main:has(> .largura-cheia) {
+  padding: 0;
+  min-height: 0;
+}
+
 /* Tema verde ESCOPADO à rota /sessoes/[id]/conduzir (Fase 12, revogação de
    B71 — pedido do dono, 17/09/2026: "quero que o sistema seja VIVO"). Classe
    IRMÃ de `.largura-cheia`/`.foco-sessao` no MESMO `<div>` do layout da
@@ -367,6 +390,14 @@ body:has(.modo-tela-cheia-sessao) > header {
 }
 body:has(.modo-tela-cheia-sessao) main {
   padding: 0;
+  /* F-2 (18/09/2026, rodada 2 do Fable): com `header`/`.nav-lateral`
+     escondidos por `display:none`, o `<main>` (`flex-1` na coluna do
+     `AppShell`) não tem mais irmão de fluxo disputando altura — mas também
+     não ganha altura sozinho sem isto. `100dvh` aqui é o par exato do
+     `h-full` que `ConduzirSessaoApp.tsx` passa a usar (antes era
+     `h-[100dvh]` direto no filho, duplicando a mesma conta em dois
+     lugares). */
+  height: 100dvh;
 }
 
 .dark {

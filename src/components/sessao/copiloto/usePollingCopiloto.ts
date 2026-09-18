@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ErroSessao, buscarPollingCopiloto } from "@/components/sessao/api";
-import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoBotCopiloto, InfoCicloCopiloto, InventarioParaPainel, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
+import type { BlocoAtualResolvido, ComparacaoDecisoresPresentes, EstadoBotCopiloto, FichaParaPainel, InfoCicloCopiloto, InventarioParaPainel, SegmentoCopiloto, SugestaoCopilotoPolling } from "@/types/copiloto";
 
 /** `codigo` que as 3 rotas do copiloto devolvem em HTTP 409 quando
  * `copiloto_sessao.ativo=false` — fail-closed por AUSÊNCIA (chave ausente,
@@ -124,6 +124,23 @@ export interface EstadoPollingCopiloto {
    * nunca um objeto com contagens zeradas fingindo "0 itens" (regra da
    * casa). */
   inventario: InventarioParaPainel | null;
+  /** 18/09/2026 — Ficha do cliente (migration 0122). Mesma regra de
+   * substituição de `comparacaoDecisores`/`inventario`: SUBSTITUI sempre,
+   * nunca acumula — o servidor já devolve a lista COMPLETA, já combinada
+   * (ficha + patrimônio) e já ORDENADA (`ordenarFicha`), a cada resposta.
+   *
+   * 🔴 `null`/ausente = **SÓ** o kill-switch `copiloto_sessao.ficha_cliente`
+   * desligado, e aí a célula cai no layout anterior (transcrição +
+   * inventário). Ligado e ainda sem item chega como `{ itens: [],
+   * teto_fixos }` — objeto com lista VAZIA, de propósito, e a célula JÁ é a
+   * Ficha do cliente com o vazio desenhado.
+   *
+   * ⚠️ Corrigido na 4ª rodada de revisão (achado do Fable). Enquanto `null`
+   * significava as duas coisas, a col. 3 TROCAVA de identidade no meio da
+   * sessão ao vivo (~90s, quando o 1º item chegava) — salto de layout
+   * proibido nesta tela. Não reintroduza o colapso dos dois estados:
+   * `PainelCopiloto.tsx` lê ESTE campo para escolher o layout. */
+  ficha: FichaParaPainel | null;
   /** 🔴 Fatia 5a (achado do Fable, 17/09): o payload já trazia
    * `resposta.bot: EstadoBotCopiloto | null` a cada tick — MESMO defeito de
    * `segmentos_novos` (pedido e descartado). Regra de substituição: `??`
@@ -140,6 +157,29 @@ export interface EstadoPollingCopiloto {
    * (`server/copiloto/estado.ts::montarBotEComparacaoDecisores`, chamada
    * única em `route.ts`). */
   bot: EstadoBotCopiloto | null;
+  /** F5 (18/09) — kill-switch `copiloto_sessao.realce_insight_novo` (0115).
+   * `true` até a 1ª resposta chegar (mesmo valor de fábrica da chave) e
+   * sempre que o campo vier ausente — comportamento IDÊNTICO ao anterior
+   * (realce incondicional) enquanto o backend não preencher o campo. `??`
+   * (nunca substituição pura): um único tick sem o campo não pode apagar um
+   * `false` já confirmado antes. */
+  realceInsightNovoAtivo: boolean;
+  /** 🔴 F3-2 (Fable, rodada 3, 18/09) — kill-switch `copiloto_sessao.
+   * rodape_transcricao` (0122). `estado.ts` JÁ devolve esta chave desde a
+   * F4; esta correção é quem primeiro a copia para o estado do hook (até
+   * aqui o campo chegava no payload e morria sem uso, e `PainelCopiloto`
+   * exibia o rodapé incondicionalmente). `true` até a 1ª resposta chegar
+   * (nasce ligada na 0122) e `??` — mesma disciplina de `realceInsightNovoAtivo`:
+   * um tick sem o campo não apaga um `false` já visto. */
+  rodapeTranscricaoAtivo: boolean;
+  /** 🔴 F3-2 — `copiloto_sessao.silencio_atencao_s`/`silencio_alerta_s`
+   * (0122), MESMA correção do campo acima. `estado.ts` sempre devolve um
+   * número válido (nunca `null` — padrão de fábrica cobre config
+   * ausente/ilegível), então aqui é substituição direta com fallback só
+   * para o instante antes da 1ª resposta (mesmos valores de fábrica da
+   * migration, para não haver flash de outro limiar). */
+  silencioAtencaoS: number;
+  silencioAlertaS: number;
 }
 
 /** Pedido de FIXAÇÃO MANUAL para o próximo ciclo (Fase 12, Fatia B — o
@@ -179,7 +219,12 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
     indiceFixacaoPendente: null,
     requisicaoEmVoo: false,
     inventario: null,
+    ficha: null,
     bot: null,
+    realceInsightNovoAtivo: true,
+    rodapeTranscricaoAtivo: true,
+    silencioAtencaoS: 12,
+    silencioAlertaS: 25,
   };
   const [estado, setEstado] = useState<EstadoPollingCopiloto>(ESTADO_INICIAL);
   const cursorSegmentoRef = useRef(0);
@@ -333,6 +378,15 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             // (contrato antigo) quanto `null` explícito (kill-switch
             // desligado) — as duas coisas somem da aba do mesmo jeito.
             inventario: resposta.inventario ?? null,
+            // Mesma regra de substituição de `inventario`/`comparacaoDecisores`
+            // — a Ficha já vem completa e ordenada a cada resposta.
+            ficha: resposta.ficha ?? null,
+            realceInsightNovoAtivo: resposta.realce_insight_novo ?? atual.realceInsightNovoAtivo,
+            // F3-2: mesma disciplina de `realceInsightNovoAtivo` — `??`
+            // nunca substitui por um tick sem o campo.
+            rodapeTranscricaoAtivo: resposta.rodape_transcricao ?? atual.rodapeTranscricaoAtivo,
+            silencioAtencaoS: resposta.silencio_atencao_s ?? atual.silencioAtencaoS,
+            silencioAlertaS: resposta.silencio_alerta_s ?? atual.silencioAlertaS,
             // Fatia 5a: `??`, NUNCA substituição pura (ver comentário do
             // campo em `EstadoPollingCopiloto.bot`) — `null` do servidor não
             // apaga um `ativo` já visto, ele só significa "nada de novo para

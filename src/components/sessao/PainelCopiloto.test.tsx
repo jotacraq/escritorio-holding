@@ -2031,7 +2031,7 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
         respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s1", 1)], proximo_cursor_sugestao: 1, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
         respostaPolling({ sugestoes_novas: [sugestaoPollingDe("s2", 2)], proximo_cursor_sugestao: 2, ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null } }),
       ];
-      const { container, getByText } = await abrirComPolling();
+      const { getByText } = await abrirComPolling();
       await vi.advanceTimersByTimeAsync(3000);
       await vi.advanceTimersByTimeAsync(0);
 
@@ -2192,36 +2192,113 @@ describe("PainelCopiloto — Fatia 3, sugestão invisível do ciclo automático 
 });
 
 /**
- * 🔴 GEOMETRIA DO MOSAICO — regressão reportada pelo dono com captura de tela
- * (17/09/2026, poucos minutos depois de a F4 subir): a coluna da transcrição
- * descia a página inteira.
+ * 🔴 GEOMETRIA DO MOSAICO — histórico: regressão reportada pelo dono com
+ * captura de tela (17/09/2026, poucos minutos depois de a F4 subir): a
+ * coluna da transcrição descia a página inteira. Causa: `min-h-0` +
+ * `overflow-y-auto` nas colunas estava correto, mas só funciona se ALGUM
+ * ancestral tiver altura definida. A correção original ancorou o teto no
+ * VIEWPORT com um número mágico (`max-h-[calc(100vh-14,5rem)]`) — o próprio
+ * arquivo registrava que o valor nunca tinha sido re-medido com precisão, e
+ * `rem` não acompanha `--fator-escala` desta base (só o `font-size` da raiz
+ * reage à escala de texto; a subtração usava `vh`, que não escala junto).
  *
- * Causa: `min-h-0` + `overflow-y-auto` nas colunas estava correto, mas só
- * funciona se ALGUM ancestral tiver altura definida — e `ConduzirSessaoApp`
- * não define nenhuma. Sem isso, `flex-1` não tem contra o que se medir e a
- * coluna cresce até caberem os 60 segmentos do teto.
+ * 🔴 F7 (18/09/2026) — o número mágico SAIU. Trocado por `h-[100dvh]` no
+ * ANCESTRAL desta árvore (`ConduzirSessaoApp.tsx`, fora do escopo de
+ * montagem deste teste, que monta `PainelCopiloto` isolado) +
+ * `grid-rows-[minmax(0,1fr)_auto_auto]` aqui: a linha do mosaico
+ * (`minmax(0,1fr)`) recebe o que sobrar do ancestral, sem precisar somar
+ * constantes de outras telas para adivinhar quanto sobra. Este teste passa a
+ * provar o CONTRATO deste componente (as 2 classes do grid externo:
+ * `min-h-0`/`h-full` recebendo `1fr` do pai, e a linha das colunas com
+ * `min-h-0` para poder encolher dentro dele) — o teto de viewport em si
+ * (`h-[100dvh]`) é responsabilidade de `ConduzirSessaoApp.tsx`, testado lá.
  *
- * A lição desta base (já registrada para `sticky`): `min-h-0` sozinho não
- * segura nada; a pergunta é sempre "QUAL elemento define a altura?". O teto
- * passou a ancorar no VIEWPORT (`max-h-[calc(100vh-…)]`), que independe da
- * cadeia de pais.
- *
- * Este teste prende a classe no DOM. É teste de geometria por classe, com a
- * limitação honesta de que jsdom não calcula layout: ele prova que o teto
- * FOI DECLARADO, não que a altura resultante é a desejada — isso só o olho
- * no navegador confirma (foi assim que o defeito apareceu). Ainda assim
- * prende a regressão exata: apagar o `max-h` derruba este teste.
+ * Limitação honesta, como antes: jsdom não calcula layout — isto prova que o
+ * grid FOI DECLARADO com as classes certas, não que a altura resultante é a
+ * desejada (isso só o olho no navegador confirma).
  */
-describe("mosaico — teto de altura ancorado no viewport", () => {
-  it("a linha das 3 colunas declara max-h de viewport e um piso mínimo", async () => {
+describe("mosaico — geometria do grid sem número mágico (F7)", () => {
+  it("o grid externo entrega min-h-0/h-full para o ancestral controlar a altura, sem max-h calculado", async () => {
+    const { container } = await abrir();
+    const grid = container.querySelector('[class*="grid-rows-"]');
+    expect(grid).not.toBeNull();
+    const classe = grid!.getAttribute("class") ?? "";
+    // Nunca mais um `max-h` calculado por subtração de constante — a régua
+    // que este teste protegia antes (17/09) agora vive em
+    // `ConduzirSessaoApp.test.tsx` (o ancestral que de fato declara a altura).
+    expect(classe).not.toMatch(/max-h-\[calc/);
+    expect(classe).toMatch(/min-h-0/);
+    expect(classe).toMatch(/h-full/);
+  });
+
+  it("a linha das 3 colunas continua com min-h-0 (permite encolher dentro do 1fr do grid pai)", async () => {
     const { container } = await abrir();
     const linha = container.querySelector('[class*="lg:grid-cols-"]');
     expect(linha).not.toBeNull();
-    const classe = linha!.getAttribute("class") ?? "";
-    // Teto: sem ele, a transcrição desce a página (o defeito reportado).
-    expect(classe).toMatch(/max-h-\[calc\(100vh/);
-    // Piso: sem ele, em tela baixa o mosaico colapsa numa faixa ilegível.
-    expect(classe).toMatch(/min-h-\[/);
+    expect(linha!.getAttribute("class") ?? "").toMatch(/min-h-0/);
+  });
+});
+
+/**
+ * F4-2 (Fable, rodada 4) — `ficha` ligada-e-vazia (`{ itens: [], teto_fixos }`,
+ * correção do backend em `estado.ts`) precisa manter a COL 3 como "Ficha do
+ * cliente" desde o PRIMEIRO polling — nunca abrir como "Transcrição e
+ * inventário" e trocar de identidade ~90s depois quando o 1º item chega
+ * (achado do Fable: `polling.ficha === null` cobria as duas situações —
+ * "chave desligada" e "chave ligada, sessão sem item ainda" — e o layout da
+ * tela ao vivo mudava sozinho no meio da sessão). O estado vazio
+ * ("Nenhum fato relevante identificado ainda nesta sessão.") já existe em
+ * `FichaCliente.tsx` desde a F1 (18/09), mas era INALCANÇÁVEL pela app:
+ * nenhum teste desta suíte tinha `ficha` até esta rodada — zero ocorrências
+ * confirmadas pelo Fable antes desta correção.
+ */
+describe("Fase 12, F4-2 — ficha ligada e vazia mantém a identidade de COL 3 desde o início", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Mesmo padrão de `abrirComPolling` usado nos describes vizinhos (Fatia 3,
+  // linha ~2074): `abrir()` só espera o GET inicial (`buscarEstadoCopiloto`)
+  // sumir — o campo `ficha` só chega pelo PRIMEIRO tick do polling, que exige
+  // avançar os fake timers.
+  async function abrirComPolling() {
+    const montado = montar(<PainelCopiloto sessaoId="s1" indiceAtual={1} />);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(0);
+    return montado;
+  }
+
+  it("ficha ligada e vazia → COL 3 já é 'Ficha do cliente' com o estado vazio, não 'Transcrição e inventário'", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({ ficha: { itens: [], teto_fixos: null } });
+    const { container, getByText } = await abrirComPolling();
+
+    // "Ficha do cliente" é texto visível (`<p>` dentro de `FichaCliente.tsx`,
+    // não `aria-label` de `Coluna` — F4-1 tirou `rolavel` desta célula).
+    expect(getByText("Ficha do cliente")).toBeTruthy();
+    expect(getByText("Nenhum fato relevante identificado ainda nesta sessão.")).toBeTruthy();
+    // A COL de fallback (`rotulo="Transcrição e inventário"`, só `aria-label`
+    // porque a `Coluna` é `rolavel`) não pode existir junto — as duas
+    // identidades da COL 3 são mutuamente exclusivas. `PainelTranscricao`
+    // (região "Transcrição da sessão") tampouco é montada nesse ramo — a
+    // frase "Aguardando a fala da sessão." continua existindo no rodapé
+    // (`RodapeTranscricao`, mesma frase por design), então a prova certa é a
+    // AUSÊNCIA da região da transcrição, não da frase solta no documento.
+    expect(container.querySelector('[role="region"][aria-label="Transcrição e inventário"]')).toBeNull();
+    expect(container.querySelector('[role="region"][aria-label="Transcrição da sessão"]')).toBeNull();
+  });
+
+  it("ficha null (kill-switch desligado ou payload antigo) continua no layout anterior — zero regressão", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({ ficha: null });
+    const { container, queryByText } = await abrirComPolling();
+
+    expect(container.querySelector('[role="region"][aria-label="Transcrição e inventário"]')).not.toBeNull();
+    expect(queryByText("Ficha do cliente")).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@ import { conferirOrcamentoCopiloto } from "@/server/copiloto/orcamento";
 import { conferirGateCopiloto } from "@/server/copiloto/gate";
 import { executarIaCopiloto } from "@/server/copiloto/executar-ia";
 import { sugestaoEVisivel, validarSugestaoCopiloto } from "@/server/copiloto/validar";
+import { acumularFichaNaSessao, converterDeFichaEstruturada } from "@/server/copiloto/ficha";
 import { acumularInventarioNaSessao } from "@/server/copiloto/inventario";
 import { acumularResumoNaSessao, resumoAcumuladoEstaAtivo } from "@/server/copiloto/resumo";
 import { lerConfiguracaoBool, lerConfiguracaoJson } from "@/server/ia/configuracao";
@@ -263,6 +264,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // `inventario.ts`. Falha aqui NUNCA derruba a resposta ao cliente: a
     // sugestão já foi gravada e é isso que importa para quem chamou.
     await acumularInventarioNaSessao(admin, { sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
+
+    // 18/09/2026 (FICHA DO CLIENTE) — mesma regra do bloco acima:
+    // `converterDeFichaEstruturada` é a fonte ATIVA hoje (contingência
+    // aprovada pelo dono documentada em `server/copiloto/ficha.ts`).
+    await acumularFichaNaSessao(admin, { sessaoId, itensNovos: converterDeFichaEstruturada(validado.sugestao.ficha_cliente ?? []) });
 
     // 18/09/2026 (Fatia A da memória do copiloto) — mesmo ponto/mesma regra
     // do bloco acima: DEPOIS do INSERT confirmado. `camposBlocoAtual`/

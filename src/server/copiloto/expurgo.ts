@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { lerConfiguracaoBool, lerConfiguracaoInt } from "@/server/ia/configuracao";
+import { redigirEvidenciasFicha, temEvidenciaNaoRedigidaNaFicha } from "@/server/copiloto/ficha";
 import { redigirEvidenciasInventario, temEvidenciaNaoRedigidaNoInventario } from "@/server/copiloto/inventario";
-import type { InventarioAcumulado, SugestaoCopiloto } from "@/types/copiloto";
+import type { FichaAcumulada, InventarioAcumulado, SugestaoCopiloto } from "@/types/copiloto";
 
 /**
  * Expurgo de `sessoes_copiloto_segmentos` por idade — Fase 10, Fatia 5
@@ -125,6 +126,16 @@ export interface ResultadoExpurgoCopiloto {
    * além do prazo de retenção — a sessão já saiu do pool, nenhuma passagem
    * futura tenta de novo sozinha; investigação manual necessária. */
   sessoesComFalhaDeRedacaoInventario: number;
+  /** 🔴 FICHA DO CLIENTE (18/09/2026, bloqueante desde o plano — "já falhou
+   * 2× nesta base"): MESMA CLASSE de `sessoesComFalhaDeRedacaoInventario`,
+   * aplicada a `sessoes_copiloto.ficha_acumulada`: sessão carimbada cuja
+   * REDAÇÃO da citação literal em `ficha_acumulada[].evidencia` falhou
+   * (`redigirFichaDaSessao`). Contador PRÓPRIO, separado dos outros dois —
+   * as três redações (`copiloto_sugestoes`, inventário, ficha) são passos
+   * independentes; uma pode falhar sem as outras falharem. `0` no caminho
+   * normal; `> 0` sinaliza que existe evidência literal de dor/objeção/
+   * desejo de cliente real ainda gravada além do prazo de retenção. */
+  sessoesComFalhaDeRedacaoFicha: number;
   /** `expurgo_desligado` = `copiloto_sessao.expurgo_ativo` != true (default e estado seguro).
    * `sem_retencao_configurada` = a chave do prazo não é um inteiro positivo válido. */
   pulada?: "expurgo_desligado" | "sem_retencao_configurada";
@@ -417,6 +428,12 @@ interface ResultadoCarimbo {
    * (que é sobre `copiloto_sugestoes`) — as duas redações são passos
    * independentes; uma pode falhar sem a outra falhar. */
   concluidasComFalhaDeRedacaoInventario: number;
+  /** 🔴 FICHA DO CLIENTE (18/09/2026) — sessão carimbada cuja redação de
+   * `ficha_acumulada[].evidencia` FALHOU (ver `sessoesComFalhaDeRedacaoFicha`
+   * em `ResultadoExpurgoCopiloto`). Contador SEPARADO dos outros dois — as
+   * três redações são passos independentes; uma pode falhar sem as outras
+   * falharem. */
+  concluidasComFalhaDeRedacaoFicha: number;
 }
 
 async function carimbarSessoesSemPendencia(
@@ -432,6 +449,7 @@ async function carimbarSessoesSemPendencia(
   let concluidasComFalhaDeRedacao = 0;
   let concluidasComLoteCheio = 0;
   let concluidasComFalhaDeRedacaoInventario = 0;
+  let concluidasComFalhaDeRedacaoFicha = 0;
 
   for (const sessaoId of candidatas) {
     // CORRECAO (achado (b) do 5o caminho via coordenador - "squatter
@@ -476,6 +494,12 @@ async function carimbarSessoesSemPendencia(
           // sai JUNTO, no mesmo instante — não numa passagem futura.
           const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
           if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
+          // 🔴 FICHA DO CLIENTE (18/09/2026) — mesma classe, mesmo instante:
+          // a citação literal de dor/objeção/desejo/fato_decisor em
+          // `sessoes_copiloto.ficha_acumulada[].evidencia` sai JUNTO, não
+          // numa passagem futura hipotética.
+          const okFicha = await redigirFichaDaSessao(admin, sessaoId);
+          if (!okFicha) concluidasComFalhaDeRedacaoFicha++;
           // 18/09/2026 (Fatia A da memória do copiloto) — NO-OP deliberado
           // hoje (ver comentário de `redigirResumoDaSessao`); cabeada aqui
           // para o expurgo já CONHECER o campo `resumo_acumulado` antes da
@@ -530,6 +554,11 @@ async function carimbarSessoesSemPendencia(
         // segmento vivo para ser redigida.
         const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
         if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
+        // Mesmo raciocínio: retenção pelo backstop é sobre o SEGMENTO — a
+        // citação já registrada em `ficha_acumulada` não precisa do
+        // segmento vivo para ser redigida.
+        const okFicha = await redigirFichaDaSessao(admin, sessaoId);
+        if (!okFicha) concluidasComFalhaDeRedacaoFicha++;
         // Mesmo raciocínio: NO-OP deliberado hoje, cabeada para conhecimento
         // futuro do campo (ver comentário de `redigirResumoDaSessao`).
         await redigirResumoDaSessao(admin, sessaoId);
@@ -553,6 +582,7 @@ async function carimbarSessoesSemPendencia(
     concluidasComFalhaDeRedacao,
     concluidasComLoteCheio,
     concluidasComFalhaDeRedacaoInventario,
+    concluidasComFalhaDeRedacaoFicha,
   };
 }
 
@@ -823,6 +853,57 @@ async function redigirInventarioDaSessao(admin: SupabaseClient, sessaoId: string
 }
 
 /**
+ * `sessoes_copiloto.ficha_acumulada` (0122, FICHA DO CLIENTE, 18/09/2026) —
+ * MESMA CLASSE de `redigirInventarioDaSessao` acima: `evidencia` é citação
+ * LITERAL de dor/objeção/desejo/fato_decisor de cliente real — a PII mais
+ * pesada da tela `/conduzir` — e, sem esta função, sobreviveria
+ * INDEFINIDAMENTE ao expurgo de `sessoes_copiloto_segmentos` (a fala bruta
+ * que a originou). Fechada NA MESMA migration/entrega de código que
+ * introduz a coluna (decisão do plano: "já falhou 2× nesta base" — campo
+ * com citação literal nasce, redação vem depois, numa janela sem
+ * cobertura).
+ *
+ * Zera só `evidencia` de CADA item — `categoria`, `texto`, `chave`, `n`,
+ * `primeira_mencao_em`/`ultima_mencao_em` sobrevivem intactos: o registro
+ * de QUE aquele fato foi levantado continua valendo, só a citação sai.
+ *
+ * Leitura por PK (`sessoes_copiloto_pkey`, 0091) — 1 linha, sem lote/teto,
+ * mesmo padrão de `redigirInventarioDaSessao`: a ÚNICA linha possível por
+ * sessão é a própria `sessoes_copiloto`. `UPDATE` por linha (não upsert) —
+ * a linha SEMPRE já existe (é a própria sessão sendo carimbada).
+ */
+async function redigirFichaDaSessao(admin: SupabaseClient, sessaoId: string): Promise<boolean> {
+  try {
+    const { data, error: erroLeitura } = await admin
+      .from("sessoes_copiloto")
+      .select("ficha_acumulada")
+      .eq("sessao_id", sessaoId)
+      .maybeSingle<{ ficha_acumulada: FichaAcumulada | null }>();
+    if (erroLeitura) throw erroLeitura;
+
+    const acumulado = data?.ficha_acumulada ?? [];
+    if (acumulado.length === 0) return true; // sem ficha nesta sessão — nada a redigir
+    if (!temEvidenciaNaoRedigidaNaFicha(acumulado)) return true; // idempotente: já redigido, não escreve à toa
+
+    const redigido = redigirEvidenciasFicha(acumulado);
+    const { error: erroUpdate } = await admin
+      .from("sessoes_copiloto")
+      .update({ ficha_acumulada: redigido })
+      .eq("sessao_id", sessaoId);
+    if (erroUpdate) throw erroUpdate;
+    return true;
+  } catch (erro) {
+    // Isolamento: falha na redação da Ficha desta sessão nunca aborta o
+    // carimbo (já commitado) nem a redação das OUTRAS sessões da mesma
+    // passagem — mesmo raciocínio de `redigirInventarioDaSessao`. `false`
+    // propagado ao chamador para virar `sessoesComFalhaDeRedacaoFicha` no
+    // resultado do cron.
+    registrarErro("copiloto/expurgo.redigirFichaDaSessao", erro, { sessao_id: sessaoId });
+    return false;
+  }
+}
+
+/**
  * `sessoes_copiloto.resumo_acumulado` (0091/0120, Fatia A da MEMÓRIA DO
  * COPILOTO, 18/09/2026) — achado do arquiteto na revisão desta entrega,
  * MESMA CLASSE de `redigirInventarioDaSessao`/`redigirEvidenciasConteudo`:
@@ -871,6 +952,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
       sessoesComFalhaDeRedacaoInventario: 0,
+      sessoesComFalhaDeRedacaoFicha: 0,
       pulada: "expurgo_desligado",
     };
   }
@@ -884,6 +966,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
       sessoesComFalhaDeRedacaoInventario: 0,
+      sessoesComFalhaDeRedacaoFicha: 0,
       pulada: "sem_retencao_configurada",
     };
   }
@@ -900,6 +983,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
         sessoesComFalhaDeRedacao: 0,
         sessoesComRedacaoParcial: 0,
         sessoesComFalhaDeRedacaoInventario: 0,
+        sessoesComFalhaDeRedacaoFicha: 0,
         retencaoDias,
       };
     }
@@ -949,6 +1033,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       concluidasComFalhaDeRedacao: sessoesComFalhaDeRedacao,
       concluidasComLoteCheio: sessoesComRedacaoParcial,
       concluidasComFalhaDeRedacaoInventario: sessoesComFalhaDeRedacaoInventario,
+      concluidasComFalhaDeRedacaoFicha: sessoesComFalhaDeRedacaoFicha,
     } = await carimbarSessoesSemPendencia(admin, candidatasAoCarimbo, sessoesEsvaziadas, sessoesElegiveis, limiteIso, motivo);
 
     return {
@@ -958,6 +1043,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComFalhaDeRedacao,
       sessoesComRedacaoParcial,
       sessoesComFalhaDeRedacaoInventario,
+      sessoesComFalhaDeRedacaoFicha,
       retencaoDias,
       restaLote: encheuLote,
     };
@@ -973,6 +1059,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
         sessoesComFalhaDeRedacao: 0,
         sessoesComRedacaoParcial: 0,
         sessoesComFalhaDeRedacaoInventario: 0,
+        sessoesComFalhaDeRedacaoFicha: 0,
         erro: "coluna_ausente",
       };
     }
@@ -984,6 +1071,7 @@ export async function etapaExpurgoSegmentosCopiloto(admin: SupabaseClient): Prom
       sessoesComFalhaDeRedacao: 0,
       sessoesComRedacaoParcial: 0,
       sessoesComFalhaDeRedacaoInventario: 0,
+      sessoesComFalhaDeRedacaoFicha: 0,
       erro: erro instanceof Error ? erro.message.slice(0, 300) : String(erro).slice(0, 300),
     };
   }

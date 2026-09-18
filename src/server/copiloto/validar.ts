@@ -3,11 +3,13 @@ import type { SugestaoCopilotoIa } from "./schema";
 import {
   MAX_ITENS_COBRIU_NO_BLOCO,
   MAX_ITENS_FALTA_NO_BLOCO,
+  MAX_ITENS_FICHA_POR_CHAMADA,
   MAX_ITENS_INVENTARIO_POR_CHAMADA,
   TETO_DESCRICAO_INVENTARIO,
   TETO_EVIDENCIA_BLOCO_INFERIDO,
   TETO_EVIDENCIA_COBRIU,
   TETO_EVIDENCIA_FALTA,
+  TETO_EVIDENCIA_FICHA,
   TETO_EVIDENCIA_INVENTARIO,
   TETO_EVIDENCIA_OBSERVACAO,
   TETO_EVIDENCIA_PERGUNTA,
@@ -15,6 +17,7 @@ import {
   TETO_ITEM_FALTA,
   TETO_MOTIVO_DESVIO,
   TETO_MOTIVO_PERGUNTA,
+  TETO_TEXTO_FICHA,
   TETO_TEXTO_OBSERVACAO,
   TETO_TEXTO_PERGUNTA,
   TETO_TITULARIDADE_INVENTARIO,
@@ -28,7 +31,7 @@ import {
  * que foi enviado — o Zod não sabe o que é um `bloco_id` válido nem o que é
  * uma citação literal, só sabe que é uma string.
  *
- * Três recusas, em ordem, cada uma com efeito diferente (nunca "erro genérico"):
+ * Quatro recusas, em ordem, cada uma com efeito diferente (nunca "erro genérico"):
  *  1. `bloco_id` que não existe no roteiro ativo → a SUGESTÃO INTEIRA de
  *     desvio é descartada (campo vira nulo), não "corrigida" para outro bloco
  *     — corrigir seria a IA escolhendo por baixo dos panos, o oposto de
@@ -42,6 +45,14 @@ import {
  *     texto da saída → a sugestão inteira é recusada (mesma postura de B61,
  *     `agente-whatsapp/respostas.ts`: defesa em profundidade sobre a SAÍDA,
  *     não só sobre a entrada do cliente).
+ *  4. (18/09/2026, `ficha_cliente`/`inventario_mencionado` apenas) evidência
+ *     cuja ÚNICA origem, dentre as fontes que casam por substring, é fala da
+ *     EQUIPE (advogada/assistente) → o ITEM INTEIRO é descartado —
+ *     `evidenciaVemSoDaEquipe`. Evidência ambígua (casa também com fala do
+ *     decisor ou com o estado factual) passa: a recusa é só quando a fala da
+ *     equipe é a única prova possível (achado do `security-pentester`,
+ *     mesmo defeito que gravou um imóvel da advogada como patrimônio do
+ *     cliente no inventário em produção).
  *
  * Confiança abaixo de `confiancaMinima` NÃO é validação de conteúdo — é regra
  * de exibição (a sugestão é gravada, só não aparece na tela). Fica de fora
@@ -100,6 +111,9 @@ function contemTermoDeValor(saida: SugestaoCopilotoIa): boolean {
     if (item.titularidade) textos.push(item.titularidade);
     if (item.valor_mencionado) textos.push(item.valor_mencionado);
   }
+  for (const item of saida.ficha_cliente) {
+    textos.push(item.texto, item.evidencia);
+  }
 
   const normalizados = textos.map(normalizarTexto);
   // '%' varre sem normalizar acento (não é letra) — checagem à parte, mesmo raciocínio de TERMOS_VALOR.
@@ -137,6 +151,70 @@ function evidenciaConferida(evidencia: string, contexto: ContextoCopiloto): bool
   ].map(normalizarTexto);
 
   return fontes.some((fonte) => fonte.includes(alvo));
+}
+
+/** Papéis da EQUIPE do escritório (`participantes.ts::PapelFala`) — nunca o
+ * decisor. `decisor_N`/`acompanhante_N`/`participante` (fallback) são o
+ * CLIENTE do outro lado da mesa; só estes dois rótulos descrevem quem
+ * conduz/apoia a sessão pelo escritório. */
+const PAPEIS_DE_EQUIPE = new Set(["advogada", "assistente"]);
+
+/** Extrai o papel do prefixo de uma linha da janela (`"${papel}: ${texto}"`,
+ * formato fixo montado em `contexto.ts::montarJanelaTranscricaoDeSegmentos`
+ * / `rotuloFalante` — papel é sempre um dos valores fechados de `PapelFala`
+ * ou `"participante"`, nunca contém `": "`). `null` quando a linha não segue
+ * o formato esperado (defensivo — nunca deveria acontecer). */
+function papelDaLinhaJanela(linha: string): string | null {
+  const fim = linha.indexOf(": ");
+  return fim === -1 ? null : linha.slice(0, fim);
+}
+
+/** 18/09/2026 (achado do `security-pentester`, mesma classe de defeito que
+ * queimou em produção no inventário: um imóvel da advogada virou "patrimônio
+ * do cliente"). A `janela_transcricao` mistura falas de TODOS os papéis —
+ * `evidenciaConferida` confere só a citação literal, sem saber de quem é a
+ * fala. Esta função responde a pergunta seguinte: "a ÚNICA fonte que contém
+ * esta evidência é fala da equipe?" Se sim, o item não pode entrar em
+ * `ficha_cliente`/`inventario_mencionado` — regra explícita do dono: "não
+ * pode captar informação pessoal do advogado, só do decisor".
+ *
+ * Fail-OPEN de propósito quando há AMBIGUIDADE: se a evidência casa com
+ * fala da equipe E TAMBÉM com alguma fonte não-equipe (fala do decisor, ou
+ * um item do estado factual C, que nunca é fala da equipe), o item é
+ * ACEITO — recusar aqui apagaria dado legítimo do cliente por causa de uma
+ * coincidência de substring (pedido explícito de quem revisou: "fail-closed
+ * aqui geraria falso negativo"). A recusa só vale quando a ÚNICA origem
+ * possível, dentre as fontes que casam, é a equipe.
+ *
+ * `janelaComPapeis` pode ser `undefined` (chamador antigo/teste que ainda
+ * não migrou) — nesse caso não há como saber o papel, e a função devolve
+ * `false` (não recusa nada), IDÊNTICO ao comportamento anterior a esta
+ * correção. Isso nunca acontece no caminho real (`ciclo.ts`/rota sempre
+ * repassam `contexto.janela_transcricao`), só em teste de mesa antigo.
+ */
+function evidenciaVemSoDaEquipe(evidencia: string, contexto: ContextoCopiloto): boolean {
+  const alvo = normalizarTexto(evidencia.trim());
+  if (alvo.length === 0) return false;
+
+  let casouComEquipe = false;
+  let casouComNaoEquipe = false;
+
+  for (const linha of contexto.janela_transcricao) {
+    if (!normalizarTexto(linha).includes(alvo)) continue;
+    const papel = papelDaLinhaJanela(linha);
+    if (papel !== null && PAPEIS_DE_EQUIPE.has(papel)) casouComEquipe = true;
+    else casouComNaoEquipe = true;
+  }
+
+  // Fontes fora da transcrição (estado factual C) nunca são fala da equipe.
+  const fontesNaoTranscricao = [
+    ...contexto.estado_factual.sims_registrados,
+    ...contexto.estado_factual.blocos_percorridos,
+    ...contexto.estado_factual.campos_pendentes_no_bloco,
+  ];
+  if (fontesNaoTranscricao.some((fonte) => normalizarTexto(fonte).includes(alvo))) casouComNaoEquipe = true;
+
+  return casouComEquipe && !casouComNaoEquipe;
 }
 
 function cortar(texto: string, teto: number): string {
@@ -297,9 +375,19 @@ export function validarSugestaoCopiloto(
   // evidência (mesma ordem de `falta_no_bloco`: cortar primeiro, validar o
   // que sobrou — nunca o inverso, que descartaria itens válidos por estarem
   // depois de itens inválidos na lista da IA).
+  //
+  // 🔴 18/09/2026 (achado do `security-pentester`, defeito medido em produção
+  // na sessão do Carlos Alberto: um imóvel da Dra. Elaine virou "patrimônio
+  // do cliente"). `evidenciaConferida` sozinha só prova que a citação é
+  // LITERAL — não de QUEM. `evidenciaVemSoDaEquipe` fecha essa lacuna: se a
+  // ÚNICA fala que sustenta a evidência é da equipe (advogada/assistente), o
+  // item é descartado junto com os que falham em `evidenciaConferida` —
+  // mesma severidade, mesmo "item inteiro fora". Evidência ambígua (casa com
+  // fala da equipe E com fala do decisor/estado factual) passa — a recusa é
+  // só para a origem EXCLUSIVA da equipe (ver comentário da função).
   const inventarioMencionado = saidaIa.inventario_mencionado
     .slice(0, MAX_ITENS_INVENTARIO_POR_CHAMADA)
-    .filter((item) => evidenciaConferida(item.evidencia, contexto))
+    .filter((item) => evidenciaConferida(item.evidencia, contexto) && !evidenciaVemSoDaEquipe(item.evidencia, contexto))
     .map((item) => ({
       categoria: item.categoria,
       descricao: cortar(item.descricao, TETO_DESCRICAO_INVENTARIO),
@@ -307,6 +395,30 @@ export function validarSugestaoCopiloto(
       posse: item.posse,
       valor_mencionado: item.valor_mencionado ? cortar(item.valor_mencionado, TETO_VALOR_MENCIONADO_INVENTARIO) : null,
       evidencia: cortar(item.evidencia, TETO_EVIDENCIA_INVENTARIO),
+    }));
+
+  // -- ficha_cliente (18/09/2026): MESMA regra de `inventario_mencionado` —
+  // evidência não conferida DESCARTA O ITEM INTEIRO, nunca só anula o campo
+  // evidência. Um item de dor/objeção/desejo/fato_decisor sem citação
+  // literal comprovada não é "um fato com prova fraca", é a IA inventando
+  // dor de cliente real — a mesma severidade que motivou a decisão do dono
+  // (`docs`/plano: "sem citação conferida contra a transcrição, o item não
+  // entra"). Teto de itens POR CHAMADA aplicado ANTES da conferência de
+  // evidência (mesma ordem de `inventario_mencionado`/`falta_no_bloco`).
+  //
+  // 🔴 18/09/2026 (achado do `security-pentester`, MESMA classe de defeito de
+  // `inventario_mencionado` acima — é o campo que nasce mais exposto a ele:
+  // a Ficha existe justamente para capturar dor/objeção/desejo do DECISOR, e
+  // a regra do dono é explícita e não negociável: "não pode captar
+  // informação pessoal do advogado". `evidenciaVemSoDaEquipe` recusa o item
+  // cuja única fala de sustentação é da equipe — ver comentário da função.
+  const fichaCliente = saidaIa.ficha_cliente
+    .slice(0, MAX_ITENS_FICHA_POR_CHAMADA)
+    .filter((item) => evidenciaConferida(item.evidencia, contexto) && !evidenciaVemSoDaEquipe(item.evidencia, contexto))
+    .map((item) => ({
+      categoria: item.categoria,
+      texto: cortar(item.texto, TETO_TEXTO_FICHA),
+      evidencia: cortar(item.evidencia, TETO_EVIDENCIA_FICHA),
     }));
 
   return {
@@ -320,6 +432,7 @@ export function validarSugestaoCopiloto(
       campos_evidencia_nao_conferida: camposNaoConferidos,
       bloco_inferido: blocoInferido,
       inventario_mencionado: inventarioMencionado,
+      ficha_cliente: fichaCliente,
     },
     motivoRecusaTotal: null,
   };

@@ -233,6 +233,102 @@ export interface ResumoInventarioAcumulado {
 }
 
 // ---------------------------------------------------------------------------
+// 18/09/2026 — FICHA DO CLIENTE (`server/copiloto/ficha.ts`,
+// `server/copiloto/schema.ts::ItemFichaClienteSchema`, migration 0122). A
+// col. 3 da tela `/conduzir` deixa de ser transcrição+inventário em ABAS que
+// a advogada nunca clicava e vira o retrato humano do decisor, acumulado na
+// sessão, sempre visível. Medido na sessão real que motivou o pedido: as
+// `observacao` da IA são 74% navegação, mas as EVIDÊNCIAS por trás são ouro
+// — "eu vou perder qualidade de vida" (dor), "imposto de renda é 30 por
+// 100" (objeção), "40 40 10 e 10" (desejo). 173 geradas e descartadas.
+// ---------------------------------------------------------------------------
+
+/** 4 categorias fechadas — a ORDEM aqui é só de declaração, NUNCA a ordem de
+ * exibição (isso é `rank_categoria` em `server/copiloto/ficha.ts`, regra de
+ * negócio explícita do dono: objeção não tratada derruba a venda, dor é
+ * combustível — não risco). */
+export type CategoriaFichaCliente = "dor" | "objecao" | "desejo" | "fato_decisor";
+
+/** Um item de Ficha como a IA o propôs nesta chamada — já validado
+ * (evidência conferida contra a janela de transcrição, mesma severidade de
+ * `ItemInventarioMencionado`: sem citação comprovada, o ITEM INTEIRO é
+ * descartado, nunca só a evidência anulada) e cortado nos tetos de
+ * `schema.ts` (`TETO_TEXTO_FICHA`=90, `TETO_EVIDENCIA_FICHA`=120). */
+export interface ItemFichaCliente {
+  categoria: CategoriaFichaCliente;
+  texto: string;
+  evidencia: string;
+}
+
+/** Um item já ACUMULADO em `sessoes_copiloto.ficha_acumulada` — mesmos
+ * campos do item bruto, mais o controle de deduplicação/atualização que só
+ * existe depois que o item entrou no acumulador
+ * (`server/copiloto/ficha.ts::acumularFicha`). Upsert por `chave`
+ * (categoria + texto normalizado) — nunca delete+insert (regra
+ * "anti-piscada": item já registrado não some por não ter sido repetido na
+ * janela mais recente). `n` é a contagem de vezes que o MESMO fato foi dito
+ * de novo — desempate DENTRO da categoria na ordenação, nunca o ordenador
+ * principal (decisão do dono, ver `rank_categoria` em `ficha.ts`). */
+export interface ItemFichaClienteAcumulado extends ItemFichaCliente {
+  /** Chave de deduplicação — texto normalizado (minúsculas, sem acento,
+   * espaços colapsados) + categoria. Não exposta à IA nem à tela; detalhe
+   * interno do acumulador (mesmo padrão de `ItemInventarioAcumulado.chave`). */
+  chave: string;
+  primeira_mencao_em: string;
+  ultima_mencao_em: string;
+  n: number;
+}
+
+/** `sessoes_copiloto.ficha_acumulada` (jsonb, migration 0122) — o array
+ * completo de itens já vistos nesta sessão, TODAS as categorias. CHECK de
+ * <= 4096 bytes (mesmo backstop de `resumo_acumulado`) — a poda por bytes
+ * (`server/copiloto/ficha.ts::podarPorBytes`, alvo 3.000 B) acontece ANTES
+ * de qualquer escrita chegar a esse limite. */
+export type FichaAcumulada = ItemFichaClienteAcumulado[];
+
+/** O que a TELA recebe, já ORDENADO pela regra de negócio do dono
+ * (`server/copiloto/ficha.ts::ordenarFicha`: `rank_categoria` asc — objeção
+ * primeiro, depois dor, desejo, fato_decisor, patrimônio por último — `n`
+ * desc como desempate DENTRO da categoria, `ultima_mencao_em` desc como
+ * 2º desempate). O front nunca reordena — recebe a lista pronta, mesma
+ * disciplina de `resumirInventario`/`ItemInventarioRecentePainel`.
+ *
+ * `patrimonio` é o inventário mencionado (`ItemInventarioRecentePainel`,
+ * já existente) COMBINADO na mesma lista/ordenação — não uma segunda lista
+ * separada: para a advogada, "o que sei sobre este cliente" é uma coisa só,
+ * mesmo vindo de dois acumuladores distintos no banco (`ficha_acumulada` e
+ * `inventario_acumulado`). */
+export interface ItemFichaParaPainel {
+  categoria: CategoriaFichaCliente | "patrimonio";
+  texto: string;
+  evidencia: string;
+  n: number;
+  ultima_mencao_em: string;
+}
+
+/** `EstadoCopilotoCompleto.ficha` — Ficha do cliente, já combinada e
+ * ordenada. `null` quando o kill-switch `copiloto_sessao.ficha_cliente`
+ * está desligado (padrão de fábrica, 0122) — 🔴 CORRIGIDO (achado do Fable,
+ * rodada B4): antes também vinha `null` com a chave LIGADA mas a sessão
+ * ainda sem item de ficha nem de inventário próprio acumulado, e
+ * `PainelCopiloto` decide o LAYOUT da col. 3 por `ficha ? <FichaCliente/> :
+ * <transcrição+inventário/>` — isso fazia a tela trocar de layout no meio da
+ * sessão ao vivo assim que o 1º item chegasse (~90s), contra a exigência do
+ * dono de geometria constante nesta tela. Agora, com a chave ligada, vem
+ * `{ itens: [], teto_fixos }` mesmo sem nenhum item ainda — a tela já nasce
+ * fixada no layout de Ficha e mostra o vazio (`FichaCliente.tsx`). */
+export interface FichaParaPainel {
+  itens: ItemFichaParaPainel[];
+  /** Override de `copiloto_sessao.ficha_teto_fixos` (migration 0122) —
+   * `null` (padrão de fábrica) significa "sem override": a TELA deriva o
+   * teto de itens fixos do viewport do dispositivo. Um NÚMERO aqui VENCE a
+   * derivação automática. Só é lido/incluído quando a Ficha está ativa
+   * (`ficha` não é `null`) — mesma disciplina de não gastar leitura de
+   * config quando a feature inteira está desligada. */
+  teto_fixos: number | null;
+}
+
+// ---------------------------------------------------------------------------
 // 18/09/2026 — MEMÓRIA DO COPILOTO, Fatia A (`server/copiloto/resumo.ts`).
 // Medido em produção (sessão real do Carlos Alberto, 2h05): sem memória, a IA
 // repetiu 49 perguntas sobre família e ainda perguntava sobre filhos no 4º
@@ -457,6 +553,16 @@ export interface SugestaoCopiloto {
    * interface). `?:` pelo mesmo motivo de `bloco_inferido`: contrato novo
    * por composição, sem quebrar literais de teste do front. */
   inventario_mencionado?: ItemInventarioMencionado[];
+  /** 18/09/2026 — itens de Ficha do cliente NOVOS propostos nesta chamada,
+   * já validados (evidência conferida, item inteiro descartado se não
+   * casar por substring) e cortados nos tetos de `schema.ts`. Mesmo
+   * raciocínio de `inventario_mencionado`: `[]` é o valor normal, este
+   * campo é o DELTA desta chamada (telemetria/auditoria de
+   * `copiloto_sugestoes.conteudo`) — o acumulado de verdade mora em
+   * `sessoes_copiloto.ficha_acumulada`. `?:` pelo mesmo motivo dos campos
+   * acima: contrato novo por composição, sem quebrar literais de teste do
+   * front. */
+  ficha_cliente?: ItemFichaCliente[];
 }
 
 /** Resposta de sucesso de `POST /api/sessoes/[id]/copiloto/sugestao`. */
@@ -695,6 +801,52 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
    * acima: contrato novo por composição, sem quebrar literais de teste do
    * front. */
   inventario?: InventarioParaPainel | null;
+  /** 18/09/2026 — Ficha do cliente (migration 0122), já combinada com o
+   * inventário próprio e ordenada por `server/copiloto/ficha.ts`.
+   * `null`/ausente SÓ com o kill-switch `copiloto_sessao.ficha_cliente`
+   * desligado (padrão de fábrica) — faz a coluna 3 da tela `/conduzir` cair
+   * no layout de transcrição+inventário. 🔴 CORRIGIDO (achado do Fable,
+   * rodada B4): antes `null` também cobria "chave ligada, sessão sem item
+   * ainda", e o layout trocava sozinho no meio da sessão ao vivo quando o
+   * 1º item chegava — contra a geometria constante exigida para esta tela.
+   * Com a chave ligada, mesmo sem nenhum item, vem `{ itens: [], teto_fixos
+   * }` — layout de Ficha fixo desde o início. `?:` pelo mesmo motivo dos
+   * campos acima: contrato novo por composição, sem quebrar literais de
+   * teste do front. */
+  ficha?: FichaParaPainel | null;
+  /** F5 (18/09) — leitura do kill-switch `copiloto_sessao.realce_insight_novo`
+   * (migration 0115, nasce `true`). A 0115 registrou a chave e documentou
+   * explicitamente que NENHUMA rota a lia ainda ("o componente aplica o
+   * realce incondicionalmente") — achado do pentester em 17/09, mantido de
+   * propósito até esta fatia ligar a leitura de verdade. Campo OPCIONAL:
+   * contrato novo por composição, mesmo padrão de `ficha`/`inventario`
+   * acima — `undefined` (rota ainda não preenche) tem o MESMO efeito de
+   * `true` (o valor de fábrica da chave), preservando o comportamento atual
+   * sem quebrar nenhum teste existente. `false` explícito é a ÚNICA forma
+   * de desligar. */
+  realce_insight_novo?: boolean;
+  /** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — kill-switch
+   * `copiloto_sessao.rodape_transcricao` (nasce `true`). MESMA disciplina de
+   * `realce_insight_novo` acima: até esta correção (achado do Fable) a
+   * migration criava a chave, mas nenhuma rota a devolvia —
+   * `PainelCopiloto.tsx` sempre exibia o rodapé, equivalente ao default
+   * `true` do banco (comentário de topo daquele componente). Campo
+   * OPCIONAL pelo mesmo motivo dos demais desta interface: contrato novo
+   * por composição, `undefined` tem o MESMO efeito de `true` (o padrão de
+   * fábrica), sem quebrar teste existente. */
+  rodape_transcricao?: boolean;
+  /** SILÊNCIO NA SALA (18/09/2026, migration 0122) — segundos de silêncio
+   * para os níveis ATENÇÃO/ALERTA de `RodapeTranscricao.tsx`. Até esta
+   * correção (achado do Fable) o componente usava 2 CONSTANTES FIXAS
+   * (12/25, os mesmos valores de fábrica da 0122) porque "o payload de
+   * polling ainda não expõe essas duas chaves" (comentário de topo daquele
+   * arquivo) — esta correção fecha a lacuna. Campos OPCIONAIS: `undefined`
+   * tem o MESMO efeito das constantes fixas que o componente usava antes
+   * (mesmos valores 12/25, agora como fallback de parâmetro em
+   * `RodapeTranscricao.tsx`, não mais fixos no corpo). O `frontend-engineer`
+   * JÁ TROCOU as constantes por estas props — nenhuma pendência aqui. */
+  silencio_atencao_s?: number;
+  silencio_alerta_s?: number;
 }
 
 // ---------------------------------------------------------------------------

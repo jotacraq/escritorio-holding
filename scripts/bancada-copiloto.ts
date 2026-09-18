@@ -29,15 +29,18 @@
  * densa ao longo da sessão inteira — não um só recorte do fim.
  *
  * MODO DE USO:
- *   npx tsx scripts/bancada-copiloto.ts                          # 12 janelas, v7_baseline + v8_economia, 2 repetições
+ *   npx tsx scripts/bancada-copiloto.ts                          # 12 janelas, v7/v8/v9/v10, 2 repetições
  *   npx tsx scripts/bancada-copiloto.ts --janelas=4               # rodada menor (gasto menor)
  *   npx tsx scripts/bancada-copiloto.ts --variantes=v7_baseline   # só uma variante (ex.: reconferir baseline sozinho)
+ *   npx tsx scripts/bancada-copiloto.ts --variantes=v10_ficha     # só a v10, contra o baseline já medido antes
  *
- * NUNCA PROMOVE: imprime a tabela e, se v8 vencer o gate, imprime o SQL de
- * ativação para o humano rodar — não existe `--aplicar` que ative prompt.
+ * NUNCA PROMOVE: imprime a tabela e, se uma variante vencer o gate, imprime
+ * o SQL de ativação para o humano rodar — não existe `--aplicar` que ative
+ * prompt.
  *
- * TETO DE GASTO: 12 janelas × 2 variantes × 2 repetições × ~US$0,0135 ≈
- * US$0,65 — abaixo do teto `ORCAMENTO_MAXIMO_USD` (US$ 3) desta rodada.
+ * TETO DE GASTO (4 variantes: v7/v8/v9/v10): 12 janelas × 4 variantes × 2
+ * repetições × ~US$0,0135 ≈ US$1,30 — abaixo do teto `ORCAMENTO_MAXIMO_USD`
+ * (US$ 3) desta rodada.
  *
  * PII (regra não negociável desta bancada): a transcrição contém patrimônio
  * e família reais. Este script NUNCA grava transcrição em arquivo e NUNCA
@@ -78,6 +81,13 @@ const VARIANTES: DefinicaoVariante[] = [
   // derivada no servidor, sem campo novo. Medir isto é mais barato que
   // escrever a feature e descobrir depois.
   { variante: "v9_memoria", versaoPrompt: 9 },
+  // 🔴 ACRESCENTADA (achado do Fable, 2ª rodada) — v10 = v9 + Ficha do
+  // Cliente (0123: proibição de `observacao` de navegação + instrução de
+  // `ficha_cliente[]`, migration 0122). Sem esta variante na bancada não há
+  // como medir a v10 ANTES de ativar — e é exatamente por FALTA de bancada
+  // que a v8 e a v9 nunca saíram de `ativo=false`: sem número lado a lado,
+  // não há decisão, só acúmulo de versão nunca promovida.
+  { variante: "v10_ficha", versaoPrompt: 10 },
 ];
 
 function criarClienteAdmin(): SupabaseClient {

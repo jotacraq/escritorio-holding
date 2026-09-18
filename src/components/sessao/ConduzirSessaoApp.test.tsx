@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// Timer REAL, importado do módulo nativo — não é `globalThis.setTimeout`, que
+// `vi.useFakeTimers()` substitui. Ver `tickReal` abaixo (F-1, 18/09).
+import { setTimeout as setTimeoutReal } from "node:timers";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { Ficha360 } from "@/lib/api";
 import type { RoteiroVersao } from "@/types/roteiro";
@@ -167,11 +170,45 @@ const FICHA = {
   agendamentos: [],
 } as unknown as Ficha360;
 
+/**
+ * Espera um "tick real" (macrotask) — usado para deixar uma leva de efeitos
+ * passivos do React (`useEffect`) e as promises que eles disparam terminar
+ * de propagar, sem depender do fake clock.
+ *
+ * Causa raiz (F-1, 18/09): o `setTimeout(r, 0)` que existia antes era um
+ * timer FAKE (sob `vi.useFakeTimers()`, `globalThis.setTimeout` é o mock) —
+ * sua resolução dependia de `shouldAdvanceTime: true` empurrar o clock fake
+ * em paralelo ao tempo de parede, um acoplamento impreciso sob contenção de
+ * CPU (paralelismo padrão): sob corrida, esse avanço podia ultrapassar
+ * `POLLING_MS_EM_FOCO_INICIAL` (3000ms) ANTES do 1º efeito do
+ * `usePollingCopiloto` sequer ter rodado, fazendo o ciclo automático
+ * disparar fora de ordem. `node:timers` importa a referência ORIGINAL do
+ * timer nativo (não o `globalThis.setTimeout` mockado) — um tick real
+ * sempre roda só depois que toda a fila de microtasks e de efeitos
+ * passivos pendentes já esgotou (ordem de precedência do event loop),
+ * então nunca compete com o fake clock.
+ */
+async function tickReal() {
+  await new Promise<void>((resolve) => setTimeoutReal(resolve, 0));
+}
+
+/**
+ * Abre a tela e espera a cadeia de carregamento assíncrono inteira
+ * assentar: `carregar()` (3-4 `await`s encadeados) resolve na 1ª leva de
+ * efeitos; o `useEffect` de setup do `usePollingCopiloto` (que só existe
+ * DEPOIS que `sessaoId` sai de `null`, ou seja, depois que `carregar()`
+ * termina) só roda na leva SEGUINTE — dois `tickReal()` cobrem as duas
+ * levas. Sem o 2º tick, um clique em "Corrigir parte" logo após `abrir()`
+ * podia cair ANTES desse `useEffect` de setup existir, e o disparo
+ * imediato (`cicloRef.current` ainda de uma execução anterior, ou a
+ * própria montagem do efeito reordenando com o efeito do disparo) perdia a
+ * fixação pendente — falha medida sem paralelismo nenhum, confirmando que
+ * não era race de CPU e sim ordem de efeitos incompleta.
+ */
 async function abrir() {
   const montado = montar(<ConduzirSessaoApp jornadaId="j1" />);
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  await tickReal();
+  await tickReal();
   return montado;
 }
 
@@ -214,6 +251,47 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
   it("copiloto continua montado, sem nenhum clique", async () => {
     const { container } = await abrir();
     expect(container.querySelector('[data-testid="stub-copiloto"]')).toBeTruthy();
+  });
+
+  /**
+   * F7 (18/09/2026) — número mágico morto: `PainelCopiloto.tsx` tinha
+   * `max-h-[calc(100vh-14,5rem)]`, uma subtração de constante nunca
+   * re-medida com precisão e que não acompanha `--fator-escala` (só o
+   * `font-size` da raiz reage à escala de texto; `vh` não). Este ancestral
+   * (a raiz de `ConduzirSessaoApp`) declara `grid-rows-[auto_auto_minmax(0,1fr)_auto]`:
+   * cabeçalho, linha fina e rodapé pedem `auto`; só a linha do mosaico
+   * (`minmax(0,1fr)`, dentro de `PainelCopiloto`) recebe o que sobra.
+   *
+   * F-2 (18/09/2026, rodada 2 do Fable): `h-[100dvh]` DIRETO aqui competia
+   * com o padding/cabeçalho do `<main>` do `AppShell` no modo NORMAL — a
+   * página rolava. `h-full` + o ancestral (`<main>`, via `globals.css`)
+   * definindo a altura real disponível nos dois modos é quem resolve a
+   * viewport (`dvh` continua no CSS, só que num nível acima, uma conta só).
+   */
+  it("a raiz declara h-full com grid-rows explícito — sem max-h calculado por subtração e sem competir com o padding do AppShell", async () => {
+    const { container } = await abrir();
+    const raiz = container.querySelector('[class*="grid-rows-"]');
+    expect(raiz).not.toBeNull();
+    const classe = raiz!.getAttribute("class") ?? "";
+    expect(classe).toMatch(/h-full/);
+    expect(classe).toMatch(/grid-rows-\[auto_auto_minmax\(0,1fr\)_auto\]/);
+    expect(classe).not.toMatch(/max-h-\[calc/);
+    expect(classe).not.toMatch(/h-\[100dvh\]/);
+  });
+
+  /**
+   * `Cabecalho` é CONDICIONAL (some em tela cheia) — sem `grid-row`
+   * explícito por elemento, a ausência dele empurraria `LinhaFinaRoteiro`
+   * para a linha 1 e o painel do copiloto para a linha 2 (`auto`, nunca
+   * `1fr`), e o mosaico perderia a única linha que cresce. `row-start-3`
+   * no wrapper do copiloto garante a posição INDEPENDENTE de quem mais
+   * está presente.
+   */
+  it("o wrapper do copiloto fica fixo na linha 3 do grid (row-start-3), independente do Cabecalho estar presente", async () => {
+    const { container } = await abrir();
+    const wrapperCopiloto = container.querySelector('[data-testid="stub-copiloto"]')?.parentElement;
+    expect(wrapperCopiloto).not.toBeNull();
+    expect(wrapperCopiloto!.getAttribute("class") ?? "").toMatch(/row-start-3/);
   });
 
   /**
@@ -290,6 +368,11 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     const { getByLabelText } = await abrir();
     const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "1" } });
+    // `fixarBlocoManualmente` seta a ref pendente de forma síncrona (antes
+    // do `fireEvent` retornar) — `tickReal()` só precisa esperar o
+    // `useEffect([disparoImediato])` rodar e a promise mockada de
+    // `buscarPollingCopiloto` resolver (F-1, 18/09).
+    await tickReal();
     await waitFor(() => {
       const chamadaComFixacao = estado.pollingChamadas.find((c) => c.fixadoEm);
       expect(chamadaComFixacao).toBeTruthy();
@@ -328,6 +411,8 @@ describe("ConduzirSessaoApp — linha fina do topo substitui a primeira dobra (F
     const select = getByLabelText("Corrigir a parte atual do roteiro") as HTMLSelectElement;
     expect(select.value).toBe("0");
     fireEvent.change(select, { target: { value: "0" } });
+    // `tickReal()` — mesmo motivo do teste acima (F-1, 18/09).
+    await tickReal();
     await waitFor(() => {
       const chamadaComFixacao = estado.pollingChamadas.find((c) => c.fixadoEm);
       expect(chamadaComFixacao).toBeTruthy();

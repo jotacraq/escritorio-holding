@@ -5,6 +5,7 @@ import { conferirOrcamentoCopiloto } from "./orcamento";
 import { montarContextoCopiloto } from "./contexto";
 import { executarIaCopiloto } from "./executar-ia";
 import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
+import { acumularFichaNaSessao, converterDeFichaEstruturada } from "./ficha";
 import { acumularInventarioNaSessao } from "./inventario";
 import { acumularResumoNaSessao, resumoAcumuladoEstaAtivo } from "./resumo";
 import { avaliarGatilho, type OrigemBlocoParaGatilho, type TipoGatilhoCopiloto } from "./gatilho";
@@ -374,6 +375,15 @@ export async function executarCicloCopiloto(
     // confirmado, sai cedo (zero query) sem item novo. Falha aqui não afeta
     // o resultado do ciclo (já foi gravado o que importa).
     await acumularInventarioNaSessao(admin, { sessaoId: params.sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
+
+    // 18/09/2026 (FICHA DO CLIENTE) — mesmo ponto/mesma regra:
+    // `converterDeFichaEstruturada` é a fonte ATIVA hoje (campo
+    // `ficha_cliente` da IA, já validado); se um dia a bancada trocar para a
+    // fonte de contingência (`converterDeObservacao`), só esta linha muda.
+    await acumularFichaNaSessao(admin, {
+      sessaoId: params.sessaoId,
+      itensNovos: converterDeFichaEstruturada(validado.sugestao.ficha_cliente ?? []),
+    });
 
     // 18/09/2026 (Fatia A da memória do copiloto) — mesmo ponto/mesma regra:
     // DEPOIS do INSERT confirmado, nunca antes. `camposBlocoAtual`/`resumoAtivo`

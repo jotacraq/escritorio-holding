@@ -1,29 +1,267 @@
 # Continuar daqui — SIC-HF
 
-> ### 🔴 DÍVIDA MEDIDA — `ConduzirSessaoApp.test.tsx` só passa com paralelismo reduzido (18/09/2026)
+> ### 🔴 DECISÃO PENDENTE COM O MARCIO — ativar o prompt v10 sem bancada é APOSTA (18/09/2026, noite)
 >
-> **Medido nesta máquina, 4 execuções da suíte completa:**
-> - `npx vitest run --maxWorkers=2` → **1.725/1.725, três rodadas seguidas**
-> - `npx vitest run` (paralelismo padrão) → **4 falhas**, todas em
->   `ConduzirSessaoApp.test.tsx` (`AssertionError: expected undefined to be truthy`)
-> - o arquivo isolado → **28/28**, sempre
+> O Marcio pediu para eu finalizar sozinho e deixar tudo no ar ("coloca a última
+> versão no ar... na próxima sessão quero validar de vez tanto o visual quanto o
+> motor"). **Não ativei o v10, e a razão é um número medido — não cautela genérica.**
 >
-> 🔴 **Isto importa porque o `ci.yml` roda com paralelismo padrão.** Um teste que
-> só passa sozinho não protege nada — e hoje ele é a única cobertura da tela de
-> condução ponta a ponta (a mesma tela que ganhou o estado "bloco coberto").
+> **O teto de saída não tem folga para a Ficha:**
 >
-> Diagnóstico do `fable-orchestrator` (3 execuções independentes, mesma conclusão):
-> corrida de worker, não defeito do código sob teste. Já havia sido nomeado em
-> 11/09 para `EscalaTexto`/`Travado` com a mesma assinatura — **é a terceira vez
-> que a família de testes de tela sofre isso**, agora com número medido dos dois
-> lados.
+> | versão | execuções | saída média | **p99 saída** | truncadas | latência |
+> |---|---|---|---|---|---|
+> | v5 | 183 | 368 | 601 | 0 | 6.369 ms |
+> | v6 | 131 | 497 | 1.055 | 0 | 8.279 ms |
+> | **v7 (ATIVA)** | 299 | 691 | **1.371** | 0 | 10.490 ms |
 >
-> **Correção candidata** (mesma da dívida de 11/09, nunca aplicada): `testTimeout`
-> explícito nos testes que esperam por `waitFor`, ou `maxWorkers` limitado no
-> `ci.yml`. A 2ª é uma linha e resolve hoje; a 1ª ataca a causa.
+> `copiloto_sessao.max_tokens` = **1.400**. A v7 já usa **1.371 no p99** — sobram
+> **29 tokens**. A v10 acrescenta o campo `ficha_cliente[]` (até 2 itens, cada um
+> com `texto` + `evidencia` literal). Isso não cabe em 29 tokens.
 >
-> **Gatilho:** entra na próxima fatia que encostar em `src/components/sessao/`.
-> Não deixar passar de novo — na 4ª vez, some com a confiança na suíte inteira.
+> **🔬 MEDIÇÃO FINA (18/09, noite) — a conta exata, 299 execuções da v7:**
+>
+> | métrica | valor | folga |
+> |---|---|---|
+> | saída MÁXIMA observada | **1.387** | 13 tokens até 1.400 |
+> | execuções acima de 1.370 | 3 de 299 (1,0%) | — |
+> | execuções acima de 1.330 | 7 de 299 (2,3%) | — |
+> | latência máxima | **19.396 ms** | 604 ms até `timeout_ms`=20.000 |
+> | estouros de timeout | **0** | — |
+> | correlação saída × latência | **0,958** | — |
+> | custo marginal | **10,77 ms por token** de saída | — |
+>
+> **O que isso resolve:** `"ficha_cliente":[]` custa 6–8 tokens de SAÍDA. As 3
+> execuções que hoje ficam em 1.371–1.387 passariam a 1.377–1.395 — **ainda sob
+> o teto**, mas com 5 tokens de margem no pior caso. Em latência, 8 tokens ×
+> 10,77 ms = **~86 ms** sobre uma folga de 604 ms: cabe.
+>
+> 🔴 **Isto vale para o PUSH (schema estrito obriga o campo mesmo na v7), NÃO
+> para a ATIVAÇÃO.** Ativar a v10 acrescenta o campo *preenchido* (2 itens com
+> texto + evidência literal), que é ordem de grandeza maior que `[]` — e aí os
+> 13 tokens de folga não bastam.
+>
+> **Consequência de ativar às cegas:** `stop_reason='length'` — a resposta trunca,
+> o JSON quebra e a sugestão inteira se perde. Hoje são **0 truncadas em 299
+> execuções**; seria trocar um sistema que não falha por um que falha na sessão
+> que o Marcio quer usar para validar.
+>
+> **Por que não rodei a bancada:** exige `SUPABASE_SERVICE_ROLE_KEY` e
+> `OPENROUTER_API_KEY`; não existe `.env.local` nesta máquina e **eu não busco
+> credencial de produção** (regra da casa, com incidente registrado). Custo
+> estimado pelo Fable: **~US$ 0,32** só a `v10_ficha`, ~US$ 1,30 as 4 variantes.
+>
+> **Além disso, a v10 é cumulativa:** deriva da v9 (memória), que deriva da v8
+> (economia). Ativar a v10 liga **três** incrementos nunca medidos de uma vez.
+> Não existe "ativar só a parte da Ficha" — o corpo do prompt é um só.
+>
+> 🔑 **A v8 tinha exatamente o propósito de resolver isto:** cortar raciocínio
+> desperdiçado (medido: de 943 tokens de saída, ~475 são raciocínio e só ~267
+> viram JSON útil — 28%). Se a economia da v8 derrubar o p99, a Ficha cabe sem
+> mexer no teto. **Esse é o número que a bancada existe para dar.**
+>
+> ### O que o Marcio precisa fazer (uma das duas)
+>
+> **(a) Rodar a bancada** — 1 comando, ~US$ 0,32, com o `.env.local` dele:
+> ```
+> npx tsx scripts/bancada-copiloto.ts --variantes=v10_ficha,v9_memoria
+> ```
+> Se o p99 da v10 ficar com folga contra 1.400, ativar. Senão, subir `max_tokens`
+> ANTES — mas aí entra o conflito já mapeado com `timeout_ms` (20.000) e o
+> intervalo do ciclo (20s, que já escorrega para 23,9s).
+>
+> **(b) Mandar ativar assim mesmo**, ciente de que a primeira sessão pode truncar.
+> É decisão dele, não minha — e é reversível em 1 comando.
+>
+> ### 🎛️ Estado das chaves em produção AGORA (conferido após o push)
+>
+> | chave | valor | por quê |
+> |---|---|---|
+> | `copiloto_sessao.ficha_cliente` | `false` | feature nova, espera bancada |
+> | `copiloto_sessao.resumo_acumulado` | `false` | memória, espera bancada (fail-CLOSED, B76) |
+> | `copiloto_sessao.rodape_transcricao` | **`false`** | ver abaixo — NÃO é descuido |
+> | `copiloto_sessao.ficha_teto_fixos` | `null` | deriva do viewport (padrão) |
+> | prompt ativo | **v7** | v8, v9 e v10 existem com `ativo=false` |
+>
+> 🔴 **Por que o `rodape_transcricao` foi DESLIGADO antes do push** (achado do
+> Fable na 4ª rodada): com `ficha_cliente=false`, a col. 3 mostra a transcrição
+> inteira **e** o rodapé novo apareceria embaixo — transcrição duplicada, mais o
+> indicador de silêncio, numa combinação que **nenhuma rodada desenhou nem
+> testou**. O rodapé foi concebido como SUBSTITUTO da col. 3, não como
+> complemento. Ligar os dois juntos leva a tela de um estado conhecido para
+> outro conhecido, sem passar pelo intermediário que ninguém viu.
+>
+> ### ✅ ATIVAÇÃO — os comandos, na ordem certa
+>
+> ```sql
+> -- 1) promove o prompt (a v10 já existe no banco, com a regra de papel do falante)
+> update prompts_versoes set ativo=false where chave='copiloto_sessao' and ativo;
+> update prompts_versoes set ativo=true  where chave='copiloto_sessao' and versao=10;
+>
+> -- 2) liga as 3 chaves JUNTAS — rodapé junto com a ficha, nunca separados
+> update configuracoes set valor='true'::jsonb
+>  where chave in ('copiloto_sessao.ficha_cliente',
+>                  'copiloto_sessao.resumo_acumulado',
+>                  'copiloto_sessao.rodape_transcricao');
+> ```
+>
+> **Reversão (1 comando cada):**
+> ```sql
+> update prompts_versoes set ativo=(versao=7) where chave='copiloto_sessao';
+> update configuracoes set valor='false'::jsonb
+>  where chave in ('copiloto_sessao.ficha_cliente',
+>                  'copiloto_sessao.resumo_acumulado',
+>                  'copiloto_sessao.rodape_transcricao');
+> ```
+>
+> ⚠️ **A margem é de 5 tokens** no pior caso observado em 299 execuções. Se
+> `execucoes_ia.status` mostrar `saida_nao_validou` ou `stop_reason='length'` na
+> primeira sessão, reverta e suba `copiloto_sessao.max_tokens` antes de tentar de
+> novo — mas confira contra `timeout_ms=20000`, porque cada token custa 10,77 ms
+> e a folga de latência é de 604 ms.
+
+> ### 🟢 ATIVO — auditoria do método contra transcrição de alta qualidade (18/09/2026)
+>
+> **🔴 RECLASSIFICADO em 18/09 à noite. Eu havia registrado como backlog e o Marcio
+> corrigiu:** *"A gente faz isso com o backlog, precisa fazer agora, não em outro
+> momento. Eu vou te chamar para a gente poder conferir isso."* — ou seja, é tarefa
+> ATIVA e a conferência é **junto com ele**, não entrega solta.
+>
+> **A ideia:** reprocessar as transcrições das Sessões de Viabilidade com um modelo de
+> transcrição mais apurado (sem a pressa do tempo real) e **bater o resultado contra o
+> modus operandi** — avaliar se a análise da sessão está sendo feita corretamente e se o
+> copiloto está de fato auxiliando a advogada da maneira certa.
+>
+> Não é auditoria de código: é **auditoria de método**. A pergunta não é "o sistema
+> funciona?", é "o que ele sugere serve?".
+>
+> **Material já disponível** (medido no banco):
+> - **57 transcrições de Sessão de Viabilidade**, todas `origem_dado='real'`, de
+>   09/02/2026 a 01/09/2026, ~54 mil chars cada
+> - **18 de apresentação de Croqui** (~27 mil chars) — permite comparar o que foi dito na
+>   SV com o que virou proposta
+> - a sessão do Carlos Alberto (18/09) tem, além da transcrição, **178 sugestões da IA
+>   com evidência**, o que a torna o único caso com "o que o copiloto disse" gravado
+>
+> **🔴 Limite que precisa ser resolvido ANTES, senão a auditoria não conclui:**
+> - **53 das 57** transcrições têm `jornada_id` NULO — não dá para cruzar com cliente,
+>   etapa ou pagamento
+> - **nenhuma** `sessoes_viabilidade` tem `resultado` preenchido — não se sabe quais
+>   viraram venda
+>
+> Sem isso a auditoria responde "o copiloto seguiu o roteiro?", mas **não** responde "o
+> copiloto ajudou a vender?". A segunda é a pergunta que importa. Vincular as 53 e
+> registrar o desfecho é pré-requisito, e é trabalho de dado, não de código.
+>
+> **Como fazer:** usar a transcrição reprocessada também como gabarito para medir o
+> erro da transcrição ao vivo (ver o bloco de defeitos de captura abaixo — "Vilarejo" 19×
+> contra "Vilarinho" 8×). Os dois problemas se medem com o mesmo material.
+
+
+> ### 🔴 MOTOR DO AGENTE — 3 defeitos de CAPTURA medidos na sessão real (18/09/2026)
+>
+> Achados pelo Marcio lendo a transcrição do Carlos Alberto. **Prioridade DEPOIS do
+> frontend** (decisão dele: "o foco agora é o front-end; depois a gente mexe nessa
+> parte mais do motor do agente"). Números conferidos por mim no banco.
+>
+> **1. 🔴 O inventário não sabe QUEM FALOU — e por isso capturou bem do ADVOGADO.**
+> Medido: **69 dos 70 itens** de `inventario_acumulado` não guardam o papel do
+> falante; a `evidencia` é só o texto. Consequência real: a Dra. Elaine disse
+> *"arrumei 1 apartamento pra ele no Barra Bali, de frente pra praia"* (imóvel DELA)
+> e o sistema gravou no inventário do cliente — titularidade registrada como
+> *"dela, para o pai morar"* e mesmo assim mantido. **A sessão deve capturar o
+> patrimônio do DECISOR, nunca o do advogado.**
+> Os papéis de fala já foram corrigidos hoje (`21906ec`), mas o inventário não
+> consome essa informação. É aí que a correção entra.
+>
+> **2. 🔴 Hipótese e exemplo viram bem material.** A holding **que ainda vai ser
+> criada** foi registrada como patrimônio existente: **11 dos 70 itens** falam de
+> holding futura. O caso literal: *"e eu ficar mantendo 1 holding aqui"* (hipótese
+> do cliente) virou o item **"holding existente mantida pelo cliente"**. Também
+> entraram *"empresa para transmissão das cotas"*, *"imóveis trazidos para a
+> estrutura"*, *"investimentos a serem aportados"* — tudo do desenho proposto, não
+> do que ele tem. Falta distinguir **o que ele TEM** de **o que se propõe criar**,
+> e de **exemplo/dúvida**.
+> 51 dos 70 itens (73%) estão sem titularidade nenhuma — o campo existe e quase
+> nunca é preenchido.
+>
+> **3. 🟡 Nome próprio do cliente sai errado na maioria das vezes.** Medido:
+> **"Vilarejo" 19× contra "Vilarinho" 8×**. A transcrição é insumo do Croqui e a IA
+> precisa citar evidência literal; nome errado contamina os dois.
+> Outros erros observados na mesma sessão: "super curitávamos", "AAA aberto",
+> "recuo" por "pecúlio", "no 9 da manhã".
+>
+> **🔬 MEDIDO na API do Recall (conta nova, 18/09) — vocabulário dirigido funciona:**
+> não existe "treinar" o Deepgram (não há fine-tuning por aqui, e o MCP do Recall é
+> read-only: lê bot/log/gravação, não configura transcrição). O que existe é guiar:
+>
+> | Modelo | Parâmetro | Resultado do teste |
+> |---|---|---|
+> | `nova-2` (o que usamos hoje) | `keywords: ["Vilarinho:2","peculio:2"]` | aceito, ecoado na resposta |
+> | `nova-3` (existe, não usamos) | `keyterm: ["Vilarinho","peculio"]` | aceito, ecoado na resposta |
+>
+> O `:N` é peso. Peso alto demais faz o modelo **inventar** a palavra onde ela não
+> estava — é regulável e precisa de medição, não de chute.
+>
+> **🔴 De onde saem os termos — o cadastro NÃO basta hoje (medido no banco):**
+> - `pessoas_cadastradas.nome` = **"Carlos Alberto"** — sem o "Vilarinho" que o Zoom
+>   exibe e que é justamente o que o Deepgram erra
+> - `familiares_cadastrados` para esta jornada = **nenhum**
+> - `briefings.conteudo->processo_decisorio.decisores` = **"Cônjuge", "Filha 1",
+>   "Filha 2"** — rótulos genéricos, não nomes próprios
+>
+> Então a lista viável se divide em duas metades com viabilidade diferente:
+> 1. **termos do domínio** (pecúlio, ITCMD, usufruto, nua-propriedade, holding
+>    patrimonial, doação em vida, inventário, sucessório, partilha, quotas,
+>    protocolo familiar) — fixos, valem para toda sessão, **ganho imediato**
+> 2. **nome completo do cliente + nomes de familiares** — dependem de cadastro
+>    preenchido, que hoje está vazio. É **mudança de processo**, não de código.
+>
+> **Bônus separado:** migrar `nova-2` → `nova-3` melhora o pt-BR por si só, e o
+> `keyterm` do nova-3 aceita expressão de várias palavras (o `keywords` do nova-2 só
+> aceita termo isolado). Exige comparativo antes — a bancada de replay serve.
+>
+> ⚠️ Isto resolve APENAS o defeito 3. Os defeitos 1 e 2 são erro de **interpretação**
+> da IA, não de transcrição: o áudio foi ouvido certo.
+>
+> **Por que os três juntos:** todos são falha de CAPTURA, não de raciocínio. A IA
+> conclui bem sobre o que recebe — o problema é o que chega até ela. Atacar isso
+> rende mais que ajustar prompt.
+
+
+> ### ✅ RESOLVIDO — a corrida do `ConduzirSessaoApp.test.tsx` (18/09/2026, rodada 2)
+>
+> Nasceu no diff da Ficha do cliente (não era dívida herdada de 11/09 — ver
+> histórico abaixo, mantido como lição). Causa raiz real, medida com
+> diagnóstico instrumentado (não suposição): `abrir()` só dava UM tick real
+> pós-`montar()`; o `useEffect` de setup do `usePollingCopiloto` (que só
+> existe depois que `sessaoId` sai de `null`, ou seja, depois que
+> `carregar()` resolve) precisa de uma SEGUNDA leva de efeitos passivos para
+> rodar. Com um clique em "Corrigir parte" logo após `abrir()`, esse efeito
+> de setup podia não ter rodado ainda — o disparo imediato lia
+> `fixacaoPendenteRef` já limpa, sem `fixadoEm`. Não era race de CPU pura:
+> reproduzia até sem paralelismo nenhum, uma vez isolado o mecanismo exato.
+>
+> **Correção:** `abrir()` agora dá dois `tickReal()` (timer real via
+> `node:timers`, que não é afetado por `vi.useFakeTimers()`) em vez de um
+> `Promise`+`setTimeout` fake. `ConduzirSessaoApp.test.tsx`.
+>
+> **Medido:** `npx vitest run src/components/sessao` em paralelismo padrão —
+> **267/267, oito rodadas seguidas** (critério pedido era 3). `ci.yml`
+> devolvido a `npm test` (sem `--maxWorkers`).
+>
+> Lição adicional: `console.log` instrumentado dentro do próprio hook
+> (temporário, revertido) provou a ordem real de execução dos efeitos —
+> suposição sobre "qual timer corre primeiro" sem essa instrumentação levou
+> a 3 hipóteses erradas (heurística `jest` da testing-library,
+> `shouldAdvanceTime` correndo timers demais, `new Date()` disparando
+> timers por reentrância) antes da causa real aparecer.
+>
+> ---
+> **Histórico (18/09/2026, noite) — por que não era dívida antiga:**
+> medido o HEAD (`b8eefef`) num worktree isolado, paralelismo padrão:
+> 243/243 passando; o diff da Ficha do cliente, mesma pasta: 3 falhas.
+> A corrida nascia no diff, não em pendência de 11/09 — registrar isso
+> como dívida herdada teria sido esconder uma regressão desta entrega.
 
 
 > ### 🟡 PRONTO E DESLIGADO — memória do copiloto (Fatia A), 18/09/2026
@@ -73,6 +311,21 @@
 
 
 > ### 🔴 PENDÊNCIA — 90 `uppercase` fora do design system, migração GPS-THB (14/09/2026)
+>
+> 🔴 **EXCEÇÃO NOMEADA (18/09/2026) — os 3 rótulos de coluna de `/conduzir` NÃO entram
+> nesta migração.** São `FALE AGORA`, `COMO ESTÁ INDO` e `FICHA DO CLIENTE`, em
+> `PainelCopiloto.tsx`. O `uppercase` ali é **mecanismo de leitura de relance**, não
+> resíduo de estilo: o Marcio abriu exceção de densidade só para essa tela porque a
+> advogada lê de canto de olho enquanto conversa com o cliente (ver
+> `05 Decisoes/sic-hf-excecao-visual-da-tela-de-conducao-nao-se-estende.md` no vault).
+> São 3 palavras, não texto corrido, e o peso vem de `font-bold` + caixa — que custam
+> ZERO pixel, ao contrário de subir um degrau de fonte (que custaria +2,6 px na escala
+> Grande, onde o orçamento vertical da tela travada já aperta).
+> Quem rodar a migração: pular estes 3 e manter o comentário que os justifica.
+>
+> **Contagem de referência atualizada:** o grep do B7 passa de **90 para 93**
+> ocorrências fora de `src/components/ui/`. Registrar o número novo evita que a
+> próxima auditoria trate 93 como drift não explicado.
 >
 > Decisão do Marcio (B7): a migração de paleta/tipografia para o padrão GPS-THB trocou os
 > 12 `uppercase` **de dentro de** `src/components/ui/` por `font-semibold` sentence case

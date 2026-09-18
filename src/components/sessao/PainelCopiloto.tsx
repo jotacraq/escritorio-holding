@@ -16,7 +16,6 @@ import type {
   InventarioParaPainel,
   ItemInventarioRecentePainel,
   RespostaSugestaoCopiloto,
-  SegmentoCopiloto,
   SugestaoCopiloto,
   SugestaoCopilotoPolling,
   TipoObservacaoCopiloto,
@@ -34,24 +33,52 @@ import { ultimoNaoNulo } from "@/components/sessao/copiloto/ultimoNaoNulo";
 import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
 import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
 import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
+import { RodapeTranscricao } from "@/components/sessao/copiloto/RodapeTranscricao";
+import { FichaCliente } from "@/components/sessao/copiloto/FichaCliente";
 import { Coluna } from "@/components/sessao/copiloto/Coluna";
 import { useRealceUmaVez } from "@/components/sessao/copiloto/useRealceUmaVez";
 
 // ---------------------------------------------------------------------------
 // Fase 12, Fatia B/F4 — mosaico de 3 colunas, sem rolagem de página (pedido
 // do Marcio, 17/09: "na mesma tela está tudo reunido [...] não consigo
-// visualizar, é muito conteúdo"). Réguas aplicadas neste arquivo:
+// visualizar, é muito conteúdo"). "Fale agora, ficha e andamento numa tela
+// só, travada" (18/09) reformulou a régua de "só o que muda a PRÓXIMA FRASE"
+// — a Ficha do cliente (F1) e o andamento das partes (`BarraPartes`) são
+// permanentes por natureza, e a régua antiga os reprovaria por engano
+// (nunca "mudam a próxima frase" no sentido literal, e mesmo assim NÃO são
+// enfeite). O que sobrevive é DUAS categorias, não uma:
 //
-//  1. Se não muda a PRÓXIMA FRASE que a advogada vai dizer nos próximos 30
-//     segundos, não fica na tela ao vivo.
-//  2. Um único foco visual por vez — só o bloco "Fale agora" tem peso;
-//     "Cuidado" e a transcrição são apoio, nunca competem com ele.
-//  3. Jargão traduzido: "SIMs pendentes" → a pendência por extenso; "falta no
+// (a) EFÊMERO — compete pela PRÓXIMA FRASE que a advogada vai dizer nos
+//     próximos ~30s ("Fale agora", "Cuidado"). A régua de 17/09 vale
+//     INTEIRA aqui: se um item não muda a próxima frase, não fica na tela
+//     ao vivo — vira telemetria ou material do resumo da sessão.
+// (b) CONSOLIDADO — Ficha do cliente e andamento das partes
+//     (`BarraPartes`). Não competem pela próxima frase: ANCORAM. Um item
+//     aqui vale PORQUE NÃO MUDA — é o retrato do cliente e "onde estamos no
+//     roteiro", lidos de relance para se situar, não para decidir a
+//     próxima pergunta.
+//
+// "Um único foco visual por vez" CONTINUA valendo, sem exceção — só a COL 1
+// ("Fale agora") tem peso visual; COL 2 e COL 3 (efêmero de apoio e
+// consolidado) nunca competem com ela em intensidade, mesmo sendo
+// permanentes.
+//
+// Réguas que continuam valendo no arquivo inteiro:
+//
+//  1. Jargão traduzido: "SIMs pendentes" → a pendência por extenso; "falta no
 //     bloco" → "Ainda não perguntou:"; "insight comercial"/"bloco atual"/
 //     "confiança 0,72"/"gatilho: intervalo" saem da tela ao vivo (viram
 //     telemetria ou material do resumo da sessão, nunca leitura ao vivo).
-//  4. Densidade sem rolagem de PÁGINA: cada coluna rola por dentro
+//  2. Densidade sem rolagem de PÁGINA: cada coluna rola por dentro
 //     (`min-h-0` + `overflow-y-auto` própria) — a página nunca rola.
+//  3. Exceção de densidade (`uppercase` em `FALE AGORA`/`COMO ESTÁ INDO`/
+//     `FICHA DO CLIENTE`, 3 rótulos de coluna) vale SÓ para `/conduzir` — a
+//     advogada lê de relance enquanto conversa com o cliente; nas outras
+//     telas ela senta e trabalha. NÃO SE ESTENDE a mais telas por analogia
+//     (`05 Decisoes/sic-hf-excecao-visual-da-tela-de-conducao-nao-se-
+//     estende.md`) — quem migrar `uppercase` para `font-semibold` sentence
+//     case no resto da base (pendência nomeada em `CONTINUAR-AQUI.md`) pula
+//     estes 3 de propósito.
 // ---------------------------------------------------------------------------
 
 /**
@@ -256,56 +283,37 @@ export function PainelCopiloto({
   const proximoBloco = estado.blocos_nao_percorridos[0] ?? null;
 
   return (
-    // F4 — mosaico de 3 colunas, SEM rolagem de página (pedido do Marcio,
-    // 17/09: hoje ~230px do topo são gastos com subtítulo/aviso/"ainda
-    // identificando" antes de qualquer conteúdo útil aparecer). `grid-rows`
-    // fixo (`auto 1fr auto`): a linha do meio (as 3 colunas) é a única que
-    // cresce/encolhe; o rodapé de status fica sempre no mesmo lugar, nunca
-    // deslocado por conteúdo novo em cima dele. `min-h-0` no wrapper e em
-    // cada coluna é o que permite `overflow-y-auto` funcionar dentro de um
-    // grid — sem ele, a coluna cresce com o conteúdo em vez de rolar por
-    // dentro (armadilha de geometria já registrada nesta base).
-    <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto] gap-2">
+    // F7 (18/09) — número mágico morto: `max-h-[calc(100vh-14.5rem)]` media
+    // "o que sobra da viewport" por SUBTRAÇÃO de uma constante nunca
+    // re-medida com precisão (o próprio comentário anterior já registrava
+    // isso) e que `rem` não acompanha `--fator-escala` desta base (só o
+    // `font-size` da raiz reage à escala de texto; a subtração usava `vh`,
+    // que não escala junto — subestimava o teto disponível em escala Grande,
+    // onde o orçamento vertical já é mais apertado). Trocado por
+    // `h-[100dvh]` no ANCESTRAL desta árvore
+    // (`ConduzirSessaoApp.tsx::ConduzirSessaoApp`, o `<div>` raiz) +
+    // `grid-rows-[auto_auto_minmax(0,1fr)_auto]` aqui: cabeçalho, linha fina
+    // e rodapé pedem `auto` (a altura que o CONTEÚDO deles exigir); a linha
+    // do mosaico (`minmax(0,1fr)`) recebe TUDO que sobra, sem precisar somar
+    // constantes de outras telas para adivinhar quanto sobra. `dvh` (não
+    // `vh`) resolve a barra de endereço do mobile aparecendo/sumindo ao
+    // rolar — `vh` mediria a altura com a barra recolhida e sobraria
+    // conteúdo cortado quando ela reaparece.
+    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto] gap-2">
       {/* LINHA 1 — as 3 colunas do mosaico. `lg:grid-cols-[40%_32%_28%]`
        * (Fale agora / Cuidado / Transcrição); abaixo de `lg` empilha em
        * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
        * mas a tela não pode quebrar em monitor estreito.
        *
-       * `max-h-[calc(100vh-14.5rem)]` ancora no VIEWPORT e é o TETO de fora;
-       * a CONTENÇÃO de cada célula é responsabilidade de `Coluna`
-       * (`copiloto/Coluna.tsx`) — corrigido 17/09/2026 depois de a
-       * transcrição vazar por cima do rodapé com 31 segmentos (COL 3 era só
-       * `min-h-0`, sem `flex`: o `flex-1` do filho ficava inerte).
-       *
-       * 🔴 O valor da reserva foi MEDIDO no navegador (17/09, 18:48, viewport
-       * 1536×826, build 8357981), não estimado: cabeçalho + linha de comando
-       * = 142px acima do grid, gap 8px, rodapé de status 61px → 211px + folga
-       * = 13,7rem necessários. A estimativa anterior (11rem, "por tipografia,
-       * não cronometrado", como o executor avisou) deixava o rodapé 34px
-       * abaixo da dobra num laptop; em 1920×1080 cabia e o defeito não
-       * aparecia. 14,5rem dá ~20px de folga e escala com o ajuste "Tamanho
-       * do texto" (rem acompanha o `font-size` da raiz; px não acompanharia).
-       * `min-h-[22rem]` evita que o mosaico colapse para uma faixa ilegível em
-       * tela baixa.
-       *
-       * ⚠️ DIVERGÊNCIA DO PLANO (F3, 17/09): o plano pedia RE-MEDIR este
-       * valor no navegador depois do redesenho da `BarraPartes` (F1, que
-       * trocou o rótulo de uma linha `text-legenda` para rótulo+trilho em
-       * duas linhas dentro de `LinhaFinaRoteiro`). Este ambiente não tem
-       * navegador/servidor de dev com sessão autenticada disponível para
-       * medir com DevTools — não simulei o número. Estimativa por
-       * aritmética, não substituto da medição: `BarraPartes` cresceu de
-       * ~1 linha (rótulo `text-legenda` 11px + segmentos `h-2`=8px, quase
-       * sobrepostos) para 2 linhas reais empilhadas (`text-sm`=14px/~20px de
-       * `line-height` + `gap-1`=4px + trilho `h-1.5`=6px) ≈ +10px de altura
-       * mínima do conteúdo da linha fina — dentro do `min-h-11` (44px) que
-       * `LinhaFinaRoteiro` já reservava, então o pior caso plausível é a
-       * linha fina ficar ~10px mais alta que antes SE o conteúdo já estivesse
-       * perto do teto de 44px (não estava: rótulo+trilho empilhados medem
-       * ~34px, ainda dentro do `min-h-11`). Mantenho 14,5rem sem alterar —
-       * PROPOSTA AO ARQUITETO: confirmar em 1536×826 real antes do próximo
-       * deploy; se o rodapé cair abaixo da dobra, subir para 15rem. */}
-      <div className="grid min-h-[22rem] max-h-[calc(100vh-14.5rem)] grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+       * A CONTENÇÃO de cada célula é responsabilidade de `Coluna`
+       * (`copiloto/Coluna.tsx`, `overflow-hidden`/`min-h-0`) — corrigido
+       * 17/09/2026 depois de a transcrição vazar por cima do rodapé com 31
+       * segmentos (COL 3 era só `min-h-0`, sem `flex`: o `flex-1` do filho
+       * ficava inerte). `min-h-[22rem]` evita que o mosaico colapse para uma
+       * faixa ilegível em tela baixa; o teto de cima (antes um `max-h`
+       * calculado aqui) agora vem de sobra do `1fr` do grid ancestral — não
+       * há mais uma 2ª conta de altura para divergir da 1ª. */}
+      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
          * e do "card inteiro clicável muda o contrato do link") — só os
@@ -317,29 +325,38 @@ export function PainelCopiloto({
          * `Coluna` (que já tem `overflow-hidden`) — duas barras de rolagem
          * pelo MESMO conteúdo. `rolavel` faz esta célula ser a ÚNICA
          * superfície de rolagem da COL 1; `BlocoFaleAgora` perdeu o
-         * `max-h`/`overflow` interno (ver o componente). `PlacarConducao`
-         * (pedido do dono, 17/09, julga a CONDUÇÃO DA ADVOGADA — ✅ cobriu o
-         * item do bloco, ❌ pulou item obrigatório) é o ÚLTIMO card do fluxo,
-         * rolando junto com o resto — nunca um 2º container fixo disputando
-         * altura. */}
-        <Coluna className="gap-2" rolavel rotulo="Fale agora">
+         * `max-h`/`overflow` interno (ver o componente).
+         *
+         * F3 (18/09) — `PlacarConducao` MUDOU DE COLUNA: saiu daqui e foi
+         * para o topo da COL 2 ("Como está indo"), pedido do arquiteto —
+         * ele julga a CONDUÇÃO DA ADVOGADA (✅ cobriu o item do bloco, ❌
+         * pulou item obrigatório), que é exatamente o tema da COL 2, não o
+         * conteúdo da próxima fala. Ganho colateral medido: com só
+         * `BlocoFaleAgora` aqui, a COL 1 fica com um card só e deixa de
+         * rolar na prática nas sessões normais (o card cabe sozinho na
+         * célula na maioria dos casos). */}
+        <Coluna rolavel rotulo="Fale agora">
           <BlocoFaleAgora
             sessaoId={sessaoId}
             indiceAtual={indiceAtual}
             sugestoesCiclo={sugestoesCiclo}
+            realceInsightNovoAtivo={polling.realceInsightNovoAtivo}
             blocosRoteiro={blocosRoteiro}
             irPara={irPara}
             blocoAtualCoberto={blocoAtualCoberto}
             proximoBloco={proximoBloco}
           />
-          <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
         </Coluna>
 
-        {/* COL 2 — "Cuidado". CONDICIONAL: sem risco, não existe no DOM
-         * (nunca um card vazio dizendo "nada"). Funde os 3 antigos quadros
-         * que eram jargão/risco: Alerta (SIMs pendentes) + O que aconteceu
-         * (falta no bloco) + Pode pular pra (desvio sugerido). */}
-        <Coluna>
+        {/* COL 2 — "Como está indo": `PlacarConducao` (F3, 18/09 — movido da
+         * COL 1 para cima de `BlocoCuidado`; ganho colateral: a COL 1 fica
+         * com um único card e para de rolar na prática em sessões normais)
+         * + "Cuidado", CONDICIONAL: sem risco, não existe no DOM (nunca um
+         * card vazio dizendo "nada"). Funde os 3 antigos quadros que eram
+         * jargão/risco: Alerta (SIMs pendentes) + O que aconteceu (falta no
+         * bloco) + Pode pular pra (desvio sugerido). */}
+        <Coluna className="gap-2" rolavel rotulo="Como está indo">
+          <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
           <BlocoCuidado
             pendentes={estado.sims_pendentes}
             falta={estado.falta_no_bloco}
@@ -350,20 +367,63 @@ export function PainelCopiloto({
           />
         </Coluna>
 
-        {/* COL 3 — Transcrição | Inventário, em abas (pedido do dono, 17/09).
-         * Transcrição: a mesma lista que `usePollingCopiloto` já acumula com
-         * teto de 60 segmentos — nenhuma rota nova. Inventário: `polling.
-         * inventario`, já no payload desde bcd3050 — mesmo poller, zero
-         * query nova. */}
-        <Coluna>
-          <ColunaTranscricaoInventario segmentos={sessaoEncerrada ? [] : polling.segmentos} inventario={polling.inventario} usuarioLogado={usuarioLogado} />
-        </Coluna>
+        {/* COL 3 — "Ficha do cliente" (F1, migration 0122) quando o
+         * kill-switch `copiloto_sessao.ficha_cliente` está LIGADO
+         * (`polling.ficha` não nulo) — o retrato humano do decisor, já
+         * combinado com o patrimônio mencionado e ORDENADO pelo servidor.
+         * `polling.ficha === null` cobre TANTO o kill-switch desligado
+         * (padrão de fábrica, 0122: nasce `false`) QUANTO sessão sem item
+         * ainda — nos dois casos cai no layout ANTERIOR (Transcrição +
+         * Inventário empilhados, F2: sem abas, que a advogada nunca clicava)
+         * em vez de mostrar uma Ficha vazia. Zero regressão: quem ainda não
+         * ligou a chave continua vendo exatamente o que via antes desta
+         * fatia. */}
+        {/* 🔴 F4-1 (Fable, rodada 4, medido em Chromium real) — esta célula
+         * NÃO é `rolavel`: `FichaCliente` já é dona da sua ÚNICA superfície de
+         * rolagem própria (a região `role="region"` de `itensRolaveis`, só
+         * existe quando há excedente de fato). Com `Coluna rolavel`
+         * (`overflow-y-auto`) envolvendo `raizRef` (`relative`), o
+         * container-SOMBRA de medição (`absolute`, `visibility:hidden` via
+         * `invisible`) CONTINUAVA CONTANDO na área rolável do ancestral —
+         * elemento `absolute` participa do `scrollHeight` do primeiro
+         * ancestral com `overflow`, mesmo invisível. Número medido pelo
+         * Fable em Chrome headless 1536×826, 768p×18px, 5+ itens
+         * otimistas: `col.scrollHeight(614) !== col.clientHeight(590)` com
+         * `Coluna rolavel` (excedente de 24px — a COL 3 ganhava ~24px de
+         * rolagem sobre NADA, e a "área fixa" deixava de ser fixa ao rolar,
+         * reabrindo o duplo-scroll que a F3 fechou em 17/09). Com `Coluna`
+         * padrão (`overflow-hidden`), a sombra é recortada pela célula ANTES
+         * de contar em qualquer `scrollHeight` — `overflow-hidden` não expõe
+         * barra mesmo quando o conteúdo excede (mesmo padrão já usado no
+         * ramo `else` abaixo: `PainelTranscricao` também é dono da própria
+         * região rolável dentro de uma `Coluna` que só contém). */}
+        {polling.ficha ? (
+          <Coluna rotulo="Ficha do cliente">
+            <FichaCliente itens={polling.ficha.itens} sessaoEncerrada={sessaoEncerrada} configTeto={polling.ficha.teto_fixos} />
+          </Coluna>
+        ) : (
+          <Coluna className="gap-2" rolavel rotulo="Transcrição e inventário">
+            <PainelTranscricao segmentos={sessaoEncerrada ? [] : polling.segmentos} usuarioLogado={usuarioLogado} />
+            {polling.inventario && (
+              <div className="shrink-0">
+                <p className="mb-1.5 text-rotulo font-semibold text-tinta-fraca">
+                  Inventário · {polling.inventario.resumo.total_itens_proprios + polling.inventario.resumo.total_itens_incertos}
+                </p>
+                <PainelInventario inventario={polling.inventario} />
+              </div>
+            )}
+          </Coluna>
+        )}
       </div>
 
       {/* LINHA 2 — rodapé PERMANENTE, sempre no mesmo pixel, fora do espaço
        * nobre. `EstadoDoCopiloto` é o ÚNICO `aria-live="polite"` desta tela
        * (dois disparando no mesmo tick seria ruído) — o resto do rodapé é
-       * ação, não anúncio.
+       * ação, não anúncio. Duas sub-linhas dentro do mesmo `auto` do grid
+       * (nenhuma linha de grid nova): a de cima é a que já existia; a de
+       * baixo é `RodapeTranscricao` (F4, 18/09) — indicador de saúde da
+       * captura + última fala + botão que abre a transcrição completa em
+       * overlay, sem tirar as 3 colunas do mosaico da tela.
        *
        * Fatia 10 (17/09) — famílias separadas: à ESQUERDA, leitura/registro
        * do que está acontecendo na sessão (`EstadoDoCopiloto` + "O cliente
@@ -372,51 +432,75 @@ export function PainelCopiloto({
        * do rodapé, com separador vertical para nunca ser confundida com um
        * botão de leitura ao lado. `min-h-[3.25rem]` (intocado — já reserva
        * a altura certa) continua só em volta de `EstadoDoCopiloto`. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-linha pt-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="min-h-[3.25rem] min-w-0 flex-1">
-            {!sessaoEncerrada && (
-              <EstadoDoCopiloto
-                ciclo={polling.ciclo}
-                requisicaoEmVoo={polling.requisicaoEmVoo}
-                falhasConsecutivas={polling.falhasConsecutivas}
-                falhandoDesde={polling.falhandoDesde}
-                ultimaSugestaoAbaixoDoLimiar={ultimaSugestaoDoCicloAbaixoDoLimiar}
-              />
-            )}
-            {encerradaPorDuracaoMaxima && (
-              <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-                Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
-              </p>
-            )}
-            {encerradaManualmente && !encerradaPorDuracaoMaxima && (
-              <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
-                Copiloto encerrado — transcrição consolidada, sem novas sugestões.
-              </p>
-            )}
+      <div className="flex flex-col gap-2 border-t border-linha pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="min-h-[3.25rem] min-w-0 flex-1">
+              {!sessaoEncerrada && (
+                <EstadoDoCopiloto
+                  ciclo={polling.ciclo}
+                  requisicaoEmVoo={polling.requisicaoEmVoo}
+                  falhasConsecutivas={polling.falhasConsecutivas}
+                  falhandoDesde={polling.falhandoDesde}
+                  ultimaSugestaoAbaixoDoLimiar={ultimaSugestaoDoCicloAbaixoDoLimiar}
+                />
+              )}
+              {encerradaPorDuracaoMaxima && (
+                <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                  Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
+                </p>
+              )}
+              {encerradaManualmente && !encerradaPorDuracaoMaxima && (
+                <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
+                  Copiloto encerrado — transcrição consolidada, sem novas sugestões.
+                </p>
+              )}
+            </div>
+
+            {/* `[O cliente disse ▸]` — o registro manual é AÇÃO ocasional
+             * (digitar/colar um trecho perdido), não leitura permanente: sai
+             * do espaço nobre e fica recolhido aqui. `RegistroManual` é
+             * exatamente o mesmo componente (campo + lista); só o CONTAINER
+             * muda de lugar/estado. Estado local puro de apresentação — o
+             * CONTEÚDO continua vindo do servidor via `listarSegmentosCopiloto`
+             * dentro de `RegistroManual`, nunca duplicado aqui. Mesma família
+             * de `EstadoDoCopiloto`: leitura/registro do que está acontecendo,
+             * nunca ação destrutiva — por isso mora à esquerda, com ele. */}
+            <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto} className="shrink-0">
+              O cliente disse
+              <span aria-hidden="true" className={`ml-1 inline-block transition-transform ${registroAberto ? "rotate-90" : ""}`}>
+                ▸
+              </span>
+            </Botao>
           </div>
 
-          {/* `[O cliente disse ▸]` — o registro manual é AÇÃO ocasional
-           * (digitar/colar um trecho perdido), não leitura permanente: sai
-           * do espaço nobre e fica recolhido aqui. `RegistroManual` é
-           * exatamente o mesmo componente (campo + lista); só o CONTAINER
-           * muda de lugar/estado. Estado local puro de apresentação — o
-           * CONTEÚDO continua vindo do servidor via `listarSegmentosCopiloto`
-           * dentro de `RegistroManual`, nunca duplicado aqui. Mesma família
-           * de `EstadoDoCopiloto`: leitura/registro do que está acontecendo,
-           * nunca ação destrutiva — por isso mora à esquerda, com ele. */}
-          <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto} className="shrink-0">
-            O cliente disse
-            <span aria-hidden="true" className={`ml-1 inline-block transition-transform ${registroAberto ? "rotate-90" : ""}`}>
-              ▸
-            </span>
-          </Botao>
+          {!sessaoEncerrada && (
+            <div className="flex shrink-0 items-center gap-2 border-l border-linha pl-2">
+              <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />
+            </div>
+          )}
         </div>
 
-        {!sessaoEncerrada && (
-          <div className="flex shrink-0 items-center gap-2 border-l border-linha pl-2">
-            <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />
-          </div>
+        {/* F4 (18/09) — rodapé de transcrição. `rodape_transcricao` nasce
+         * LIGADO na 0122 (reorganização de UI sobre dado que já existe, não
+         * capacidade nova a testar com cautela). 🔴 F3-2 (Fable, rodada 3,
+         * 18/09): o payload de polling JÁ expõe a chave
+         * (`polling.rodapeTranscricaoAtivo`) — o rodapé agora é
+         * CONDICIONAL de fato, não mais sempre exibido. Decisão de produto
+         * do coordenador (18/09): `rodape_transcricao=false` significa
+         * ESCONDER o rodapé inteiro — não existe mais "voltar para a aba
+         * anterior" (`ColunaTranscricaoInventario` foi removida nesta mesma
+         * entrega), então desligar a chave é a única saída visível. Some
+         * também quando a sessão encerra (nada de novo a escutar), mesmo
+         * padrão do resto do rodapé. */}
+        {!sessaoEncerrada && polling.rodapeTranscricaoAtivo && (
+          <RodapeTranscricao
+            segmentos={polling.segmentos}
+            sessaoEncerrada={sessaoEncerrada}
+            usuarioLogado={usuarioLogado}
+            silencioAtencaoS={polling.silencioAtencaoS}
+            silencioAlertaS={polling.silencioAlertaS}
+          />
         )}
       </div>
 
@@ -440,112 +524,6 @@ const ROTULO_CATEGORIA_INVENTARIO: Record<CategoriaInventarioMencionado, string>
   investimento: "Investimentos",
   outro: "Outros",
 };
-
-/**
- * COL 3 — Transcrição | Inventário (pedido do dono, 17/09). Duas abas
- * LOCAIS a esta coluna (não usam `ChaveTabFicha`/`tabs.ts` — aquele catálogo
- * é da Ficha 360, este componente é da tela ao vivo). Mesmo padrão de
- * `TabsFicha.tsx` (`role="tablist"`/`"tab"`/`"tabpanel"`, setas de teclado):
- * a aba inativa DESMONTA o conteúdo (`{ativa ? conteudo : null}`), nunca só
- * `hidden` — é o padrão já estabelecido nesta base para não manter pollers/
- * scroll de uma aba fora de vista consumindo ciclo à toa.
- *
- * A aba Inventário só aparece quando `inventario` não é `null` (kill-switch
- * `copiloto_sessao.inventario_mencionado` desligado, ou sessão sem item
- * ainda) — sem ela, só a Transcrição existe, sem aba nenhuma para não
- * sugerir uma escolha que não leva a lugar nenhum.
- */
-function ColunaTranscricaoInventario({
-  segmentos,
-  inventario,
-  usuarioLogado,
-}: {
-  segmentos: SegmentoCopiloto[];
-  inventario: InventarioParaPainel | null;
-  /** Fase 12, Fatia 7 — só repassado a `PainelTranscricao`, nunca lido aqui. */
-  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
-}) {
-  const [abaAtiva, setAbaAtiva] = useState<"transcricao" | "inventario">("transcricao");
-  // Fatia 2 (17/09) — achado do arquiteto: `total_itens_proprios` E
-  // `total_itens_incertos` JÁ vêm no payload (`ResumoInventarioAcumulado`),
-  // zero backend novo. O rótulo da aba usava só o próprio ("Inventário (0)")
-  // e mentia por omissão com 31 itens captados, ainda não confirmados — o
-  // rótulo passa a somar os dois: responde "tem coisa aqui?", não "já bati o
-  // olho nisso?" (essa segunda pergunta é a linha densa dentro do painel).
-  const totalCaptado = inventario ? inventario.resumo.total_itens_proprios + inventario.resumo.total_itens_incertos : null;
-
-  // Sem inventário, não há por que existir aba nenhuma — a Transcrição some
-  // do papel de "aba" e volta a ser o conteúdo direto da coluna, como antes
-  // desta entrega (geometria idêntica: mesmo `min-h-0`/`flex-1` interno de
-  // `PainelTranscricao`).
-  if (!inventario) return <PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} />;
-
-  const abas: { chave: "transcricao" | "inventario"; rotulo: string }[] = [
-    { chave: "transcricao", rotulo: "Transcrição" },
-    { chave: "inventario", rotulo: `Inventário · ${totalCaptado}` },
-  ];
-
-  function aoTeclar(evento: React.KeyboardEvent, atual: "transcricao" | "inventario") {
-    const indice = abas.findIndex((a) => a.chave === atual);
-    let proximo: number | null = null;
-    if (evento.key === "ArrowRight") proximo = (indice + 1) % abas.length;
-    else if (evento.key === "ArrowLeft") proximo = (indice - 1 + abas.length) % abas.length;
-    if (proximo === null) return;
-    evento.preventDefault();
-    const chave = abas[proximo].chave;
-    setAbaAtiva(chave);
-    document.getElementById(`tab-copiloto-${chave}`)?.focus();
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-      <div role="tablist" aria-label="Transcrição e inventário" className="flex shrink-0 gap-0.5 border-b border-linha">
-        {abas.map((aba) => {
-          const selecionada = aba.chave === abaAtiva;
-          return (
-            <button
-              key={aba.chave}
-              type="button"
-              role="tab"
-              id={`tab-copiloto-${aba.chave}`}
-              aria-selected={selecionada}
-              aria-controls={`painel-copiloto-${aba.chave}`}
-              tabIndex={selecionada ? 0 : -1}
-              onClick={() => setAbaAtiva(aba.chave)}
-              onKeyDown={(evento) => aoTeclar(evento, aba.chave)}
-              className={`-mb-px min-h-11 border-b-2 px-2.5 text-sm transition-colors duration-[var(--transicao-rapida)] ${
-                selecionada ? "border-[color:var(--acento,var(--latao))] font-bold text-tinta" : "border-transparent font-medium text-tinta-suave hover:text-tinta"
-              }`}
-            >
-              {aba.rotulo}
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        role="tabpanel"
-        id="painel-copiloto-transcricao"
-        aria-labelledby="tab-copiloto-transcricao"
-        hidden={abaAtiva !== "transcricao"}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        {/* A aba inativa não monta o conteúdo — mesma regra de `TabsFicha.tsx`. */}
-        {abaAtiva === "transcricao" ? <PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} /> : null}
-      </div>
-
-      <div
-        role="tabpanel"
-        id="painel-copiloto-inventario"
-        aria-labelledby="tab-copiloto-inventario"
-        hidden={abaAtiva !== "inventario"}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
-        {abaAtiva === "inventario" ? <PainelInventario inventario={inventario} /> : null}
-      </div>
-    </div>
-  );
-}
 
 /**
  * Contagens por categoria (`IMÓVEIS · 6`) + os 5 itens mais recentes com a
@@ -788,6 +766,7 @@ function BlocoFaleAgora({
   sessaoId,
   indiceAtual,
   sugestoesCiclo,
+  realceInsightNovoAtivo,
   blocosRoteiro,
   irPara,
   blocoAtualCoberto,
@@ -796,6 +775,9 @@ function BlocoFaleAgora({
   sessaoId: string;
   indiceAtual: number;
   sugestoesCiclo: SugestaoCopilotoPolling[];
+  /** F5 (18/09) — `copiloto_sessao.realce_insight_novo` (0115). Repassado
+   * até `CardRecente`, o único consumidor real do realce. */
+  realceInsightNovoAtivo: boolean;
   blocosRoteiro?: { id: string; titulo?: string }[];
   irPara?: (indice: number) => void;
   /** B73 — `estado.falta_no_bloco` (campos + observar) do payload
@@ -863,6 +845,7 @@ function BlocoFaleAgora({
           <SugestoesDoCiclo
             sessaoId={sessaoId}
             sugestoes={sugestoesCiclo}
+            realceInsightNovoAtivo={realceInsightNovoAtivo}
             blocosRoteiro={blocosRoteiro}
             irPara={irPara}
             aoMudarNaoLidas={setNaoLidas}
@@ -1053,6 +1036,7 @@ function CardPlacar({ chave, children }: { chave: string; children: ReactNode })
 function SugestoesDoCiclo({
   sessaoId,
   sugestoes,
+  realceInsightNovoAtivo,
   blocosRoteiro,
   irPara,
   aoMudarNaoLidas,
@@ -1062,6 +1046,8 @@ function SugestoesDoCiclo({
 }: {
   sessaoId: string;
   sugestoes: SugestaoCopilotoPolling[];
+  /** F5 (18/09) — repassado até `CardRecente`. */
+  realceInsightNovoAtivo: boolean;
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
   aoMudarNaoLidas?: (n: number) => void;
@@ -1169,7 +1155,7 @@ function SugestoesDoCiclo({
 
   return (
     <div className="flex flex-col gap-2">
-      <CardRecente sugestaoId={recente.sugestao_id} naoLida={recenteNaoLida}>
+      <CardRecente sugestaoId={recente.sugestao_id} naoLida={recenteNaoLida} realceAtivo={realceInsightNovoAtivo}>
         <ApresentacaoSugestao
           sessaoId={sessaoId}
           sugestaoId={recente.sugestao_id}
@@ -1256,9 +1242,27 @@ function SugestoesDoCiclo({
  * 🔴 `entrar-insight`+`decair-destaque` juntas colidiam (ver `CardPlacar`) —
  * `.anim-entrar-e-decair` combina as duas; `duracaoMs=5000` casa com
  * `@keyframes decair-destaque`.
+ *
+ * F5 (18/09) — `realceAtivo` liga a leitura do kill-switch
+ * `copiloto_sessao.realce_insight_novo` (0115), gravado desde 17/09 e nunca
+ * lido até esta fatia (achado do pentester, "o componente aplica o realce
+ * incondicionalmente"). `realceAtivo=false` desliga só o GATILHO ANIMADO
+ * (`entrar-insight`/`decair-destaque`) — a borda esquerda de "não lido"
+ * continua (é ESTADO, não animação; nunca fez parte do que a chave promete
+ * desligar).
  */
-function CardRecente({ sugestaoId, naoLida, children }: { sugestaoId: string; naoLida: boolean; children: ReactNode }) {
-  const destacar = useRealceUmaVez(naoLida, sugestaoId, 5000);
+function CardRecente({
+  sugestaoId,
+  naoLida,
+  realceAtivo,
+  children,
+}: {
+  sugestaoId: string;
+  naoLida: boolean;
+  realceAtivo: boolean;
+  children: ReactNode;
+}) {
+  const destacar = useRealceUmaVez(naoLida && realceAtivo, sugestaoId, 5000);
 
   return (
     <div

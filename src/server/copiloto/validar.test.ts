@@ -60,6 +60,7 @@ function saidaBase(): SugestaoCopilotoIa {
     confianca_geral: 0.8,
     bloco_inferido: null,
     inventario_mencionado: [],
+    ficha_cliente: [],
   };
 }
 
@@ -429,6 +430,93 @@ describe("validarSugestaoCopiloto — inventario_mencionado (17/09/2026)", () =>
     const resultado = validarSugestaoCopiloto(saida, contextoBase());
     expect(resultado.motivoRecusaTotal).toBe("termo_proibido");
     expect(resultado.sugestao).toBeNull();
+  });
+});
+
+/**
+ * 18/09/2026 — achado do `security-pentester`: a `janela_transcricao` mistura
+ * fala de TODOS os papéis (`"advogada: ..."`, `"decisor_1: ..."`, etc.) e
+ * `evidenciaConferida` só confere a citação por substring, sem saber de quem
+ * é a fala. Já aconteceu em produção com o inventário (imóvel da advogada
+ * virado patrimônio do cliente) — a correção cobre `inventario_mencionado[]`
+ * E `ficha_cliente[]`, a mesma classe de defeito nos dois.
+ */
+function contextoComJanelaMista(linhasExtra: string[]): ContextoCopiloto {
+  return {
+    ...contextoBase(),
+    janela_transcricao: [...contextoBase().janela_transcricao, ...linhasExtra],
+  };
+}
+
+describe("validarSugestaoCopiloto — evidência exclusiva da fala da EQUIPE é recusada (18/09/2026)", () => {
+  it("🔴 inventario_mencionado: evidência que SÓ casa com fala da advogada descarta o item inteiro", () => {
+    const contexto = contextoComJanelaMista(["advogada: arrumei 1 apartamento pra ele no Barra Bali, de frente pra praia"]);
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      inventario_mencionado: [
+        {
+          categoria: "imovel",
+          descricao: "apartamento no Barra Bali",
+          titularidade: null,
+          posse: "propria",
+          valor_mencionado: null,
+          evidencia: "arrumei 1 apartamento pra ele no Barra Bali, de frente pra praia",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contexto);
+    expect(resultado.sugestao?.inventario_mencionado).toEqual([]);
+  });
+
+  it("🔴 ficha_cliente: evidência que SÓ casa com fala do assistente descarta o item inteiro", () => {
+    const contexto = contextoComJanelaMista(["assistente: ele falou que tá muito preocupado com a separação dos filhos"]);
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      ficha_cliente: [
+        {
+          categoria: "dor",
+          texto: "preocupação com a separação dos filhos",
+          evidencia: "ele falou que tá muito preocupado com a separação dos filhos",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contexto);
+    expect(resultado.sugestao?.ficha_cliente).toEqual([]);
+  });
+
+  it("evidência AMBÍGUA (casa com fala da equipe E com fala do decisor) é ACEITA — fail-closed aqui apagaria dado legítimo", () => {
+    const contexto = contextoComJanelaMista([
+      "advogada: e você falou que quer proteger o apartamento da praia, certo?",
+      "decisor_1: quero proteger o apartamento da praia",
+    ]);
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      ficha_cliente: [
+        {
+          categoria: "desejo",
+          texto: "proteger o apartamento da praia",
+          evidencia: "quero proteger o apartamento da praia",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contexto);
+    expect(resultado.sugestao?.ficha_cliente).toHaveLength(1);
+  });
+
+  it("evidência que casa com fala do decisor (não da equipe) passa normalmente", () => {
+    const contexto = contextoComJanelaMista(["decisor_1: minha maior preocupação é meu filho ficar desamparado"]);
+    const saida: SugestaoCopilotoIa = {
+      ...saidaBase(),
+      ficha_cliente: [
+        {
+          categoria: "dor",
+          texto: "medo do filho ficar desamparado",
+          evidencia: "minha maior preocupação é meu filho ficar desamparado",
+        },
+      ],
+    };
+    const resultado = validarSugestaoCopiloto(saida, contexto);
+    expect(resultado.sugestao?.ficha_cliente).toHaveLength(1);
   });
 });
 

@@ -279,7 +279,37 @@ export function ConduzirSessaoApp({
   if (!blocoAtual || !sessaoId) return null;
 
   return (
-    <div ref={containerRef} className={`flex w-full flex-col gap-2 pb-4 ${telaCheiaAtiva ? "modo-tela-cheia-sessao" : ""}`}>
+    // F7 (18/09) — o ancestral que ancora a geometria da tela travada. Antes,
+    // `PainelCopiloto.tsx` tentava adivinhar "o que sobra da viewport" com
+    // `max-h-[calc(100vh-14.5rem)]` — uma subtração de constante nunca
+    // re-medida com precisão E que não acompanha `--fator-escala` (só o
+    // `font-size` da raiz reage à escala de texto; `vh` não). Agora é
+    // `grid` com `h-full`: cabeçalho, linha fina e rodapé pedem `auto` (a
+    // altura real do conteúdo deles); só a linha do mosaico
+    // (`minmax(0,1fr)`, dentro de `PainelCopiloto`) recebe o que sobra —
+    // sem número mágico, sem 2ª conta de altura para divergir da 1ª.
+    //
+    // F-2 (18/09/2026, rodada 2 do Fable): `h-[100dvh]` direto aqui
+    // ignorava que, no modo NORMAL, este `<div>` é filho do `<main>` do
+    // `AppShell` — que reserva espaço para o cabeçalho `sticky` do mobile e
+    // para o padding próprio. `h-[100dvh]` competia por 100% da viewport
+    // por cima do que o `AppShell` já tinha reservado, e a página rolava.
+    // Agora o ancestral (`<main>`, via `globals.css`) é quem define a
+    // altura real disponível nos dois modos — `padding:0` sempre nesta
+    // rota, e `height:100dvh` só quando `.modo-tela-cheia-sessao` esconde
+    // cabeçalho/lateral — e este `<div>` só herda com `h-full`, uma
+    // conta só, no lugar certo, em vez de duas contas (uma aqui, outra no
+    // `<main>`) podendo divergir.
+    //
+    // 🔴 `grid-row` EXPLÍCITO em cada filho (não a ordem de quem está
+    // presente): `Cabecalho` é CONDICIONAL (some em tela cheia) — com
+    // `grid-rows-[auto_auto_minmax(0,1fr)_auto]` posicionando só por ordem
+    // de fonte, a ausência de `Cabecalho` empurraria `LinhaFinaRoteiro` para
+    // a linha 1 e `PainelCopiloto` para a linha 2 (`auto`, nunca `1fr`) —
+    // o mosaico perderia a única linha que cresce, e a tela voltaria a
+    // rolar por página. Fixar a linha de cada um por número resolve nos
+    // dois modos, sem depender de contagem de filhos.
+    <div ref={containerRef} className={`grid h-full w-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-2 ${telaCheiaAtiva ? "modo-tela-cheia-sessao" : ""}`}>
       {/* Pedido 2 (16/09): "a tela fica cheia e a gente vai visualizando os
        * insights [...] esconder o cabeçalho da página e a navegação do
        * AppShell; os 3 blocos + a linha fina ocupam tudo". O `Cabecalho`
@@ -288,7 +318,11 @@ export function ConduzirSessaoApp({
        * CSS via `.modo-tela-cheia-sessao` (`globals.css`, mesmo padrão de
        * `:has()` de `.largura-cheia`). O botão de tela cheia continua
        * acessível dentro de `LinhaFinaRoteiro`, que nunca some. */}
-      {!telaCheiaAtiva && <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />}
+      {!telaCheiaAtiva && (
+        <div className="row-start-1">
+          <Cabecalho ficha={estado.ficha} jornadaId={jornadaId} roteiro={estado.roteiro} />
+        </div>
+      )}
 
       {/*
        * Fase 12, Fatia B — "a tela vira leitura" (pedido do Marcio, 16/09):
@@ -310,28 +344,37 @@ export function ConduzirSessaoApp({
        * `<select>` "Corrigir parte" é o único caminho de correção agora, e
        * ele fixa de verdade.
        */}
-      <LinhaFinaRoteiro
-        sessaoId={sessaoId}
-        indiceAtual={indice}
-        blocosRoteiro={estado.roteiro.definicao.blocos}
-        irPara={irPara}
-        polling={polling}
-        linkSala={estado.ficha.sessao?.link_sala ?? null}
-        aoAtualizarLinkSala={aoAtualizarLinkSala}
-        telaCheiaAtiva={telaCheiaAtiva}
-        aoAlternarTelaCheia={() => void alternarTelaCheia(containerRef.current)}
-      />
+      <div className="row-start-2">
+        <LinhaFinaRoteiro
+          sessaoId={sessaoId}
+          indiceAtual={indice}
+          blocosRoteiro={estado.roteiro.definicao.blocos}
+          irPara={irPara}
+          polling={polling}
+          linkSala={estado.ficha.sessao?.link_sala ?? null}
+          aoAtualizarLinkSala={aoAtualizarLinkSala}
+          telaCheiaAtiva={telaCheiaAtiva}
+          aoAlternarTelaCheia={() => void alternarTelaCheia(containerRef.current)}
+        />
+      </div>
 
-      <PainelCopiloto
-        sessaoId={sessaoId}
-        indiceAtual={indice}
-        blocosRoteiro={estado.roteiro.definicao.blocos}
-        irPara={irPara}
-        polling={polling}
-        sessaoEncerrada={sessaoEncerrada}
-        aoEncerrar={() => setEncerradaManualmente(true)}
-        usuarioLogado={usuarioLogado}
-      />
+      {/* `row-start-3` + `min-h-0`: é o item de grid que RECEBE o `1fr` —
+       * sem `min-h-0` aqui, o filho (`PainelCopiloto`, que já é `grid
+       * min-h-0 flex-1` por dentro) não consegue encolher abaixo do
+       * conteúdo, e o `minmax(0,1fr)` da linha 3 não tem efeito prático
+       * (mesma armadilha de geometria já registrada nesta base). */}
+      <div className="row-start-3 min-h-0">
+        <PainelCopiloto
+          sessaoId={sessaoId}
+          indiceAtual={indice}
+          blocosRoteiro={estado.roteiro.definicao.blocos}
+          irPara={irPara}
+          polling={polling}
+          sessaoEncerrada={sessaoEncerrada}
+          aoEncerrar={() => setEncerradaManualmente(true)}
+          usuarioLogado={usuarioLogado}
+        />
+      </div>
     </div>
   );
 }

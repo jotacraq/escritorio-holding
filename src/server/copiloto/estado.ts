@@ -7,13 +7,21 @@ import type {
   ComparacaoDecisoresPresentes,
   EstadoBotCopiloto,
   EstadoCopiloto,
+  FichaAcumulada,
+  FichaParaPainel,
   InventarioAcumulado,
   InventarioParaPainel,
   ItemInventarioRecentePainel,
   SimPendente,
 } from "@/types/copiloto";
 import { erroNaoEncontrado } from "@/server/erros";
-import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson, lerConfiguracoesBool } from "@/server/ia/configuracao";
+import {
+  lerConfiguracaoBool,
+  lerConfiguracaoInt,
+  lerConfiguracaoJson,
+  lerConfiguracoesEmLote,
+} from "@/server/ia/configuracao";
+import { ordenarFicha } from "./ficha";
 import { resumirInventario } from "./inventario";
 import { compararComDecisores } from "./participantes";
 import { CHAVE_RESUMO_ACUMULADO_ATIVO, derivarPendente, normalizarResumoAcumulado } from "./resumo";
@@ -103,6 +111,13 @@ interface SessaoComRoteiroEBloco {
      * normaliza é `normalizarResumoAcumulado` (`resumo.ts`), nunca este
      * módulo lendo campo direto de um jsonb não validado. */
     resumo_acumulado: unknown;
+    /** FICHA DO CLIENTE (18/09/2026, migration 0122) — mesmo embed, ZERO
+     * query nova (mesma disciplina de `inventario_acumulado`/
+     * `resumo_acumulado` acima): a coluna já vem no SELECT que esta função
+     * já faz. `montarFichaParaPainel` combina este array com
+     * `inventario_acumulado` (já lido logo acima) numa lista só, ordenada
+     * pela regra de negócio de `server/copiloto/ficha.ts`. */
+    ficha_acumulada: FichaAcumulada | null;
   } | null;
 }
 
@@ -213,6 +228,43 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
    * desligado ou sessão sem item acumulado ainda (nunca objeto com contagens
    * zeradas). */
   inventario: InventarioParaPainel | null;
+  /** FICHA DO CLIENTE (18/09/2026, migration 0122) — ver
+   * `montarFichaParaPainel`.
+   *
+   * 🔴 `null` = **SÓ** o kill-switch `copiloto_sessao.ficha_cliente`
+   * desligado (padrão de fábrica). Ligado e ainda sem item devolve
+   * `{ itens: [], teto_fixos }` — objeto com lista VAZIA, de propósito.
+   *
+   * Corrigido na 4ª rodada de revisão (achado do Fable): este campo decide o
+   * LAYOUT INTEIRO da col. 3 (`polling.ficha ? <FichaCliente/> :
+   * <transcrição+inventário/>`). Enquanto `null` significava as duas coisas,
+   * a tela nascia em "transcrição e inventário" e TROCAVA para "Ficha do
+   * cliente" quando o 1º item chegasse (~90s) — salto de layout no meio da
+   * sessão ao vivo, proibido nesta tela ("geometria constante", "vai ficar
+   * fixa, travada ali").
+   *
+   * ⚠️ NÃO "conserte" isto de volta para `null` quando vazio: a lista vazia
+   * é o estado que mantém a identidade da coluna, e `FichaCliente.tsx` tem o
+   * vazio desenhado ("Nenhum fato relevante identificado ainda nesta
+   * sessão."). Trancado por `estado.test.ts` e `PainelCopiloto.test.tsx`. */
+  ficha: FichaParaPainel | null;
+  /** F5 (18/09) — kill-switch `copiloto_sessao.realce_insight_novo` (0115).
+   * `usePollingCopiloto.ts:356` já lê este campo desde a F5; até esta
+   * correção nenhuma rota o preenchia (achado do pentester, 17/09: "o
+   * componente aplica o realce incondicionalmente"). Sempre presente
+   * (nunca opcional aqui — é este módulo que fecha a lacuna). */
+  realce_insight_novo: boolean;
+  /** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — mesma disciplina
+   * de `realce_insight_novo` acima: a migration criou a chave, esta
+   * correção é quem primeiro a devolve no payload. */
+  rodape_transcricao: boolean;
+  /** SILÊNCIO NA SALA (18/09/2026, migration 0122) — segundos para os
+   * níveis ATENÇÃO/ALERTA do indicador de `RodapeTranscricao.tsx`. Sempre
+   * presentes (nunca `null`): a chave sempre tem padrão de fábrica válido,
+   * mesmo com a config ausente/ilegível (`lerConfiguracoesEmLote`, tipo
+   * `"int"`). */
+  silencio_atencao_s: number;
+  silencio_alerta_s: number;
 }
 
 /** `copiloto_sessao.inventario_mencionado` (0111) — MESMA chave que já
@@ -225,6 +277,55 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
  * `sessoes_copiloto.inventario_acumulado` — é sobre o que a TELA vê, não
  * sobre o que se grava (mesmo raciocínio de `contexto.ts`). */
 const CHAVE_INVENTARIO_MENCIONADO_ATIVO = "copiloto_sessao.inventario_mencionado";
+
+/** FICHA DO CLIENTE (18/09/2026, migration 0122) — kill-switch da EXIBIÇÃO
+ * na coluna 3 da tela `/conduzir`. Nasce `false` (feature nova de tela,
+ * diferente do fail-OPEN de `inventario_mencionado` acima): o dono confere
+ * e ativa depois de medir. Desligar não impede o ACUMULADOR de continuar
+ * gravando (mesmo raciocínio de `inventario_mencionado`). */
+const CHAVE_FICHA_CLIENTE_ATIVA = "copiloto_sessao.ficha_cliente";
+
+/** FICHA DO CLIENTE (18/09/2026, migration 0122) — override do teto de itens
+ * fixos. Lido SEMPRE, no MESMO lote de `lerConfiguracoesEmLote` que as
+ * demais flags desta função (correção da 3ª rodada, achado do Fable: ler só
+ * QUANDO `fichaClienteAtiva` já é conhecido exigia uma ida SEQUENCIAL extra
+ * depois do lote booleano — o oposto de "zero ida a mais"). O valor lido é
+ * descartado logo abaixo quando `fichaClienteAtiva=false`; `null` (padrão de
+ * fábrica da chave) significa "sem override" — a tela deriva o teto do
+ * viewport. */
+const CHAVE_FICHA_TETO_FIXOS = "copiloto_sessao.ficha_teto_fixos";
+
+/** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — nasce `true`
+ * (reorganização de UI sobre dado que já existe, não capacidade nova a
+ * testar com cautela; ver comentário da 0122). Entra no MESMO lote de
+ * `lerConfiguracoesEmLote` que as demais chaves desta função — nenhuma ida a
+ * mais ao banco. `false` esconde o rodapé (decisão do dono, 3ª rodada: a aba
+ * própria que existia antes, `ColunaTranscricaoInventario`, foi REMOVIDA
+ * neste mesmo diff — não há layout anterior para voltar). */
+const CHAVE_RODAPE_TRANSCRICAO_ATIVO = "copiloto_sessao.rodape_transcricao";
+
+/** REALCE DE INSIGHT NOVO (17/09, migration 0115) — nasce `true`. MESMA
+ * chave que `usePollingCopiloto.ts:356` já consome
+ * (`resposta.realce_insight_novo`) desde a F5 — o achado do pentester
+ * (17/09) documentou explicitamente que "o componente aplica o realce
+ * incondicionalmente" porque nenhuma rota devolvia o valor. Corrigido aqui:
+ * entra no MESMO lote de `lerConfiguracoesEmLote`, zero ida a mais ao banco. */
+const CHAVE_REALCE_INSIGHT_NOVO_ATIVO = "copiloto_sessao.realce_insight_novo";
+
+/** SILÊNCIO NA SALA (18/09/2026, migration 0122) — segundos a partir dos
+ * quais a tela `/conduzir` acende ATENÇÃO/ALERTA (`RodapeTranscricao.tsx`).
+ * Padrões de fábrica da 0122 (12/25) — MESMOS valores que o componente já
+ * usa como constante fixa hoje (comentário de topo daquele arquivo:
+ * "quando o payload passar a expor... trocar estas 2 linhas por props é a
+ * única mudança necessária"). Inteiros, não booleanos, mas entram no MESMO
+ * `lerConfiguracoesEmLote` das flags booleanas e do json de
+ * `ficha_teto_fixos` (3ª rodada, achado do Fable: leitor único por tipo
+ * fazia 3 idas ao banco onde cabia 1) — zero ida a mais além da 1 ida total
+ * deste lote, sempre em paralelo no `Promise.all` desta função. */
+const CHAVE_SILENCIO_ATENCAO_S = "copiloto_sessao.silencio_atencao_s";
+const CHAVE_SILENCIO_ALERTA_S = "copiloto_sessao.silencio_alerta_s";
+const PADRAO_SILENCIO_ATENCAO_S = 12;
+const PADRAO_SILENCIO_ALERTA_S = 25;
 
 /** Mesma chave de `contexto.ts` — ver `carregarBlocosComFallback`. */
 const CHAVE_ROTEIRO_SESSAO_VIABILIDADE = "sessao_viabilidade";
@@ -278,6 +379,50 @@ function montarInventarioParaPainel(
     resumo: resumirInventario(acumulado),
     recentes,
   };
+}
+
+/**
+ * FICHA DO CLIENTE (18/09/2026, migration 0122) — ZERO query nova:
+ * `ficha_acumulada` já vem no MESMO embed de `sessoes_copiloto` que esta
+ * função já lê (mesmo padrão de `montarInventarioParaPainel` acima), e
+ * `inventarioAcumulado` é o MESMO array já lido para montar `inventario`
+ * (nenhuma leitura duplicada). Combina os dois acumuladores numa lista
+ * ÚNICA e ordenada pela regra de negócio do dono
+ * (`server/copiloto/ficha.ts::ordenarFicha` — objeção > dor > desejo >
+ * fato_decisor > patrimônio, `n` como desempate dentro da categoria).
+ *
+ * `itensInventario` reusa o MESMO corte de `LIMITE_ITENS_RECENTES_
+ * INVENTARIO_PAINEL` que `montarInventarioParaPainel` já aplica (os
+ * `recentes` calculados ali, não uma 2ª derivação do array bruto) — a
+ * linha de patrimônio na Ficha é o mesmo recorte que a célula de inventário
+ * já mostra, nunca um universo maior escondido atrás de outra tela.
+ *
+ * 🔴 CORRIGIDO (achado do Fable, rodada B4): `null` tinha DOIS significados —
+ * "kill-switch desligado" e "ligado, mas ainda sem item" — e `PainelCopiloto`
+ * decide o LAYOUT inteiro da col. 3 por `polling.ficha ? <FichaCliente/> :
+ * <transcrição+inventário/>`. Isso fazia a tela nascer em "transcrição e
+ * inventário" e TROCAR para "Ficha do cliente" assim que o 1º item chegasse
+ * (~90s) — salto de layout no meio da sessão ao vivo, exatamente o que o
+ * dono proibiu para esta tela ("geometria constante", "vai ficar fixa,
+ * travada ali"). Agora `null` é SÓ o kill-switch desligado; ligada e vazia
+ * devolve `{ itens: [], teto_fixos }` — o objeto com lista vazia que o
+ * comentário de `FichaParaPainel` dizia "nunca" existir passa a ser,
+ * justamente, o estado que resolve isto: a tela já entra fixada no layout de
+ * Ficha, e `FichaCliente.tsx` mostra o vazio que já tinha desenho pronto
+ * ("Nenhum fato relevante identificado ainda nesta sessão."), até então
+ * inalcançável pela app.
+ *
+ * Pura (zero I/O) — mesmo padrão de `montarInventarioParaPainel`.
+ */
+function montarFichaParaPainel(
+  fichaAcumulada: FichaAcumulada | null,
+  itensInventario: ItemInventarioRecentePainel[],
+  fichaClienteAtiva: boolean,
+  tetoFixos: number | null,
+): FichaParaPainel | null {
+  if (!fichaClienteAtiva) return null;
+
+  return { itens: ordenarFicha(fichaAcumulada ?? [], itensInventario), teto_fixos: tetoFixos };
 }
 
 /** Chave de configuração da fixação manual por tempo (mesma que a rota usa
@@ -653,8 +798,11 @@ export async function montarEstadoCopiloto(
         // montarEstadoCopiloto já faz"). MEMÓRIA DO COPILOTO (18/09/2026,
         // achado do Fable): `resumo_acumulado` entra pela MESMA razão — zero
         // query nova para `falta_no_bloco` poder subtrair o que já foi
-        // perguntado.
-        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em, inventario_acumulado, resumo_acumulado)",
+        // perguntado. FICHA DO CLIENTE (18/09/2026, migration 0122):
+        // `ficha_acumulada` entra pela MESMA razão — zero query nova; não
+        // mexe no total de idas a `configuracoes` (ver TOTAL por tick, mais
+        // abaixo, junto de `lerConfiguracoesEmLote`).
+        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em, inventario_acumulado, resumo_acumulado, ficha_acumulada)",
     )
     .eq("id", sessaoId)
     .maybeSingle<SessaoComRoteiroEBloco>();
@@ -694,27 +842,60 @@ export async function montarEstadoCopiloto(
     blocos = ativo?.definicao?.blocos ?? [];
   }
 
-  // 🔴 DUAS FLAGS, UMA IDA AO BANCO (18/09/2026, achado do Fable). Esta função
-  // roda no GET de POLLING — `usePollingCopiloto` bate a cada 3 s com a tela
-  // em foco, e cada `lerConfiguracaoBool` era uma requisição própria ao
-  // PostgREST. `lerConfiguracoesBool` troca N requisições por UMA
-  // (`in('chave', [...])`, `chave` é PK desde a 0027) preservando o padrão de
-  // CADA chave: `inventario_mencionado` continua fail-OPEN (true) e
-  // `resumo_acumulado` continua fail-CLOSED (false, B76) — inclusive quando a
-  // query inteira falha, porque o lote devolve os padrões informados.
+  // 🔴 UMA SÓ IDA PARA TODAS AS CONFIGS DESTE TICK (3ª rodada, achado do
+  // Fable). Esta função roda no GET de POLLING — `usePollingCopiloto` bate a
+  // cada 3 s com a tela em foco — e a rodada anterior, ao tirar a leitura
+  // SEQUENCIAL de `ficha_teto_fixos`, tinha somado 2 requisições A MAIS ao
+  // caminho quente: `lerConfiguracaoJson(ficha_teto_fixos)` incondicional
+  // (mesmo com `ficha_cliente=false`, que é o padrão de fábrica e o estado
+  // atual de produção) e `lerConfiguracoesInt` das 2 chaves de silêncio, que
+  // nenhum componente ainda consome. 9→8 idas por tick, quando o objetivo era
+  // reduzir.
   //
-  // A memória do copiloto ACRESCENTOU uma flag aqui; em vez de somar a 3ª
-  // requisição por tick, a feature deixa o caminho com MENOS ida ao banco do
-  // que encontrou (2 leituras viraram 1).
-  const [blocoAtualResolvido, flags] = await Promise.all([
+  // `lerConfiguracoesEmLote` (novo em `server/ia/configuracao.ts`) resolve
+  // bool + int + json da MESMA `select ... where chave in (...)` — as 5
+  // flags booleanas (inventário, resumo acumulado, ficha do cliente, rodapé
+  // de transcrição, realce de insight novo), `ficha_teto_fixos` (json) e as
+  // 2 chaves de silêncio (int) entram TODAS no mesmo lote. Onde havia 3
+  // chamadas (bool, json, int) agora há 1 — o tick fica com MENOS idas do
+  // que o HEAD antes desta rodada tinha, não mais.
+  //
+  // Semântica por chave preservada, idêntica à das leitoras que substituiu:
+  // ausente, ilegível ou de tipo inesperado cai no padrão INFORMADO, nunca
+  // no lado oposto — fail-OPEN (`inventario_mencionado`=true) e fail-CLOSED
+  // (`resumo_acumulado`=false, B76) convivem porque cada chave carrega seu
+  // próprio padrão na especificação abaixo, e o `try/catch` interno de
+  // `lerConfiguracoesEmLote` garante que uma falha de rede/driver não lança
+  // — nunca vira HTTP 500 na tela ao vivo. `ficha_teto_fixos` mantém os 3
+  // estados (`null`=deriva do viewport, número=override, padrão só quando a
+  // leitura falha) porque o tipo "json" do lote devolve o valor CRU,
+  // incluindo `null` — nunca colapsa em 0 nem em "ausente".
+  //
+  // TOTAL por tick nesta função (histerese + config): as 4 leituras de
+  // `resolverBlocoAtual` (quando a inferência está ligada) somadas a 1 ida
+  // deste lote único = 5 idas a `configuracoes`, todas em paralelo entre si
+  // no mesmo `Promise.all` abaixo.
+  const [blocoAtualResolvido, config] = await Promise.all([
     resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual),
-    lerConfiguracoesBool(supabase, {
-      [CHAVE_INVENTARIO_MENCIONADO_ATIVO]: true,
-      [CHAVE_RESUMO_ACUMULADO_ATIVO]: false,
-    }),
+    lerConfiguracoesEmLote(supabase, {
+      [CHAVE_INVENTARIO_MENCIONADO_ATIVO]: { tipo: "bool", padrao: true },
+      [CHAVE_RESUMO_ACUMULADO_ATIVO]: { tipo: "bool", padrao: false },
+      [CHAVE_FICHA_CLIENTE_ATIVA]: { tipo: "bool", padrao: false },
+      [CHAVE_RODAPE_TRANSCRICAO_ATIVO]: { tipo: "bool", padrao: true },
+      [CHAVE_REALCE_INSIGHT_NOVO_ATIVO]: { tipo: "bool", padrao: true },
+      [CHAVE_FICHA_TETO_FIXOS]: { tipo: "json", padrao: null as number | null },
+      [CHAVE_SILENCIO_ATENCAO_S]: { tipo: "int", padrao: PADRAO_SILENCIO_ATENCAO_S },
+      [CHAVE_SILENCIO_ALERTA_S]: { tipo: "int", padrao: PADRAO_SILENCIO_ALERTA_S },
+    } as const),
   ]);
-  const inventarioMencionadoAtivo = flags[CHAVE_INVENTARIO_MENCIONADO_ATIVO];
-  const resumoAcumuladoAtivo = flags[CHAVE_RESUMO_ACUMULADO_ATIVO];
+  const inventarioMencionadoAtivo = config[CHAVE_INVENTARIO_MENCIONADO_ATIVO];
+  const resumoAcumuladoAtivo = config[CHAVE_RESUMO_ACUMULADO_ATIVO];
+  const fichaClienteAtiva = config[CHAVE_FICHA_CLIENTE_ATIVA];
+  const rodapeTranscricaoAtivo = config[CHAVE_RODAPE_TRANSCRICAO_ATIVO];
+  const realceInsightNovoAtivo = config[CHAVE_REALCE_INSIGHT_NOVO_ATIVO];
+  // Descarta o valor lido quando a Ficha está desligada — a leitura já
+  // aconteceu no mesmo lote, só o USO permanece condicional.
+  const fichaTetoFixos = fichaClienteAtiva ? config[CHAVE_FICHA_TETO_FIXOS] : null;
   // `indice` para o CONTEÚDO do bloco (campos/observar/percorridos) segue o
   // mesmo fallback de sempre (0 quando nada resolve) — é um detalhe de
   // MONTAGEM DE CONTEXTO, diferente de `bloco_atual_resolvido`, que é o FATO
@@ -765,6 +946,11 @@ export async function montarEstadoCopiloto(
 
   const { bot, comparacaoDecisores } = montarBotEComparacaoDecisores(data);
 
+  // Calculado UMA vez, reaproveitado em `inventario` e em `ficha` — a Ficha
+  // combina exatamente os `recentes` que a célula de inventário já expõe,
+  // nunca uma 2ª derivação do array bruto (`inventario_acumulado`).
+  const inventarioParaPainel = montarInventarioParaPainel(data.sessoes_copiloto?.inventario_acumulado ?? null, inventarioMencionadoAtivo);
+
   return {
     sessao_id: data.id,
     bloco_atual_id: blocoAtual?.id ?? null,
@@ -776,7 +962,17 @@ export async function montarEstadoCopiloto(
     comparacao_decisores: comparacaoDecisores,
     expurgo_segmentos_em: data.sessoes_copiloto?.expurgo_segmentos_em ?? null,
     bloco_atual_resolvido: blocoAtualResolvido,
-    inventario: montarInventarioParaPainel(data.sessoes_copiloto?.inventario_acumulado ?? null, inventarioMencionadoAtivo),
+    inventario: inventarioParaPainel,
+    ficha: montarFichaParaPainel(
+      data.sessoes_copiloto?.ficha_acumulada ?? null,
+      inventarioParaPainel?.recentes ?? [],
+      fichaClienteAtiva,
+      fichaTetoFixos,
+    ),
+    realce_insight_novo: realceInsightNovoAtivo,
+    rodape_transcricao: rodapeTranscricaoAtivo,
+    silencio_atencao_s: config[CHAVE_SILENCIO_ATENCAO_S],
+    silencio_alerta_s: config[CHAVE_SILENCIO_ALERTA_S],
   };
 }
 
