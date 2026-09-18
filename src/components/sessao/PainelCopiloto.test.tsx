@@ -656,6 +656,136 @@ describe("PainelCopiloto — Fatia 2, botão Me ajuda agora", () => {
     await waitFor(() => expect(container.textContent).toContain("não teve nada específico a apontar"));
   });
 
+  describe("B73 — bloco coberto (bloqueio de ativação da memória do copiloto)", () => {
+    const sugestaoVazia: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: null,
+      desvio_sugerido: null,
+      confianca_geral: 0.65,
+      campos_evidencia_nao_conferida: [],
+    };
+
+    it("pergunta nula + falta_no_bloco do ESTADO sem campos: mostra 'Bloco coberto' e o título do PRÓXIMO bloco", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [
+          { id: "b2", titulo: "PARTE 03 — Radiografia", indice: 2 },
+          { id: "b3", titulo: "PARTE 04 — Objeções", indice: 3 },
+        ],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const { getByRole, container } = await abrirComRoteiro();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+
+      await waitFor(() => expect(container.textContent).toContain("Bloco coberto"));
+      expect(container.textContent).toContain("PARTE 03 — Radiografia");
+      expect(container.textContent).not.toContain("não teve nada específico a apontar");
+    });
+
+    /**
+     * 🔴 VAZIO POR IGNORÂNCIA ≠ VAZIO POR COBERTURA (achado na revisão, 18/09).
+     *
+     * `estado.ts:688` monta `camposPendentes` como `(blocoAtual?.campos ?? [])`:
+     * quando o servidor NÃO resolveu bloco nenhum (roteiro não carregado,
+     * `blocos` vazio, bloco `indisponivel`), `falta_no_bloco` vem `[]` —
+     * indistinguível de um bloco genuinamente coberto. Afirmar "Bloco coberto"
+     * aí seria a tela mentindo sobre um fato do servidor.
+     *
+     * O caso não é hipotético: a sessão real do Carlos Alberto rodou 2h05
+     * inteira sem bloco resolvido, por falta do fallback de roteiro em
+     * `estado.ts` (corrigido em 21906ec, no mesmo dia).
+     */
+    it("🔴 sem bloco resolvido (bloco_atual_id null): NÃO afirma 'Bloco coberto' — vazio por ignorância não é cobertura", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        bloco_atual_id: null,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b2", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-x", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const { getByRole, container } = await abrirComRoteiro();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+
+      await waitFor(() => expect(container.textContent).toContain("não teve nada específico a apontar"));
+      expect(container.textContent).not.toContain("Bloco coberto");
+    });
+
+    it("clicar em 'Ir para o próximo bloco' chama irPara com o índice certo", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const irParaMock = vi.fn();
+      const { getByRole, container } = await abrirComRoteiro(irParaMock);
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+      await waitFor(() => expect(container.textContent).toContain("Bloco coberto"));
+
+      // `BLOCOS_ROTEIRO` = [b1, b2, b3] → "b3" é índice 2.
+      fireEvent.click(getByRole("button", { name: /ir para o próximo bloco/i }));
+      expect(irParaMock).toHaveBeenCalledWith(2);
+    });
+
+    it("último bloco do roteiro (sem próximo): mostra 'Bloco coberto' sem oferecer avanço inexistente", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const { getByRole, container, queryByRole } = await abrirComRoteiro();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+
+      await waitFor(() => expect(container.textContent).toContain("Bloco coberto"));
+      expect(container.textContent).toContain("último do roteiro");
+      expect(queryByRole("button", { name: /ir para/i })).toBeNull();
+    });
+
+    it("sugestão vazia COM campos pendentes no estado: continua no texto antigo, nunca 'Bloco coberto'", async () => {
+      // `ESTADO_BASE.falta_no_bloco.campos` tem 1 item ("Objeção principal")
+      // — silêncio genuíno da IA, não bloco coberto.
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const { getByRole, container } = await abrirComRoteiro();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+
+      await waitFor(() => expect(container.textContent).toContain("não teve nada específico a apontar"));
+      expect(container.textContent).not.toContain("Bloco coberto");
+    });
+
+    it("blocosRoteiro/irPara ausentes (contrato opcional): mostra 'Bloco coberto' sem quebrar e sem botão de navegação", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b2", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      // `abrir()` monta sem `blocosRoteiro`/`irPara` — mesmo fallback do teste unitário.
+      const { getByRole, container, queryByRole } = await abrir();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+
+      await waitFor(() => expect(container.textContent).toContain("Bloco coberto"));
+      expect(container.textContent).toContain("PARTE 03 — Radiografia");
+      expect(queryByRole("button", { name: /ir para/i })).toBeNull();
+    });
+
+    it("não tem violação de acessibilidade no estado 'Bloco coberto'", async () => {
+      estado.copiloto = {
+        ...ESTADO_BASE,
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b2", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+      };
+      estado.sugestaoResposta = { sugestao_id: "sug-1", gatilho: "sob_demanda", confianca_geral: 0.65, visivel: true, sugestao: sugestaoVazia };
+      const { getByRole, container } = await abrirComRoteiro();
+      fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+      await waitFor(() => expect(container.textContent).toContain("Bloco coberto"));
+
+      await semViolacoes(container);
+    });
+  });
+
   it("botão não pode ser clicado duas vezes enquanto a IA responde", async () => {
     let resolver!: (v: RespostaSugestaoCopiloto) => void;
     const pendente = new Promise<RespostaSugestaoCopiloto>((r) => {
@@ -842,6 +972,204 @@ describe("PainelCopiloto — Fatia 3, ciclo automático e polling", () => {
 
     expect(container.textContent).toContain("Quem mais participa das decisões financeiras");
     expect(queryByRole("button", { name: /ver sugestão/i })).toBeNull();
+  });
+
+  /**
+   * 🔴 CORRIGIDO (18/09/2026, achado do Fable) — `SugestoesDoCiclo` (herói) e
+   * `SugestaoIA` (sob demanda) renderizam `ApresentacaoSugestao`
+   * SIMULTANEAMENTE na mesma coluna; com o bloco coberto os dois podiam cair
+   * em `nada` ao mesmo tempo — dois cards "Bloco coberto" e dois botões "Ir
+   * para o próximo bloco" empilhados, cada um oferecendo a MESMA navegação.
+   * Só o herói (já na tela ANTES do clique manual) deve oferecer a ação.
+   */
+  it("🔴 sugestão do ciclo (herói) JÁ mostra 'Bloco coberto' + clique em 'Me ajuda agora' também sem nada: só UM card e UM botão 'Ir para o próximo bloco' na tela", async () => {
+    const sugestaoVaziaBlocoCoberto: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: null,
+      desvio_sugerido: null,
+      confianca_geral: 0.65,
+      campos_evidencia_nao_conferida: [],
+    };
+    estado.copiloto = {
+      ...ESTADO_BASE,
+      falta_no_bloco: { campos: [], observar: [] },
+      blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+    };
+    estado.pollingRespostas = [
+      respostaPolling({
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-auto-coberto",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.8,
+            visivel: true,
+            sugestao: sugestaoVaziaBlocoCoberto,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    estado.sugestaoResposta = {
+      sugestao_id: "sug-manual-coberto",
+      gatilho: "sob_demanda",
+      confianca_geral: 0.65,
+      visivel: true,
+      sugestao: sugestaoVaziaBlocoCoberto,
+    };
+
+    const { getByRole, container, queryAllByRole } = await abrirComPolling({ blocosRoteiro: BLOCOS_ROTEIRO, irPara: vi.fn() });
+    expect(container.textContent).toContain("Bloco coberto");
+
+    fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(estado.pedirSugestaoChamadas).toBe(1));
+
+    // "Bloco coberto" aparece (o herói continua mostrando), mas só UMA VEZ.
+    const ocorrenciasBlocoCoberto = (container.textContent?.match(/Bloco coberto/g) ?? []).length;
+    expect(ocorrenciasBlocoCoberto).toBe(1);
+
+    // Só um botão "Ir para o próximo bloco" — nunca dois empilhados.
+    expect(queryAllByRole("button", { name: /ir para o próximo bloco/i })).toHaveLength(1);
+
+    // A IA sob demanda continua respondendo (não vira "Aguardando pergunta"),
+    // só não duplica a afirmação "Bloco coberto"/o botão de avanço.
+    expect(container.textContent).toContain("não teve nada específico a apontar");
+  });
+
+  /**
+   * 🔴 CORRIGIDO (iteração 3, 18/09/2026, achado do Fable) — a supressão
+   * acima usava `temSugestaoCiclo` (`sugestoesCiclo.length > 0`), que só
+   * verifica "existe algo na LISTA", não "o herói está de fato mostrando
+   * Bloco coberto". Herói DISPENSADO some de `pendentes` (filtro de
+   * `SugestoesDoCiclo`) mas a lista `sugestoesCiclo` continua com o item —
+   * `temSugestaoCiclo` ficava `true` sem nenhum card na tela, e a IA sob
+   * demanda (que DEVERIA afirmar "Bloco coberto", já que é o único card
+   * visível) caía no texto genérico por engano.
+   */
+  it("🔴 herói DISPENSADO + clique em 'Me ajuda agora' com bloco coberto: mostra 'Bloco coberto' (não é mais suprimido por engano)", async () => {
+    const sugestaoVaziaBlocoCoberto: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: null,
+      desvio_sugerido: null,
+      confianca_geral: 0.65,
+      campos_evidencia_nao_conferida: [],
+    };
+    estado.copiloto = {
+      ...ESTADO_BASE,
+      falta_no_bloco: { campos: [], observar: [] },
+      blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+    };
+    estado.pollingRespostas = [
+      respostaPolling({
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-auto-dispensado",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.8,
+            visivel: true,
+            sugestao: sugestaoVaziaBlocoCoberto,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    estado.sugestaoResposta = {
+      sugestao_id: "sug-manual-coberto",
+      gatilho: "sob_demanda",
+      confianca_geral: 0.65,
+      visivel: true,
+      sugestao: sugestaoVaziaBlocoCoberto,
+    };
+
+    const { getByRole, container, queryAllByRole } = await abrirComPolling({ blocosRoteiro: BLOCOS_ROTEIRO, irPara: vi.fn() });
+    expect(container.textContent).toContain("Bloco coberto");
+
+    // A advogada dispensa o herói — o card do ciclo some da tela.
+    fireEvent.click(getByRole("button", { name: /dispensar/i }));
+    expect(container.textContent).not.toContain("Bloco coberto");
+
+    fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(estado.pedirSugestaoChamadas).toBe(1));
+
+    const ocorrenciasBlocoCoberto = (container.textContent?.match(/Bloco coberto/g) ?? []).length;
+    expect(ocorrenciasBlocoCoberto).toBe(1);
+    expect(queryAllByRole("button", { name: /ir para o próximo bloco/i })).toHaveLength(1);
+    expect(container.textContent).not.toContain("não teve nada específico a apontar");
+  });
+
+  it("🔴 herói ABAIXO DO LIMIAR (visivel: false) + clique em 'Me ajuda agora' com bloco coberto: mostra 'Bloco coberto' (não é mais suprimido por engano)", async () => {
+    const sugestaoVaziaBlocoCoberto: SugestaoCopiloto = {
+      proxima_pergunta: null,
+      falta_no_bloco: [],
+      observacao: null,
+      desvio_sugerido: null,
+      confianca_geral: 0.65,
+      campos_evidencia_nao_conferida: [],
+    };
+    estado.copiloto = {
+      ...ESTADO_BASE,
+      falta_no_bloco: { campos: [], observar: [] },
+      blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+    };
+    estado.pollingRespostas = [
+      respostaPolling({
+        falta_no_bloco: { campos: [], observar: [] },
+        blocos_nao_percorridos: [{ id: "b3", titulo: "PARTE 03 — Radiografia", indice: 2 }],
+        sugestoes_novas: [
+          {
+            sugestao_id: "sug-auto-invisivel",
+            ordem_evento: 1,
+            gatilho: "intervalo",
+            confianca_geral: 0.2,
+            // Abaixo do limiar de confiança — `SugestoesDoCiclo` filtra este
+            // item de `pendentes` (Fatia 3, 17/09) e ele nunca vira card,
+            // mas `sugestoesCiclo` (a lista bruta) continua com 1 item.
+            visivel: false,
+            sugestao: null,
+            desfecho: null,
+            criado_em: new Date().toISOString(),
+          },
+        ],
+        proximo_cursor_sugestao: 1,
+        ciclo: { avaliado: true, resultado: "sugestao_gravada", motivo_bloqueio: null },
+      }),
+    ];
+    estado.sugestaoResposta = {
+      sugestao_id: "sug-manual-coberto",
+      gatilho: "sob_demanda",
+      confianca_geral: 0.65,
+      visivel: true,
+      sugestao: sugestaoVaziaBlocoCoberto,
+    };
+
+    const { getByRole, container, queryAllByRole } = await abrirComPolling({ blocosRoteiro: BLOCOS_ROTEIRO, irPara: vi.fn() });
+    // Sugestão invisível nunca virou card do herói (Fatia 3) — nenhum "Bloco
+    // coberto" na tela antes do clique manual.
+    expect(container.textContent).not.toContain("Bloco coberto");
+
+    fireEvent.click(getByRole("button", { name: /me ajuda agora/i }));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(estado.pedirSugestaoChamadas).toBe(1));
+
+    const ocorrenciasBlocoCoberto = (container.textContent?.match(/Bloco coberto/g) ?? []).length;
+    expect(ocorrenciasBlocoCoberto).toBe(1);
+    expect(queryAllByRole("button", { name: /ir para o próximo bloco/i })).toHaveLength(1);
+    expect(container.textContent).not.toContain("não teve nada específico a apontar");
   });
 
   it("sugestão mais recente substitui a anterior NO MESMO LUGAR; a anterior vai para o histórico recolhido", async () => {

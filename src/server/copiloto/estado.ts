@@ -13,9 +13,10 @@ import type {
   SimPendente,
 } from "@/types/copiloto";
 import { erroNaoEncontrado } from "@/server/erros";
-import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
+import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson, lerConfiguracoesBool } from "@/server/ia/configuracao";
 import { resumirInventario } from "./inventario";
 import { compararComDecisores } from "./participantes";
+import { CHAVE_RESUMO_ACUMULADO_ATIVO, derivarPendente, normalizarResumoAcumulado } from "./resumo";
 
 /**
  * Montagem do estado determinístico do copiloto — Fase 10, Fatias 1 e 4
@@ -30,6 +31,19 @@ import { compararComDecisores } from "./participantes";
  * principal agora embute `jornadas(pessoa_id)` — 2 idas ao banco no total,
  * não 3 — e o comentário da 2ª ida passou a descrever o que o código
  * realmente faz (ela roda SEMPRE, não só "quando o bloco é o 1º").
+ *
+ * 🔴 CORRIGIDO (18/09/2026, achado do Fable) — `falta_no_bloco.campos` NUNCA
+ * esvaziava: a montagem antiga listava `campos[]` do bloco inteiro, sem
+ * subtrair o que a MEMÓRIA do copiloto (`sessoes_copiloto.resumo_acumulado`,
+ * `resumo.ts`) já marcou como `perguntado`. Efeito medido: `blocoAtualCoberto`
+ * (que exige `campos.length===0`) era `false` em 100% dos blocos do roteiro
+ * v5 ativo, sempre — a tela "Bloco coberto" (B73) nunca aparecia em produção.
+ * A correção reusa `derivarPendente` (`resumo.ts`, MESMA função que já
+ * alimenta o bloco E do contexto de IA) e lê `resumo_acumulado` do MESMO
+ * embed de `sessoes_copiloto` que esta função já fazia — zero query nova.
+ * Fail-CLOSED por trás de `CHAVE_RESUMO_ACUMULADO_ATIVO` (mesma chave e
+ * mesma régua de `contexto.ts:287`): com a memória desligada, o resultado é
+ * IDÊNTICO ao de antes desta correção.
  *
  * UMA QUERY COALESCIDA para sessão + jornada + roteiro + estado do copiloto
  * + participantes + briefing atual (§2.4, e achado do coordenador na
@@ -79,6 +93,16 @@ interface SessaoComRoteiroEBloco {
      * aqui para não acoplar este módulo ao tipo de `types/copiloto.ts` além
      * do necessário; `montarInventarioParaPainel` faz o cast estrutural. */
     inventario_acumulado: InventarioAcumulado | null;
+    /** MEMÓRIA DO COPILOTO — Fatia A (18/09/2026, achado do Fable:
+     * `falta_no_bloco` nunca esvaziava porque `estado.ts` montava a lista
+     * INTEIRA de `campos[]` do bloco sem subtrair o que a memória já marcou
+     * como `perguntado`). Coluna já existe desde a 0091; entra no MESMO
+     * embed de `sessoes_copiloto` que esta função já lê — ZERO query nova
+     * (mesmo padrão de `inventario_acumulado` acima). `unknown` porque o
+     * jsonb bruto pode ser `'{}'::jsonb` legado (default da 0091) — quem
+     * normaliza é `normalizarResumoAcumulado` (`resumo.ts`), nunca este
+     * módulo lendo campo direto de um jsonb não validado. */
+    resumo_acumulado: unknown;
   } | null;
 }
 
@@ -626,8 +650,11 @@ export async function montarEstadoCopiloto(
       "id, roteiro_versao_id, sims, jornadas(pessoa_id, briefings(conteudo, atual)), roteiros_versoes(definicao), " +
         // Fase 12, Fatia 5a: `inventario_acumulado` entra no MESMO embed —
         // ZERO query nova (achado do arquiteto: "já vem no mesmo embed que
-        // montarEstadoCopiloto já faz").
-        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em, inventario_acumulado)",
+        // montarEstadoCopiloto já faz"). MEMÓRIA DO COPILOTO (18/09/2026,
+        // achado do Fable): `resumo_acumulado` entra pela MESMA razão — zero
+        // query nova para `falta_no_bloco` poder subtrair o que já foi
+        // perguntado.
+        "sessoes_copiloto(estado, gravacao_externa_id, participantes, expurgo_segmentos_em, inventario_acumulado, resumo_acumulado)",
     )
     .eq("id", sessaoId)
     .maybeSingle<SessaoComRoteiroEBloco>();
@@ -667,13 +694,27 @@ export async function montarEstadoCopiloto(
     blocos = ativo?.definicao?.blocos ?? [];
   }
 
-  const [blocoAtualResolvido, inventarioMencionadoAtivo] = await Promise.all([
+  // 🔴 DUAS FLAGS, UMA IDA AO BANCO (18/09/2026, achado do Fable). Esta função
+  // roda no GET de POLLING — `usePollingCopiloto` bate a cada 3 s com a tela
+  // em foco, e cada `lerConfiguracaoBool` era uma requisição própria ao
+  // PostgREST. `lerConfiguracoesBool` troca N requisições por UMA
+  // (`in('chave', [...])`, `chave` é PK desde a 0027) preservando o padrão de
+  // CADA chave: `inventario_mencionado` continua fail-OPEN (true) e
+  // `resumo_acumulado` continua fail-CLOSED (false, B76) — inclusive quando a
+  // query inteira falha, porque o lote devolve os padrões informados.
+  //
+  // A memória do copiloto ACRESCENTOU uma flag aqui; em vez de somar a 3ª
+  // requisição por tick, a feature deixa o caminho com MENOS ida ao banco do
+  // que encontrou (2 leituras viraram 1).
+  const [blocoAtualResolvido, flags] = await Promise.all([
     resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual),
-    // Fase 12, Fatia 5a — mesma chave que já controla o bloco G do contexto
-    // de IA (0111); lida aqui em PARALELO com a resolução do bloco (que já
-    // faz suas próprias leituras de config) — nenhuma serialização nova.
-    lerConfiguracaoBool(supabase, CHAVE_INVENTARIO_MENCIONADO_ATIVO, true),
+    lerConfiguracoesBool(supabase, {
+      [CHAVE_INVENTARIO_MENCIONADO_ATIVO]: true,
+      [CHAVE_RESUMO_ACUMULADO_ATIVO]: false,
+    }),
   ]);
+  const inventarioMencionadoAtivo = flags[CHAVE_INVENTARIO_MENCIONADO_ATIVO];
+  const resumoAcumuladoAtivo = flags[CHAVE_RESUMO_ACUMULADO_ATIVO];
   // `indice` para o CONTEÚDO do bloco (campos/observar/percorridos) segue o
   // mesmo fallback de sempre (0 quando nada resolve) — é um detalhe de
   // MONTAGEM DE CONTEXTO, diferente de `bloco_atual_resolvido`, que é o FATO
@@ -685,11 +726,35 @@ export async function montarEstadoCopiloto(
       : 0);
   const blocoAtual = blocos[indiceParaConteudo] ?? null;
 
-  const camposPendentes: CampoPendente[] = (blocoAtual?.campos ?? []).map((c) => ({
-    id: c.id,
-    rotulo: c.rotulo,
-    tipo: c.tipo,
-  }));
+  // MEMÓRIA DO COPILOTO (18/09/2026, achado do Fable) — `falta_no_bloco.
+  // campos` deixa de ser a lista INTEIRA de `campos[]` do bloco (que nunca
+  // esvaziava, deixando `blocoAtualCoberto` sempre `false` na tela) e passa
+  // a subtrair o que `resumo_acumulado.perguntado` já cobriu. Reusa
+  // `derivarPendente` de `resumo.ts` — MESMA função que `resumirParaContexto`
+  // já usa para o bloco E do contexto de IA, nenhuma reimplementação da
+  // subtração `campos do bloco menos perguntado`.
+  //
+  // Fail-CLOSED (B76, mesma régua de `contexto.ts:287`): com o kill-switch
+  // desligado, `resumoAcumuladoAtivo=false` faz `idsPendentes` = todos os
+  // `campos[]` do bloco (equivalente a `perguntado=[]`) — resultado
+  // IDÊNTICO ao de antes desta correção, sem regressão nenhuma para quem
+  // roda com a memória desligada.
+  const idsPendentes = resumoAcumuladoAtivo
+    ? new Set(
+        derivarPendente(
+          normalizarResumoAcumulado(data.sessoes_copiloto?.resumo_acumulado).perguntado,
+          blocoAtual?.campos ?? [],
+        ),
+      )
+    : null; // null = não filtra nada (equivalente a "todos pendentes")
+
+  const camposPendentes: CampoPendente[] = (blocoAtual?.campos ?? [])
+    .filter((c) => idsPendentes === null || idsPendentes.has(c.id))
+    .map((c) => ({
+      id: c.id,
+      rotulo: c.rotulo,
+      tipo: c.tipo,
+    }));
   const observarPendente: string[] = blocoAtual?.observar ?? [];
 
   const simsPendentes = await calcularSimsPendentes(supabase, data.jornadas?.pessoa_id ?? null, data.sims);

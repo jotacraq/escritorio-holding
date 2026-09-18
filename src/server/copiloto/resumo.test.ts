@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { acumularResumo, acumularResumoNaSessao, categorizarPergunta, normalizarResumoAcumulado, resumirParaContexto, RESUMO_VAZIO } from "./resumo";
+import {
+  acumularResumo,
+  acumularResumoNaSessao,
+  categorizarPergunta,
+  normalizarResumoAcumulado,
+  resumirParaContexto,
+  RESUMO_VAZIO,
+  SINONIMOS_POR_CAMPO,
+} from "./resumo";
 import type { ResumoAcumulado } from "@/types/copiloto";
 import type { RoteiroCampo } from "@/types/roteiro";
 
@@ -32,17 +40,192 @@ describe("categorizarPergunta — casa por termo significativo do rótulo, nunca
     expect(tema).toBeNull();
   });
 
-  it("ordem de `campos[]` decide o campo quando dois casariam ao mesmo tempo — determinístico, sempre o mesmo", () => {
+  it("🔴 CORRIGIDO (achado do Fable, resolução por especificidade): quando dois campos casam por termo de MESMO comprimento, o campo com MAIS termos casados vence — 'total' (em 'Patrimônio total') soma ao termo 'patrimonio' que os dois compartilham, tornando 'b' mais específico que 'a'", () => {
     const campos: RoteiroCampo[] = [
       { id: "a", rotulo: "Bens e Patrimônio", tipo: "texto" },
       { id: "b", rotulo: "Patrimônio total", tipo: "texto" },
     ];
-    expect(categorizarPergunta("Qual o patrimônio total da família?", campos)).toBe("a");
+    expect(categorizarPergunta("Qual o patrimônio total da família?", campos)).toBe("b");
+  });
+
+  it("EMPATE TOTAL (mesmo termo, mesma quantidade): ordem de `campos[]` decide — determinístico, sempre o mesmo", () => {
+    const campos: RoteiroCampo[] = [
+      { id: "a", rotulo: "Patrimônio herdado", tipo: "texto" },
+      { id: "b", rotulo: "Patrimônio declarado", tipo: "texto" },
+    ];
+    // Ambos casam só por "patrimonio" (10 letras, 1 termo cada) — nenhum
+    // termo do rótulo aparece na pergunta além dele. Empate total: o
+    // PRIMEIRO do bloco vence.
+    expect(categorizarPergunta("Qual é o patrimônio da família?", campos)).toBe("a");
   });
 
   it("acentuação e caixa não impedem o casamento (normalização)", () => {
     const tema = categorizarPergunta("QUAIS SÃO AS OCUPAÇÕES ATUAIS DE VOCÊS?", CAMPOS_PARTE_03);
     expect(tema).toBe("ocupacoes_idades");
+  });
+});
+
+// Roteiro v5 REAL (0118_roteiro_v5_conteudo_do_script.sql, parte_03 completa +
+// `reserva_seguro_inventario` da parte_04) — os `id`s abaixo existem hoje em
+// produção, conferidos na migration, nenhum inventado para o teste.
+const CAMPOS_ROTEIRO_REAL: RoteiroCampo[] = [
+  { id: "filhos_maiores_menores", rotulo: "Filhos (maiores ou menores)", tipo: "texto" },
+  { id: "regimes_casamento", rotulo: "Regimes de casamento de todos os envolvidos", tipo: "texto" },
+  { id: "ocupacoes_idades", rotulo: "Ocupações e idades", tipo: "texto" },
+  { id: "lista_bens", rotulo: "Lista de bens", tipo: "texto" },
+  { id: "valores_mercado_aquisicao", rotulo: "Valores de mercado e de aquisição, datas e formas de pagamento de cada bem", tipo: "texto" },
+  { id: "relacao_pessoal_bem", rotulo: "Relação pessoal do cliente com cada bem (valor emocional, não só financeiro)", tipo: "texto" },
+  { id: "quem_paga_contas", rotulo: "Quem paga as contas hoje", tipo: "texto" },
+  { id: "reservas_financeiras", rotulo: "Reservas financeiras disponíveis", tipo: "texto" },
+  { id: "reserva_seguro_inventario", rotulo: "Existência de reserva financeira ou seguro de vida específico para pagar o inventário", tipo: "texto" },
+];
+
+/**
+ * TESTE DE ACEITE (18/09/2026) — as 4 perguntas do enunciado (achado medido na
+ * sessão real do Carlos Alberto, 122 perguntas exibidas, 36% — 44 de 122 —
+ * não categorizavam) e a amostra de vocabulário real citada junto. Não busca
+ * PII no banco: o texto das perguntas está no próprio pedido.
+ *
+ * MEDIDO — antes desta fatia (só rótulo), as 4 perguntas da tabela do
+ * enunciado davam `null` as 4 (0/4, 0%). Depois de `SINONIMOS_POR_CAMPO`,
+ * as 4 categorizam (4/4, 100%) — o `describe` abaixo prova cada uma.
+ */
+describe("categorizarPergunta — TESTE DE ACEITE: perguntas reais que não categorizavam antes desta fatia", () => {
+  it("'Quantos anos a Flávia tem?' → ocupacoes_idades (era null antes do sinônimo de idade)", () => {
+    expect(categorizarPergunta("Quantos anos a Flávia tem?", CAMPOS_ROTEIRO_REAL)).toBe("ocupacoes_idades");
+  });
+
+  it("'Essa previdência é sua ou do seu marido?' → lista_bens (era null antes do sinônimo de previdência)", () => {
+    expect(categorizarPergunta("Essa previdência é sua ou do seu marido?", CAMPOS_ROTEIRO_REAL)).toBe("lista_bens");
+  });
+
+  it("'Essa reserva no Tesouro Selic está em nome de quem?' → lista_bens (era null: 'reserva' sozinho não bastava, 'tesouro'/'selic' resolvem)", () => {
+    expect(categorizarPergunta("Essa reserva no Tesouro Selic está em nome de quem?", CAMPOS_ROTEIRO_REAL)).toBe("lista_bens");
+  });
+
+  it("'A Flávia e o marido moram só com o senhor?' → relacao_pessoal_bem (era null antes do sinônimo de moradia)", () => {
+    expect(categorizarPergunta("A Flávia e o marido moram só com o senhor?", CAMPOS_ROTEIRO_REAL)).toBe("relacao_pessoal_bem");
+  });
+
+  it("20 variações de pergunta de idade (vocabulário medido na sessão) casam com ocupacoes_idades", () => {
+    const perguntas = [
+      "Quantos anos ela tem?",
+      "Em que ano ela nasceu?",
+      "Qual é a idade dela?",
+      "Ele trabalha ou está aposentado?",
+      "Qual a profissão dela hoje?",
+    ];
+    for (const p of perguntas) expect(categorizarPergunta(p, CAMPOS_ROTEIRO_REAL)).toBe("ocupacoes_idades");
+  });
+
+  it("'idade' não casa por acidente com 'cidade' (borda de palavra, não substring solto)", () => {
+    // Pergunta deliberadamente livre de outros termos do roteiro (inclusive
+    // do rótulo "Quem paga as contas HOJE" — "hoje" já casava por rótulo
+    // antes desta fatia, comportamento pré-existente e fora deste escopo).
+    expect(categorizarPergunta("Em que cidade do estado vocês nasceram?", CAMPOS_ROTEIRO_REAL)).toBeNull();
+  });
+
+  it("pergunta que menciona 'filho' mas pergunta sobre idade cai em filhos_maiores_menores — ordem do bloco decide, determinístico (não é regressão)", () => {
+    expect(categorizarPergunta("Qual é a idade do seu filho?", CAMPOS_ROTEIRO_REAL)).toBe("filhos_maiores_menores");
+  });
+
+  it("vocabulário de previdência/investimento casa com lista_bens", () => {
+    const perguntas = ["Vocês têm alguma aplicação financeira?", "Investem em fundos imobiliários?", "Tem ações na bolsa?"];
+    for (const p of perguntas) expect(categorizarPergunta(p, CAMPOS_ROTEIRO_REAL)).toBe("lista_bens");
+  });
+
+  /**
+   * 🔴 CORRIGIDO (achado do Fable, resolução por especificidade): "Tem
+   * reserva guardada em algum banco?" agora casa com `reservas_financeiras`
+   * (sinônimo "tem reserva"/"reserva guardada", 12-15 chars), NÃO mais com
+   * `lista_bens` (que antes só tinha "reserva" solto, 7 chars, removido por
+   * ser o termo largo que causou a regressão de "reservas financeiras
+   * disponíveis" — ver comentário de `SINONIMOS_POR_CAMPO`). O campo mais
+   * específico é o correto: a pergunta É sobre reserva financeira, não
+   * sobre listar bens em geral.
+   */
+  it("'Tem reserva guardada em algum banco?' vai para reservas_financeiras (campo mais específico), não mais lista_bens", () => {
+    expect(categorizarPergunta("Tem reserva guardada em algum banco?", CAMPOS_ROTEIRO_REAL)).toBe("reservas_financeiras");
+  });
+
+  it("vocabulário de conta/despesa (12 perguntas medidas) casa com quem_paga_contas", () => {
+    expect(categorizarPergunta("Quem paga as contas da casa hoje?", CAMPOS_ROTEIRO_REAL)).toBe("quem_paga_contas");
+    expect(categorizarPergunta("Ele já é aposentado?", CAMPOS_ROTEIRO_REAL)).toBe("ocupacoes_idades");
+  });
+
+  /**
+   * 🔴 CORRIGIDO (achado do Fable, REGRESSÃO real medida): "renda" SOLTO
+   * saiu de `quem_paga_contas` — "Vocês têm reservas financeiras
+   * disponíveis?" e perguntas parecidas de BEM ("renda fixa") caíam,
+   * erradas, em `quem_paga_contas` antes desta correção. "Qual é a renda de
+   * vocês dois?" sem `paga`/`pagam` não categoriza mais (null é o resultado
+   * correto: renda sozinha é ambígua entre bem e despesa do dia a dia — o
+   * módulo não força encaixe). Só a FRASE completa ("quem paga"/"paga as
+   * contas") categoriza.
+   */
+  it("'renda' SOLTA não categoriza mais (era falso-positivo de despesa) — só a frase com 'paga'/'pagam' categoriza", () => {
+    expect(categorizarPergunta("Qual é a renda de vocês dois?", CAMPOS_ROTEIRO_REAL)).toBeNull();
+    expect(categorizarPergunta("Quem paga a renda da casa?", CAMPOS_ROTEIRO_REAL)).toBe("quem_paga_contas");
+  });
+
+  it("vocabulário de divórcio/separação (6 perguntas medidas) casa com regimes_casamento", () => {
+    expect(categorizarPergunta("Você já passou por um divórcio antes?", CAMPOS_ROTEIRO_REAL)).toBe("regimes_casamento");
+    expect(categorizarPergunta("Como ficou a partilha com a ex-mulher?", CAMPOS_ROTEIRO_REAL)).toBe("regimes_casamento");
+  });
+
+  it("vocabulário de moradia (6 perguntas medidas) casa com relacao_pessoal_bem", () => {
+    expect(categorizarPergunta("Vocês moram em casa própria?", CAMPOS_ROTEIRO_REAL)).toBe("relacao_pessoal_bem");
+    expect(categorizarPergunta("Onde a família reside atualmente?", CAMPOS_ROTEIRO_REAL)).toBe("relacao_pessoal_bem");
+  });
+
+  /**
+   * 🔴 CORRIGIDO (achado do Fable): `reserva_seguro_inventario` é sobre
+   * RESERVA/SEGURO para pagar o INVENTÁRIO, não sobre saúde em si —
+   * `tratamento`/`plano de saude` saíram do mapa (achado do Fable: "Qual o
+   * tratamento tributário do ITCMD?" caía, errado, neste campo por causa de
+   * `tratamento`). "Plano de saúde particular" sem menção a
+   * seguro/reserva/inventário não categoriza mais — é o resultado correto
+   * (o rótulo do campo não tem termo de saúde nenhum; "plano de saude" era
+   * FALSO-POSITIVO recall, não cobertura legítima). "Seguro de vida" e
+   * "convênio médico" continuam cobertos, por serem específicos o bastante.
+   */
+  it("'plano de saúde' sozinho NÃO categoriza mais em reserva_seguro_inventario (falso-positivo removido) — 'seguro de vida' continua cobrindo", () => {
+    expect(categorizarPergunta("Ela tem plano de saúde particular?", CAMPOS_ROTEIRO_REAL)).toBeNull();
+    expect(categorizarPergunta("Vocês têm seguro de vida contratado?", CAMPOS_ROTEIRO_REAL)).toBe("reserva_seguro_inventario");
+  });
+
+  it("cobertura agregada da amostra medida (25 perguntas reais/representativas) — meta: maioria categoriza", () => {
+    const amostra = [
+      "Quantos anos a Flávia tem?",
+      "Essa previdência é sua ou do seu marido?",
+      "Essa reserva no Tesouro Selic está em nome de quem?",
+      "A Flávia e o marido moram só com o senhor?",
+      "Quantos anos ela tem?",
+      "Em que ano ela nasceu?",
+      "Ele trabalha ou está aposentado?",
+      "Qual a profissão dela hoje?",
+      "Vocês têm alguma aplicação financeira?",
+      "Tem reserva guardada em algum banco?",
+      "Investem em fundos imobiliários?",
+      "Tem ações na bolsa?",
+      "Quem paga as contas da casa hoje?",
+      "Qual é a renda de vocês dois?",
+      "Você já passou por um divórcio antes?",
+      "Como ficou a partilha com a ex-mulher?",
+      "Vocês moram em casa própria?",
+      "Onde a família reside atualmente?",
+      "Ela tem plano de saúde particular?",
+      "Ele faz algum tratamento médico?",
+      "Qual é a profissão do marido?",
+      "Tem imóvel financiado ainda?",
+      "Quanto custa o convênio médico de vocês?",
+      "Ela é separada ou solteira?",
+      "Onde vocês vivem hoje?",
+    ];
+    const categorizadas = amostra.filter((p) => categorizarPergunta(p, CAMPOS_ROTEIRO_REAL) !== null);
+    // Antes desta fatia (só rótulo), a MESMA amostra dava 0/25 (nenhum termo
+    // do rótulo formal aparece em nenhuma das 25 perguntas coloquiais).
+    expect(categorizadas.length).toBeGreaterThanOrEqual(Math.ceil(amostra.length * 0.8));
   });
 });
 
@@ -436,5 +619,186 @@ describe("acumularResumoNaSessao — I/O, fail-CLOSED (B76) e caminho comum sem 
     });
 
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 🔴 REGRESSÃO MEDIDA — falso-positivo por palavra genérica de rótulo
+ * (18/09/2026, achado na revisão da fatia de sinônimos).
+ *
+ * O rótulo do roteiro v5 "Quem paga as contas hoje" produzia o termo
+ * significativo "hoje" (4 letras, fora da stop-list original). Medido nas 122
+ * perguntas reais exibidas na sessão do Carlos Alberto: **30 continham
+ * "hoje"**, e **26 delas não tinham nenhuma relação com contas** ("Quantos
+ * anos ela tem hoje?", "onde elas moram hoje?").
+ *
+ * Todas seriam gravadas como `quem_paga_contas` — e isso é PIOR que não
+ * categorizar: a memória passaria a bloquear o tema errado, calando uma
+ * pergunta legítima sobre idade ou moradia porque "contas já foi perguntado".
+ */
+describe("categorizarPergunta — palavra genérica de rótulo não pode casar (18/09/2026)", () => {
+  const CAMPOS_REAIS: RoteiroCampo[] = [
+    { id: "quem_paga_contas", tipo: "texto_longo", rotulo: "Quem paga as contas hoje" },
+    { id: "ocupacoes_idades", tipo: "texto_longo", rotulo: "Ocupações e idades" },
+    { id: "filhos_maiores_menores", tipo: "texto_longo", rotulo: "Filhos (maiores ou menores)" },
+  ];
+
+  it("🔴 'Quantos anos ela tem hoje?' NÃO cai em quem_paga_contas — cai no campo certo", () => {
+    const tema = categorizarPergunta("Quantos anos ela tem hoje?", CAMPOS_REAIS);
+    expect(tema).not.toBe("quem_paga_contas");
+    expect(tema).toBe("ocupacoes_idades");
+  });
+
+  it("🔴 'E onde elas moram hoje?' NÃO cai em quem_paga_contas", () => {
+    expect(categorizarPergunta("E onde elas moram hoje?", CAMPOS_REAIS)).not.toBe("quem_paga_contas");
+  });
+
+  it("a pergunta que É sobre contas continua casando (a correção não derrubou o recall)", () => {
+    expect(categorizarPergunta("Quem paga as contas da casa?", CAMPOS_REAIS)).toBe("quem_paga_contas");
+  });
+
+  it("palavras interrogativas e temporais não viram tema sozinhas", () => {
+    for (const generica of ["hoje", "agora", "quando", "onde", "quantos", "qual"]) {
+      expect(categorizarPergunta(`E ${generica}?`, CAMPOS_REAIS)).toBeNull();
+    }
+  });
+});
+
+/**
+ * 🔴 TESTE DE NÃO-REGRESSÃO (18/09/2026, achado do Fable — a ausência deste
+ * teste é o que deixou 3 regressões passarem em 401 testes verdes). Prova a
+ * frase do comentário de topo ("união, nunca substituição — não regride")
+ * CONTRA O CASAMENTO SÓ POR RÓTULO (comportamento do HEAD, antes de
+ * `SINONIMOS_POR_CAMPO` existir): para cada pergunta abaixo, o resultado
+ * usando SÓ o rótulo (sem nenhum sinônimo cadastrado) é o "campo X" que o
+ * HEAD dava — e o resultado da função REAL (com sinônimos) tem que continuar
+ * dando X, nunca outro campo.
+ *
+ * As 3 perguntas são EXATAMENTE as regressões medidas pelo Fable:
+ *   - "reservas financeiras disponíveis" era capturado só pelo rótulo de
+ *     `reservas_financeiras` (o próprio nome do campo) — não pode mais cair
+ *     em `lista_bens`.
+ *   - "valor afetivo" era capturado só pelo rótulo de `relacao_pessoal_bem`
+ *     ("valor emocional") — não pode mais cair em `lista_bens`.
+ *   - "tratamento tributário do ITCMD" era capturado só pelo rótulo de
+ *     `ciencia_itcmd_reforma` ("ciência... itcmd") — não pode mais cair em
+ *     `reserva_seguro_inventario`.
+ */
+describe("categorizarPergunta — NÃO-REGRESSÃO: casamento só por rótulo (comportamento do HEAD) continua funcionando com os sinônimos ativos", () => {
+  /** Roteiro v5 completo (parte_03 + `ciencia_itcmd_reforma` da parte_04) —
+   * mesmos `id`s/rótulos conferidos em `0118_roteiro_v5_conteudo_do_script.sql`. */
+  const ROTEIRO_V5_PARTE_03_E_04: RoteiroCampo[] = [
+    ...CAMPOS_ROTEIRO_REAL,
+    { id: "custo_inventario_apresentado", rotulo: "Custo do inventário apresentado ao cliente (quanto os filhos gastariam)", tipo: "texto_longo" },
+    { id: "ciencia_itcmd_reforma", rotulo: "Ciência do cliente sobre o aumento do ITCMD com a reforma tributária", tipo: "texto_longo" },
+  ];
+
+  it("🔴 REGRESSÃO 1: 'Vocês têm reservas financeiras disponíveis?' → reservas_financeiras (HEAD já acertava pelo rótulo; esta fatia NÃO pode regredir para lista_bens)", () => {
+    // Prova o comportamento do HEAD: só rótulo (sem SINONIMOS_POR_CAMPO) já
+    // categoriza certo, porque o rótulo de `reservas_financeiras` É "Reservas
+    // financeiras disponíveis" — a própria pergunta.
+    const rotuloBate = termosSignificativosParaTeste("Reservas financeiras disponíveis").some((t) =>
+      normalizarParaTeste("Vocês têm reservas financeiras disponíveis?").includes(t),
+    );
+    expect(rotuloBate).toBe(true);
+
+    // A função REAL (com sinônimos) tem que dar o MESMO campo do HEAD.
+    expect(categorizarPergunta("Vocês têm reservas financeiras disponíveis?", ROTEIRO_V5_PARTE_03_E_04)).toBe("reservas_financeiras");
+  });
+
+  it("🔴 REGRESSÃO 2: 'Esse imóvel tem valor afetivo para a família?' → relacao_pessoal_bem (HEAD já acertava por 'valor emocional' no rótulo; não pode regredir para lista_bens)", () => {
+    expect(categorizarPergunta("Esse imóvel tem valor afetivo para a família?", ROTEIRO_V5_PARTE_03_E_04)).toBe(
+      "relacao_pessoal_bem",
+    );
+  });
+
+  it("🔴 REGRESSÃO 3: 'Qual o tratamento tributário do ITCMD?' → ciencia_itcmd_reforma (não pode regredir para reserva_seguro_inventario, capturado antes só por 'tratamento')", () => {
+    expect(categorizarPergunta("Qual o tratamento tributário do ITCMD?", ROTEIRO_V5_PARTE_03_E_04)).toBe(
+      "ciencia_itcmd_reforma",
+    );
+  });
+});
+
+/** Cópia mínima de `normalizar`/`termosSignificativos` só para o teste de
+ * não-regressão PROVAR o comportamento do HEAD de forma independente (sem
+ * importar função interna não exportada) — mantém a mesma régua de
+ * normalização do módulo real (NFD, sem diacrítico, minúsculas). */
+function normalizarParaTeste(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+function termosSignificativosParaTeste(rotulo: string): string[] {
+  const ignoradas = new Set(["a", "o", "e", "de", "da", "do", "das", "dos", "em", "para"]);
+  return normalizarParaTeste(rotulo)
+    .replace(/[()/,.-]/g, " ")
+    .split(" ")
+    .filter((t) => t.length >= 4 && !ignoradas.has(t));
+}
+
+/**
+ * 🔴 TRIPWIRE DO MAPA (18/09/2026, achado do Fable — item 4). Sem este
+ * teste, `SINONIMOS_POR_CAMPO` envelhece em silêncio: se a Dra. Elaine
+ * publicar um roteiro v6 que renomeia ou remove um `campo.id`, o mapa
+ * continua com sinônimos apontando para um `id` que não existe mais em
+ * NENHUM roteiro — nem erro, nem aviso, só uma entrada morta que nunca casa
+ * com nada. Este teste falha o build se isso acontecer, forçando quem mexeu
+ * no roteiro a também revisar `SINONIMOS_POR_CAMPO`.
+ *
+ * `CAMPOS_ROTEIRO_REAL` (parte_03) + o campo de `ciencia_itcmd_reforma`
+ * (parte_04) já servem de espelho do roteiro ativo — mesma lista usada nos
+ * testes de aceite acima, conferida contra `0118_roteiro_v5_conteudo_do_script.sql`.
+ */
+describe("SINONIMOS_POR_CAMPO — tripwire: todo campo.id do mapa existe no roteiro ativo", () => {
+  it("🔴 nenhum campo.id de SINONIMOS_POR_CAMPO é órfão — todos existem no espelho do roteiro v5 ativo", () => {
+    const idsDoRoteiroV5 = new Set([
+      ...CAMPOS_ROTEIRO_REAL.map((c) => c.id),
+      "custo_inventario_apresentado",
+      "ciencia_itcmd_reforma",
+    ]);
+    const idsDoMapa = Object.keys(SINONIMOS_POR_CAMPO);
+    const orfaos = idsDoMapa.filter((id) => !idsDoRoteiroV5.has(id));
+    expect(orfaos).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 REGRESSÃO MEDIDA PELO FABLE (18/09/2026, iteração 2).
+ *
+ * A frase "quantos anos" é o termo natural de idade, mas precedida de "há"
+ * vira DURAÇÃO: "há quantos anos vocês são casados / moram / compraram" são
+ * perguntas de regime, moradia e aquisição. Casá-las com `ocupacoes_idades`
+ * faria a memória calar o tema idade antes de alguém perguntar sobre idade —
+ * falso-positivo, que por critério do dono é pior que não categorizar.
+ *
+ * Um comentário do código afirmava que a frase de 2 palavras era "específica
+ * o bastante para não colidir". A medição desmentiu nos três casos; a
+ * afirmação foi removida junto com a correção.
+ */
+describe("categorizarPergunta — construção temporal não é idade (18/09/2026)", () => {
+  const CAMPOS: RoteiroCampo[] = [
+    { id: "regimes_casamento", tipo: "texto_longo", rotulo: "Regimes de casamento de todos os envolvidos" },
+    { id: "ocupacoes_idades", tipo: "texto_longo", rotulo: "Ocupações e idades" },
+    { id: "valores_mercado_aquisicao", tipo: "texto_longo", rotulo: "Valores de mercado e de aquisição, datas e formas de pagamento de cada bem" },
+  ];
+
+  it("🔴 'Há quantos anos vocês são casados?' NÃO é idade", () => {
+    expect(categorizarPergunta("Há quantos anos vocês são casados?", CAMPOS)).not.toBe("ocupacoes_idades");
+  });
+
+  it("🔴 'Comprou esse imóvel há quantos anos?' NÃO é idade", () => {
+    expect(categorizarPergunta("Comprou esse imóvel há quantos anos?", CAMPOS)).not.toBe("ocupacoes_idades");
+  });
+
+  it("🔴 'Há quantos anos moram nessa casa?' NÃO é idade", () => {
+    expect(categorizarPergunta("Há quantos anos moram nessa casa?", CAMPOS)).not.toBe("ocupacoes_idades");
+  });
+
+  it("a pergunta que É de idade continua casando (a correção não derrubou o recall)", () => {
+    expect(categorizarPergunta("Quantos anos a Flávia tem?", CAMPOS)).toBe("ocupacoes_idades");
+    expect(categorizarPergunta("Quantos anos ela tem hoje?", CAMPOS)).toBe("ocupacoes_idades");
   });
 });

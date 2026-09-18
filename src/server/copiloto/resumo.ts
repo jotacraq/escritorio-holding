@@ -20,7 +20,14 @@ import type { RoteiroCampo } from "@/types/roteiro";
  *     contexto, `contexto.ts:209-211` — zero query nova) e devolve o
  *     `RoteiroCampo.id` que casou, ou `null` se nenhum casou. Pergunta que
  *     não casa NÃO ENTRA em `perguntado` — nunca força encaixe, nunca inventa
- *     `t` (medido: ~35% das perguntas reais não categorizam).
+ *     `t` (medido na sessão real: 36% das perguntas — 44 de 122 — não
+ *     categorizavam só com o casamento por RÓTULO do campo. 18/09/2026,
+ *     achado do dono: era vocabulário, não falta de tema — "Quantos anos a
+ *     Flávia tem?" não casa com o rótulo "Ocupações e idades". Cobertura
+ *     reforçada com `SINONIMOS_POR_CAMPO`, mapa de termo coloquial → `campo.id`
+ *     — ver comentário da constante para a decisão entre banco/código/híbrido
+ *     e o número medido de cobertura sobre a amostra das 8 perguntas reais do
+ *     pedido, em `resumo.test.ts`).
  *   - `acumularResumo` — mescla o tema novo (se houve categorização) no
  *     `ResumoAcumulado` já existente: upsert por `t` (soma `n`, atualiza
  *     `em`), depois recalcula `pendente` = `campos[]` do bloco atual MENOS os
@@ -82,6 +89,24 @@ const PALAVRAS_IGNORADAS = new Set([
   "a", "o", "e", "de", "da", "do", "das", "dos", "em", "um", "uma", "para",
   "com", "que", "os", "as", "se", "sua", "seu", "suas", "seus", "no", "na",
   "ou", "por", "como", "sobre", "ja", "tem", "ha", "voces", "vocês",
+  // 🔴 PALAVRAS GENÉRICAS DE RÓTULO (18/09/2026, medido nas 122 perguntas
+  // reais da sessão do Carlos Alberto). Estas aparecem DENTRO de rótulos do
+  // roteiro mas não identificam tema nenhum — deixá-las passar como "termo
+  // significativo" faz o campo casar por acidente.
+  //
+  // O caso que motivou: o rótulo "Quem paga as contas HOJE" produzia o termo
+  // "hoje" (4 letras, fora da lista), e **30 das 122 perguntas continham
+  // "hoje"** — 26 delas sem nenhuma relação com contas ("Quantos anos ela tem
+  // hoje?", "onde moram hoje?"). Todas seriam gravadas como
+  // `quem_paga_contas`, e a memória passaria a bloquear o tema ERRADO: pior
+  // que não categorizar, porque cala uma pergunta legítima.
+  //
+  // Critério para entrar aqui: a palavra é temporal, quantificadora ou
+  // estrutural — nunca o assunto em si.
+  "hoje", "agora", "ainda", "cada", "todos", "todas", "todo", "toda",
+  "onde", "quando", "quanto", "quantos", "quantas", "qual", "quais",
+  "esse", "essa", "este", "esta", "isso", "aqui", "mesmo", "mesma",
+  "outro", "outra", "outros", "outras", "entre", "apos", "antes",
 ]);
 
 /** Termos "significativos" do rótulo de um campo — o rótulo inteiro
@@ -100,23 +125,294 @@ function termosSignificativos(rotulo: string): string[] {
 }
 
 /**
- * Casa o TEXTO de uma pergunta já sugerida contra os `campos[]` do bloco
- * ATUAL (já vêm no contexto, zero query nova) — devolve o `id` do PRIMEIRO
- * campo cujo rótulo tem algum termo significativo presente no texto da
- * pergunta, ou `null` se nenhum casar. Pura, testável sem I/O.
+ * SINÔNIMOS COLOQUIAIS (18/09/2026, achado medido na sessão real do Carlos
+ * Alberto: 44 de 122 perguntas exibidas — 36% — não categorizavam com o
+ * casamento por RÓTULO sozinho, e não por falta de tema no roteiro: por
+ * vocabulário. A advogada e a IA falam em termo do dia a dia ("quantos anos",
+ * "previdência", "tesouro selic"); o rótulo do roteiro é formal ("Ocupações e
+ * idades", "Lista de bens"). Ex.: "Quantos anos a Flávia tem?" nunca casava
+ * com `ocupacoes_idades` porque nem "ocupações" nem "idades" (a palavra no
+ * PLURAL) aparecem no singular coloquial da pergunta real.
  *
- * Ordem de checagem = ordem de `campos[]` no roteiro (a ordem que a Dra.
- * Elaine cadastrou) — determinístico, nunca escolha aleatória entre dois
- * campos que casem ao mesmo tempo (raro, mas possível com rótulos
- * parecidos: o primeiro do bloco vence, sempre o mesmo para o mesmo roteiro).
+ * DECISÃO DE IMPLEMENTAÇÃO (avaliadas 3, ver pedido do arquiteto/dono):
+ *   (a) tabela no banco (`campo_id` → termos) — descartada: `categorizarPergunta`
+ *       é função PURA hoje (testável sem I/O, chamada de dentro de
+ *       `acumularResumoNaSessaoInterno` sem `SupabaseClient` disponível nesse
+ *       ponto da cadeia) e o ciclo já escorrega de 20s para 23,9s (`ciclo.ts`,
+ *       a cada ~20s) — qualquer query nova aqui é orçamento que não sobra.
+ *       Emendar no MESMO select de `contexto.ts` também não serve: exigiria
+ *       misturar vocabulário de sinônimo dentro do jsonb `roteiros_versoes.
+ *       definicao` (conteúdo do ROTEIRO, decisão da Dra. Elaine) ou uma
+ *       tabela nova só para isto — migration 0122 só para um mapa que muda
+ *       raramente é custo de schema sem contrapartida de flexibilidade real:
+ *       o vocabulário coloquial medido (idade, previdência, conta/despesa,
+ *       renda, divórcio, profissão, mora, plano de saúde) é estável, não
+ *       nasce a cada roteiro novo.
+ *   (b) ESCOLHIDA: mapa no código por `campo.id`, UNIÃO com o casamento por
+ *       rótulo de hoje (nunca substituição) — zero I/O, zero migration, e um
+ *       `campo.id` sem entrada aqui continua funcionando exatamente como
+ *       antes (não regride). Envelhece se a Dra. Elaine publicar um roteiro
+ *       com `id`s novos sem sinônimo cadastrado — aceito: o fallback por
+ *       rótulo cobre a lacuna até alguém atualizar este mapa, sem downtime.
+ *   (c) intermediária descartada por não trazer benefício sobre (b) aqui:
+ *       o problema medido não é "roteiro muda muito", é "vocabulário formal
+ *       ≠ vocabulário falado" — o mesmo roteiro v5 de hoje já cobre os temas,
+ *       só falta o SINÔNIMO, que é exatamente o que (b) resolve sem custo.
+ *
+ * Termos por `campo.id` do roteiro v5 ativo (0118) — só ids que REALMENTE
+ * existem no roteiro hoje (conferido em `0118_roteiro_v5_conteudo_do_script.sql`),
+ * nunca um id inventado. Cobertura medida contra as perguntas reais da sessão
+ * do Carlos Alberto: ver `resumo.test.ts` (checagem de cobertura da amostra
+ * completa do enunciado, comentário com o número medido).
+ */
+/**
+ * 🔴 CORRIGIDO (18/09/2026, achado do Fable — 3 REGRESSÕES MEDIDAS: HEAD
+ * categorizava certo, esta fatia errava). Causa: termos LARGOS DEMAIS em
+ * `lista_bens` sombreavam campos mais específicos citados DEPOIS dela no
+ * bloco — "reserva"/"reservas" tornavam `reservas_financeiras` inalcançável
+ * pela própria palavra que o nomeia; "imovel"/"empresa"/"acoes" (substantivo
+ * solto, sem contexto de "ter"/"tem") capturavam perguntas sobre RELAÇÃO
+ * PESSOAL ou TRIBUTAÇÃO só por citarem o mesmo substantivo. E `anos` solto
+ * em `ocupacoes_idades` capturava qualquer "há quantos anos", inclusive sobre
+ * tempo de casamento/moradia, campos de outro tema.
+ *
+ * Regressões corrigidas (medidas pelo Fable, teste de não-regressão abaixo):
+ *   - "Vocês têm reservas financeiras disponíveis?" → `lista_bens` (errado,
+ *     por "reserva"/"reservas") → agora `reservas_financeiras` (era o campo
+ *     do HEAD, antes desta fatia inteira de sinônimos existir).
+ *   - "Esse imóvel tem valor afetivo para a família?" → `lista_bens` (errado,
+ *     por "imovel") → agora `relacao_pessoal_bem`.
+ *   - "Qual o tratamento tributário do ITCMD?" → `reserva_seguro_inventario`
+ *     (errado, por "tratamento") → agora `ciencia_itcmd_reforma`.
+ *
+ * Termos retirados (nunca substituídos por sinônimo igualmente largo):
+ *   - `lista_bens`: `reserva`, `reservas`, `imovel`, `imoveis`, `empresa`,
+ *     `acoes` — o substantivo sozinho não distingue "listar o bem" de
+ *     "relação pessoal com o bem"/"reserva PARA pagar algo"/"tratamento
+ *     tributário do bem". Sinônimo de posse explícita ("ações na bolsa",
+ *     "cotas da empresa", "tem imóvel") substitui, sem reintroduzir a
+ *     mesma ambiguidade.
+ *   - `ocupacoes_idades`: `anos` solto — mantém `idade`/`idades`/`nasceu` e
+ *     frases com VERBO DE POSSE ("quantos anos tem", "anos de idade"). A
+ *     frase "quantos anos" sozinha foi TENTADA e MEDIDA como falsa: casa com
+ *     "há quantos anos vocês são casados/moram/compraram", que é construção
+ *     temporal. O comentário anterior afirmava o contrário — a medição do
+ *     Fable (18/09) desmentiu, e a afirmação saiu daqui.
+ *   - `reserva_seguro_inventario`: `tratamento`, `plano de saude` — o campo é
+ *     sobre RESERVA/SEGURO para pagar o inventário, não sobre saúde em si;
+ *     "convenio medico"/"seguro de vida" continuam (específicos o bastante).
+ *   - `quem_paga_contas`: `renda`/`conta`/`contas` SOLTOS saíram — só entram
+ *     como FRASE com `paga`/`pagam` já embutida ("quem paga", "paga as
+ *     contas", "paga a conta"); fora disso, "renda fixa"/"conta conjunta"
+ *     são BENS (`lista_bens`), não despesa do dia a dia.
+ */
+// EXPORTADA (18/09/2026, achado do Fable — item 4, tripwire do mapa): só as
+// CHAVES (`campo.id`) precisam sair do módulo para `resumo.test.ts` provar
+// que nenhuma aponta para um `campo.id` que não existe mais no roteiro ativo
+// — o valor (lista de sinônimos) continua encapsulado, ninguém fora deste
+// arquivo lê os termos em si.
+export const SINONIMOS_POR_CAMPO: Record<string, string[]> = {
+  // 20 perguntas de idade na sessão real — "ocupações e idades" nunca casava
+  // com "quantos anos"/"idade" no singular nem com nome próprio + verbo.
+  ocupacoes_idades: [
+    // 🔴 "quantos anos" SOZINHO foi medido e REPROVADO (Fable, 18/09): casa
+    // com "HÁ quantos anos vocês são casados/moram/compraram" — construção
+    // TEMPORAL, não de idade. Cada uma dessas gravaria `ocupacoes_idades`
+    // como perguntado, e a memória calaria o tema idade antes de alguém
+    // perguntar. Falso-positivo cala pergunta legítima: é pior que não
+    // categorizar. A frase precisa carregar o VERBO DE POSSE.
+    "quantos anos", "anos de idade",
+    "idade", "idades", "nasceu", "nascimento", "aniversario",
+    "trabalha", "trabalham", "profissao", "profissoes", "ocupacao", "ocupacoes",
+    "aposentado", "aposentada", "estuda", "estudante",
+  ],
+  // 28 perguntas de previdência/investimento — nenhuma batia em "lista de
+  // bens" nem em "valores de mercado" por vocabulário de produto financeiro.
+  // Termos largos (reserva/imovel/empresa/acoes soltos) SAÍRAM (achado do
+  // Fable, 3 regressões) — só frases específicas de posse continuam.
+  lista_bens: [
+    "previdencia", "tesouro", "selic", "aplicacao", "aplicacoes", "investimento",
+    "investimentos", "poupanca", "fundo", "fundos", "ações na bolsa",
+    "cotas da empresa", "tem imovel", "tem imoveis", "imovel financiado",
+  ],
+  valores_mercado_aquisicao: [
+    "quanto vale", "valor de mercado", "comprou por", "pagou por", "avaliacao",
+    "escritura", "matricula",
+  ],
+  // Conta/despesa/renda: "renda"/"conta"/"contas" SOLTOS saíram (achado do
+  // Fable — capturavam "renda fixa"/"conta conjunta", que são BENS). Só
+  // entram como FRASE já com `paga`/`pagam` embutido. "custo de
+  // vida"/salário/pensão continuam soltos: já são específicos o bastante
+  // (não aparecem como nome de investimento).
+  quem_paga_contas: [
+    "custo de vida", "salario", "salarios", "pensao", "sustento",
+    "quem paga", "paga as contas", "pagam as contas", "paga a conta", "pagam a conta",
+  ],
+  reservas_financeiras: [
+    "reserva financeira", "reservas financeiras", "reserva de emergencia",
+    "guardado", "guardam", "poupam", "tem reserva", "reserva guardada",
+  ],
+  // 6 perguntas de divórcio/separação/partilha — "regime de casamento" é
+  // sobre o REGIME (comunhão/separação), não sobre o EVENTO de separar.
+  regimes_casamento: [
+    "divorcio", "divorciado", "divorciada", "separacao", "separado", "separada",
+    "partilha", "ex-mulher", "ex-marido", "casado", "casada", "solteiro", "solteira",
+  ],
+  // 6 perguntas de moradia — "lista de bens"/"relação pessoal com o bem" não
+  // tem "mora"/"reside"/"casa própria" no rótulo. "imovel" (posse pura) NÃO
+  // entra aqui: relação pessoal é sobre MORAR/VALOR AFETIVO, não sobre listar
+  // o bem — mas "esse imóvel tem valor afetivo" precisa casar aqui, coberto
+  // pela frase "valor afetivo" abaixo, não por "imovel" solto.
+  relacao_pessoal_bem: [
+    "mora", "moram", "reside", "residem", "casa propria", "onde vive", "onde vivem",
+    "valor afetivo", "valor sentimental",
+  ],
+  // 5 perguntas de plano de saúde/tratamento — CAMPO É SOBRE RESERVA/SEGURO
+  // para pagar inventário, não sobre saúde (achado do Fable: "tratamento" e
+  // "plano de saude" saíram — capturavam pergunta de saúde/tributo que não
+  // tem nada a ver com reserva para inventário).
+  reserva_seguro_inventario: [
+    "seguro de vida", "reserva para o inventario", "reserva para pagar o inventario",
+    "convenio medico",
+  ],
+  // Filhos/menores — cobre variação coloquial que o rótulo formal
+  // ("Filhos maiores ou menores") já cobria bem, mantido por completude.
+  filhos_maiores_menores: [
+    "filho", "filhos", "filha", "filhas", "neto", "netos", "neta", "netas",
+  ],
+  // Campo do MESMO bloco (parte_04) que `reserva_seguro_inventario` —
+  // "tratamento tributário do ITCMD" era capturado por `tratamento`
+  // (removido de `reserva_seguro_inventario`, achado do Fable) antes de
+  // "itcmd"/"reforma tributaria" resolverem para o campo certo.
+  ciencia_itcmd_reforma: [
+    "itcmd", "reforma tributaria", "tratamento tributario", "imposto sobre heranca",
+    "imposto de heranca",
+  ],
+};
+
+/**
+ * 🔴 CORRIGIDO (18/09/2026, achado do Fable — 3 regressões medidas). A regra
+ * antiga ("primeiro campo do bloco que casar vence") foi desenhada para
+ * COLISÃO RARA — mas o mapa de sinônimos põe até 18 termos largos num único
+ * campo (`lista_bens`, 4º de 8 no roteiro v5), e qualquer campo DEPOIS dele
+ * no bloco fica sombreado: mesmo quando a pergunta casa por um termo muito
+ * mais específico de um campo posterior, o campo anterior já tinha vencido
+ * por um termo genérico.
+ *
+ * Nova regra: CASAMENTO MAIS ESPECÍFICO VENCE, entre TODOS os campos do
+ * bloco — não mais o primeiro a bater.
+ *   1. Reúne, para CADA campo, o(s) termo(s) que casaram — sinônimo
+ *      (`SINONIMOS_POR_CAMPO`) e rótulo (`termosSignificativos`) SEPARADOS,
+ *      não misturados: um SINÔNIMO é vocabulário coloquial CURADO a dedo
+ *      contra perguntas reais (alta precisão por construção); um termo de
+ *      RÓTULO é só uma palavra do texto formal do roteiro sobrevivendo à
+ *      stop-list (`termosSignificativos`) — mais largo por natureza (é assim
+ *      que "financeira", termo do RÓTULO longo de `reserva_seguro_
+ *      inventario`, colidia com "aplicação financeira" de `lista_bens`,
+ *      achado nesta mesma correção: sem a camada abaixo, um termo de rótulo
+ *      comprido vencia um sinônimo específico só por ter mais letras).
+ *   2. CAMADA decide primeiro: qualquer campo com casamento por SINÔNIMO
+ *      vence qualquer campo que só casou por RÓTULO — independente do
+ *      comprimento do termo. Sinônimo é sempre mais específico que rótulo,
+ *      por construção (é curado; rótulo é fallback genérico pré-existente).
+ *   3. Dentro da MESMA camada: o termo MAIS LONGO que casou decide — "quantos
+ *      anos" (12) é mais específico que "idade" (5).
+ *   4. Empate no termo mais longo → desempate pela CONTAGEM de termos que
+ *      casaram naquele campo (mais termos batendo é sinal mais forte).
+ *   5. Empate total → ORDEM DO BLOCO decide (o campo que vem primeiro em
+ *      `camposDoBloco`) — determinístico, sempre o mesmo resultado para a
+ *      mesma pergunta e o mesmo roteiro (comportamento herdado, preservado).
+ *
+ * Pura, testável sem I/O. Sinônimo e rótulo continuam UNIÃO na COBERTURA
+ * (um campo sem entrada em `SINONIMOS_POR_CAMPO` compete normalmente só pelo
+ * rótulo, exatamente como sempre) — a mudança é só na ORDEM DE PRECEDÊNCIA
+ * quando dois campos DIFERENTES casam ao mesmo tempo.
  */
 export function categorizarPergunta(textoPergunta: string, camposDoBloco: RoteiroCampo[]): string | null {
   const textoNormalizado = normalizar(textoPergunta);
-  for (const campo of camposDoBloco) {
-    const termos = termosSignificativos(campo.rotulo);
-    if (termos.some((termo) => textoNormalizado.includes(termo))) return campo.id;
+
+  interface Candidato {
+    campoId: string;
+    ordemNoBloco: number;
+    casouPorSinonimo: boolean;
+    termoMaisLongo: number;
+    quantidadeTermos: number;
   }
-  return null;
+
+  const candidatos: Candidato[] = [];
+
+  camposDoBloco.forEach((campo, ordemNoBloco) => {
+    const sinonimos = SINONIMOS_POR_CAMPO[campo.id] ?? [];
+    const termosSinonimo = sinonimos.filter((termo) => casaPorPalavra(textoNormalizado, termo));
+
+    // Camada de SINÔNIMO tem precedência: se casou por sinônimo, o rótulo
+    // nem entra na conta de especificidade deste campo (evita que um termo
+    // de rótulo comprido, mas genérico, "ajude" um campo que já casou pelo
+    // vocabulário curado — a camada já decide sozinha).
+    const casouPorSinonimo = termosSinonimo.length > 0;
+    const termosRotulo = casouPorSinonimo
+      ? []
+      : termosSignificativos(campo.rotulo).filter((termo) => textoNormalizado.includes(termo));
+
+    const todosOsTermos = [...termosSinonimo, ...termosRotulo];
+    if (todosOsTermos.length === 0) return;
+
+    const termoMaisLongo = Math.max(...todosOsTermos.map((t) => normalizar(t).length));
+    candidatos.push({ campoId: campo.id, ordemNoBloco, casouPorSinonimo, termoMaisLongo, quantidadeTermos: todosOsTermos.length });
+  });
+
+  if (candidatos.length === 0) return null;
+
+  candidatos.sort((a, b) => {
+    if (a.casouPorSinonimo !== b.casouPorSinonimo) return a.casouPorSinonimo ? -1 : 1;
+    if (b.termoMaisLongo !== a.termoMaisLongo) return b.termoMaisLongo - a.termoMaisLongo;
+    if (b.quantidadeTermos !== a.quantidadeTermos) return b.quantidadeTermos - a.quantidadeTermos;
+    return a.ordemNoBloco - b.ordemNoBloco;
+  });
+
+  return candidatos[0]!.campoId;
+}
+
+/** Casamento por BORDA DE PALAVRA (não substring solto) — usado só pelos
+ * sinônimos (`SINONIMOS_POR_CAMPO`), NUNCA pelos termos de rótulo (mantém o
+ * comportamento herdado, já validado em produção, intocado). Achado no
+ * próprio teste de aceite desta fatia: "cidade" contém "idade" como
+ * substring — `.includes` puro categorizava "Como está o clima hoje na
+ * cidade de vocês?" como `ocupacoes_idades`, um falso-positivo que a regra
+ * "nunca força encaixe" deste módulo existe para evitar. Sinônimo de mais de
+ * uma palavra (ex.: "custo de vida") não tem borda regex simples nas duas
+ * pontas do espaço interno — trata como frase e cai no `includes` comum,
+ * suficiente porque frases de 2+ palavras já são específicas o bastante para
+ * não colidir por acidente com uma palavra maior. */
+/**
+ * 🔴 CONSTRUÇÃO TEMPORAL RECUSA O CASAMENTO (18/09/2026, medição do Fable).
+ *
+ * "quantos anos" é o termo natural para idade ("Quantos anos a Flávia tem?"),
+ * mas precedido de "há" vira DURAÇÃO, não idade: "HÁ quantos anos vocês são
+ * casados / moram aqui / compraram o imóvel". As três são perguntas de
+ * regime, moradia e aquisição — e casá-las com `ocupacoes_idades` faria a
+ * memória calar o tema idade antes de alguém perguntar sobre idade.
+ *
+ * Enumerar variantes ("quantos anos tem", "quantos anos ela tem", …) não
+ * resolve: quebra em "Quantos anos a Flávia tem?" (nome próprio no meio) e a
+ * lista nunca fecha. A regra é recusar o PREFIXO temporal, que é finito.
+ */
+const PREFIXOS_TEMPORAIS = ["ha ", "a ", "faz "];
+
+function ehConstrucaoTemporal(textoNormalizado: string, termoNormalizado: string): boolean {
+  if (termoNormalizado !== "quantos anos") return false;
+  const pos = textoNormalizado.indexOf(termoNormalizado);
+  if (pos < 0) return false;
+  const antes = textoNormalizado.slice(0, pos);
+  return PREFIXOS_TEMPORAIS.some((pref) => antes.endsWith(pref));
+}
+
+function casaPorPalavra(textoNormalizado: string, termo: string): boolean {
+  const termoNormalizado = normalizar(termo);
+  if (ehConstrucaoTemporal(textoNormalizado, termoNormalizado)) return false;
+  if (termoNormalizado.includes(" ")) return textoNormalizado.includes(termoNormalizado);
+  const escapado = termoNormalizado.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escapado}(?:[^a-z0-9]|$)`, "u").test(textoNormalizado);
 }
 
 /**
@@ -167,8 +463,15 @@ export function acumularResumo(
  * mesma unidade dos dois lados (`campo.id`), sem tradução no meio (decisão do
  * dono: é o que torna o vocabulário dinâmico possível sem enum fixo).
  * Preserva a ordem de `campos[]` do roteiro (a ordem que a Dra. Elaine
- * cadastrou), cortada no teto de produto. */
-function derivarPendente(perguntado: ItemResumoAcumulado[], camposDoBloco: RoteiroCampo[]): string[] {
+ * cadastrou), cortada no teto de produto.
+ *
+ * EXPORTADA (18/09/2026, achado do Fable — B73/`falta_no_bloco` nunca
+ * esvaziava): `estado.ts::montarEstadoCopiloto` reusa esta MESMA função para
+ * derivar `falta_no_bloco.campos` — nenhuma reimplementação da subtração
+ * `campos do bloco menos perguntado`. Sem teto de PRODUTO aqui seria
+ * inconsistente com `resumirParaContexto` (que também reusa esta função) —
+ * ambos os consumidores aceitam o corte de `TETO_PENDENTE`. */
+export function derivarPendente(perguntado: ItemResumoAcumulado[], camposDoBloco: RoteiroCampo[]): string[] {
   const jaPerguntados = new Set(perguntado.map((item) => item.t));
   return camposDoBloco.map((c) => c.id).filter((id) => !jaPerguntados.has(id)).slice(0, TETO_PENDENTE);
 }

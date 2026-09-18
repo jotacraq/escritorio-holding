@@ -136,6 +136,20 @@ function montarSupabase(
           const valor = chaveAtual !== undefined ? dados?.configuracoes?.[chaveAtual] : undefined;
           return valor === undefined ? { data: null, error: null } : { data: { valor }, error: null };
         },
+        // Leitura em LOTE (`lerConfiguracoesBool`, 18/09/2026): troca N
+        // requisições por uma `in('chave', [...])`. O mock devolve só as
+        // chaves que existem em `dados.configuracoes` — as ausentes não vêm
+        // na resposta, exatamente como o PostgREST faz, e é por isso que o
+        // leitor precisa cair no padrão informado por chave.
+        in: (_coluna: string, chaves: string[]) => {
+          const linhas = chaves
+            .map((chave) => ({ chave, valor: dados?.configuracoes?.[chave] }))
+            .filter((l) => l.valor !== undefined);
+          return {
+            returns: async () => ({ data: linhas, error: null }),
+            then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: linhas, error: null }).then(ok),
+          };
+        },
       });
       return builder;
     }
@@ -341,10 +355,12 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
     // `from` só é chamado para 'sessoes_viabilidade', as leituras de config
     // (Fase 12, Fatia 1: `configuracoes` ×4 — `inferencia_bloco_ativa` + as 3
     // chaves de histerese da 0117 — mais 1× `configuracoes` do kill-switch
-    // `inventario_mencionado` da Fatia 5a, lido em paralelo pelo MESMO
-    // `Promise.all`), `copiloto_sugestoes` e 'consentimentos' — se algum
-    // código chamasse `.from('briefings')` separadamente, o mock lançaria
-    // "tabela não mockada: briefings" e este teste falharia.
+    // `inventario_mencionado` da Fatia 5a + 1× `configuracoes` do
+    // kill-switch da MEMÓRIA do copiloto (18/09/2026, achado do Fable),
+    // todas lidas em paralelo pelo MESMO `Promise.all`), `copiloto_sugestoes`
+    // e 'consentimentos' — se algum código chamasse `.from('briefings')`
+    // separadamente, o mock lançaria "tabela não mockada: briefings" e este
+    // teste falharia.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
       // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
@@ -354,6 +370,17 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
+      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
+      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
+      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
+      // booleanas do `Promise.all` final (`inventario_mencionado` e
+      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
+      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
+      //
+      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
+      // mesmo assim o caminho terminou com MENOS ida ao banco do que
+      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
+      // leitura em lote.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -400,14 +427,16 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
   it("🔴 mesma query coalescida de sempre para o carimbo de expurgo — nenhum select A MAIS além do que a Fatia 1 já acrescenta", async () => {
     // Aceite ORIGINAL desta fatia (Fase 10, Fatia 5): "sessoes_viabilidade" +
     // "consentimentos", sem nada a mais para ler o expurgo. Fase 12
-    // ACRESCENTA deliberadamente 6 chamadas (5× configuracoes — 1 do
+    // ACRESCENTA deliberadamente 7 chamadas (6× configuracoes — 1 do
     // interruptor de inferência + 3 da histerese da 0117 + 1 do kill-switch
-    // do inventário da Fatia 5a — + copiloto_sugestoes) à lista — é o custo
-    // aceito da inferência do bloco atual + do inventário no painel
-    // (resolverBlocoAtual/montarInventarioParaPainel), documentado no
-    // comentário de `montarSupabase` acima. Este teste prova que o EXPURGO
-    // em si não soma nada ALÉM disso — não que a fatia inteira ficou com
-    // zero leitura extra (ela não fica, por desenho).
+    // do inventário da Fatia 5a + 1 do kill-switch da MEMÓRIA do copiloto,
+    // 18/09/2026 (achado do Fable: `falta_no_bloco` nunca esvaziava) — +
+    // copiloto_sugestoes) à lista — é o custo aceito da inferência do bloco
+    // atual + do inventário + da memória no painel
+    // (resolverBlocoAtual/montarInventarioParaPainel/`falta_no_bloco.campos`),
+    // documentado no comentário de `montarSupabase` acima. Este teste prova
+    // que o EXPURGO em si não soma nada ALÉM disso — não que a fatia inteira
+    // ficou com zero leitura extra (ela não fica, por desenho).
     const supabase = montarSupabase(
       sessaoBase({
         sessoes_copiloto: {
@@ -428,6 +457,17 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
+      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
+      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
+      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
+      // booleanas do `Promise.all` final (`inventario_mencionado` e
+      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
+      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
+      //
+      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
+      // mesmo assim o caminho terminou com MENOS ida ao banco do que
+      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
+      // leitura em lote.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -937,9 +977,11 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
     );
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
     // Mesma lista de sempre (sessoes_viabilidade + 4x configuracoes da
-    // histerese + 1x configuracoes do kill-switch do inventário +
-    // copiloto_sugestoes + consentimentos) — nenhuma tabela nova chamada só
-    // para o inventário, porque ele já veio no embed principal.
+    // histerese + 1x configuracoes do kill-switch do inventário + 1x
+    // configuracoes do kill-switch da MEMÓRIA do copiloto (18/09/2026,
+    // achado do Fable) + copiloto_sugestoes + consentimentos) — nenhuma
+    // tabela nova chamada só para o inventário, porque ele já veio no embed
+    // principal.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
       // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
@@ -949,6 +991,17 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
       // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
       // não faz esta chamada — ver o teste dedicado abaixo.
       "roteiros_versoes",
+      // 🔴 UMA `configuracoes` A MENOS que antes (18/09/2026, achado do Fable).
+      // Esta função roda no GET de POLLING (a cada 3 s com a tela em foco), e
+      // cada `lerConfiguracaoBool` era uma requisição própria. As duas flags
+      // booleanas do `Promise.all` final (`inventario_mencionado` e
+      // `resumo_acumulado`) passaram a ser lidas por `lerConfiguracoesBool`,
+      // que faz UMA `in('chave', [...])` — 2 requisições viraram 1.
+      //
+      // O número importa: a memória do copiloto ACRESCENTOU uma flag aqui, e
+      // mesmo assim o caminho terminou com MENOS ida ao banco do que
+      // encontrou. Se este teste voltar a 6 `configuracoes`, alguém desfez a
+      // leitura em lote.
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -1041,5 +1094,174 @@ describe("montarEstadoCopiloto — fallback de roteiro ativo (18/09/2026)", () =
 
     expect(resultado.bloco_atual_resolvido.indice).toBe(3);
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).not.toContain("roteiros_versoes");
+  });
+});
+
+/**
+ * 🔴 CORREÇÃO DO FABLE (18/09/2026) — `falta_no_bloco` nunca esvaziava.
+ * `montarEstadoCopiloto` montava `camposPendentes` a partir de `campos[]` do
+ * bloco INTEIRO, sem subtrair o que `resumo_acumulado.perguntado` (a memória
+ * do copiloto) já cobriu — `blocoAtualCoberto` (front) exige
+ * `campos.length===0`, e isso nunca acontecia. Estes testes usam o PAYLOAD
+ * REAL de `montarEstadoCopiloto` (não uma fixture literal de
+ * `EstadoCopiloto`) — provam a subtração de ponta a ponta, com o roteiro e o
+ * `resumo_acumulado` entrando exatamente pelo mesmo embed que a produção usa.
+ */
+describe("montarEstadoCopiloto — falta_no_bloco.campos subtrai resumo_acumulado.perguntado (18/09/2026)", () => {
+  const BLOCO_COM_CAMPOS = {
+    id: "parte_03",
+    titulo: "Radiografia Familiar e Patrimonial",
+    campos: [
+      { id: "filhos_maiores_menores", rotulo: "Filhos (maiores ou menores)", tipo: "texto" },
+      { id: "ocupacoes_idades", rotulo: "Ocupações e idades", tipo: "texto" },
+      { id: "lista_bens", rotulo: "Lista de bens", tipo: "texto" },
+    ],
+    observar: ["Hesitação ao falar do imóvel da praia"],
+  };
+  const ROTEIRO_COM_CAMPOS = { definicao: { blocos: [BLOCO_COM_CAMPOS] } };
+
+  it("kill-switch LIGADO + 2 dos 3 campos já perguntados: falta_no_bloco.campos devolve só o que falta", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: ROTEIRO_COM_CAMPOS,
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: null,
+          inventario_acumulado: null,
+          resumo_acumulado: {
+            v: 1,
+            perguntado: [
+              { t: "filhos_maiores_menores", em: "2026-09-18T14:00:00Z", n: 1 },
+              { t: "ocupacoes_idades", em: "2026-09-18T14:05:00Z", n: 2 },
+            ],
+            pendente: ["lista_bens"],
+            cortado_em: null,
+          },
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.resumo_acumulado": true } },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+
+    expect(resultado.falta_no_bloco.campos).toEqual([{ id: "lista_bens", rotulo: "Lista de bens", tipo: "texto" }]);
+    // `observar` nunca é filtrado pela memória (é texto livre, a memória não categoriza) — continua exibido por inteiro.
+    expect(resultado.falta_no_bloco.observar).toEqual(["Hesitação ao falar do imóvel da praia"]);
+  });
+
+  it("kill-switch LIGADO + TODOS os campos já perguntados: falta_no_bloco.campos fica VAZIO — a tela de bloco coberto passa a ser alcançável", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: ROTEIRO_COM_CAMPOS,
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: null,
+          inventario_acumulado: null,
+          resumo_acumulado: {
+            v: 1,
+            perguntado: [
+              { t: "filhos_maiores_menores", em: "t", n: 1 },
+              { t: "ocupacoes_idades", em: "t", n: 1 },
+              { t: "lista_bens", em: "t", n: 1 },
+            ],
+            pendente: [],
+            cortado_em: null,
+          },
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.resumo_acumulado": true } },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+
+    expect(resultado.falta_no_bloco.campos).toEqual([]);
+  });
+
+  it("kill-switch DESLIGADO (padrão de fábrica): falta_no_bloco.campos devolve TODOS os campos do bloco — idêntico ao comportamento de antes desta correção", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: ROTEIRO_COM_CAMPOS,
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: null,
+          inventario_acumulado: null,
+          resumo_acumulado: {
+            v: 1,
+            perguntado: [{ t: "filhos_maiores_menores", em: "t", n: 1 }, { t: "ocupacoes_idades", em: "t", n: 1 }, { t: "lista_bens", em: "t", n: 1 }],
+            pendente: [],
+            cortado_em: null,
+          },
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.resumo_acumulado": false } },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+
+    // Mesmo com `perguntado` cobrindo os 3 campos, o kill-switch desligado
+    // (fail-CLOSED, B76) faz a memória NÃO SER LIDA para este fim — os 3
+    // campos continuam aparecendo, exatamente como antes da memória existir.
+    expect(resultado.falta_no_bloco.campos).toEqual([
+      { id: "filhos_maiores_menores", rotulo: "Filhos (maiores ou menores)", tipo: "texto" },
+      { id: "ocupacoes_idades", rotulo: "Ocupações e idades", tipo: "texto" },
+      { id: "lista_bens", rotulo: "Lista de bens", tipo: "texto" },
+    ]);
+  });
+
+  it("chave AUSENTE de `configuracoes` (nunca configurada): cai no padrão `false` — fail-CLOSED sem exigir gravação prévia", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: ROTEIRO_COM_CAMPOS,
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: null,
+          inventario_acumulado: null,
+          resumo_acumulado: { v: 1, perguntado: [{ t: "lista_bens", em: "t", n: 1 }], pendente: [], cortado_em: null },
+        },
+      }),
+      undefined,
+      { configuracoes: {} },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+
+    expect(resultado.falta_no_bloco.campos.map((c) => c.id)).toEqual(["filhos_maiores_menores", "ocupacoes_idades", "lista_bens"]);
+  });
+
+  it("resumo_acumulado '{}' legado (default da 0091, sessão pré-existente): normaliza para vazio, nunca lança — todos os campos continuam pendentes", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: ROTEIRO_COM_CAMPOS,
+        sessoes_copiloto: {
+          estado: "ativo",
+          gravacao_externa_id: null,
+          participantes: [],
+          expurgo_segmentos_em: null,
+          inventario_acumulado: null,
+          resumo_acumulado: {},
+        },
+      }),
+      undefined,
+      { configuracoes: { "copiloto_sessao.resumo_acumulado": true } },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.falta_no_bloco.campos.map((c) => c.id)).toEqual(["filhos_maiores_menores", "ocupacoes_idades", "lista_bens"]);
   });
 });

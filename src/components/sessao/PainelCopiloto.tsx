@@ -9,6 +9,7 @@ import {
   registrarDesfechoSugestaoCopiloto,
 } from "@/components/sessao/api";
 import type {
+  BlocoPendente,
   CategoriaInventarioMencionado,
   DesfechoCopiloto,
   InfoCicloCopiloto,
@@ -210,6 +211,50 @@ export function PainelCopiloto({
   const ultimaSugestaoDoCicloAbaixoDoLimiar =
     sugestoesCiclo.length > 0 && !sugestoesCiclo[sugestoesCiclo.length - 1].visivel;
 
+  // B73 (bloqueio de ativação da memória do copiloto, 18/09) — "bloco
+  // coberto" é FATO DO SERVIDOR, nunca inferido da sugestão da IA: o campo
+  // que prova isso é `estado.falta_no_bloco.campos` (o que a rota
+  // determinística já sabe faltar no bloco atual), não `sugestao.
+  // falta_no_bloco` (o que a IA achou faltar numa chamada específica — pode
+  // vir vazio por silêncio genuíno mesmo com campo pendente real). Sem
+  // campo pendente e sem observação pendente = bloco coberto.
+  //
+  // `proximoBloco` vem de `blocos_nao_percorridos[0]`, populado pelo SERVIDOR
+  // contra o roteiro ativo — não de `indiceAtual+1` (que mentiria depois de
+  // um desvio). Lista vazia = não há próximo bloco (fim do roteiro), estado
+  // de primeira classe, nunca "índice fora do array" tratado como bug.
+  //
+  // 🔴 VAZIO POR COBERTURA ≠ VAZIO POR IGNORÂNCIA (18/09/2026, achado na
+  // revisão). `estado.ts:688` monta `camposPendentes` como
+  // `(blocoAtual?.campos ?? []).map(...)` — quando NÃO HÁ bloco resolvido
+  // (roteiro não carregado, `blocos` vazio, bloco `indisponivel`), o servidor
+  // devolve `[]` do mesmo jeito que devolveria para um bloco genuinamente
+  // coberto. Sem a guarda abaixo, a tela afirmaria "bloco coberto" sem base
+  // nenhuma — e o caso NÃO é hipotético: o defeito de roteiro não carregado
+  // foi medido em produção hoje de manhã (a sessão inteira do Carlos Alberto
+  // rodou com `bloco_indice = 0` por falta do fallback em `estado.ts`).
+  //
+  // A guarda é `bloco_atual_id != null`: só afirma cobertura quando o
+  // servidor SABE em que bloco a conversa está (`estado.ts:706` só preenche
+  // esse id a partir de um `blocoAtual` real). Sem isso, cai no texto
+  // genérico de sempre — que é honesto, porque de fato não se sabe.
+  const temBlocoResolvido = estado.bloco_atual_id != null;
+  //
+  // 🔴 `observar` FICA DE FORA DO CRITÉRIO (18/09/2026, reprovação do Fable).
+  // `estado.ts:755` monta `observarPendente` como a lista INTEIRA do bloco
+  // (`blocoAtual?.observar ?? []`) e NADA a subtrai — `observar` é texto livre
+  // ("perceber se o cliente hesita ao falar do irmão"), que a memória não
+  // categoriza e nunca vai esvaziar. Medido no roteiro v5 ativo: **13 dos 13
+  // blocos têm `observar >= 1`**. Mantê-lo aqui tornava `blocoAtualCoberto`
+  // FALSO EM 100% DOS BLOCOS, SEMPRE — a tela do B73 seria inalcançável em
+  // produção, e a advogada leria "não teve nada específico a apontar"
+  // exatamente no caso que este estado existe para eliminar.
+  //
+  // `observar` continua VISÍVEL como informação (não foi apagado do payload
+  // nem da tela) — só deixou de ser trava de um estado que ele não sabe medir.
+  const blocoAtualCoberto = temBlocoResolvido && estado.falta_no_bloco.campos.length === 0;
+  const proximoBloco = estado.blocos_nao_percorridos[0] ?? null;
+
   return (
     // F4 — mosaico de 3 colunas, SEM rolagem de página (pedido do Marcio,
     // 17/09: hoje ~230px do topo são gastos com subtítulo/aviso/"ainda
@@ -278,7 +323,15 @@ export function PainelCopiloto({
          * rolando junto com o resto — nunca um 2º container fixo disputando
          * altura. */}
         <Coluna className="gap-2" rolavel rotulo="Fale agora">
-          <BlocoFaleAgora sessaoId={sessaoId} indiceAtual={indiceAtual} sugestoesCiclo={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} />
+          <BlocoFaleAgora
+            sessaoId={sessaoId}
+            indiceAtual={indiceAtual}
+            sugestoesCiclo={sugestoesCiclo}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+            blocoAtualCoberto={blocoAtualCoberto}
+            proximoBloco={proximoBloco}
+          />
           <PlacarConducao sugestoesCiclo={sugestoesCiclo} />
         </Coluna>
 
@@ -737,12 +790,22 @@ function BlocoFaleAgora({
   sugestoesCiclo,
   blocosRoteiro,
   irPara,
+  blocoAtualCoberto,
+  proximoBloco,
 }: {
   sessaoId: string;
   indiceAtual: number;
   sugestoesCiclo: SugestaoCopilotoPolling[];
   blocosRoteiro?: { id: string; titulo?: string }[];
   irPara?: (indice: number) => void;
+  /** B73 — `estado.falta_no_bloco` (campos + observar) do payload
+   * determinístico: `true` quando o bloco atual não tem mais nada pendente
+   * segundo o SERVIDOR. Distingue "bloco coberto" de "a IA não teve nada a
+   * apontar agora" dentro de `ApresentacaoSugestao`. */
+  blocoAtualCoberto: boolean;
+  /** `estado.blocos_nao_percorridos[0]` — `null` quando não há próximo
+   * bloco (fim do roteiro). */
+  proximoBloco: BlocoPendente | null;
 }) {
   const temSugestaoCiclo = sugestoesCiclo.length > 0;
   // Fase 12, Fatia C — contador de não-lido NO PRÓPRIO RÓTULO do quadro
@@ -751,6 +814,22 @@ function BlocoFaleAgora({
   // — `SugestoesDoCiclo` é quem sabe quais IDs existem e quando um deixa de
   // ser "novo"; aqui só se acumula a contagem para o rótulo.
   const [naoLidas, setNaoLidas] = useState(0);
+  // Iteração 3 (18/09/2026, achado do Fable) — `temSugestaoCiclo` só diz "há
+  // algo na lista", não "o herói está mostrando Bloco coberto AGORA" (herói
+  // pode estar dispensado, abaixo do limiar ou com conteúdo). `SugestaoIA`
+  // precisa do fato específico para decidir se suprime O CARD DELA — ver
+  // comentário completo em `SugestaoIA`. `SugestoesDoCiclo` só existe (é
+  // montado) quando `temSugestaoCiclo`; ao desmontar (lista esvazia), o
+  // último valor reportado ficaria "preso" — o reset explícito abaixo cobre
+  // essa transição sem exigir cleanup no filho.
+  const [heroiMostraCoberto, setHeroiMostraCoberto] = useState(false);
+  if (!temSugestaoCiclo && heroiMostraCoberto) {
+    // Espelha o padrão de "setState derivado durante o render" só quando o
+    // valor DIVERGE do que o próximo render precisa (mesma régua seguida
+    // pelo React para evitar loop: idempotente, não dispara de novo depois
+    // que o estado já reflete `false`).
+    setHeroiMostraCoberto(false);
+  }
   // F7 — "· N nova" pulsa UMA vez a cada valor novo (chave = o próprio
   // valor): 1→2 pulsa de novo, 2→2 (mesmo render) não repete. 320ms casa com
   // `@keyframes pulsar-uma-vez` (`.anim-pulsar-uma-vez`, globals.css).
@@ -781,11 +860,29 @@ function BlocoFaleAgora({
        * garantida (o teto agora é o da `Coluna` ancestral, não deste bloco). */}
       <div className="flex flex-col gap-3">
         {temSugestaoCiclo && (
-          <SugestoesDoCiclo sessaoId={sessaoId} sugestoes={sugestoesCiclo} blocosRoteiro={blocosRoteiro} irPara={irPara} aoMudarNaoLidas={setNaoLidas} />
+          <SugestoesDoCiclo
+            sessaoId={sessaoId}
+            sugestoes={sugestoesCiclo}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+            aoMudarNaoLidas={setNaoLidas}
+            aoMudarHeroiMostraCoberto={setHeroiMostraCoberto}
+            blocoAtualCoberto={blocoAtualCoberto}
+            proximoBloco={proximoBloco}
+          />
         )}
 
         <div className={temSugestaoCiclo ? "border-t border-dashed border-linha pt-3" : undefined}>
-          <SugestaoIA sessaoId={sessaoId} indiceAtual={indiceAtual} blocosRoteiro={blocosRoteiro} irPara={irPara} temSugestaoCiclo={temSugestaoCiclo} />
+          <SugestaoIA
+            sessaoId={sessaoId}
+            indiceAtual={indiceAtual}
+            blocosRoteiro={blocosRoteiro}
+            irPara={irPara}
+            temSugestaoCiclo={temSugestaoCiclo}
+            heroiMostraCoberto={heroiMostraCoberto}
+            blocoAtualCoberto={blocoAtualCoberto}
+            proximoBloco={proximoBloco}
+          />
         </div>
       </div>
     </Quadro>
@@ -959,12 +1056,27 @@ function SugestoesDoCiclo({
   blocosRoteiro,
   irPara,
   aoMudarNaoLidas,
+  aoMudarHeroiMostraCoberto,
+  blocoAtualCoberto,
+  proximoBloco,
 }: {
   sessaoId: string;
   sugestoes: SugestaoCopilotoPolling[];
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
   aoMudarNaoLidas?: (n: number) => void;
+  /** Iteração 3 (18/09/2026, achado do Fable) — reporta ao pai se o HERÓI
+   * (esta função) está de fato renderizando `BlocoCoberto` agora, e não
+   * apenas "existe alguma sugestão na lista" (`temSugestaoCiclo`). Os dois
+   * predicados divergiam: herói dispensado, abaixo do limiar (`!visivel`,
+   * filtrado em `pendentes`) ou com conteúdo (`nada` falso) faziam
+   * `temSugestaoCiclo` continuar `true` mesmo sem nenhum `BlocoCoberto` na
+   * tela — e `SugestaoIA` suprimia o card DELA por engano, caindo no texto
+   * "não teve nada específico a apontar agora" bem depois de um clique no
+   * botão "Me ajuda agora". */
+  aoMudarHeroiMostraCoberto?: (mostra: boolean) => void;
+  blocoAtualCoberto: boolean;
+  proximoBloco: BlocoPendente | null;
 }) {
   const [dispensadas, setDispensadas] = useState<Record<string, boolean>>({});
   const [vistos, setVistos] = useState<Record<string, boolean>>({});
@@ -1029,6 +1141,28 @@ function SugestoesDoCiclo({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendentes.map((s) => s.sugestao_id).join(","), vistos]);
 
+  // Iteração 3 — mesmo predicado de `ApresentacaoSugestao` (`nada` +
+  // `blocoAtualCoberto`) que decide `BlocoCoberto`, calculado aqui para o
+  // card do HERÓI especificamente. Sem `recente` (nenhum pendente — herói
+  // dispensado ou abaixo do limiar já removidos de `pendentes`), o herói não
+  // está mostrando `BlocoCoberto`: `false`. Booleano primitivo, estável
+  // entre renders com o mesmo resultado — não é objeto novo a cada chamada.
+  const heroiMostraCoberto = Boolean(
+    recente &&
+      blocoAtualCoberto &&
+      !recente.sugestao.proxima_pergunta &&
+      recente.sugestao.falta_no_bloco.length === 0 &&
+      !recente.sugestao.observacao &&
+      !recente.sugestao.desvio_sugerido,
+  );
+
+  // Reporta ao pai em effect — nunca durante o render deste componente,
+  // mesma régua de `aoMudarNaoLidas` logo acima (`set-state-in-effect`
+  // seria disparado do PAI se chamado direto no corpo da função).
+  useEffect(() => {
+    aoMudarHeroiMostraCoberto?.(heroiMostraCoberto);
+  }, [heroiMostraCoberto, aoMudarHeroiMostraCoberto]);
+
   if (pendentes.length === 0) return null;
 
   const recenteNaoLida = Boolean(recente) && !vistos[recente.sugestao_id];
@@ -1042,6 +1176,8 @@ function SugestoesDoCiclo({
           sugestao={recente.sugestao}
           blocosRoteiro={blocosRoteiro}
           irPara={irPara}
+          blocoAtualCoberto={blocoAtualCoberto}
+          proximoBloco={proximoBloco}
         />
         {/* F4 (17/09) — rodapé do herói: hora SEMPRE (F0 — `criado_em` real,
          * nunca condicional) à esquerda, "Dispensar" à direita, mesma
@@ -1076,12 +1212,19 @@ function SugestoesDoCiclo({
                * filtro; código morto removido, não só simplificado. */}
               {anteriores.map((s) => (
                 <li key={s.sugestao_id} className="rounded-controle border border-linha p-2.5">
+                  {/* Histórico: "bloco coberto" só se aplica ao AGORA — uma
+                   * sugestão anterior mostrar de novo "vá para o próximo
+                   * bloco" seria uma 2ª ação de navegação na tela, competindo
+                   * com a do card recente. `blocoAtualCoberto={false}` aqui
+                   * preserva o texto sóbrio de sempre para o passado. */}
                   <ApresentacaoSugestao
                     sessaoId={sessaoId}
                     sugestaoId={s.sugestao_id}
                     sugestao={s.sugestao}
                     blocosRoteiro={blocosRoteiro}
                     irPara={irPara}
+                    blocoAtualCoberto={false}
+                    proximoBloco={null}
                   />
                 </li>
               ))}
@@ -1204,12 +1347,29 @@ function SugestaoIA({
   blocosRoteiro,
   irPara,
   temSugestaoCiclo,
+  heroiMostraCoberto,
+  blocoAtualCoberto,
+  proximoBloco,
 }: {
   sessaoId: string;
   indiceAtual: number;
   blocosRoteiro?: { id: string }[];
   irPara?: (indice: number) => void;
+  /** `sugestoesCiclo.length > 0` — usado só para a prioridade 3 do bloco
+   * ("sem nenhuma das duas, linha curta de aguardando"), NÃO para decidir se
+   * este card suprime `BlocoCoberto` (ver `heroiMostraCoberto` abaixo). */
   temSugestaoCiclo: boolean;
+  /** Iteração 3 (18/09/2026, achado do Fable) — `true` só quando o card do
+   * HERÓI (`SugestoesDoCiclo`) está de fato renderizando `BlocoCoberto`
+   * agora. Antes, `blocoAtualCobertoParaEstaSugestao` usava `temSugestaoCiclo`
+   * para essa decisão e divergia do fato real em 3 casos: herói dispensado,
+   * herói abaixo do limiar de confiança (`!visivel`) e herói com conteúdo
+   * (`nada` falso) — nos três, `temSugestaoCiclo` continuava `true` sem
+   * nenhum `BlocoCoberto` na tela, e esta função suprimia o card DELA por
+   * engano. */
+  heroiMostraCoberto: boolean;
+  blocoAtualCoberto: boolean;
+  proximoBloco: BlocoPendente | null;
 }) {
   const [pedindo, setPedindo] = useState(false);
   const [resposta, setResposta] = useState<RespostaSugestaoCopiloto | null>(null);
@@ -1229,6 +1389,33 @@ function SugestaoIA({
       setPedindo(false);
     }
   }
+
+  // 🔴 CORRIGIDO (18/09/2026, achado do Fable) — DOIS cards "Bloco coberto"
+  // ao mesmo tempo, com DOIS botões "Ir para o próximo bloco" empilhados na
+  // mesma coluna, quando `SugestoesDoCiclo` (herói) JÁ está oferecendo o
+  // card de bloco coberto e a advogada também clica "Me ajuda agora": os
+  // dois `ApresentacaoSugestao` (`SugestoesDoCiclo` e este) recebem o MESMO
+  // `blocoAtualCoberto` vindo do estado do servidor — e um card `nada` (a IA
+  // sob demanda também não tem pergunta nova, porque o bloco de fato já foi
+  // coberto) também vira "Bloco coberto" aqui, duplicando a ação.
+  //
+  // Regra: só UM card oferece "Ir para o próximo bloco" — o herói
+  // (`SugestoesDoCiclo`) tem precedência, por já estar na tela ANTES do
+  // clique manual. Quando `heroiMostraCoberto` é `true` (o herói ESTÁ, agora,
+  // de fato renderizando `BlocoCoberto` — não apenas "existe alguma sugestão
+  // na lista"), a sugestão sob demanda desta função nunca afirma "Bloco
+  // coberto" — cai no texto sóbrio de sempre ("a IA respondeu, mas não teve
+  // nada específico a apontar agora"), que continua verdadeiro (o bloco ESTÁ
+  // coberto, só que a AÇÃO de avançar já está oferecida em outro lugar da
+  // mesma coluna).
+  //
+  // 🔴 CORRIGIDO (iteração 3, 18/09/2026) — o antigo `temSugestaoCiclo`
+  // (`sugestoesCiclo.length > 0`) divergia deste fato: herói dispensado,
+  // abaixo do limiar de confiança ou com conteúdo faziam `temSugestaoCiclo`
+  // continuar `true` sem nenhum `BlocoCoberto` na tela, suprimindo este card
+  // por engano — a advogada clicava "Me ajuda agora" num herói dispensado e
+  // via "não teve nada específico a apontar agora" em vez de "Bloco coberto".
+  const blocoAtualCobertoParaEstaSugestao = heroiMostraCoberto ? false : blocoAtualCoberto;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -1269,6 +1456,8 @@ function SugestaoIA({
           sugestao={resposta.sugestao}
           blocosRoteiro={blocosRoteiro}
           irPara={irPara}
+          blocoAtualCoberto={blocoAtualCobertoParaEstaSugestao}
+          proximoBloco={proximoBloco}
         />
       )}
 
@@ -1385,14 +1574,20 @@ function ApresentacaoSugestao({
   sugestao,
   blocosRoteiro,
   irPara,
+  blocoAtualCoberto,
+  proximoBloco,
 }: {
   sessaoId: string;
   /** `resposta.sugestao_id` — nível de `RespostaSugestaoCopiloto`, não de
    * `SugestaoCopiloto`. É o vínculo para `POST .../[sugestaoId]/desfecho`. */
   sugestaoId: string;
   sugestao: SugestaoCopiloto;
-  blocosRoteiro?: { id: string }[];
+  blocosRoteiro?: { id: string; titulo?: string }[];
   irPara?: (indice: number) => void;
+  /** B73 — `true` quando o SERVIDOR (`estado.falta_no_bloco`, não a
+   * sugestão) já não tem campo/observação pendente no bloco atual. */
+  blocoAtualCoberto: boolean;
+  proximoBloco: BlocoPendente | null;
 }) {
   const nada =
     !sugestao.proxima_pergunta &&
@@ -1401,6 +1596,18 @@ function ApresentacaoSugestao({
     !sugestao.desvio_sugerido;
 
   if (nada) {
+    // B73 — bloqueio de ativação da memória do copiloto (Fatia A, `66dc5b3`).
+    // A memória faz `proxima_pergunta: null` quando os temas do bloco já
+    // foram todos perguntados — ANTES desta mudança, isso caía no MESMO
+    // texto sóbrio de "silêncio genuíno" que a IA usa quando simplesmente
+    // não tem nada, o que passou a ser FALSO com a memória ligada: a verdade
+    // aqui é "cobriu o bloco, pode avançar". `blocoAtualCoberto` (fato do
+    // ESTADO do servidor, nunca inferido da sugestão) decide qual dos dois
+    // é real; sugestão vazia com campo AINDA pendente no estado continua no
+    // texto antigo — silêncio genuíno, não bloco coberto.
+    if (blocoAtualCoberto) {
+      return <BlocoCoberto proximoBloco={proximoBloco} blocosRoteiro={blocosRoteiro} irPara={irPara} />;
+    }
     return (
       <p className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
         A IA respondeu, mas não teve nada específico a apontar agora.
@@ -1478,6 +1685,82 @@ function ApresentacaoSugestao({
           </div>
           <p className="text-sm text-tinta-suave">{sugestao.observacao.texto}</p>
           {sugestao.observacao.evidencia && <Evidencia texto={sugestao.observacao.evidencia} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * B73 — estado "bloco coberto": os temas do bloco atual já foram todos
+ * perguntados (fato do servidor, `estado.falta_no_bloco`), então
+ * `proxima_pergunta: null` deixa de ser "silêncio" e passa a significar
+ * "pode avançar". Decisão do dono (17/09, revogação do B71 para esta tela):
+ * "sistema vivo" — usa o MESMO gatilho de insight novo que `CardRecente` já
+ * usa (`anim-entrar-e-decair`, disparado uma vez por bloco coberto via
+ * `useRealceUmaVez`), nunca uma tela morta. `prefers-reduced-motion` zera a
+ * `@keyframes` inteira em `globals.css` — nada aqui duplica a media query.
+ *
+ * Geometria constante (mesmo padrão de `CardRecente`/`DesvioSugerido`): a
+ * borda existe desde o primeiro render, só cor/fundo variam.
+ *
+ * Sem `proximoBloco` (fim do roteiro) o card mostra só o fato "coberto",
+ * sem oferecer avanço para lugar nenhum — nunca um índice inventado.
+ */
+function BlocoCoberto({
+  proximoBloco,
+  blocosRoteiro,
+  irPara,
+}: {
+  proximoBloco: BlocoPendente | null;
+  blocosRoteiro?: { id: string; titulo?: string }[];
+  irPara?: (indice: number) => void;
+}) {
+  // Chave estável por bloco coberto: se o próximo bloco mudar (a advogada
+  // avançou e um NOVO bloco terminou de ser coberto), o gatilho visual
+  // dispara de novo — é insight novo, não o mesmo re-render.
+  const chave = proximoBloco?.id ?? "fim-do-roteiro";
+  const destacar = useRealceUmaVez(true, chave, 5000);
+
+  // O servidor já resolve `blocos_nao_percorridos` contra o roteiro ativo;
+  // a navegação em si só existe se a tela também conseguir achar o índice
+  // real na lista carregada aqui — mesma régua de `DesvioSugerido`.
+  const indiceAlvo = proximoBloco ? (blocosRoteiro?.findIndex((b) => b.id === proximoBloco.id) ?? -1) : -1;
+  const podeNavegar = Boolean(irPara) && indiceAlvo >= 0;
+  const tituloProximo = proximoBloco?.titulo ?? blocosRoteiro?.find((b) => b.id === proximoBloco?.id)?.titulo ?? null;
+
+  return (
+    <div
+      className={`flex flex-col gap-2 rounded-controle border px-3 py-2.5 ${
+        destacar ? "anim-entrar-e-decair border-[color:var(--verde,var(--acento))]" : "anim-entrar-insight border-linha"
+      }`}
+    >
+      <div className="flex items-start gap-2.5">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-verde-fraco text-[color:var(--verde)]"
+        >
+          <IconeAcerto />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-subtitulo font-bold leading-snug text-tinta">Bloco coberto</p>
+          <p className="mt-1 text-sm text-tinta-suave">
+            {proximoBloco ? (
+              <>
+                Todos os temas deste bloco já foram perguntados. Próximo:{" "}
+                <span className="font-medium text-tinta">{tituloProximo ?? proximoBloco.titulo}</span>
+              </>
+            ) : (
+              "Todos os temas deste bloco já foram perguntados — é o último do roteiro."
+            )}
+          </p>
+        </div>
+      </div>
+      {podeNavegar && (
+        <div className="flex justify-end">
+          <Botao variante="secundario" tamanho="compacto" onClick={() => irPara!(indiceAlvo)}>
+            Ir para o próximo bloco
+          </Botao>
         </div>
       )}
     </div>

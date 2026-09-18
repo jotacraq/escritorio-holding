@@ -28,9 +28,10 @@
 // ---------------------------------------------------------------------------
 
 /** Um item de `campos[]` do bloco atual que ainda não tem resposta registrada
- * (hoje: nenhuma rota grava resposta de `campos[]` — todo campo do bloco
- * atual aparece aqui até que essa gravação exista; ausente é ausente, não é
- * um "falso positivo" a esconder). */
+ * NEM foi categorizado como perguntado pela memória do copiloto (18/09/2026
+ * — ver `EstadoCopiloto.falta_no_bloco`; nenhuma rota grava resposta
+ * estruturada de `campos[]` ainda; ausente é ausente, não é um
+ * "falso positivo" a esconder). */
 export interface CampoPendente {
   id: string;
   rotulo: string;
@@ -61,8 +62,15 @@ export interface EstadoCopiloto {
   sessao_id: string;
   /** Nulo quando não há roteiro ativo — a rota nunca inventa um bloco. */
   bloco_atual_id: string | null;
-  /** `campos[]` do bloco atual ainda sem resposta + `observar[]` (texto puro,
-   * sem id — é o que o roteiro já rotula como "observar", não um campo). */
+  /** `campos[]` do bloco atual ainda NÃO CATEGORIZADOS como perguntados pela
+   * MEMÓRIA do copiloto (`resumo_acumulado.perguntado`, `resumo.ts`, 18/09/2026)
+   * + `observar[]` (texto puro, sem id — é o que o roteiro já rotula como
+   * "observar", não um campo). Com o kill-switch da memória desligado
+   * (`copiloto_sessao.resumo_acumulado`), equivale a "todos os campos do
+   * bloco atual" — mesmo comportamento de antes da memória existir. Nunca
+   * significa "resposta registrada": hoje nenhuma rota grava resposta
+   * estruturada de `campos[]`; "categorizado como perguntado" é o mais perto
+   * que o sistema chega disso sem essa gravação existir. */
   falta_no_bloco: { campos: CampoPendente[]; observar: string[] };
   sims_pendentes: SimPendente[];
   blocos_nao_percorridos: BlocoPendente[];

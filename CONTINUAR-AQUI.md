@@ -1,5 +1,31 @@
 # Continuar daqui — SIC-HF
 
+> ### 🔴 DÍVIDA MEDIDA — `ConduzirSessaoApp.test.tsx` só passa com paralelismo reduzido (18/09/2026)
+>
+> **Medido nesta máquina, 4 execuções da suíte completa:**
+> - `npx vitest run --maxWorkers=2` → **1.725/1.725, três rodadas seguidas**
+> - `npx vitest run` (paralelismo padrão) → **4 falhas**, todas em
+>   `ConduzirSessaoApp.test.tsx` (`AssertionError: expected undefined to be truthy`)
+> - o arquivo isolado → **28/28**, sempre
+>
+> 🔴 **Isto importa porque o `ci.yml` roda com paralelismo padrão.** Um teste que
+> só passa sozinho não protege nada — e hoje ele é a única cobertura da tela de
+> condução ponta a ponta (a mesma tela que ganhou o estado "bloco coberto").
+>
+> Diagnóstico do `fable-orchestrator` (3 execuções independentes, mesma conclusão):
+> corrida de worker, não defeito do código sob teste. Já havia sido nomeado em
+> 11/09 para `EscalaTexto`/`Travado` com a mesma assinatura — **é a terceira vez
+> que a família de testes de tela sofre isso**, agora com número medido dos dois
+> lados.
+>
+> **Correção candidata** (mesma da dívida de 11/09, nunca aplicada): `testTimeout`
+> explícito nos testes que esperam por `waitFor`, ou `maxWorkers` limitado no
+> `ci.yml`. A 2ª é uma linha e resolve hoje; a 1ª ataca a causa.
+>
+> **Gatilho:** entra na próxima fatia que encostar em `src/components/sessao/`.
+> Não deixar passar de novo — na 4ª vez, some com a confiança na suíte inteira.
+
+
 > ### 🟡 PRONTO E DESLIGADO — memória do copiloto (Fatia A), 18/09/2026
 >
 > `sessoes_copiloto.resumo_acumulado` finalmente TEM escritor. Existia desde a 0091,
