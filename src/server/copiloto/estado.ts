@@ -202,6 +202,9 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
  * sobre o que se grava (mesmo raciocínio de `contexto.ts`). */
 const CHAVE_INVENTARIO_MENCIONADO_ATIVO = "copiloto_sessao.inventario_mencionado";
 
+/** Mesma chave de `contexto.ts` — ver `carregarBlocosComFallback`. */
+const CHAVE_ROTEIRO_SESSAO_VIABILIDADE = "sessao_viabilidade";
+
 /** Quantos itens recentes (com evidência) vão para o painel — Fase 12,
  * Fatia 5a. Fixo, não é chave de `configuracoes`: é um teto de PAYLOAD, não
  * um parâmetro de negócio (mesmo raciocínio de `LIMITE_SEGMENTOS_NOVOS` na
@@ -631,7 +634,38 @@ export async function montarEstadoCopiloto(
   if (error) throw error;
   if (!data) throw erroNaoEncontrado("Sessão de Viabilidade não encontrada.");
 
-  const blocos = data.roteiros_versoes?.definicao?.blocos ?? [];
+  // 🔴 FALLBACK DE ROTEIRO ATIVO — medido na sessão AO VIVO de 18/09/2026
+  // (Carlos Alberto, `b3eca233`). O fallback já existia em `contexto.ts`
+  // (achado do coordenador, 14/09) e NÃO foi propagado para cá: a mesma
+  // correção ficou aplicada em um só dos dois lugares que leem o roteiro.
+  //
+  // `roteiro_versao_id` só é carimbado por `registrar_sim_sessao` (0030) no
+  // 1º SIM — nascer NULO é o DESENHO, não defeito de dado. Sem o fallback,
+  // `blocos` fica `[]`, o `blocos.findIndex` de `aplicarHisterese` devolve
+  // -1 para TODA candidata, as 16 inferências válidas da IA são descartadas
+  // e `resolverBlocoAtual` cai em `indisponivel` — que `route.ts` converte
+  // em índice 0 para montar contexto. Efeito medido em 1h10 de sessão real:
+  // `copiloto_ciclos.bloco_indice = 0` em 100% das 215 janelas e 98 de 113
+  // sugestões (87%) dizendo "desvie do bloco atual", comparando conversa de
+  // partilha patrimonial contra o bloco de Check-in.
+  //
+  // Mesma query e mesmo contrato de `contexto.ts`: `uniq_roteiro_ativo`
+  // (índice único parcial em `(chave) where ativo`, 0030), Index Scan por
+  // igualdade, e só roda quando a FK é NULA. NUNCA escreve
+  // `roteiro_versao_id` de volta — carimbar é ato de `registrar_sim_sessao`,
+  // com autoria; inventar o carimbo contaminaria o registro de qual roteiro
+  // realmente conduziu a sessão.
+  let blocos = data.roteiros_versoes?.definicao?.blocos ?? [];
+  if (blocos.length === 0) {
+    const { data: ativo, error: erroAtivo } = await supabase
+      .from("roteiros_versoes")
+      .select("definicao")
+      .eq("chave", CHAVE_ROTEIRO_SESSAO_VIABILIDADE)
+      .eq("ativo", true)
+      .maybeSingle<{ definicao: RoteiroDefinicao }>();
+    if (erroAtivo) throw erroAtivo;
+    blocos = ativo?.definicao?.blocos ?? [];
+  }
 
   const [blocoAtualResolvido, inventarioMencionadoAtivo] = await Promise.all([
     resolverBlocoAtual(supabase, sessaoId, blocos, fixacaoManual),

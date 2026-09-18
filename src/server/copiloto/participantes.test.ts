@@ -353,3 +353,170 @@ describe("resolverPapelNoJoin — ordem de resolução (decisão do dono, 15/09/
     expect(papel).toBe("acompanhante_2");
   });
 });
+
+/**
+ * 🔴 A ADVOGADA É A IDENTIDADE, NUNCA QUEM ABRIU A SALA — Marcio, 18/09/2026.
+ *
+ * Regressão medida ao vivo na sessão do Carlos Alberto (`b3eca233`): o
+ * "Marco - Staff" abriu a reunião no Meet, levou o papel "advogada" pelo
+ * `isHost` e SAIU aos 3 minutos; a Dra. Elaine entrou depois e caiu em
+ * `acompanhante_2`, o cliente Vilarinho em `acompanhante_1`. Com
+ * `papeis_de_fala` ligado, a IA passou 1h30 sem saber quem conduzia a sessão
+ * nem quem era o cliente.
+ */
+describe("resolverPapelNoJoin — advogada pela identidade (18/09/2026)", () => {
+  const EQUIPE = { advogadas: ["Dra. Elaine Montenegro"], assistentes: ["Marco - Staff", "Cristiane Postiga"] };
+
+  it("🔴 o assistente abre a sala (isHost) e NÃO vira advogada — é o defeito medido na sessão real", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Marco - Staff",
+      isHost: true,
+      decisoresEsperados: ["Carlos Alberto Vilarinho"],
+      participantesAtuais: [],
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("assistente");
+  });
+
+  it("a Dra. Elaine entra DEPOIS, sem ser host, e ainda assim é a advogada — o papel segue a pessoa", () => {
+    const jaNaSala = [
+      { id: "100", nome: "Marco - Staff", entrou_em: "2026-09-18T12:04:04Z", saiu_em: null, papel: "assistente" as const },
+    ];
+    const papel = resolverPapelNoJoin({
+      nome: "Dra. Elaine Montenegro",
+      isHost: false,
+      decisoresEsperados: ["Carlos Alberto Vilarinho"],
+      participantesAtuais: jaNaSala,
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("o cliente continua casando com o decisor do briefing — a regra nova não atropela o passo 2", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Carlos Alberto Vilarinho",
+      isHost: false,
+      decisoresEsperados: ["Carlos Alberto Vilarinho"],
+      participantesAtuais: [],
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("decisor_1");
+  });
+
+  it("quem não é da equipe nem do briefing (filho, contador) segue em acompanhante_N", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Pessoa Desconhecida",
+      isHost: false,
+      decisoresEsperados: ["Carlos Alberto Vilarinho"],
+      participantesAtuais: [],
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("acompanhante_1");
+  });
+
+  it("🔴 com a equipe conhecida, `isHost` NUNCA mais elege advogada: um estranho que abre a sala é acompanhante", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Alguém de Fora",
+      isHost: true,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("acompanhante_1");
+  });
+
+  it("duas advogadas do escritório na mesma sala: AMBAS conduzem (papel descreve a conversa, não é crachá)", () => {
+    const equipeDuas = { advogadas: ["Dra. Elaine Montenegro", "Dra. Cristiane"], assistentes: [] };
+    const jaTemElaine = [
+      { id: "1", nome: "Dra. Elaine Montenegro", entrou_em: "2026-09-18T12:00:00Z", saiu_em: null, papel: "advogada" as const },
+    ];
+    const papel = resolverPapelNoJoin({
+      nome: "Dra. Cristiane",
+      isHost: false,
+      decisoresEsperados: [],
+      participantesAtuais: jaTemElaine,
+      equipe: equipeDuas,
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("compatibilidade: sem `equipe` (chamador não migrado) o comportamento antigo por isHost é preservado", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Marco - Staff",
+      isHost: true,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("nome com acento/caixa diferente casa mesmo assim (normalização)", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "dra. elaine montenegro",
+      isHost: false,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: EQUIPE,
+    });
+    expect(papel).toBe("advogada");
+  });
+});
+
+describe("resolverPapelNoJoin — degradação segura da equipe (18/09/2026)", () => {
+  it("🔴 equipe ILEGÍVEL (erro de leitura → listas vazias): volta ao isHost, nunca deixa a sessão sem advogada", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Dra. Elaine Montenegro",
+      isHost: true,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: { advogadas: [], assistentes: [] },
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("🔴 banco sem NENHUMA advogada marcada (só assistentes): também degrada para isHost", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Marco - Staff",
+      isHost: true,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: { advogadas: [], assistentes: ["Marco - Staff"] },
+    });
+    expect(papel).toBe("advogada");
+  });
+});
+
+describe("resolverPapelNoJoin — tratamento profissional (caso real medido, 18/09/2026)", () => {
+  it("🔴 Meet mostra 'Elaine Montenegro', cadastro diz 'Dra. Elaine Montenegro' — casa mesmo assim", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Elaine Montenegro",
+      isHost: false,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: { advogadas: ["Dra. Elaine Montenegro"], assistentes: ["Marco - Staff"] },
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("o inverso também: sala com tratamento, cadastro sem", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Dra. Elaine Montenegro",
+      isHost: false,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: { advogadas: ["Elaine Montenegro"], assistentes: [] },
+    });
+    expect(papel).toBe("advogada");
+  });
+
+  it("tirar o tratamento NÃO afrouxa a ponto de casar pessoas diferentes", () => {
+    const papel = resolverPapelNoJoin({
+      nome: "Dra. Cristiane Postiga",
+      isHost: false,
+      decisoresEsperados: [],
+      participantesAtuais: [],
+      equipe: { advogadas: ["Dra. Elaine Montenegro"], assistentes: [] },
+    });
+    expect(papel).toBe("acompanhante_1");
+  });
+});

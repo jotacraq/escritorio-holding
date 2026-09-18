@@ -90,7 +90,15 @@ const ROTEIRO_VAZIO = { definicao: { blocos: [] } };
 function montarSupabase(
   sessaoData: unknown,
   selectSpy?: ReturnType<typeof vi.fn>,
-  dados?: { copilotoSugestoes?: unknown[]; configuracoes?: Record<string, unknown> },
+  dados?: {
+    copilotoSugestoes?: unknown[];
+    configuracoes?: Record<string, unknown>;
+    /** Fallback de roteiro ativo (18/09/2026) — `definicao` da versão ATIVA
+     * de `sessao_viabilidade`, lida só quando a sessão não tem roteiro
+     * carimbado. `undefined` = nenhuma versão ativa (o padrão desta suíte,
+     * que preserva `blocos: []` como antes da correção). */
+    roteiroAtivo?: unknown;
+  },
 ) {
   const from = vi.fn((tabela: string) => {
     if (tabela === "sessoes_viabilidade") {
@@ -133,6 +141,14 @@ function montarSupabase(
     }
     if (tabela === "copiloto_sugestoes") {
       return consultaEncadeavelLista(dados?.copilotoSugestoes ?? []);
+    }
+    // Fallback de roteiro ativo (18/09/2026): `montarEstadoCopiloto` só chega
+    // aqui quando a sessão NÃO tem roteiro carimbado (`roteiro_versao_id`
+    // nulo, o estado de toda sessão antes do 1º SIM). Sem `roteiroAtivo` nos
+    // dados, devolve vazio — `blocos` continua `[]` e o comportamento dos
+    // casos desta suíte é o mesmo de antes da correção.
+    if (tabela === "roteiros_versoes") {
+      return consultaEncadeavelUnica({ data: dados?.roteiroAtivo ?? null, error: null });
     }
     throw new Error(`tabela não mockada: ${tabela}`);
   });
@@ -331,6 +347,13 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
     // "tabela não mockada: briefings" e este teste falharia.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
+      // `roteiro_versao_id` carimbado (estado de toda sessão antes do 1º
+      // SIM), então `montarEstadoCopiloto` busca a versão ATIVA. Medido em
+      // produção: Index Scan em `uniq_roteiro_ativo`, 0,074 ms / 2 buffers,
+      // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
+      // não faz esta chamada — ver o teste dedicado abaixo.
+      "roteiros_versoes",
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -398,6 +421,13 @@ describe("montarEstadoCopiloto — expurgo_segmentos_em (Fatia 5, B69/B19)", () 
     await montarEstadoCopiloto(supabase, "sessao-1", 0);
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
+      // `roteiro_versao_id` carimbado (estado de toda sessão antes do 1º
+      // SIM), então `montarEstadoCopiloto` busca a versão ATIVA. Medido em
+      // produção: Index Scan em `uniq_roteiro_ativo`, 0,074 ms / 2 buffers,
+      // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
+      // não faz esta chamada — ver o teste dedicado abaixo.
+      "roteiros_versoes",
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -912,6 +942,13 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
     // para o inventário, porque ele já veio no embed principal.
     expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
       "sessoes_viabilidade",
+      // Fallback de roteiro ativo (18/09/2026): esta sessão mockada não tem
+      // `roteiro_versao_id` carimbado (estado de toda sessão antes do 1º
+      // SIM), então `montarEstadoCopiloto` busca a versão ATIVA. Medido em
+      // produção: Index Scan em `uniq_roteiro_ativo`, 0,074 ms / 2 buffers,
+      // e some assim que o 1º SIM carimba a FK. Sessão COM roteiro carimbado
+      // não faz esta chamada — ver o teste dedicado abaixo.
+      "roteiros_versoes",
       "configuracoes",
       "configuracoes",
       "configuracoes",
@@ -920,5 +957,89 @@ describe("montarEstadoCopiloto — inventario no payload (Fase 12, Fatia 5a)", (
       "copiloto_sugestoes",
       "consentimentos",
     ]);
+  });
+});
+
+/**
+ * 🔴 REGRESSÃO MEDIDA AO VIVO — sessão de 18/09/2026 (Carlos Alberto,
+ * `b3eca233`), 1h10 de conversa real.
+ *
+ * O fallback de roteiro ativo existia em `contexto.ts` desde 14/09 (achado do
+ * coordenador) e NÃO foi propagado para `estado.ts`. Como `roteiro_versao_id`
+ * só é carimbado por `registrar_sim_sessao` no 1º SIM, `blocos` ficava `[]`
+ * aqui, o `blocos.findIndex` de `aplicarHisterese` devolvia -1 para TODA
+ * candidata, e as inferências corretas da IA eram descartadas: bloco resolvia
+ * `indisponivel` → `route.ts` convertia em índice 0 → a IA comparava
+ * partilha patrimonial contra o bloco de Check-in.
+ *
+ * Medido na sessão real: `bloco_indice = 0` em 100% das 215 janelas e 98 de
+ * 113 sugestões (87%) dizendo "desvie do bloco atual", com 16 inferências
+ * válidas (≥ piso 0,7) sendo jogadas fora — a maioria apontando `parte_03`
+ * (Radiografia Familiar e Patrimonial), que era de fato onde a conversa
+ * estava.
+ */
+describe("montarEstadoCopiloto — fallback de roteiro ativo (18/09/2026)", () => {
+  const BLOCOS_V5 = [
+    { id: "parte_00", titulo: "Check-in e Profissionalismo" },
+    { id: "parte_01", titulo: "Assumir o Controle" },
+    { id: "parte_02", titulo: "A Motivação do Cliente" },
+    { id: "parte_03", titulo: "Radiografia Familiar e Patrimonial" },
+  ];
+
+  function sugestaoInferindo(ordem: number, blocoId: string, confianca: number) {
+    return {
+      bloco_id: null,
+      conteudo: { bloco_inferido: { bloco_id: blocoId, confianca } },
+      criado_em: `2026-09-18T13:0${ordem}:00.000Z`,
+    };
+  }
+
+  it("🔴 sessão SEM roteiro carimbado (antes do 1º SIM): a inferência da IA resolve o bloco em vez de cair no índice 0", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({ roteiro_versao_id: null, roteiros_versoes: null }),
+      undefined,
+      {
+        // Duas leituras concordantes acima do piso — a janela de histerese
+        // (n=2) que a sessão real tinha e que era descartada.
+        copilotoSugestoes: [sugestaoInferindo(2, "parte_03", 0.85), sugestaoInferindo(1, "parte_03", 0.8)],
+        roteiroAtivo: { definicao: { blocos: BLOCOS_V5 } },
+      },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null);
+
+    expect(resultado.bloco_atual_resolvido.origem).toBe("inferido");
+    expect(resultado.bloco_atual_resolvido.bloco_id).toBe("parte_03");
+    // O ponto do defeito: 3, não 0. `route.ts` usa `indice ?? 0`, então
+    // `indisponivel` viraria silenciosamente o bloco de Check-in.
+    expect(resultado.bloco_atual_resolvido.indice).toBe(3);
+  });
+
+  it("sem versão ativa no banco (nem carimbo, nem fallback): continua `indisponivel` — nunca um índice inventado", async () => {
+    const supabase = montarSupabase(sessaoBase({ roteiro_versao_id: null, roteiros_versoes: null }), undefined, {
+      copilotoSugestoes: [sugestaoInferindo(2, "parte_03", 0.85), sugestaoInferindo(1, "parte_03", 0.8)],
+      roteiroAtivo: undefined,
+    });
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null);
+
+    expect(resultado.bloco_atual_resolvido.origem).toBe("indisponivel");
+    expect(resultado.bloco_atual_resolvido.indice).toBeNull();
+  });
+
+  it("sessão COM roteiro carimbado: usa o carimbo e NÃO consulta `roteiros_versoes` (zero query extra no caminho comum)", async () => {
+    const supabase = montarSupabase(
+      sessaoBase({
+        roteiro_versao_id: "roteiro-v5",
+        roteiros_versoes: { definicao: { blocos: BLOCOS_V5 } },
+      }),
+      undefined,
+      { copilotoSugestoes: [sugestaoInferindo(2, "parte_03", 0.85), sugestaoInferindo(1, "parte_03", 0.8)] },
+    );
+
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", null);
+
+    expect(resultado.bloco_atual_resolvido.indice).toBe(3);
+    expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).not.toContain("roteiros_versoes");
   });
 });

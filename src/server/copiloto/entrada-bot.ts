@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { lerConfiguracaoBool } from "@/server/ia/configuracao";
 import { aplicarEventoParticipante, resolverPapelNoJoin, normalizarParticipantesBrutos } from "./participantes";
 import { extrairDecisoresEsperados } from "./estado";
+import { carregarEquipeDoEscritorio } from "./equipe";
 
 /**
  * O EFEITO de cada evento do webhook do Recall.ai — Fase 10, Fatia 4b
@@ -333,12 +334,19 @@ export async function registrarEventoParticipante(
   // sobre por que não precisa ser recalculado a cada retentativa do CAS.
   let papelParaJoin: ReturnType<typeof resolverPapelNoJoin> | undefined;
   if (params.tipo === "join" && (await papeisDeFalaEstaoAtivos(admin))) {
-    const decisoresEsperados = await buscarDecisoresEsperadosDaSessao(admin, sessaoId);
+    // Equipe do escritório lida junto com os decisores (as duas em paralelo,
+    // nenhuma serialização nova): quem decide "advogada" é a IDENTIDADE, não
+    // `isHost` — ver `equipe.ts` e o comentário de `resolverPapelNoJoin`.
+    const [decisoresEsperados, equipe] = await Promise.all([
+      buscarDecisoresEsperadosDaSessao(admin, sessaoId),
+      carregarEquipeDoEscritorio(admin),
+    ]);
     papelParaJoin = resolverPapelNoJoin({
       nome: params.nomeParticipante,
       isHost: params.isHost,
       decisoresEsperados,
       participantesAtuais: normalizarParticipantesBrutos(participantesEsperados),
+      equipe,
     });
   }
 

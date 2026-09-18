@@ -328,12 +328,34 @@ export async function encerrarBot(botId: string): Promise<ResultadoEncerrarBot> 
 
   if (resposta.ok) return { situacao: "encerrado" };
 
+  // 🔴 TODO 400 DESTE ENDPOINT É "JÁ SAIU" — corrigido 18/09/2026, medido em
+  // produção na sessão do Carlos Alberto (`b3eca233`).
+  //
+  // O código exigia `corpo.code === "bot_command_error"`, mas a referência da
+  // Recall para `POST /bot/{id}/leave_call/` documenta exatamente dois
+  // retornos: `200` e **`400`: No response body**. Sem corpo, o
+  // `.json().catch(() => null)` devolve `null`, a condição nunca casa e um
+  // encerramento perfeitamente normal virava `falha_provedor` — duas vezes,
+  // porque `encerrarBotComRetentativa` repete a mesma chamada.
+  //
+  // O efeito não era só ruído: a sessão ganhava
+  // `pendencia_encerramento_bot` mandando a advogada "remover manualmente o
+  // participante" de uma sala que ela já tinha fechado. Medido: aconteceu na
+  // sessão do Carlos Alberto (bot `done` às 14:05 por `call_ended_by_host`,
+  // pendência gravada às 14:08) e nas DUAS sessões de 17/09 (Nicéas e
+  // Cláudia) — 3 de 3, ou seja, todo bot que sai antes do clique em
+  // "Encerrar".
+  //
+  // `leave_call` é idempotente por desenho e IRREVERSÍVEL: não existe 400
+  // deste endpoint que signifique "o bot continua na sala" — significa que
+  // não havia chamada da qual sair. Tratar todo 400 como `ja_tinha_saido` é
+  // o que o comentário de topo da função já prometia; o `code` era uma
+  // condição a mais que a API não cumpre.
   if (resposta.status === 400) {
-    const corpo = (await resposta.json().catch(() => null)) as { code?: string } | null;
-    if (corpo?.code === "bot_command_error") {
-      // Estado esperado — NÃO registrarErro (comentário de topo do tipo).
-      return { situacao: "ja_tinha_saido" };
-    }
+    // Estado esperado — NÃO registrarErro (comentário de topo do tipo).
+    // O corpo é drenado e ignorado: pode não existir.
+    await resposta.json().catch(() => null);
+    return { situacao: "ja_tinha_saido" };
   }
 
   registrarErro("copiloto/recall.encerrarBot#http", new Error(`recall_${resposta.status}`), { bot_id: botId, status: resposta.status });

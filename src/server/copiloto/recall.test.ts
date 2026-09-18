@@ -430,12 +430,32 @@ describe("encerrarBot — 400 bot_command_error é estado esperado (§4.2.2)", (
     expect(registrarErroMock).not.toHaveBeenCalled();
   });
 
-  it("outro 400 (não bot_command_error) É falha real e registra erro", async () => {
+  /**
+   * 🔴 SUBSTITUI o teste antigo "outro 400 (não bot_command_error) É falha
+   * real" (18/09/2026). Aquele caso NÃO EXISTE na API: a referência de
+   * `POST /bot/{id}/leave_call/` documenta só `200` e **`400`: No response
+   * body**. O teste trancava um comportamento inventado e, pior, sustentava
+   * o defeito medido em produção — todo bot que saía antes do clique em
+   * "Encerrar" caía em `falha_provedor` e gerava uma pendência falsa
+   * mandando a advogada remover um participante que já não estava na sala.
+   */
+  it("🔴 400 SEM CORPO (o que a API realmente devolve) é 'já saiu', não falha — sem registrarErro", async () => {
     process.env.RECALL_API_KEY = "chave-teste";
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ code: "outro_erro_qualquer" }) }),
+      // `json()` rejeita: resposta sem corpo, exatamente como a doc descreve.
+      vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => { throw new Error("Unexpected end of JSON input"); } }),
     );
+
+    const resultado = await encerrarBot("bot_x");
+
+    expect(resultado).toEqual({ situacao: "ja_tinha_saido" });
+    expect(registrarErroMock).not.toHaveBeenCalled();
+  });
+
+  it("500 do provedor continua sendo falha real e registra erro", async () => {
+    process.env.RECALL_API_KEY = "chave-teste";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
 
     const resultado = await encerrarBot("bot_x");
 

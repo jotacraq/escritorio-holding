@@ -117,6 +117,14 @@ function montarCenario(opts: {
     if (tabela === "consentimentos") {
       return consultaEncadeavel({ data: null, error: null });
     }
+    // Fallback de roteiro ativo (18/09/2026, `estado.ts`): estas sessões
+    // mockadas não têm `roteiro_versao_id` carimbado — estado de toda sessão
+    // antes do 1º SIM —, então `montarEstadoCopiloto` busca a versão ATIVA.
+    // `data: null` = nenhuma versão ativa: `blocos` fica `[]`, exatamente o
+    // comportamento que estes testes já assumiam antes da correção.
+    if (tabela === "roteiros_versoes") {
+      return consultaEncadeavel({ data: null, error: null });
+    }
     throw new Error(`tabela não mockada em supabaseServidorMock: ${tabela}`);
   });
 }
@@ -323,6 +331,8 @@ describe("GET /api/sessoes/[id]/copiloto — bot e comparação de decisores no 
       if (tabela === "sessoes_copiloto_segmentos") return consultaEncadeavel({ data: [], error: null });
       if (tabela === "copiloto_sugestoes") return consultaEncadeavel({ data: [], error: null });
       if (tabela === "consentimentos") return consultaEncadeavel({ data: null, error: null });
+      // Fallback de roteiro ativo (18/09/2026) — ver comentário no mock acima.
+      if (tabela === "roteiros_versoes") return consultaEncadeavel({ data: null, error: null });
       throw new Error(`tabela não mockada em supabaseServidorMock: ${tabela}`);
     });
   }

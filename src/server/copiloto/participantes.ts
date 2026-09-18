@@ -21,6 +21,8 @@
  * (decisão de arquitetura registrada pelo coordenador, 15/09/2026).
  */
 
+import { semTratamento } from "./equipe";
+
 // ---------------------------------------------------------------------------
 // Registro de join/leave — chamado pelo webhook (server/copiloto/recall no
 // caminho de entrada, route.ts de fato grava).
@@ -34,7 +36,7 @@
  * `null` = ainda não resolvido (sessão em andamento de antes desta fatia, ou
  * `papeis_de_fala` desligado) — cai no fallback `"participante"` genérico
  * em `contexto.ts::rotuloFalante`, comportamento idêntico ao de antes. */
-export type PapelFala = "advogada" | `decisor_${number}` | `acompanhante_${number}`;
+export type PapelFala = "advogada" | "assistente" | `decisor_${number}` | `acompanhante_${number}`;
 
 export interface ParticipanteRegistrado {
   /** Id nativo do provedor (Recall/Meet), quando presente — chave PREFERIDA
@@ -358,8 +360,60 @@ export function resolverPapelNoJoin(params: {
   isHost: boolean;
   decisoresEsperados: string[];
   participantesAtuais: ParticipanteRegistrado[];
+  /** Nomes da equipe do escritório (`perfis_equipe.nome`, ativos), separados
+   * em quem conduz e quem apoia — ver `equipe.ts::carregarEquipeDoEscritorio`.
+   * Omitido (undefined) = chamador que ainda não migrou: o comportamento cai
+   * no `isHost` de antes, sem quebrar. */
+  equipe?: { advogadas: string[]; assistentes: string[] };
 }): PapelFala {
-  if (params.isHost) {
+  // 🔴 A ADVOGADA É RECONHECIDA PELA IDENTIDADE, NUNCA POR QUEM ABRIU A SALA
+  // (decisão do Marcio, 18/09/2026, depois do defeito medido ao vivo na
+  // sessão do Carlos Alberto).
+  //
+  // O que acontecia: o passo 1 era `isHost === true → "advogada"`, e só a
+  // PRIMEIRA pessoa host levava o papel. Na sessão real quem abriu a sala foi
+  // o "Marco - Staff" (assistente), que levou o papel "advogada" e SAIU aos
+  // 3 minutos; a Dra. Elaine entrou depois e caiu em `acompanhante_2`, e o
+  // cliente em `acompanhante_1`. Com `papeis_de_fala` ligado, a IA passou a
+  // sessão inteira sem saber quem conduzia e quem era o cliente.
+  //
+  // `isHost` descreve quem clicou primeiro no Meet — é um acidente de
+  // operação, não um fato sobre o escritório. A identidade é o fato: quem
+  // casa com um perfil de advogada da equipe conduz, quem casa com o resto
+  // da equipe apoia. O papel segue a PESSOA: se a Dra. Elaine entra 40 min
+  // atrasada, ela assume "advogada" na hora em que entra.
+  const equipeUsavel = (params.equipe?.advogadas.length ?? 0) > 0;
+  if (params.nome && params.equipe && equipeUsavel) {
+    // `semTratamento` dos DOIS lados: o Meet mostrou "Elaine Montenegro" e o
+    // cadastro diz "Dra. Elaine Montenegro" (medido na sessão real). Sem isso
+    // o casamento falha em silêncio — ver `equipe.ts::semTratamento`.
+    const nomeNormalizado = normalizarNome(semTratamento(params.nome));
+    const casaCom = (lista: string[]) => lista.some((n) => normalizarNome(semTratamento(n)) === nomeNormalizado);
+
+    if (casaCom(params.equipe.advogadas)) {
+      // Sem `jaTemAdvogada` aqui: se duas advogadas do escritório estiverem
+      // na mesma sala, AMBAS conduzem — "advogada" descreve o papel na
+      // conversa, não um crachá de exclusividade. Quem some com a trava é a
+      // eleição acidental do primeiro host.
+      return "advogada";
+    }
+    if (casaCom(params.equipe.assistentes)) {
+      // Equipe do escritório que não conduz: a IA precisa distinguir apoio
+      // interno de acompanhante do cliente (filho, cônjuge). Assistente não
+      // entra em `decisores_presentes`.
+      return "assistente";
+    }
+  }
+
+  // Compatibilidade: chamador sem `equipe` (ou sessão sem nome no join)
+  // mantém o comportamento antigo. Quando `equipe` vem preenchida, um nome
+  // que não casa com ninguém do escritório segue para decisor/acompanhante —
+  // `isHost` deixa de eleger advogada, que é exatamente o defeito corrigido.
+  // Degradação segura: equipe ilegível (erro de leitura) ou sem NENHUMA
+  // advogada marcada `papel='advogada'` cai no comportamento antigo. Sem esta
+  // guarda, uma leitura falha deixaria a sessão SEM advogada nenhuma — pior
+  // que o defeito corrigido.
+  if (params.isHost && !equipeUsavel) {
     const jaTemAdvogada = params.participantesAtuais.some((p) => p.papel === "advogada");
     if (!jaTemAdvogada) return "advogada";
   }
