@@ -986,7 +986,29 @@ function SugestoesDoCiclo({
   // `anteriores`) — roda a cada render em que a lista muda, sem efeito
   // colateral de rede. `useEffect` para não disparar `setState` do pai
   // (`aoMudarNaoLidas`) durante o render deste componente.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- ver abaixo
   useEffect(() => {
+    // 🔴 EXCEÇÃO DELIBERADA (18/09/2026). O lint novo do React marca
+    // `setState` síncrono dentro de effect como erro — e derrubou o CI desde
+    // `fb1b135` (17/09). Aqui o padrão é seguro e a exceção é consciente:
+    //
+    // - o `setVistos` usa updater e devolve `atual` quando nada muda
+    //   (`mudou ? novo : atual`), então não há re-render em cascata;
+    // - a dependência é a LISTA DE IDS serializada, não o objeto, então o
+    //   effect só roda quando a lista realmente muda;
+    // - o effect existe justamente para NÃO chamar `aoMudarNaoLidas`
+    //   (`setState` do PAI) durante o render deste componente.
+    //
+    // Tentei derivar `vistos` da lista e remover o estado: passa no lint e nos
+    // 105 testes deste arquivo, mas MUDA o comportamento — o contador "· N
+    // novas" deixa de decrescer conforme a advogada lê, porque "visto" passa a
+    // ser função só de "é a mais recente". Nenhum teste cobre esse contador,
+    // então o verde não provaria equivalência. Numa tela usada ao vivo, trocar
+    // comportamento sem cobertura é pior que conviver com a exceção.
+    //
+    // Fica como dívida NOMEADA: derivar de verdade exige primeiro um teste do
+    // contador de não lidas.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVistos((atual) => {
       let mudou = false;
       const novo = { ...atual };

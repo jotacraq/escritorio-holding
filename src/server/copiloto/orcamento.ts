@@ -14,6 +14,17 @@ import { lerConfiguracaoInt } from "@/server/ia/configuracao";
  * Duas contagens, não uma: `teto_ia_sessao` (por `sessao_id`) e `teto_ia_dia`
  * (global, todas as sessões). Falha de leitura NUNCA libera — "não saber
  * quanto já se gastou não é licença para gastar" (mesma frase do agente).
+ *
+ * 🔴 A CONTAGEM INCLUI `status='falhou'` DE PROPÓSITO (avaliado e mantido em
+ * 18/09/2026). A pergunta natural ao ver 49 falhas consumirem cota é "por que
+ * não contar só `concluida`?" — a resposta é que uma execução que falhou por
+ * `max_tokens` GASTOU os tokens: o modelo gerou a saída inteira, ela só não
+ * validou contra o schema no fim. Medido na sessão do Carlos Alberto: as 49
+ * falhas têm `custo_usd` e `tokens_saida` NULOS (o caminho de erro de
+ * `ia/executar.ts` não os grava), então o custo real delas é invisível em
+ * `vw_custo_ia_*`. Excluí-las da cota abriria um buraco no teto justamente
+ * na falha que mais gasta — o teto protege o BOLSO, não conta entregas.
+ * Contar toda execução é a leitura conservadora e é a correta.
  */
 
 export const CHAVE_PROMPT_COPILOTO = "copiloto_sessao";
