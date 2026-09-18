@@ -162,7 +162,7 @@ async function montarContextoDoPontoAmostrado(
   admin: SupabaseClient,
   params: { sessaoId: string; segmentosOrdenados: SegmentoJanela[]; ponto: PontoAmostrado },
 ): Promise<ContextoCopiloto> {
-  const contextoBase = await montarContextoCopiloto(admin, params.sessaoId, 0);
+  const { contexto: contextoBase } = await montarContextoCopiloto(admin, params.sessaoId, 0);
 
   const papeisAtivos = await papeisDeFalaEstaoAtivos(admin);
   // O mapa de papéis depende de `sessoes_copiloto.participantes`, que

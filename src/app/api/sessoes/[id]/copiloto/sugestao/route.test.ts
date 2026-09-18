@@ -117,7 +117,7 @@ function montarCenario(c: Cenario, insertExecucoesIaSpy: ReturnType<typeof vi.fn
           roteiro_versao_id: null,
           sims: {},
           criado_em: "2026-09-11T10:00:00.000Z",
-          sessoes_copiloto: { iniciado_em: "2026-09-11T10:05:00.000Z", criado_em: "2026-09-11T10:00:00.000Z", participantes: [], resumo_acumulado: {} },
+          sessoes_copiloto: { iniciado_em: "2026-09-11T10:05:00.000Z", criado_em: "2026-09-11T10:00:00.000Z", participantes: [], resumo_acumulado: null },
           jornadas: { pessoa_id: "pessoa-1" },
           roteiros_versoes: null,
         },

@@ -21,12 +21,22 @@ const lerConfiguracaoIntMock = vi.fn();
 const lerConfiguracaoJsonMock = vi.fn();
 const lerConfiguracaoBoolMock = vi.fn();
 const encerrarSePassouDoTempoMock = vi.fn();
+const resumoAcumuladoEstaAtivoMock = vi.fn();
+const acumularResumoNaSessaoMock = vi.fn();
 
 vi.mock("./gatilho", () => ({ avaliarGatilho: (...a: unknown[]) => avaliarGatilhoMock(...a) }));
 vi.mock("./gate", () => ({ conferirGateCopiloto: (...a: unknown[]) => conferirGateMock(...a) }));
 vi.mock("./orcamento", () => ({ conferirOrcamentoCopiloto: (...a: unknown[]) => conferirOrcamentoMock(...a) }));
 vi.mock("./contexto", () => ({ montarContextoCopiloto: (...a: unknown[]) => montarContextoMock(...a) }));
 vi.mock("./executar-ia", () => ({ executarIaCopiloto: (...a: unknown[]) => executarIaMock(...a) }));
+// 🔴 18/09/2026 (achado do Fable — leitura duplicada de config): mockado
+// explicitamente para provar, por observação direta da chamada, que
+// `resumoAcumuladoEstaAtivo` roda UMA VEZ por ciclo (nunca dentro de
+// `acumularResumoNaSessao`, que recebe o valor PRONTO por parâmetro).
+vi.mock("./resumo", () => ({
+  resumoAcumuladoEstaAtivo: (...a: unknown[]) => resumoAcumuladoEstaAtivoMock(...a),
+  acumularResumoNaSessao: (...a: unknown[]) => acumularResumoNaSessaoMock(...a),
+}));
 vi.mock("./validar", () => ({
   validarSugestaoCopiloto: (...a: unknown[]) => validarSugestaoMock(...a),
   sugestaoEVisivel: (...a: unknown[]) => sugestaoEVisivelMock(...a),
@@ -128,9 +138,13 @@ const CONTEXTO_VAZIO = {
   briefing_recorte: null,
   estado_factual: { sims_registrados: [], blocos_percorridos: [], campos_pendentes_no_bloco: [], decisores_esperados: null, decisores_presentes: null },
   janela_transcricao: [],
-  resumo_acumulado: {},
+  resumo_acumulado: null,
   roteiro_ativo_blocos_ids: ["bloco-1"],
 };
+
+// `RoteiroCampo[]` de teste — usado só para provar que `camposBlocoAtual`
+// (retorno de `montarContextoCopiloto`) chega intacto em `acumularResumoNaSessao`.
+const CAMPOS_TESTE = [{ id: "filhos_maiores_menores", rotulo: "Filhos", tipo: "texto" }];
 
 describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
   it("🔴 CORREÇÃO (achado do coordenador): duração máxima estourada → sessao_encerrada_por_duracao_maxima, ZERO chamada de gatilho/gate/IA", async () => {
@@ -226,7 +240,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: false, naSessao: 30, noDia: 10, motivo: "teto_ia_sessao" });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     const { supabase, admin } = clientes({});
 
     const r = await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
@@ -245,7 +259,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const { supabase, admin } = clientes({});
 
@@ -258,7 +272,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
     validarSugestaoMock.mockReturnValue({
       sugestao: { proxima_pergunta: null, falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.8, campos_evidencia_nao_conferida: [] },
@@ -281,12 +295,50 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     });
   });
 
+  it("🔴 18/09/2026 (achado do Fable — leitura duplicada de config): copiloto_sessao.resumo_acumulado é lido UMA VEZ por ciclo, e o MESMO valor é repassado a montarContextoCopiloto E a acumularResumoNaSessao — nunca uma 2ª leitura", async () => {
+    avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "virada_bloco" });
+    lerConfiguracaoIntMock.mockResolvedValue(45);
+    conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
+    conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
+    resumoAcumuladoEstaAtivoMock.mockResolvedValue(true); // ligado — o caso que a 0120 promete NÃO gerar round-trip extra
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: CAMPOS_TESTE });
+    executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
+    validarSugestaoMock.mockReturnValue({
+      sugestao: {
+        proxima_pergunta: { texto: "Vocês têm filhos?", motivo: "m", evidencia: null },
+        falta_no_bloco: [],
+        observacao: null,
+        desvio_sugerido: null,
+        confianca_geral: 0.8,
+        campos_evidencia_nao_conferida: [],
+      },
+      motivoRecusaTotal: null,
+    });
+    lerConfiguracaoJsonMock.mockResolvedValue(0.6);
+    sugestaoEVisivelMock.mockReturnValue(true);
+    const { supabase, admin } = clientes({});
+
+    await executarCicloCopiloto(supabase, admin, { sessaoId: "s1", blocoAtualIndice: 0, agoraMs: AGORA });
+
+    // A LEITURA do kill-switch acontece exatamente 1 vez por ciclo — nunca
+    // 2 (uma para montar contexto, outra dentro de acumularResumoNaSessao).
+    expect(resumoAcumuladoEstaAtivoMock).toHaveBeenCalledTimes(1);
+    // `montarContextoCopiloto` recebe o valor lido como 4º argumento.
+    expect(montarContextoMock).toHaveBeenCalledWith(supabase, "s1", 0, true);
+    // `acumularResumoNaSessao` recebe o MESMO valor por parâmetro `ativo`,
+    // nunca relendo a chave por conta própria.
+    expect(acumularResumoNaSessaoMock).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ ativo: true, camposDoBlocoAtual: CAMPOS_TESTE, textoPerguntaSugerida: "Vocês têm filhos?" }),
+    );
+  });
+
   it("0119 — lê copiloto_sessao.acerto_erro_ativo e repassa como 3º argumento de validarSugestaoCopiloto", async () => {
     avaliarGatilhoMock.mockResolvedValue({ dispara: true, gatilho: "virada_bloco" });
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
     validarSugestaoMock.mockReturnValue({
       sugestao: {
@@ -317,7 +369,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
     validarSugestaoMock.mockReturnValue({
       sugestao: { proxima_pergunta: null, falta_no_bloco: [], observacao: null, desvio_sugerido: null, confianca_geral: 0.2, campos_evidencia_nao_conferida: [] },
@@ -337,7 +389,7 @@ describe("executarCicloCopiloto — ordem e efeito de cada trava", () => {
     lerConfiguracaoIntMock.mockResolvedValue(45);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.01 });
     validarSugestaoMock.mockReturnValue({ sugestao: null, motivoRecusaTotal: "termo_proibido" });
     const { supabase, admin } = clientes({});
@@ -379,7 +431,7 @@ describe("executarCicloCopiloto — timeout_ms/max_tokens configuráveis (migrat
     });
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const { supabase, admin } = clientes({});
 
@@ -399,7 +451,7 @@ describe("executarCicloCopiloto — timeout_ms/max_tokens configuráveis (migrat
     mockarConfiguracoesPorChave({});
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const { supabase, admin } = clientes({});
 
@@ -424,7 +476,7 @@ describe("executarCicloCopiloto — timeout_ms/max_tokens configuráveis (migrat
     });
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 1, noDia: 1, motivo: null });
-    montarContextoMock.mockResolvedValue(CONTEXTO_VAZIO);
+    montarContextoMock.mockResolvedValue({ contexto: CONTEXTO_VAZIO, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const { supabase, admin } = clientes({});
 

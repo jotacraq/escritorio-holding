@@ -224,6 +224,65 @@ export interface ResumoInventarioAcumulado {
   total_itens_incertos: number;
 }
 
+// ---------------------------------------------------------------------------
+// 18/09/2026 — MEMÓRIA DO COPILOTO, Fatia A (`server/copiloto/resumo.ts`).
+// Medido em produção (sessão real do Carlos Alberto, 2h05): sem memória, a IA
+// repetiu 49 perguntas sobre família e ainda perguntava sobre filhos no 4º
+// quarto da sessão, com 2h já ouvidas. `sessoes_copiloto.resumo_acumulado`
+// (0091) existe desde a Fase 10 mas NUNCA foi escrito — este bloco fecha essa
+// lacuna.
+//
+// Vocabulário DINÂMICO: `t` é o `RoteiroCampo.id` do ROTEIRO ATIVO, nunca um
+// enum fixo de categorias de negócio — decisão do dono (18/09/2026): quando a
+// Dra. Elaine publicar um roteiro novo, o vocabulário acompanha sozinho, sem
+// deploy. `pendente` sai "de graça" da mesma unidade: `campos[]` do bloco
+// atual MENOS os `id` já presentes em `perguntado` — nenhuma tradução no meio.
+//
+// FATIA A APENAS (decisão do dono, B72): só `perguntado[]`/`pendente[]`. SEM
+// `fato_estabelecido`, SEM `fatos[]` — isso é a Fatia B, fora deste escopo.
+// `pendente` é sempre DERIVADO NO SERVIDOR (nunca proposto pela IA) — mesma
+// disciplina de `campos_pendentes_no_bloco` em `ContextoCopiloto`.
+// ---------------------------------------------------------------------------
+
+/** Um tema já perguntado nesta sessão — `t` é `RoteiroCampo.id` do roteiro
+ * ATIVO no momento em que a pergunta foi categorizada (nunca um enum fixo:
+ * ver comentário de bloco acima). `n` conta quantas vezes o tema foi tocado
+ * — hoje (Fatia A) só a partir de `proxima_pergunta.texto` categorizada
+ * (`resumo.ts::categorizarPergunta`/`acumularResumo`); `cobriu_no_bloco` NÃO
+ * entra nesta contagem (medido: rende só 11 itens em 178 sugestões da sessão
+ * real, contra 133 de `proxima_pergunta` — por isso não é usado como fonte,
+ * ver comentário de topo de `resumo.ts`). Não é `contagem_propria` de
+ * inventário, é só "quantas vezes isto voltou a aparecer", para o prompt v9
+ * poder dizer "você já tocou nisto 4 vezes". */
+export interface ItemResumoAcumulado {
+  t: string;
+  em: string;
+  n: number;
+}
+
+/** `sessoes_copiloto.resumo_acumulado` (0091, CHECK `pg_column_size <=
+ * 4096`) — teto de PRODUTO mais apertado que o CHECK (backstop de banco,
+ * nunca a meta): `perguntado` ≤ 16, `pendente` ≤ 8, alvo operacional ≤ 3500
+ * bytes (margem contra o CHECK — ver `resumo.ts::podarPorBytes`).
+ * `cortado_em` fica `null` na Fatia A inteira (nasce como campo do contrato
+ * para a Fatia B usar sem precisar de 2ª migration de schema; nenhuma rota
+ * desta fatia escreve nele). */
+export interface ResumoAcumulado {
+  v: 1;
+  perguntado: ItemResumoAcumulado[];
+  pendente: string[];
+  cortado_em: string | null;
+}
+
+/** O que REALMENTE entra no bloco E do contexto de IA — o resumo acumulado
+ * como está, já com `pendente` recalculado contra o BLOCO ATUAL desta
+ * chamada (o valor persistido pode ter sido calculado com o bloco de uma
+ * chamada anterior; `resumirParaContexto`, em `resumo.ts`, refaz a subtração
+ * na leitura, nunca confia no `pendente` gravado como definitivo — mesmo
+ * raciocínio de "não recalcular papel na leitura" NÃO se aplica aqui porque
+ * `pendente` é derivado, não decidido; ver comentário de `resumo.ts`). */
+export type ResumoAcumuladoParaContexto = ResumoAcumulado;
+
 /** O que entra na IA, montado no servidor (server/copiloto/contexto.ts).
  * 🔴 17/09/2026: a fronteira de PII original ("nenhum nome de decisor,
  * nenhum valor de patrimônio") foi REVERTIDA por decisão do Marcio ("pode
@@ -299,8 +358,15 @@ export interface ContextoCopiloto {
    * pergunta já respondida e notar o que falta (ex.: "três imóveis citados,
    * nenhum com titularidade"). */
   inventario_resumo: ResumoInventarioAcumulado | null;
-  /** `sessoes_copiloto.resumo_acumulado` como está — ninguém reescreve nesta fatia. */
-  resumo_acumulado: Record<string, unknown>;
+  /** 18/09/2026 (Fatia A) — `sessoes_copiloto.resumo_acumulado` já resumido
+   * para a IA (`resumo.ts::resumirParaContexto`): `pendente` recalculado
+   * contra o bloco ATUAL desta chamada, nunca o valor bruto persistido tal
+   * qual. `null` só quando o kill-switch `copiloto_sessao.resumo_acumulado`
+   * está desligado (fail-CLOSED, B76) — NUNCA quando a sessão simplesmente
+   * ainda não tem nada acumulado (aí vem `{v:1,perguntado:[],pendente:[...],
+   * cortado_em:null}`, mesmo padrão de `inventario_resumo`/`dossie`: ausência
+   * de memória é estado válido, não motivo para nulo). */
+  resumo_acumulado: ResumoAcumuladoParaContexto | null;
   /** Ids de todos os blocos do roteiro ativo — é contra ISTO que o servidor
    * confere `bloco_id` na validação pós-Zod (nunca contra a lista da IA). */
   roteiro_ativo_blocos_ids: string[];

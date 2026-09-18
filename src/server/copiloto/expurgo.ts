@@ -476,6 +476,11 @@ async function carimbarSessoesSemPendencia(
           // sai JUNTO, no mesmo instante — não numa passagem futura.
           const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
           if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
+          // 18/09/2026 (Fatia A da memória do copiloto) — NO-OP deliberado
+          // hoje (ver comentário de `redigirResumoDaSessao`); cabeada aqui
+          // para o expurgo já CONHECER o campo `resumo_acumulado` antes da
+          // Fatia B precisar dele.
+          await redigirResumoDaSessao(admin, sessaoId);
         }
         continue;
       }
@@ -525,6 +530,9 @@ async function carimbarSessoesSemPendencia(
         // segmento vivo para ser redigida.
         const okInventario = await redigirInventarioDaSessao(admin, sessaoId);
         if (!okInventario) concluidasComFalhaDeRedacaoInventario++;
+        // Mesmo raciocínio: NO-OP deliberado hoje, cabeada para conhecimento
+        // futuro do campo (ver comentário de `redigirResumoDaSessao`).
+        await redigirResumoDaSessao(admin, sessaoId);
       }
     } catch (erro) {
       // CORRECAO (achado (b) do 5o caminho via coordenador). Erro nesta
@@ -812,6 +820,39 @@ async function redigirInventarioDaSessao(admin: SupabaseClient, sessaoId: string
     registrarErro("copiloto/expurgo.redigirInventarioDaSessao", erro, { sessao_id: sessaoId });
     return false;
   }
+}
+
+/**
+ * `sessoes_copiloto.resumo_acumulado` (0091/0120, Fatia A da MEMÓRIA DO
+ * COPILOTO, 18/09/2026) — achado do arquiteto na revisão desta entrega,
+ * MESMA CLASSE de `redigirInventarioDaSessao`/`redigirEvidenciasConteudo`:
+ * todo campo novo que guarda algo derivado da fala precisa de um ponto de
+ * redação no expurgo, mesmo quando NADA precisa ser redigido AGORA.
+ *
+ * 🔴 NA FATIA A, `resumo_acumulado.perguntado[]` NÃO GUARDA CITAÇÃO LITERAL —
+ * só `t` (`RoteiroCampo.id`, um identificador de campo do roteiro, não fala
+ * do cliente), `em` (timestamp) e `n` (contagem). Não há `evidencia` aqui: a
+ * decisão do dono (B72) foi explícita em manter a Fatia A sem
+ * `fato_estabelecido`/`fatos[]` — é exatamente esses campos, ainda
+ * inexistentes, que carregariam citação literal na Fatia B. Esta função hoje
+ * é um NO-OP DELIBERADO (sempre `true`, nunca lê nem escreve) — existe para
+ * que o expurgo CONHEÇA o campo desde já e não vire um buraco silencioso no
+ * dia em que a Fatia B acrescentar `fatos[]` com evidência: quem implementar
+ * aquela fatia edita ESTA função (já cabeada em `carimbarSessoesSemPendencia`,
+ * nos dois pontos que chamam `redigirInventarioDaSessao`), em vez de precisar
+ * descobrir que falta um caminho de redação para um campo que já existe em
+ * produção há dias.
+ */
+async function redigirResumoDaSessao(admin: SupabaseClient, sessaoId: string): Promise<boolean> {
+  // NO-OP deliberado — ver comentário de topo. Assinatura já IGUAL à de
+  // `redigirInventarioDaSessao` para a Fatia B só trocar o corpo, sem tocar
+  // nos dois pontos de chamada em `carimbarSessoesSemPendencia`. `void` nos
+  // dois parâmetros deixa explícito que ainda não são lidos (nunca `_prefix`
+  // solto: evita o linter apontar código morto de verdade no dia em que
+  // alguém esquecer de implementar o corpo).
+  void admin;
+  void sessaoId;
+  return true;
 }
 
 /**

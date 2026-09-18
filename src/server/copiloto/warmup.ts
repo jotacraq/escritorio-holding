@@ -139,7 +139,7 @@ export async function dispararWarmupCopiloto(
     });
     if (!orcamento.dentro) return; // teto estourado — nunca fura para aquecer cache
 
-    const contexto = await montarContextoCopiloto(admin, params.sessaoId, 0);
+    const { contexto } = await montarContextoCopiloto(admin, params.sessaoId, 0);
     // 🔴 abortarNoTimeout: false — Fase 11 abriu `executar-ia.ts` para abortar
     // de verdade a chamada em voo depois de 8s (economiza tokens/orçamento no
     // caminho REAL do ciclo automático), mas o warm-up é o ÚNICO caminho que

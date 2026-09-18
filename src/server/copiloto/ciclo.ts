@@ -6,10 +6,11 @@ import { montarContextoCopiloto } from "./contexto";
 import { executarIaCopiloto } from "./executar-ia";
 import { validarSugestaoCopiloto, sugestaoEVisivel } from "./validar";
 import { acumularInventarioNaSessao } from "./inventario";
+import { acumularResumoNaSessao, resumoAcumuladoEstaAtivo } from "./resumo";
 import { avaliarGatilho, type OrigemBlocoParaGatilho, type TipoGatilhoCopiloto } from "./gatilho";
 import { encerrarSePassouDoTempo } from "./encerrar";
 import { lerConfiguracaoBool, lerConfiguracaoInt, lerConfiguracaoJson } from "@/server/ia/configuracao";
-import type { ContextoCopiloto, SugestaoCopiloto } from "@/types/copiloto";
+import type { SugestaoCopiloto } from "@/types/copiloto";
 
 /**
  * O CICLO AUTOMÁTICO — Fase 10, Fatia 3 (docs/ARQUITETURA-FASE-10.md §4.3,
@@ -296,13 +297,31 @@ export async function executarCicloCopiloto(
   // estourar, contexto/timeout/max_tokens foram lidos à toa (no máximo 1×
   // por sessão — o orçamento raramente estoura no MEIO de uma sessão, e
   // mesmo quando estoura o desperdício é leitura extra, não chamada de IA).
-  const [orcamento, contexto, timeoutMs, maxTokens, acertoErroAtivo] = await Promise.all([
+  //
+  // 🔴 18/09/2026 (achado do Fable — leitura duplicada de config): o
+  // kill-switch `copiloto_sessao.resumo_acumulado` entra AQUI, no MESMO
+  // `Promise.all` (não mais uma leitura própria dentro de `contexto.ts` E
+  // outra dentro de `resumo.ts` — eram 2 REST por ciclo mesmo desligado).
+  // `montarContexto` é uma promise ENCADEADA (lê a chave, DEPOIS monta o
+  // contexto) — sequencial DENTRO DELA MESMA (a montagem do contexto
+  // realmente precisa saber se o bloco E entra antes de montar o retorno),
+  // mas em PARALELO com orcamento/timeoutMs/maxTokens/acertoErroAtivo, que
+  // não dependem dela. O valor lido (`resumoAtivo`) é reaproveitado depois
+  // para `acumularResumoNaSessao` — nunca uma 3ª leitura da mesma chave.
+  const montarContexto = (async () => {
+    const resumoAtivo = await resumoAcumuladoEstaAtivo(admin);
+    const montado = await montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice, resumoAtivo);
+    return { ...montado, resumoAtivo };
+  })();
+
+  const [orcamento, montado, timeoutMs, maxTokens, acertoErroAtivo] = await Promise.all([
     conferirOrcamentoCopiloto(admin, { jornadaId: sessao.jornada_id, inicioSessaoIso, agora: agoraMs }),
-    montarContextoCopiloto(supabase, params.sessaoId, params.blocoAtualIndice) as Promise<ContextoCopiloto>,
+    montarContexto,
     lerConfiguracaoInt(admin, CHAVE_TIMEOUT_MS, PADRAO_TIMEOUT_MS),
     lerConfiguracaoInt(admin, CHAVE_MAX_TOKENS, PADRAO_MAX_TOKENS),
     lerConfiguracaoBool(admin, CHAVE_ACERTO_ERRO_ATIVO, PADRAO_ACERTO_ERRO_ATIVO),
   ]);
+  const { contexto, camposBlocoAtual, resumoAtivo } = montado;
   if (!orcamento.dentro) {
     return { situacao: "orcamento_estourado", motivo: orcamento.motivo ?? "falha_ao_contar_orcamento" };
   }
@@ -355,6 +374,20 @@ export async function executarCicloCopiloto(
     // confirmado, sai cedo (zero query) sem item novo. Falha aqui não afeta
     // o resultado do ciclo (já foi gravado o que importa).
     await acumularInventarioNaSessao(admin, { sessaoId: params.sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
+
+    // 18/09/2026 (Fatia A da memória do copiloto) — mesmo ponto/mesma regra:
+    // DEPOIS do INSERT confirmado, nunca antes. `camposBlocoAtual`/`resumoAtivo`
+    // já vieram da MESMA leitura combinada acima (zero query nova — `ativo`
+    // é o MESMO valor que decidiu o bloco E do contexto, nunca relido).
+    // Falha aqui nunca derruba o resultado do ciclo — a sugestão em si já
+    // foi gravada (garantia agora no CÓDIGO: `acumularResumoNaSessao` inteira
+    // sob try/catch, ver `resumo.ts`).
+    await acumularResumoNaSessao(admin, {
+      sessaoId: params.sessaoId,
+      ativo: resumoAtivo,
+      textoPerguntaSugerida: validado.sugestao.proxima_pergunta?.texto ?? null,
+      camposDoBlocoAtual: camposBlocoAtual,
+    });
 
     return {
       situacao: "sugestao_gravada",

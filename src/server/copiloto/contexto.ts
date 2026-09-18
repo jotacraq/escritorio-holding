@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RoteiroDefinicao } from "@/types/roteiro";
+import type { RoteiroCampo, RoteiroDefinicao } from "@/types/roteiro";
 import type { ContextoCopiloto, DossieCliente, InventarioAcumulado } from "@/types/copiloto";
 import { erroNaoEncontrado, registrarErro } from "@/server/erros";
 import { lerConfiguracaoBool } from "@/server/ia/configuracao";
 import { normalizarNome, normalizarParticipantesBrutos, type ParticipanteRegistrado } from "@/server/copiloto/participantes";
 import { buscarDossieCliente } from "@/server/copiloto/dossie";
 import { resumirInventario } from "@/server/copiloto/inventario";
+import { normalizarResumoAcumulado, resumirParaContexto } from "@/server/copiloto/resumo";
 
 /**
  * Montador do contexto que vai para a IA do copiloto — Fase 10, Fatia 2
@@ -50,10 +51,19 @@ import { resumirInventario } from "@/server/copiloto/inventario";
  * liberação foi sobre o DOSSIÊ (família/patrimônio/documento), um bloco
  * diferente do contexto.
  *
- * Bloco E (resumo acumulado) fica FORA desta função nesta entrega: mora em
- * `sessoes_copiloto.resumo_acumulado` (0091), e a Fatia 2 só LÊ o que já está
- * lá (a rota sob demanda não reescreve o resumo — reescrever a cada ciclo é
- * comportamento do ciclo automático, Fatia 3). Aqui ele entra como está.
+ * 🔴 Bloco E (18/09/2026, Fatia A da MEMÓRIA DO COPILOTO) — deixou de ser
+ * "lido como está": `sessoes_copiloto.resumo_acumulado` (0091/0120) agora
+ * passa por `resumirParaContexto` (`server/copiloto/resumo.ts`) antes de
+ * entrar no contexto, porque `pendente` é DERIVADO contra o bloco ATUAL desta
+ * chamada (o valor persistido pode ter sido calculado num bloco anterior da
+ * sessão — a advogada avança de bloco entre chamadas do ciclo automático).
+ * ZERO query nova (`resumo_acumulado` já vem no MESMO select principal, como
+ * o inventário do bloco G). Quem ESCREVE em `resumo_acumulado` é a
+ * ROTA/CICLO, DEPOIS de validar a saída da IA (`acumularResumoNaSessao`) —
+ * este módulo nunca grava, só lê e resume, mesma separação do resto do
+ * arquivo. Kill-switch PRÓPRIO (`copiloto_sessao.resumo_acumulado`, 0120) —
+ * FAIL-CLOSED (B76, diferente do fail-OPEN do bloco F/G): desligado, o bloco
+ * some do contexto (`null`) e nada é escrito por quem grava depois.
  *
  * 🔴 Bloco G (17/09/2026) — INVENTÁRIO MENCIONADO NA FALA (`server/copiloto/
  * inventario.ts`), DIFERENTE do bloco F (dossiê CADASTRAL): este bloco é só
@@ -86,7 +96,10 @@ interface SessaoParaContexto {
   roteiros_versoes: { definicao: RoteiroDefinicao } | null;
   sessoes_copiloto: {
     participantes: unknown;
-    resumo_acumulado: Record<string, unknown>;
+    // `unknown`, não `ResumoAcumulado` — a coluna nasce `'{}'::jsonb` (0091,
+    // ANTES desta fatia) em toda sessão pré-existente; `normalizarResumoAcumulado`
+    // (resumo.ts) trata esse formato legado antes de qualquer uso tipado.
+    resumo_acumulado: unknown;
     dossie_cliente: DossieCliente | null;
     inventario_acumulado: InventarioAcumulado | null;
   } | null;
@@ -112,12 +125,35 @@ interface BriefingRecorte {
  *
  * Lança `erroNaoEncontrado` quando a sessão não existe — mesmo contrato de
  * `montarEstadoCopiloto`.
+ *
+ * 🔴 RETORNO EM DUAS PARTES (18/09/2026, Fatia A da memória do copiloto):
+ * `contexto` é o objeto que `executarIaCopiloto` serializa por INTEIRO com
+ * `JSON.stringify` e manda ao provedor (`server/ia/executar.ts`) — qualquer
+ * campo que entrar ali vira token cobrado e texto lido pela IA, sem exceção.
+ * `camposBlocoAtual` é o `RoteiroCampo[]` COMPLETO (com `id`, que a IA nunca
+ * recebe — só o `rotulo` vai para `contexto.bloco_atual.campos: string[]`)
+ * do bloco atual, para `resumo.ts::acumularResumoNaSessao` casar a pergunta
+ * sugerida contra o `id` do campo SEM 2ª query (o roteiro já foi lido acima
+ * para montar `contexto`) e SEM vazar `id`s técnicos para o prompt.
+ *
+ * 🔴 `resumoAcumuladoAtivo` (achado do Fable — leitura duplicada de config):
+ * o kill-switch `copiloto_sessao.resumo_acumulado` é lido UMA VEZ pelo
+ * CHAMADOR (`ciclo.ts`, dentro do MESMO `Promise.all` que já lê
+ * `timeout_ms`/`max_tokens`/`acerto_erro_ativo`) e repassado aqui — nunca
+ * relido dentro desta função nem dentro de `acumularResumoNaSessao`
+ * (`resumo.ts`), que também recebe o valor pronto. Antes desta correção, as
+ * duas funções liam a MESMA chave separadamente: +2 requisições REST por
+ * ciclo, mesmo com o switch DESLIGADO — exatamente o que a 0120 prometia
+ * evitar ("ZERO round-trip novo") e o código não cumpria. Parâmetro opcional
+ * (`?? false`, fail-CLOSED) só para não quebrar quem ainda não migrou a
+ * chamada (ex.: `warmup.ts`, que nunca usa o bloco E).
  */
 export async function montarContextoCopiloto(
   supabase: SupabaseClient,
   sessaoId: string,
   indiceBlocoAtual: number,
-): Promise<ContextoCopiloto> {
+  resumoAcumuladoAtivo?: boolean,
+): Promise<{ contexto: ContextoCopiloto; camposBlocoAtual: RoteiroCampo[] }> {
   const { data, error } = await supabase
     .from("sessoes_viabilidade")
     .select(
@@ -242,9 +278,14 @@ export async function montarContextoCopiloto(
   const mapaDePapeis = papeisAtivos ? montarMapaDePapeis(data.sessoes_copiloto?.participantes) : null;
   const janelaD = await buscarJanelaTranscricao(supabase, sessaoId, mapaDePapeis);
 
-  // --- E · resumo estruturado acumulado (lido como está; ninguém reescreve
-  // aqui nesta fatia — ver comentário de topo) ------------------------------
-  const resumoE = data.sessoes_copiloto?.resumo_acumulado ?? {};
+  // --- E · resumo estruturado acumulado (18/09/2026) — ZERO query nova
+  // (`resumo_acumulado` já veio no select principal, e o kill-switch é
+  // PARÂMETRO — ver comentário de topo, nunca uma leitura própria aqui);
+  // `pendente` é recalculado contra `blocoAtual.campos` desta chamada.
+  // `null` só quando o kill-switch está desligado. --------------------------
+  const resumoE = (resumoAcumuladoAtivo ?? false)
+    ? resumirParaContexto(normalizarResumoAcumulado(data.sessoes_copiloto?.resumo_acumulado), blocoAtual?.campos ?? [])
+    : null;
 
   // --- F · dossiê do cliente (17/09/2026) — CAMINHO COMUM (sessão que já
   // passou por esta função ao menos 1×, que é a maioria das chamadas do
@@ -269,7 +310,7 @@ export async function montarContextoCopiloto(
     ? resumirInventario(data.sessoes_copiloto?.inventario_acumulado ?? [])
     : null;
 
-  return {
+  const contexto: ContextoCopiloto = {
     roteiro_fonte: roteiroFonte,
     bloco_atual: blocoA,
     bloco_anterior_titulo: blocoAnteriorTitulo,
@@ -296,6 +337,10 @@ export async function montarContextoCopiloto(
     // apontar para um bloco que não seja o atual.
     roteiro_ativo_blocos: blocos.map((b) => ({ id: b.id, titulo: b.titulo, objetivo: b.objetivo })),
   };
+
+  // `camposBlocoAtual` NUNCA entra em `contexto` (ver comentário de topo desta
+  // função) — só o chamador (ciclo/rota) usa, para `resumo.ts`.
+  return { contexto, camposBlocoAtual: blocoAtual?.campos ?? [] };
 }
 
 /** `copiloto_sessao.dossie_cliente` (0109) — kill-switch do bloco F. Lido

@@ -38,7 +38,7 @@ function contextoBase(): ContextoCopiloto {
     janela_transcricao: ["cliente: meu filho não conseguiu entrar hoje, ele viaja amanhã"],
     dossie: null,
     inventario_resumo: null,
-    resumo_acumulado: {},
+    resumo_acumulado: null,
     roteiro_ativo_blocos_ids: ["parte_00", "parte_01", "parte_02", "parte_03", "parte_04"],
     roteiro_ativo_blocos: [
       { id: "parte_00", titulo: "Abertura", objetivo: null },

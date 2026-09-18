@@ -66,6 +66,10 @@ interface MontarSupabaseOpts {
   /** `sessoes_copiloto.inventario_acumulado` embutido no select principal —
    * default `[]` (sessão sem nenhum item ainda, caso comum). */
   inventarioAcumulado?: unknown;
+  /** `sessoes_copiloto.resumo_acumulado` (18/09/2026, Fatia A) embutido no
+   * select principal — default `null` (sessão sem nada acumulado, ou o
+   * kill-switch decide o resto: ver `resumoAcumuladoEstaAtivo`). */
+  resumoAcumulado?: unknown;
 }
 
 const DOSSIE_JA_PERSISTIDO = { faixa_patrimonio: null, familiares: [], patrimonio_tipos: [], documentos_recebidos: [], documentos_pendentes: [] };
@@ -80,7 +84,7 @@ function montarSupabase(opts: MontarSupabaseOpts): SupabaseClient {
     roteiros_versoes: opts.roteirosVersoesEmbed,
     sessoes_copiloto: {
       participantes: opts.participantes ?? [],
-      resumo_acumulado: {},
+      resumo_acumulado: opts.resumoAcumulado ?? null,
       dossie_cliente: "dossieCliente" in opts ? opts.dossieCliente : DOSSIE_JA_PERSISTIDO,
       inventario_acumulado: opts.inventarioAcumulado ?? [],
     },
@@ -144,7 +148,7 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
       roteiroAtivoSpy,
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.roteiro_fonte).toBe("carimbado");
     expect(contexto.bloco_atual?.id).toBe("parte_99");
@@ -160,7 +164,7 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
       roteiroAtivoResultado: { data: { definicao: DEFINICAO_ATIVA }, error: null },
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.roteiro_fonte).toBe("ativo_fallback");
     expect(contexto.bloco_atual?.id).toBe("parte_00");
@@ -174,7 +178,7 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
       roteiroAtivoResultado: { data: null, error: null },
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.roteiro_fonte).toBe("nenhum");
     expect(contexto.bloco_atual).toBeNull();
@@ -212,7 +216,7 @@ describe("montarContextoCopiloto — fonte do roteiro", () => {
     });
     const supabase = { from } as unknown as SupabaseClient;
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.roteiro_fonte).toBe("ativo_fallback");
   });
@@ -239,7 +243,7 @@ describe("montarContextoCopiloto — 🔴 fronteira de PII (§7 do plano, teste 
       ],
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     const serializado = JSON.stringify(contexto);
 
     for (const nome of NOMES_PROIBIDOS) {
@@ -261,7 +265,7 @@ describe("montarContextoCopiloto — resolução de papel (15/09/2026, correçã
       participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: "advogada" }],
       segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.janela_transcricao).toEqual(["advogada: fala real"]);
   });
 
@@ -272,7 +276,7 @@ describe("montarContextoCopiloto — resolução de papel (15/09/2026, correçã
       participantes: [{ id: "p1", nome: "João CSM", entrou_em: "10:00", saiu_em: null, papel: null }],
       segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.janela_transcricao).toEqual(["participante: fala real"]);
   });
 
@@ -284,7 +288,7 @@ describe("montarContextoCopiloto — resolução de papel (15/09/2026, correçã
       segmentos: [{ falante: "João CSM", texto: "fala real", criado_em: new Date().toISOString() }],
       papeisDeFalaValor: { data: { valor: false }, error: null },
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.janela_transcricao).toEqual(["participante: fala real"]);
   });
 
@@ -298,7 +302,7 @@ describe("montarContextoCopiloto — resolução de papel (15/09/2026, correçã
         { falante: "cliente", texto: "resposta manual", criado_em: new Date().toISOString() },
       ],
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.janela_transcricao).toEqual(["advogada: pergunta manual", "cliente: resposta manual"]);
   });
 
@@ -331,7 +335,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
       dossieCliente: dossiePersistido,
       configuracaoPorChave: { "copiloto_sessao.dossie_cliente": { data: { valor: false }, error: null } },
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.dossie).toBeNull();
   });
 
@@ -342,7 +346,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
       dossieCliente: null,
       configuracaoPorChave: { "copiloto_sessao.dossie_cliente": { data: { valor: false }, error: null } },
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.dossie).toBeNull();
     const tabelasChamadas = (supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(tabelasChamadas).not.toContain("jornadas");
@@ -362,7 +366,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
       roteirosVersoesEmbed: { definicao: DEFINICAO_CARIMBADA },
       dossieCliente: dossiePersistido,
     });
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.dossie).toEqual(dossiePersistido);
     const tabelasChamadas = (supabase.from as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(tabelasChamadas).not.toContain("jornadas");
@@ -393,7 +397,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
     });
     const supabase = { from } as unknown as SupabaseClient;
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.dossie).toEqual({
       faixa_patrimonio: "1 a 5 milhões",
@@ -424,7 +428,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
             sims: {},
             jornadas: null,
             roteiros_versoes: { definicao: DEFINICAO_CARIMBADA },
-            sessoes_copiloto: { participantes: [], resumo_acumulado: {}, dossie_cliente: null },
+            sessoes_copiloto: { participantes: [], resumo_acumulado: null, dossie_cliente: null },
           },
           error: null,
         });
@@ -432,7 +436,7 @@ describe("montarContextoCopiloto — dossiê do cliente (17/09/2026, decisão do
       return fromOriginal(tabela);
     });
 
-    const contexto = await montarContextoCopiloto({ from } as unknown as SupabaseClient, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto({ from } as unknown as SupabaseClient, "sessao-1", 0);
     expect(contexto.dossie).toBeNull();
   });
 });
@@ -445,7 +449,7 @@ describe("montarContextoCopiloto — bloco G: resumo do inventário mencionado (
       inventarioAcumulado: [],
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.inventario_resumo).toEqual({ por_categoria: [], total_itens_proprios: 0, total_itens_incertos: 0 });
   });
@@ -480,7 +484,7 @@ describe("montarContextoCopiloto — bloco G: resumo do inventário mencionado (
       ],
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
 
     expect(contexto.inventario_resumo).toEqual({
       por_categoria: [{ categoria: "imovel", contagem_propria: 1, contagem_incerta: 0, sem_titularidade: 0 }],
@@ -509,7 +513,7 @@ describe("montarContextoCopiloto — bloco G: resumo do inventário mencionado (
       configuracaoPorChave: { "copiloto_sessao.inventario_mencionado": { data: { valor: false }, error: null } },
     });
 
-    const contexto = await montarContextoCopiloto(supabase, "sessao-1", 0);
+    const { contexto } = await montarContextoCopiloto(supabase, "sessao-1", 0);
     expect(contexto.inventario_resumo).toBeNull();
   });
 });

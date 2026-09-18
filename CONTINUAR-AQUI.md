@@ -1,5 +1,51 @@
 # Continuar daqui — SIC-HF
 
+> ### 🟡 PRONTO E DESLIGADO — memória do copiloto (Fatia A), 18/09/2026
+>
+> `sessoes_copiloto.resumo_acumulado` finalmente TEM escritor. Existia desde a 0091,
+> cabeado em `contexto.ts` e `types/copiloto.ts`, e estava `{}` nas 3 sessões reais —
+> campo morto por 5 migrations.
+>
+> **O defeito que corrige (medido, sessão do Carlos Alberto, 2h05):** a IA via só ~90 s
+> de transcrição por ciclo (`JANELA_TRANSCRICAO_SEGUNDOS`) e acordava sem memória.
+> 122 perguntas distintas em 118 min, **49 sobre família** numa família de 2 filhas;
+> no 4º quarto, com 2h já ouvidas, ainda 8 perguntas sobre filhos.
+> **Prova de que memória resolve, na mesma sessão:** tema BENS (tem memória via
+> `inventario_acumulado`) por quarto = 6→7→11→**4**; tema FAMÍLIA (sem memória) =
+> 6→14→10→**15**. Mesmo prompt, mesma IA, mesma conversa.
+>
+> **NASCE DESLIGADO, nos dois níveis:**
+> - `configuracoes.copiloto_sessao.resumo_acumulado = false` (fail-CLOSED, B76)
+> - `prompts_versoes` v9 `ativo=false` (v7 segue ativa)
+>
+> **🔴 ORDEM DE ATIVAÇÃO — não inverter:** o prompt v9 manda a IA devolver
+> `proxima_pergunta: null` quando o bloco está coberto. A tela que exibe "Temas deste
+> bloco cobertos" (B73) é **fatia de frontend AINDA NÃO FEITA**. Ligar o v9 antes dela
+> deixa a tela sem card, sem explicação. Ordem: (1) frontend do estado coberto →
+> (2) kill-switch do dado → (3) prompt v9 → (4) medir.
+>
+> **Como medir se funcionou** (baseline em `C:/tmp/baseline-copiloto.md`): concentração
+> dos 5 temas dominantes era **39,3%** das perguntas exibidas; por quarto 25,8% → 51,6%
+> → 30,0% → **50,0%**. A memória tem de fazer família/regime/motivação DECAÍREM no
+> 3º/4º quarto, como bens já decai. Contra-métrica: total de perguntas não pode cair
+> mais que ~30% — menos repergunta tem de virar pergunta NOVA, não silêncio.
+>
+> **Medido e provado contra produção:** `explain (analyze)` da RPC = `LockRows →
+> sessoes_copiloto_pkey`, **0,324 ms**; CAS provado (esperado certo → `aplicado=true`;
+> errado → `false` + devolve atual); resumo CHEIO (16+8) = **1.761 bytes** contra CHECK
+> de 4096. Pentester aprovado, 0 crítico/alto/médio.
+>
+> **Vocabulário é dinâmico:** `perguntado[].t` guarda `RoteiroCampo.id` do roteiro ativo,
+> não enum fixo — quando a Dra. Elaine publicar o v6, acompanha sem deploy.
+> ⚠️ "empresa" foi o 2º tema mais perguntado (15×) e **não tem campo próprio no roteiro
+> v5** — cai em `lista_bens`/`quem_paga_contas`. Criar campo é decisão de MÉTODO da
+> Dra. Elaine, não de código.
+>
+> **Bancada pronta, nunca executada** (`scripts/bancada-copiloto.ts`, commit 42007ef):
+> reprocessa a transcrição real para comparar versões de prompt. Teto de US$ 3, não
+> promove sozinha. Rodar antes de ativar a v8 ou a v9.
+
+
 > ### 🔴 PENDÊNCIA — 90 `uppercase` fora do design system, migração GPS-THB (14/09/2026)
 >
 > Decisão do Marcio (B7): a migração de paleta/tipografia para o padrão GPS-THB trocou os

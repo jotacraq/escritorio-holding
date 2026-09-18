@@ -114,7 +114,7 @@ describe("dispararWarmupCopiloto — ordem e efeito de cada trava", () => {
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 0, noDia: 0, motivo: null });
     const contextoFalso = { roteiro_fonte: "carimbado", bloco_atual: null };
-    montarContextoMock.mockResolvedValue(contextoFalso);
+    montarContextoMock.mockResolvedValue({ contexto: contextoFalso, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "exec-1", custoUsd: 0.013 });
     const admin = adminComClaim({ count: 1 });
 
@@ -133,7 +133,7 @@ describe("dispararWarmupCopiloto — ordem e efeito de cada trava", () => {
     warmupAtivoMock.mockResolvedValue(true);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 0, noDia: 0, motivo: null });
-    montarContextoMock.mockResolvedValue({});
+    montarContextoMock.mockResolvedValue({ contexto: {}, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const admin = adminComClaim({ count: 1 });
 
@@ -148,7 +148,7 @@ describe("dispararWarmupCopiloto — ordem e efeito de cada trava", () => {
     warmupAtivoMock.mockResolvedValue(true);
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 0, noDia: 0, motivo: null });
-    montarContextoMock.mockResolvedValue({});
+    montarContextoMock.mockResolvedValue({ contexto: {}, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "timeout" });
     const admin = adminComClaim({ count: 1 });
 
@@ -178,7 +178,7 @@ describe("dispararWarmupCopiloto — ordem e efeito de cada trava", () => {
     warmupAtivoMock.mockRejectedValue(new Error("timeout de leitura"));
     conferirGateMock.mockResolvedValue({ liberado: true, motivo: null });
     conferirOrcamentoMock.mockResolvedValue({ dentro: true, naSessao: 0, noDia: 0, motivo: null });
-    montarContextoMock.mockResolvedValue({});
+    montarContextoMock.mockResolvedValue({ contexto: {}, camposBlocoAtual: [] });
     executarIaMock.mockResolvedValue({ situacao: "ok", saida: {}, execucaoId: "e", custoUsd: null });
     const admin = adminComClaim({ count: 1 });
 

@@ -15,6 +15,7 @@ import { conferirGateCopiloto } from "@/server/copiloto/gate";
 import { executarIaCopiloto } from "@/server/copiloto/executar-ia";
 import { sugestaoEVisivel, validarSugestaoCopiloto } from "@/server/copiloto/validar";
 import { acumularInventarioNaSessao } from "@/server/copiloto/inventario";
+import { acumularResumoNaSessao, resumoAcumuladoEstaAtivo } from "@/server/copiloto/resumo";
 import { lerConfiguracaoBool, lerConfiguracaoJson } from "@/server/ia/configuracao";
 import type { RespostaSugestaoCopiloto } from "@/types/copiloto";
 
@@ -175,7 +176,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const estadoAtual = await montarEstadoCopiloto(supabase, sessaoId, null, null);
     const indiceBlocoAtual = estadoAtual.bloco_atual_resolvido.indice ?? 0;
 
-    const contexto = await montarContextoCopiloto(supabase, sessaoId, indiceBlocoAtual);
+    // 🔴 18/09/2026 (achado do Fable — leitura duplicada de config): lida UMA
+    // VEZ aqui, ANTES de montar contexto (que decide o bloco E com este
+    // valor) e reaproveitada depois para `acumularResumoNaSessao` — nunca
+    // uma 2ª leitura da mesma chave.
+    const resumoAtivo = await resumoAcumuladoEstaAtivo(admin);
+    const { contexto, camposBlocoAtual } = await montarContextoCopiloto(supabase, sessaoId, indiceBlocoAtual, resumoAtivo);
 
     const execucao = await executarIaCopiloto(admin, { jornadaId: sessao.jornada_id, contexto });
 
@@ -257,6 +263,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // `inventario.ts`. Falha aqui NUNCA derruba a resposta ao cliente: a
     // sugestão já foi gravada e é isso que importa para quem chamou.
     await acumularInventarioNaSessao(admin, { sessaoId, itensNovos: validado.sugestao.inventario_mencionado ?? [] });
+
+    // 18/09/2026 (Fatia A da memória do copiloto) — mesmo ponto/mesma regra
+    // do bloco acima: DEPOIS do INSERT confirmado. `camposBlocoAtual`/
+    // `resumoAtivo` já vieram da leitura combinada acima — `ativo` é o
+    // MESMO valor que decidiu o bloco E do contexto, nunca relido.
+    await acumularResumoNaSessao(admin, {
+      sessaoId,
+      ativo: resumoAtivo,
+      textoPerguntaSugerida: validado.sugestao.proxima_pergunta?.texto ?? null,
+      camposDoBlocoAtual: camposBlocoAtual,
+    });
 
     const resposta: RespostaSugestaoCopiloto = {
       sugestao_id: gravado.id,
