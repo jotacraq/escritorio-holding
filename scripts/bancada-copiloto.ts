@@ -71,6 +71,13 @@ interface DefinicaoVariante {
 const VARIANTES: DefinicaoVariante[] = [
   { variante: "v7_baseline" }, // sem versaoPrompt: usa a versão ATIVA (v7) — mesma convenção de bancada-ia.ts
   { variante: "v8_economia", versaoPrompt: 8 },
+  // v9 = v8 + memória do copiloto (0121). É a que precisa de número ANTES de
+  // escrever a Ficha do cliente: se a economia de raciocínio da v8 derrubar o
+  // p99 de saída (hoje 1.382 contra teto de 1.400 — 18 tokens de folga), a
+  // Ficha cabe sem mexer em `max_tokens`. Se não derrubar, a Ficha sobe
+  // derivada no servidor, sem campo novo. Medir isto é mais barato que
+  // escrever a feature e descobrir depois.
+  { variante: "v9_memoria", versaoPrompt: 9 },
 ];
 
 function criarClienteAdmin(): SupabaseClient {
