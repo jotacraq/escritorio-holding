@@ -1,0 +1,754 @@
+[
+  {
+    "combinacao": "1536x826--padrao--normal",
+    "largura": 1536,
+    "altura": 826,
+    "escala": "padrao",
+    "modo": "normal",
+    "corpoPx": "14px",
+    "paginaRola": false,
+    "paginaScrollHeight": 826,
+    "paginaClientHeight": 826,
+    "mainRola": false,
+    "mainScrollHeight": 826,
+    "mainClientHeight": 826,
+    "encerrarBottom": 754,
+    "janelaAltura": 826,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 571,
+    "col3ClientHeight": 571,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 1 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 571,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": false,
+    "transcricaoLineHeight": "21.125px",
+    "toleranciaDoFimPx": 31.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "14px",
+      "paginaRola": false,
+      "paginaScrollHeight": 826,
+      "paginaClientHeight": 826,
+      "mainRola": false,
+      "mainScrollHeight": 826,
+      "mainClientHeight": 826,
+      "encerrarBottom": 498,
+      "janelaAltura": 826,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 315,
+      "col3ClientHeight": 315,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 4 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 315,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": false,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 31.7,
+        "lineHeight": "21.125px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Mais 1 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1536x826--padrao--tela-cheia",
+    "largura": 1536,
+    "altura": 826,
+    "escala": "padrao",
+    "modo": "tela-cheia",
+    "corpoPx": "14px",
+    "paginaRola": false,
+    "paginaScrollHeight": 826,
+    "paginaClientHeight": 826,
+    "mainRola": false,
+    "mainScrollHeight": 826,
+    "mainClientHeight": 826,
+    "encerrarBottom": 754,
+    "janelaAltura": 826,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 615,
+    "col3ClientHeight": 615,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 1 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 615,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": true,
+    "transcricaoLineHeight": "21.125px",
+    "toleranciaDoFimPx": 31.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "14px",
+      "paginaRola": false,
+      "paginaScrollHeight": 826,
+      "paginaClientHeight": 826,
+      "mainRola": false,
+      "mainScrollHeight": 826,
+      "mainClientHeight": 826,
+      "encerrarBottom": 498,
+      "janelaAltura": 826,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 359,
+      "col3ClientHeight": 359,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 3 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 359,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": true,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 31.7,
+        "lineHeight": "21.125px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Mais 1 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1536x826--grande--normal",
+    "largura": 1536,
+    "altura": 826,
+    "escala": "grande",
+    "modo": "normal",
+    "corpoPx": "17.9998px",
+    "paginaRola": false,
+    "paginaScrollHeight": 826,
+    "paginaClientHeight": 826,
+    "mainRola": false,
+    "mainScrollHeight": 826,
+    "mainClientHeight": 826,
+    "encerrarBottom": 754,
+    "janelaAltura": 826,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 571,
+    "col3ClientHeight": 571,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 3 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 571,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": false,
+    "transcricaoLineHeight": "27.1604px",
+    "toleranciaDoFimPx": 40.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "17.9998px",
+      "paginaRola": false,
+      "paginaScrollHeight": 826,
+      "paginaClientHeight": 826,
+      "mainRola": false,
+      "mainScrollHeight": 826,
+      "mainClientHeight": 826,
+      "encerrarBottom": 482,
+      "janelaAltura": 826,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 299,
+      "col3ClientHeight": 299,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 299,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": false,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 40.7,
+        "lineHeight": "27.1604px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 571,
+        "col3ClientHeight": 571,
+        "rotulos": [
+          "Mais 3 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1536x826--grande--tela-cheia",
+    "largura": 1536,
+    "altura": 826,
+    "escala": "grande",
+    "modo": "tela-cheia",
+    "corpoPx": "17.9998px",
+    "paginaRola": false,
+    "paginaScrollHeight": 826,
+    "paginaClientHeight": 826,
+    "mainRola": false,
+    "mainScrollHeight": 826,
+    "mainClientHeight": 826,
+    "encerrarBottom": 754,
+    "janelaAltura": 826,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 615,
+    "col3ClientHeight": 615,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 2 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 615,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": true,
+    "transcricaoLineHeight": "27.1604px",
+    "toleranciaDoFimPx": 40.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "17.9998px",
+      "paginaRola": false,
+      "paginaScrollHeight": 826,
+      "paginaClientHeight": 826,
+      "mainRola": false,
+      "mainScrollHeight": 826,
+      "mainClientHeight": 826,
+      "encerrarBottom": 482,
+      "janelaAltura": 826,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 343,
+      "col3ClientHeight": 343,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 343,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": true,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 40.7,
+        "lineHeight": "27.1604px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 615,
+        "col3ClientHeight": 615,
+        "rotulos": [
+          "Mais 2 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1280x720--padrao--normal",
+    "largura": 1280,
+    "altura": 720,
+    "escala": "padrao",
+    "modo": "normal",
+    "corpoPx": "14px",
+    "paginaRola": false,
+    "paginaScrollHeight": 720,
+    "paginaClientHeight": 720,
+    "mainRola": false,
+    "mainScrollHeight": 720,
+    "mainClientHeight": 720,
+    "encerrarBottom": 648,
+    "janelaAltura": 720,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 465,
+    "col3ClientHeight": 465,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 3 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 465,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": false,
+    "transcricaoLineHeight": "21.125px",
+    "toleranciaDoFimPx": 31.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "14px",
+      "paginaRola": false,
+      "paginaScrollHeight": 720,
+      "paginaClientHeight": 720,
+      "mainRola": false,
+      "mainScrollHeight": 720,
+      "mainClientHeight": 720,
+      "encerrarBottom": 392,
+      "janelaAltura": 720,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 209,
+      "col3ClientHeight": 209,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 209,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": false,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 465,
+        "col3ClientHeight": 465,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 31.7,
+        "lineHeight": "21.125px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 465,
+        "col3ClientHeight": 465,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 465,
+        "col3ClientHeight": 465,
+        "rotulos": [
+          "Mais 3 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1280x720--padrao--tela-cheia",
+    "largura": 1280,
+    "altura": 720,
+    "escala": "padrao",
+    "modo": "tela-cheia",
+    "corpoPx": "14px",
+    "paginaRola": false,
+    "paginaScrollHeight": 720,
+    "paginaClientHeight": 720,
+    "mainRola": false,
+    "mainScrollHeight": 720,
+    "mainClientHeight": 720,
+    "encerrarBottom": 648,
+    "janelaAltura": 720,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 509,
+    "col3ClientHeight": 509,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 2 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 509,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": true,
+    "transcricaoLineHeight": "21.125px",
+    "toleranciaDoFimPx": 31.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "14px",
+      "paginaRola": false,
+      "paginaScrollHeight": 720,
+      "paginaClientHeight": 720,
+      "mainRola": false,
+      "mainScrollHeight": 720,
+      "mainClientHeight": 720,
+      "encerrarBottom": 392,
+      "janelaAltura": 720,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 253,
+      "col3ClientHeight": 253,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 253,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": true,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 31.7,
+        "lineHeight": "21.125px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Mais 2 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1280x720--grande--normal",
+    "largura": 1280,
+    "altura": 720,
+    "escala": "grande",
+    "modo": "normal",
+    "corpoPx": "17.9998px",
+    "paginaRola": false,
+    "paginaScrollHeight": 720,
+    "paginaClientHeight": 720,
+    "mainRola": false,
+    "mainScrollHeight": 720,
+    "mainClientHeight": 720,
+    "encerrarBottom": 648,
+    "janelaAltura": 720,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 433,
+    "col3ClientHeight": 433,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 4 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 433,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": false,
+    "transcricaoLineHeight": "27.1604px",
+    "toleranciaDoFimPx": 40.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "17.9998px",
+      "paginaRola": false,
+      "paginaScrollHeight": 720,
+      "paginaClientHeight": 720,
+      "mainRola": false,
+      "mainScrollHeight": 720,
+      "mainClientHeight": 720,
+      "encerrarBottom": 376,
+      "janelaAltura": 720,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 161,
+      "col3ClientHeight": 161,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 161,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": false,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 433,
+        "col3ClientHeight": 433,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 40.7,
+        "lineHeight": "27.1604px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 433,
+        "col3ClientHeight": 433,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 433,
+        "col3ClientHeight": 433,
+        "rotulos": [
+          "Mais 4 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  },
+  {
+    "combinacao": "1280x720--grande--tela-cheia",
+    "largura": 1280,
+    "altura": 720,
+    "escala": "grande",
+    "modo": "tela-cheia",
+    "corpoPx": "17.9998px",
+    "paginaRola": false,
+    "paginaScrollHeight": 720,
+    "paginaClientHeight": 720,
+    "mainRola": false,
+    "mainScrollHeight": 720,
+    "mainClientHeight": 720,
+    "encerrarBottom": 648,
+    "janelaAltura": 720,
+    "encerrarDentroDaDobra": true,
+    "col3ScrollHeight": 509,
+    "col3ClientHeight": 509,
+    "col3Rola": false,
+    "superficiesRolaveisNaCol3": 1,
+    "superficiesRolaveisNaCol3Rotulos": [
+      "Mais 3 itens da ficha do cliente"
+    ],
+    "mosaicoAltura": 509,
+    "faixaAbasAltura": 28,
+    "faixaAbasLinhas": 1,
+    "abaAlvoAltura": 28,
+    "telaCheia": true,
+    "transcricaoLineHeight": "27.1604px",
+    "toleranciaDoFimPx": 40.7,
+    "temFaixaDeAbas": true,
+    "superficiesNaAbaTranscricao": 1,
+    "comRegistroAberto": {
+      "corpoPx": "17.9998px",
+      "paginaRola": false,
+      "paginaScrollHeight": 720,
+      "paginaClientHeight": 720,
+      "mainRola": false,
+      "mainScrollHeight": 720,
+      "mainClientHeight": 720,
+      "encerrarBottom": 376,
+      "janelaAltura": 720,
+      "encerrarDentroDaDobra": true,
+      "col3ScrollHeight": 237,
+      "col3ClientHeight": 237,
+      "col3Rola": false,
+      "superficiesRolaveisNaCol3": 1,
+      "superficiesRolaveisNaCol3Rotulos": [
+        "Mais 5 itens da ficha do cliente"
+      ],
+      "mosaicoAltura": 237,
+      "faixaAbasAltura": 28,
+      "faixaAbasLinhas": 1,
+      "abaAlvoAltura": 28,
+      "telaCheia": true,
+      "transcricaoLineHeight": null,
+      "toleranciaDoFimPx": null
+    },
+    "porAba": {
+      "Transcrição": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Transcrição da sessão"
+        ],
+        "toleranciaDoFimPx": 40.7,
+        "lineHeight": "27.1604px"
+      },
+      "Inventário": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Inventário da sessão"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      },
+      "Ficha": {
+        "superficies": 1,
+        "col3Rola": false,
+        "col3ScrollHeight": 509,
+        "col3ClientHeight": 509,
+        "rotulos": [
+          "Mais 3 itens da ficha do cliente"
+        ],
+        "toleranciaDoFimPx": null,
+        "lineHeight": null
+      }
+    }
+  }
+]

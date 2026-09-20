@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   ErroSessao,
   buscarEstadoCopiloto,
@@ -10,11 +10,9 @@ import {
 } from "@/components/sessao/api";
 import type {
   BlocoPendente,
-  CategoriaInventarioMencionado,
+  RetrospectoDaSessao,
   DesfechoCopiloto,
   InfoCicloCopiloto,
-  InventarioParaPainel,
-  ItemInventarioRecentePainel,
   RespostaSugestaoCopiloto,
   SugestaoCopiloto,
   SugestaoCopilotoPolling,
@@ -33,8 +31,11 @@ import { ultimoNaoNulo } from "@/components/sessao/copiloto/ultimoNaoNulo";
 import { mensagemRecusa } from "@/components/sessao/copiloto/mensagensRecusa";
 import { RegistroManual } from "@/components/sessao/copiloto/RegistroManual";
 import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
+import { PainelInventario, totalDoInventario } from "@/components/sessao/copiloto/PainelInventario";
 import { RodapeTranscricao } from "@/components/sessao/copiloto/RodapeTranscricao";
 import { FichaCliente } from "@/components/sessao/copiloto/FichaCliente";
+import { AbasColuna3, type AbaColuna3 } from "@/components/sessao/copiloto/AbasColuna3";
+import { LinkRetrospecto, PopupRetrospecto } from "@/components/sessao/copiloto/PopupRetrospecto";
 import { Coluna } from "@/components/sessao/copiloto/Coluna";
 import { useRealceUmaVez } from "@/components/sessao/copiloto/useRealceUmaVez";
 
@@ -212,6 +213,21 @@ export function PainelCopiloto({
   const sessaoEncerrada = sessaoEncerradaProp ?? (encerradaManualmenteLocal || encerradaPorDuracaoMaxima);
   const aoEncerrar = aoEncerrarProp ?? (() => setEncerradaManualmenteLocal(true));
 
+  // Fase 13 (FE-6) — o pop-up do Retrospecto. `null` = fechado. O estado mora
+  // AQUI, e não dentro de `EncerrarCopiloto`, por um motivo mecânico: o
+  // botão "Encerrar" é desmontado no mesmo instante em que a sessão encerra
+  // (`{!sessaoEncerrada && …}` no rodapé) — um pop-up montado lá dentro
+  // sumiria junto com o clique que o abriu.
+  //
+  // O que a resposta de `POST …/encerrar` devolveu. `null` NÃO é "não
+  // existe": pode ser falha isolada da montagem (§D.4 — o retrospecto nunca
+  // derruba o encerramento) ou sessão JÁ encerrada. Nos dois casos o pop-up
+  // busca o que existir e, se não existir, mostra o stub rotulado. Nunca um
+  // corpo vazio disfarçado de retrospecto real.
+  const [retrospectoAberto, setRetrospectoAberto] = useState<{ inicial: RetrospectoDaSessao | null } | null>(null);
+  const gatilhoEncerrarRef = useRef<HTMLButtonElement>(null);
+  const botaoRegistroRef = useRef<HTMLButtonElement>(null);
+
   if (carregando && !estado) return <EstadoCarregando rotulo="Carregando o copiloto…" />;
 
   if (erro) {
@@ -282,6 +298,67 @@ export function PainelCopiloto({
   const blocoAtualCoberto = temBlocoResolvido && estado.falta_no_bloco.campos.length === 0;
   const proximoBloco = estado.blocos_nao_percorridos[0] ?? null;
 
+  // As abas da COL 3 (Fase 13, FE-1/FE-2). `ficha`/`inventario` saem do
+  // `polling` para constantes locais ANTES do JSX de propósito: é o que faz
+  // o TypeScript estreitar o tipo dentro das closures de `conteudo`, sem um
+  // único `!` de asserção não-nula numa tela que a advogada usa ao vivo.
+  //
+  // `conteudo` é FUNÇÃO, não elemento: só a aba ativa é chamada, então a aba
+  // inativa não existe no DOM — nenhum `onScroll`, `ResizeObserver` ou
+  // realce vivo fora de vista, e trocar de aba não bate no banco.
+  // Só o encerramento MANUAL abre o pop-up (CONFLITO C-3): o automático por
+  // duração máxima grava o retrospecto e não abre janela nenhuma — ela ainda
+  // está com o cliente na sala. `retrospectoAtivo` é o kill-switch
+  // (`copiloto_sessao.retrospecto_ativo`, 0125): desligado, o encerramento
+  // volta a ser exatamente o que era antes desta fase.
+  function aoEncerrarManualmente(retrospectoDaResposta: RetrospectoDaSessao | null) {
+    aoEncerrar();
+    if (polling.retrospectoAtivo) setRetrospectoAberto({ inicial: retrospectoDaResposta });
+  }
+
+  // Ao fechar o pop-up, o foco volta a quem o abriu. O botão "Encerrar" já
+  // não existe (a sessão encerrou e o rodapé o desmontou), então o destino é
+  // "O cliente disse" — o controle permanente mais próximo de onde ela
+  // clicou. Nunca o `<body>`: foco perdido é teclado perdido.
+  function aoFecharRetrospecto() {
+    setRetrospectoAberto(null);
+    const gatilho = gatilhoEncerrarRef.current;
+    if (gatilho && gatilho.isConnected) gatilho.focus();
+    else botaoRegistroRef.current?.focus();
+  }
+
+  const ficha = polling.ficha;
+  const inventario = polling.inventario;
+  const abasColuna3: AbaColuna3[] = [
+    ...(ficha
+      ? [
+          {
+            id: "ficha",
+            rotulo: "Ficha",
+            contagem: ficha.itens.length,
+            conteudo: () => <FichaCliente itens={ficha.itens} sessaoEncerrada={sessaoEncerrada} configTeto={ficha.teto_fixos} />,
+          },
+        ]
+      : []),
+    {
+      id: "transcricao",
+      rotulo: "Transcrição",
+      // Sessão encerrada: a transcrição ao vivo some (a consolidada vive no
+      // servidor) — regra herdada, não muda com as abas.
+      conteudo: () => <PainelTranscricao segmentos={sessaoEncerrada ? [] : polling.segmentos} usuarioLogado={usuarioLogado} />,
+    },
+    ...(inventario
+      ? [
+          {
+            id: "inventario",
+            rotulo: "Inventário",
+            contagem: totalDoInventario(inventario),
+            conteudo: () => <PainelInventario inventario={inventario} />,
+          },
+        ]
+      : []),
+  ];
+
   return (
     // F7 (18/09) — número mágico morto: `max-h-[calc(100vh-14.5rem)]` media
     // "o que sobra da viewport" por SUBTRAÇÃO de uma constante nunca
@@ -301,19 +378,34 @@ export function PainelCopiloto({
     // conteúdo cortado quando ela reaparece.
     <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto] gap-2">
       {/* LINHA 1 — as 3 colunas do mosaico. `lg:grid-cols-[40%_32%_28%]`
-       * (Fale agora / Cuidado / Transcrição); abaixo de `lg` empilha em
-       * ordem de prioridade (1→2→3) — o telão é o caso de uso principal,
-       * mas a tela não pode quebrar em monitor estreito.
+       * (Fale agora / Cuidado / Ficha·Transcrição·Inventário); abaixo de `lg`
+       * empilha em ordem de prioridade (1→2→3) — o telão é o caso de uso
+       * principal, mas a tela não pode quebrar em monitor estreito.
+       *
+       * 🔴 Fase 13, MEDIDO em Chromium: as três colunas eram `40%_32%_28%`, e
+       * porcentagem NÃO desconta o `gap`. 40+32+28 = 100% da célula MAIS 2 ×
+       * `gap-2` = a grade sempre nasceu 16 px mais larga do que o espaço que
+       * tinha (1480 contra 1464 em 1536×826). Isso ficou escondido enquanto o
+       * `<main>` tinha 24 px de padding para absorver; com o padding zerado
+       * (a correção de `globals.css` desta fase), virou rolagem HORIZONTAL de
+       * página — 1552 contra 1536. `fr` divide o que SOBRA depois dos gaps,
+       * na mesma proporção 40:32:28, e `minmax(0,…)` preserva o contrato de
+       * `min-width: 0` que a contenção desta tela depende.
        *
        * A CONTENÇÃO de cada célula é responsabilidade de `Coluna`
        * (`copiloto/Coluna.tsx`, `overflow-hidden`/`min-h-0`) — corrigido
        * 17/09/2026 depois de a transcrição vazar por cima do rodapé com 31
        * segmentos (COL 3 era só `min-h-0`, sem `flex`: o `flex-1` do filho
-       * ficava inerte). `min-h-[22rem]` evita que o mosaico colapse para uma
-       * faixa ilegível em tela baixa; o teto de cima (antes um `max-h`
-       * calculado aqui) agora vem de sobra do `1fr` do grid ancestral — não
-       * há mais uma 2ª conta de altura para divergir da 1ª. */}
-      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[40%_32%_28%]">
+       * ficava inerte). O teto de cima (antes um `max-h` calculado aqui) vem
+       * de sobra do `1fr` do grid ancestral — não há mais uma 2ª conta de
+       * altura para divergir da 1ª.
+       *
+       * 🔴 Fase 13: o comentário anterior citava um `min-h-[22rem]` que **não
+       * existe mais na classe** (era o piso contra o mosaico colapsar em tela
+       * baixa). Comentário órfão corrigido — quem lê o código lê o que ele
+       * faz. O piso de legibilidade hoje é verificado por MEDIÇÃO em Chromium
+       * (§C.4 do plano: mosaico ≥ 330 px), não por classe. */}
+      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[minmax(0,40fr)_minmax(0,32fr)_minmax(0,28fr)]">
         {/* COL 1 — "Fale agora". Único bloco com peso visual: é a próxima
          * frase dela. Nunca clicável por inteiro (a lição do "link de 11px"
          * e do "card inteiro clicável muda o contrato do link") — só os
@@ -367,53 +459,21 @@ export function PainelCopiloto({
           />
         </Coluna>
 
-        {/* COL 3 — "Ficha do cliente" (F1, migration 0122) quando o
-         * kill-switch `copiloto_sessao.ficha_cliente` está LIGADO
-         * (`polling.ficha` não nulo) — o retrato humano do decisor, já
-         * combinado com o patrimônio mencionado e ORDENADO pelo servidor.
-         * `polling.ficha === null` cobre TANTO o kill-switch desligado
-         * (padrão de fábrica, 0122: nasce `false`) QUANTO sessão sem item
-         * ainda — nos dois casos cai no layout ANTERIOR (Transcrição +
-         * Inventário empilhados, F2: sem abas, que a advogada nunca clicava)
-         * em vez de mostrar uma Ficha vazia. Zero regressão: quem ainda não
-         * ligou a chave continua vendo exatamente o que via antes desta
-         * fatia. */}
-        {/* 🔴 F4-1 (Fable, rodada 4, medido em Chromium real) — esta célula
-         * NÃO é `rolavel`: `FichaCliente` já é dona da sua ÚNICA superfície de
-         * rolagem própria (a região `role="region"` de `itensRolaveis`, só
-         * existe quando há excedente de fato). Com `Coluna rolavel`
-         * (`overflow-y-auto`) envolvendo `raizRef` (`relative`), o
-         * container-SOMBRA de medição (`absolute`, `visibility:hidden` via
-         * `invisible`) CONTINUAVA CONTANDO na área rolável do ancestral —
-         * elemento `absolute` participa do `scrollHeight` do primeiro
-         * ancestral com `overflow`, mesmo invisível. Número medido pelo
-         * Fable em Chrome headless 1536×826, 768p×18px, 5+ itens
-         * otimistas: `col.scrollHeight(614) !== col.clientHeight(590)` com
-         * `Coluna rolavel` (excedente de 24px — a COL 3 ganhava ~24px de
-         * rolagem sobre NADA, e a "área fixa" deixava de ser fixa ao rolar,
-         * reabrindo o duplo-scroll que a F3 fechou em 17/09). Com `Coluna`
-         * padrão (`overflow-hidden`), a sombra é recortada pela célula ANTES
-         * de contar em qualquer `scrollHeight` — `overflow-hidden` não expõe
-         * barra mesmo quando o conteúdo excede (mesmo padrão já usado no
-         * ramo `else` abaixo: `PainelTranscricao` também é dono da própria
-         * região rolável dentro de uma `Coluna` que só contém). */}
-        {polling.ficha ? (
-          <Coluna rotulo="Ficha do cliente">
-            <FichaCliente itens={polling.ficha.itens} sessaoEncerrada={sessaoEncerrada} configTeto={polling.ficha.teto_fixos} />
-          </Coluna>
-        ) : (
-          <Coluna className="gap-2" rolavel rotulo="Transcrição e inventário">
-            <PainelTranscricao segmentos={sessaoEncerrada ? [] : polling.segmentos} usuarioLogado={usuarioLogado} />
-            {polling.inventario && (
-              <div className="shrink-0">
-                <p className="mb-1.5 text-rotulo font-semibold text-tinta-fraca">
-                  Inventário · {polling.inventario.resumo.total_itens_proprios + polling.inventario.resumo.total_itens_incertos}
-                </p>
-                <PainelInventario inventario={polling.inventario} />
-              </div>
-            )}
-          </Coluna>
-        )}
+        {/* COL 3 — Fase 13 (FE-1/FE-2): uma célula, uma faixa de abas leve,
+         * UM painel rolável (`Ficha · Transcrição · Inventário`). O desenho,
+         * o custo vertical e a regra de "nada troca de aba sozinho" estão no
+         * docblock de `AbasColuna3`; o que importa AQUI é só isto:
+         *
+         * `Coluna` fica no modo PADRÃO (`overflow-hidden`), SEM `rolavel` —
+         * a célula contém, o painel ativo rola. É o que fecha o duplo-scroll
+         * vivo que esta coluna tinha (célula rolável + região própria da
+         * transcrição, com o inventário `shrink-0` empurrando) e o que
+         * preserva a correção F4-1 do Fable, medida em Chromium: com
+         * `Coluna rolavel` o container-sombra `absolute` da `FichaCliente`
+         * contava no `scrollHeight` do ancestral (614 !== 590). */}
+        <Coluna>
+          <AbasColuna3 abas={abasColuna3} idPadrao={ficha ? "ficha" : "transcricao"} rotuloDaFaixa="Ficha, transcrição e inventário" />
+        </Coluna>
       </div>
 
       {/* LINHA 2 — rodapé PERMANENTE, sempre no mesmo pixel, fora do espaço
@@ -445,14 +505,23 @@ export function PainelCopiloto({
                   ultimaSugestaoAbaixoDoLimiar={ultimaSugestaoDoCicloAbaixoDoLimiar}
                 />
               )}
+              {/* D-4 — a linha sóbria do fim ganha CAMINHO para o documento.
+               * No encerramento por duração máxima o pop-up não abre (C-3),
+               * e sem o link o retrospecto existia sem ninguém achar. No
+               * manual o link fica também: depois que ela fecha o pop-up,
+               * era o único jeito de voltar ao papel. `LinkRetrospecto` só
+               * se desenha se o documento existir de fato — nunca um link
+               * para gaveta vazia. */}
               {encerradaPorDuracaoMaxima && (
                 <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
                   Copiloto encerrado por tempo máximo — transcrição consolidada, sem novas sugestões.
+                  <LinkRetrospecto sessaoId={sessaoId} />
                 </p>
               )}
               {encerradaManualmente && !encerradaPorDuracaoMaxima && (
                 <p role="status" className="rounded-controle border border-dashed border-linha-forte px-3 py-2 text-sm text-tinta-suave">
                   Copiloto encerrado — transcrição consolidada, sem novas sugestões.
+                  <LinkRetrospecto sessaoId={sessaoId} />
                 </p>
               )}
             </div>
@@ -466,7 +535,15 @@ export function PainelCopiloto({
              * dentro de `RegistroManual`, nunca duplicado aqui. Mesma família
              * de `EstadoDoCopiloto`: leitura/registro do que está acontecendo,
              * nunca ação destrutiva — por isso mora à esquerda, com ele. */}
-            <Botao type="button" variante="fantasma" tamanho="compacto" onClick={() => setRegistroAberto((v) => !v)} aria-expanded={registroAberto} className="shrink-0">
+            <Botao
+              ref={botaoRegistroRef}
+              type="button"
+              variante="fantasma"
+              tamanho="compacto"
+              onClick={() => setRegistroAberto((v) => !v)}
+              aria-expanded={registroAberto}
+              className="shrink-0"
+            >
               O cliente disse
               <span aria-hidden="true" className={`ml-1 inline-block transition-transform ${registroAberto ? "rotate-90" : ""}`}>
                 ▸
@@ -476,28 +553,21 @@ export function PainelCopiloto({
 
           {!sessaoEncerrada && (
             <div className="flex shrink-0 items-center gap-2 border-l border-linha pl-2">
-              <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrar} />
+              <EncerrarCopiloto sessaoId={sessaoId} aoEncerrar={aoEncerrarManualmente} gatilhoRef={gatilhoEncerrarRef} />
             </div>
           )}
         </div>
 
-        {/* F4 (18/09) — rodapé de transcrição. `rodape_transcricao` nasce
-         * LIGADO na 0122 (reorganização de UI sobre dado que já existe, não
-         * capacidade nova a testar com cautela). 🔴 F3-2 (Fable, rodada 3,
-         * 18/09): o payload de polling JÁ expõe a chave
-         * (`polling.rodapeTranscricaoAtivo`) — o rodapé agora é
-         * CONDICIONAL de fato, não mais sempre exibido. Decisão de produto
-         * do coordenador (18/09): `rodape_transcricao=false` significa
-         * ESCONDER o rodapé inteiro — não existe mais "voltar para a aba
-         * anterior" (`ColunaTranscricaoInventario` foi removida nesta mesma
-         * entrega), então desligar a chave é a única saída visível. Some
-         * também quando a sessão encerra (nada de novo a escutar), mesmo
-         * padrão do resto do rodapé. */}
-        {!sessaoEncerrada && polling.rodapeTranscricaoAtivo && (
+        {/* Fase 13 (§A.1/§A.3) — a linha de saúde da captura, permanente, em
+         * qualquer aba: o SINAL é permanente, o CONTEÚDO é aba. Custa 44 px
+         * do orçamento da dobra (§C.1) e some quando a sessão encerra (nada
+         * de novo a escutar). Kill-switch novo — `copiloto_sessao.
+         * saude_captura` (0125) —, porque o nome antigo passaria a descrever
+         * um rodapé que não tem mais transcrição; ver `RodapeTranscricao`. */}
+        {!sessaoEncerrada && polling.saudeCapturaAtiva && (
           <RodapeTranscricao
             segmentos={polling.segmentos}
             sessaoEncerrada={sessaoEncerrada}
-            usuarioLogado={usuarioLogado}
             silencioAtencaoS={polling.silencioAtencaoS}
             silencioAlertaS={polling.silencioAlertaS}
           />
@@ -514,96 +584,13 @@ export function PainelCopiloto({
           <RegistroManual sessaoId={sessaoId} sessaoEncerrada={sessaoEncerrada || estado.estado_copiloto === "encerrado"} />
         </div>
       )}
-    </div>
-  );
-}
 
-const ROTULO_CATEGORIA_INVENTARIO: Record<CategoriaInventarioMencionado, string> = {
-  imovel: "Imóveis",
-  empresa: "Empresas",
-  investimento: "Investimentos",
-  outro: "Outros",
-};
-
-/**
- * Contagens por categoria (`IMÓVEIS · 6`) + os 5 itens mais recentes com a
- * citação literal que os prova — layout do pedido do dono, 17/09. `posse:
- * "incerta"` nunca soma no total da categoria (regra do tipo: "a confirmar",
- * nunca somado) — aparece só como contagem separada, mesmo padrão do resumo
- * que já vai para a IA (`ResumoInventarioAcumulado`). A REGRA de contagem não
- * muda na Fatia 2 — só a apresentação (linha de resumo + qual número fica em
- * negrito quando `contagem_propria` é 0).
- */
-function PainelInventario({ inventario }: { inventario: InventarioParaPainel }) {
-  const categorias = inventario.resumo.por_categoria.filter((c) => c.contagem_propria > 0 || c.contagem_incerta > 0);
-  const { total_itens_proprios: proprios, total_itens_incertos: incertos } = inventario.resumo;
-
-  return (
-    <div className="flex flex-col gap-3 rounded-controle border border-linha bg-papel-elevado px-3 py-2">
-      {/* Fatia 2 — a mentira por omissão era "Inventário (0)" com 31 itens
-       * captados: o rótulo da aba já soma próprios+incertos (responde "tem
-       * coisa aqui?"), e esta linha responde a segunda pergunta, densa:
-       * quanto já foi captado vs. quanto ainda precisa de confirmação da
-       * titularidade. Some sozinha se não há nada captado ainda (mesma regra
-       * de "vazio é vazio" — nunca "0 captados · 0 confirmados"). */}
-      {proprios + incertos > 0 && (
-        <p className="text-sm text-tinta">
-          <span className="font-bold tabular-nums">{proprios + incertos}</span> captados ·{" "}
-          <span className="font-bold tabular-nums">{proprios}</span> confirmados ·{" "}
-          <span className="font-bold tabular-nums">{incertos}</span> a confirmar
-        </p>
-      )}
-
-      {categorias.length === 0 ? (
-        <p className="text-sm text-tinta-suave">Nenhum item de patrimônio mencionado ainda nesta sessão.</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {categorias.map((c) => (
-            <li key={c.categoria} className="flex items-baseline justify-between text-sm text-tinta">
-              <span className="font-medium uppercase tracking-wide text-tinta-fraca">{ROTULO_CATEGORIA_INVENTARIO[c.categoria]}</span>
-              {/* Quando nada está confirmado ainda (`contagem_propria === 0`),
-               * o destaque nunca pode ser um "0" em negrito ao lado de itens
-               * reais captados — inverte a ênfase para o número que importa
-               * agora: o captado, ainda a confirmar. */}
-              {c.contagem_propria > 0 ? (
-                <span className="font-bold tabular-nums">
-                  {c.contagem_propria}
-                  {c.contagem_incerta > 0 && <span className="ml-1.5 font-normal text-tinta-fraca">· {c.contagem_incerta} a confirmar</span>}
-                </span>
-              ) : (
-                <span className="font-normal tabular-nums text-tinta-suave">
-                  <span className="font-bold text-tinta">{c.contagem_incerta}</span> a confirmar
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {inventario.recentes.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-dashed border-linha pt-2.5">
-          <p className="text-legenda font-medium uppercase text-tinta-fraca">Mencionados recentemente</p>
-          <ul className="flex flex-col gap-2">
-            {inventario.recentes.map((item, i) => (
-              <ItemInventarioRecente key={i} item={item} />
-            ))}
-          </ul>
-        </div>
+      {/* Fora do grid nobre: é `fixed`, não ocupa linha nenhuma e não entra
+       * no orçamento da primeira dobra (§C.3). */}
+      {retrospectoAberto && (
+        <PopupRetrospecto sessaoId={sessaoId} retrospectoInicial={retrospectoAberto.inicial} aoFechar={aoFecharRetrospecto} />
       )}
     </div>
-  );
-}
-
-function ItemInventarioRecente({ item }: { item: ItemInventarioRecentePainel }) {
-  return (
-    <li className="flex flex-col gap-0.5">
-      <p className="text-sm text-tinta">
-        {item.descricao}
-        {item.posse === "incerta" && <span className="ml-1.5 text-legenda text-tinta-fraca">(a confirmar)</span>}
-        {item.posse === "terceiro" && <span className="ml-1.5 text-legenda text-tinta-fraca">(de terceiro)</span>}
-      </p>
-      <p className="text-legenda italic text-tinta-fraca">&ldquo;{item.evidencia}&rdquo;</p>
-    </li>
   );
 }
 
@@ -1283,7 +1270,20 @@ function CardRecente({
  * `sessao_ja_encerrada` (409, clique duplo) é tratado como sucesso silencioso
  * — a sessão já está no estado que o clique pedia.
  */
-function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerrar: () => void }) {
+function EncerrarCopiloto({
+  sessaoId,
+  aoEncerrar,
+  gatilhoRef,
+}: {
+  sessaoId: string;
+  /** Recebe o retrospecto que a resposta trouxe, se trouxe. `null` cobre os
+   * três casos em que ele não vem junto (kill-switch desligado, falha
+   * isolada da montagem, sessão já encerrada) — quem decide o que fazer com
+   * isso é `PainelCopiloto`, dono do pop-up. */
+  aoEncerrar: (retrospecto: RetrospectoDaSessao | null) => void;
+  /** O botão que abriu — para o foco voltar ao fechar o pop-up. */
+  gatilhoRef?: RefObject<HTMLButtonElement | null>;
+}) {
   const [confirmando, setConfirmando] = useState(false);
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState<unknown>(null);
@@ -1292,11 +1292,16 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
     setProcessando(true);
     setErro(null);
     try {
-      await encerrarCopiloto(sessaoId);
-      aoEncerrar();
+      const resposta = await encerrarCopiloto(sessaoId);
+      // `retrospecto: null` é caminho ESPERADO, não borda: kill-switch
+      // desligado, ou a montagem falhou e o encerramento seguiu assim mesmo
+      // (§D.4 — o retrospecto nunca derruba a sessão).
+      aoEncerrar(resposta.retrospecto ?? null);
     } catch (e) {
       if (e instanceof ErroSessao && e.codigo === "sessao_ja_encerrada") {
-        aoEncerrar();
+        // Encerrar duas vezes mostra o MESMO papel, nunca dois: sem
+        // retrospecto na resposta, o pop-up BUSCA o que já existe.
+        aoEncerrar(null);
       } else {
         setErro(e);
       }
@@ -1312,7 +1317,7 @@ function EncerrarCopiloto({ sessaoId, aoEncerrar }: { sessaoId: string; aoEncerr
     // agora também `border-l` (separador do bloco de ações destrutivas) —
     // manter os dois era borda dupla no mesmo canto.
     <div className="flex flex-col gap-2">
-      <Botao variante="secundario" tamanho="compacto" onClick={() => setConfirmando(true)} className="self-start">
+      <Botao ref={gatilhoRef} variante="secundario" tamanho="compacto" onClick={() => setConfirmando(true)} className="self-start">
         Encerrar copiloto desta sessão
       </Botao>
       {Boolean(erro) && (

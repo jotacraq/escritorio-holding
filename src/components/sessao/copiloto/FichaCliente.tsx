@@ -212,9 +212,7 @@ export function FichaCliente({
   if (itens.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-        <p className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
-          Ficha do cliente{sessaoEncerrada ? " · sessão encerrada" : ""}
-        </p>
+        {sessaoEncerrada && <p className="shrink-0 text-rotulo font-semibold text-tinta-fraca">Sessão encerrada</p>}
         <p className="text-sm text-tinta-suave">Nenhum fato relevante identificado ainda nesta sessão.</p>
       </div>
     );
@@ -230,9 +228,14 @@ export function FichaCliente({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-      <p className="shrink-0 text-rotulo font-semibold text-tinta-fraca">
-        Ficha do cliente{sessaoEncerrada ? " · sessão encerrada" : ""}
-      </p>
+      {/* 🔴 Fase 13 (D-5) — o rótulo "Ficha do cliente" SAIU: esta folha passou
+       * a viver dentro de uma aba que já se chama "Ficha" (`AbasColuna3`), e
+       * repetir o nome ~20 px abaixo do rótulo da aba é o mesmo fato duas
+       * vezes numa célula de 28% de largura. O que SOBREVIVE é só o que a
+       * aba não diz: "Sessão encerrada" — o aviso de por que não há mais
+       * item novo nem área fixa. Na sessão ao vivo, nenhuma linha aqui
+       * (≈23 px devolvidos ao conteúdo). */}
+      {sessaoEncerrada && <p className="shrink-0 text-rotulo font-semibold text-tinta-fraca">Sessão encerrada</p>}
 
       {/* `raizRef` é o que participa de verdade do flex da COLUNA ancestral
        * (`flex-1 min-h-0`) — é o `clientHeight` DELE, não do container de

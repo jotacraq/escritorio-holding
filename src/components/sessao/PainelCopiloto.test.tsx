@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type {
@@ -2252,7 +2252,7 @@ describe("mosaico — geometria do grid sem número mágico (F7)", () => {
  * nenhum teste desta suíte tinha `ficha` até esta rodada — zero ocorrências
  * confirmadas pelo Fable antes desta correção.
  */
-describe("Fase 12, F4-2 — ficha ligada e vazia mantém a identidade de COL 3 desde o início", () => {
+describe("Fase 12/13 — a COL 3 e a faixa de abas", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -2274,31 +2274,78 @@ describe("Fase 12, F4-2 — ficha ligada e vazia mantém a identidade de COL 3 d
     return montado;
   }
 
-  it("ficha ligada e vazia → COL 3 já é 'Ficha do cliente' com o estado vazio, não 'Transcrição e inventário'", async () => {
+  it("ficha ligada e vazia → a aba de estreia é a Ficha, com o estado vazio dela", async () => {
     estado.pollingRespostaPadrao = respostaPolling({ ficha: { itens: [], teto_fixos: null } });
-    const { container, getByText } = await abrirComPolling();
+    const { container, getByRole, getByText } = await abrirComPolling();
 
-    // "Ficha do cliente" é texto visível (`<p>` dentro de `FichaCliente.tsx`,
-    // não `aria-label` de `Coluna` — F4-1 tirou `rolavel` desta célula).
-    expect(getByText("Ficha do cliente")).toBeTruthy();
+    // D-5: o nome vive no RÓTULO DA ABA, e em nenhum outro lugar da célula —
+    // a prova de que a Ficha está na tela é o conteúdo dela, não um segundo
+    // título repetindo a aba.
     expect(getByText("Nenhum fato relevante identificado ainda nesta sessão.")).toBeTruthy();
-    // A COL de fallback (`rotulo="Transcrição e inventário"`, só `aria-label`
-    // porque a `Coluna` é `rolavel`) não pode existir junto — as duas
-    // identidades da COL 3 são mutuamente exclusivas. `PainelTranscricao`
-    // (região "Transcrição da sessão") tampouco é montada nesse ramo — a
-    // frase "Aguardando a fala da sessão." continua existindo no rodapé
-    // (`RodapeTranscricao`, mesma frase por design), então a prova certa é a
-    // AUSÊNCIA da região da transcrição, não da frase solta no documento.
-    expect(container.querySelector('[role="region"][aria-label="Transcrição e inventário"]')).toBeNull();
+    expect(container.textContent).not.toContain("Ficha do cliente");
+    expect(getByRole("tab", { name: "Ficha" }).getAttribute("aria-selected")).toBe("true");
+    // Fase 13: a Transcrição virou ABA, e a aba inativa NÃO existe no DOM —
+    // a região "Transcrição da sessão" só é montada quando ela clica.
     expect(container.querySelector('[role="region"][aria-label="Transcrição da sessão"]')).toBeNull();
   });
 
-  it("ficha null (kill-switch desligado ou payload antigo) continua no layout anterior — zero regressão", async () => {
+  it("ficha null (kill-switch desligado) → sem aba 'Ficha' na faixa, estreia na Transcrição", async () => {
     estado.pollingRespostaPadrao = respostaPolling({ ficha: null });
-    const { container, queryByText } = await abrirComPolling();
+    const { container, getByRole, queryByRole, queryByText } = await abrirComPolling();
 
-    expect(container.querySelector('[role="region"][aria-label="Transcrição e inventário"]')).not.toBeNull();
-    expect(queryByText("Ficha do cliente")).toBeNull();
+    expect(queryByRole("tab", { name: "Ficha" })).toBeNull();
+    expect(getByRole("tab", { name: "Transcrição" }).getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector('[role="region"][aria-label="Transcrição da sessão"]')).not.toBeNull();
+    expect(queryByText("Nenhum fato relevante identificado ainda nesta sessão.")).toBeNull();
+  });
+
+  it("FE-1 — clicar em 'Transcrição' desmonta a Ficha e monta a transcrição (nunca as duas)", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({ ficha: { itens: [], teto_fixos: null } });
+    const { container, getByRole, queryByText } = await abrirComPolling();
+
+    await act(async () => {
+      fireEvent.click(getByRole("tab", { name: "Transcrição" }));
+    });
+
+    expect(queryByText("Nenhum fato relevante identificado ainda nesta sessão.")).toBeNull();
+    expect(container.querySelector('[role="region"][aria-label="Transcrição da sessão"]')).not.toBeNull();
+  });
+
+  it("FE-2 — a COL 3 tem exatamente UMA superfície de rolagem declarada, nunca duas", async () => {
+    // jsdom não calcula layout (a prova final é em Chromium, §C.4), mas a
+    // CLASSE é declarativa e verificável aqui: a célula não pode ter
+    // `overflow-y-auto` ao mesmo tempo que o painel de dentro. É o
+    // duplo-scroll que esta base já pagou duas vezes.
+    estado.pollingRespostaPadrao = respostaPolling({ ficha: null });
+    const { container } = await abrirComPolling();
+
+    const regiao = container.querySelector('[role="region"][aria-label="Transcrição da sessão"]');
+    expect(regiao?.className).toContain("overflow-y-auto");
+    // Nenhum ANCESTRAL da região rolável pode rolar também.
+    let pai = regiao?.parentElement ?? null;
+    const ancestraisRolaveis: string[] = [];
+    while (pai && pai !== container) {
+      if (pai.className.includes("overflow-y-auto")) ancestraisRolaveis.push(pai.className);
+      pai = pai.parentElement;
+    }
+    expect(ancestraisRolaveis).toEqual([]);
+  });
+
+  it("FE-1 — a contagem aparece no rótulo da aba inativa, e nunca um zero", async () => {
+    estado.pollingRespostaPadrao = respostaPolling({
+      ficha: { itens: [], teto_fixos: null },
+      inventario: {
+        resumo: { total_itens_proprios: 2, total_itens_incertos: 1, por_categoria: [] },
+        recentes: [],
+      } as unknown as EstadoCopilotoComPolling["inventario"],
+    });
+    const { getByRole, queryByRole } = await abrirComPolling();
+
+    // 2 próprios + 1 a confirmar = 3, a MESMA soma da linha de resumo do painel.
+    expect(getByRole("tab", { name: "Inventário, 3 itens" })).toBeTruthy();
+    // A Ficha está vazia: rótulo SEM número (vazio é vazio, nunca "Ficha 0").
+    expect(getByRole("tab", { name: "Ficha" })).toBeTruthy();
+    expect(queryByRole("tab", { name: /Ficha, 0/ })).toBeNull();
   });
 });
 

@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { registrarErro } from "@/server/erros";
 import { consolidarTranscricaoDaSessao } from "./consolidar";
 import { encerrarBotComRetentativa } from "./recall";
+import { gravarRetrospectoDaSessao } from "./retrospecto";
+import type { RetrospectoDaSessao } from "@/types/copiloto";
 
 /**
  * O EFEITO de encerrar uma sessão do copiloto — extraído de
@@ -14,12 +16,24 @@ import { encerrarBotComRetentativa } from "./recall";
  * — achado da revisão desta fatia: a promessa existia, o código não. Este
  * módulo é o que a torna verdadeira, nos dois caminhos, sem duplicar lógica.
  *
- * Três efeitos, sempre nesta ordem (mesma ordem da rota original):
+ * Quatro efeitos, sempre nesta ordem (as 3 primeiras são a ordem da rota
+ * original; a 4ª entrou na Fase 13):
  *  1. `sessoes_copiloto.estado → 'encerrado'` (+ `encerrado_em`), só a
- *     partir de 'aguardando'/'ativo' — idempotente, nunca reencerra.
+ *     partir de 'aguardando'/'ativo'/'erro' — idempotente, nunca reencerra.
  *  2. Consolidação em `transcricoes` (reusa o caminho de
  *     `POST /api/sessoes/[id]/transcricao`, idempotente por sha256).
  *  3. `desfecho='expirada'` em toda sugestão ainda sem desfecho.
+ *  4. 🔴 FASE 13 (19/09/2026) — RETROSPECTO DA SESSÃO
+ *     (`retrospecto.ts::gravarRetrospectoDaSessao`, tabela
+ *     `copiloto_retrospectos`, 0125). Pendurado DEPOIS de `marcarEncerrada`
+ *     ter devolvido não-nulo, que já é o portão de idempotência — roda UMA
+ *     VEZ por sessão, nos TRÊS caminhos (clique, `duracao_maxima_minutos`,
+ *     retomada de sessão em `'erro'`), sem duplicar lógica. A 2ª trava é o
+ *     banco: `sessao_id` é PK da tabela nova.
+ *
+ *     Decisão do dono (19/09): o retrospecto é GRAVADO em todos os caminhos;
+ *     o POP-UP só abre no encerramento MANUAL — isso é da TELA, não deste
+ *     módulo. Aqui o dado sempre existe; quem decide mostrar é o front.
  */
 
 export interface SessaoParaEncerrar {
@@ -33,6 +47,12 @@ export interface ResultadoEncerramento {
   transcricaoId: string | null;
   jaExistiaTranscricao: boolean;
   sugestoesExpiradas: number;
+  /** FASE 13 (19/09/2026) — o Retrospecto da Sessão, gravado aqui dentro.
+   * `null` quando `copiloto_sessao.retrospecto_ativo` está desligado (ou a
+   * chave está ausente — fail-closed) OU quando a montagem falhou: o
+   * encerramento NUNCA é derrubado por isso (ver `gravarRetrospectoDaSessao`).
+   * `encerrado:false` sempre traz `null` — nada foi feito nesta chamada. */
+  retrospecto: RetrospectoDaSessao | null;
 }
 
 interface ErroPostgrest {
@@ -202,13 +222,20 @@ async function expirarSugestoesPendentes(admin: SupabaseClient, sessaoId: string
 export async function executarEncerramentoCopiloto(
   supabase: SupabaseClient,
   admin: SupabaseClient,
-  params: { sessaoId: string; sessao: SessaoParaEncerrar },
+  params: { sessaoId: string; sessao: SessaoParaEncerrar; criadoPor?: string | null },
 ): Promise<ResultadoEncerramento> {
   const encerradoEm = new Date().toISOString();
 
   const mudou = await marcarEncerrada(admin, params.sessaoId, encerradoEm);
   if (!mudou) {
-    return { encerrado: false, encerradoEm: null, transcricaoId: null, jaExistiaTranscricao: false, sugestoesExpiradas: 0 };
+    return {
+      encerrado: false,
+      encerradoEm: null,
+      transcricaoId: null,
+      jaExistiaTranscricao: false,
+      sugestoesExpiradas: 0,
+      retrospecto: null,
+    };
   }
 
   // Tira o bot da sala ANTES de consolidar — mas NUNCA lança e NUNCA impede a
@@ -230,12 +257,49 @@ export async function executarEncerramentoCopiloto(
 
   const sugestoesExpiradas = await expirarSugestoesPendentes(admin, params.sessaoId, encerradoEm);
 
+  // 🔴 FASE 13 — RETROSPECTO. Pendurado DEPOIS de `marcarEncerrada` ter
+  // devolvido não-nulo, que é o portão de idempotência desta função: roda
+  // UMA VEZ por sessão, nos TRÊS caminhos (clique da advogada,
+  // `duracao_maxima_minutos`, retomada de sessão em `'erro'`), sem duplicar
+  // lógica em lugar nenhum. A segunda trava é o banco: `sessao_id` é PK de
+  // `copiloto_retrospectos` (0125) — duas linhas é impossível.
+  //
+  // Vem POR ÚLTIMO de propósito: `expirarSugestoesPendentes` acabou de rodar,
+  // então o retrospecto retrata a sessão já fechada. E `gravarRetrospectoDaSessao`
+  // NUNCA lança (try/catch interno, mesma disciplina de
+  // `tirarBotDaSalaSeHouver`) — falhar aqui devolve `retrospecto: null` e o
+  // encerramento continua válido: a transcrição consolidada é o que não pode
+  // se perder, o documento de fim de sessão é remontável.
+  //
+  // 🔴 DEFESA EM PROFUNDIDADE (§D.4 item 4 do plano): `gravarRetrospectoDaSessao`
+  // JÁ tem `try/catch` próprio e, por contrato, nunca lança — mas o
+  // encerramento não pode DEPENDER dessa garantia. Se um dia ela quebrar (um
+  // `throw` novo antes do try interno, por exemplo), a transcrição
+  // consolidada não pode se perder junto. Mesmo raciocínio, literalmente, do
+  // `catch` "#inesperado" de `tirarBotDaSalaSeHouver`. `encerrar.test.ts`
+  // prova este caminho com um mock que REJEITA.
+  let retrospecto: RetrospectoDaSessao | null = null;
+  try {
+    retrospecto = await gravarRetrospectoDaSessao(supabase, admin, {
+      sessaoId: params.sessaoId,
+      jornadaId: params.sessao.jornadaId,
+      criadoPor: params.criadoPor ?? null,
+    });
+  } catch (erro) {
+    // Só ids no log — o corpo do retrospecto carrega fala de família real.
+    registrarErro("copiloto/encerrar.gravarRetrospecto#inesperado", erro, {
+      sessao_id: params.sessaoId,
+      jornada_id: params.sessao.jornadaId,
+    });
+  }
+
   return {
     encerrado: true,
     encerradoEm,
     transcricaoId: consolidacao.transcricaoId,
     jaExistiaTranscricao: consolidacao.jaExistia,
     sugestoesExpiradas,
+    retrospecto,
   };
 }
 
@@ -322,6 +386,11 @@ export async function tentarNovamenteEncerrarBotPendente(
   admin: SupabaseClient,
   sessaoId: string,
   sessao: SessaoParaEncerrar,
+  /** FASE 13 — autoria do Retrospecto quando ESTA chamada tira a sessão do
+   * `'erro'` e a encerra de verdade (o ramo que delega para
+   * `executarEncerramentoCopiloto`). `null`/ausente no ramo `'encerrado'`,
+   * que não grava retrospecto nenhum (a sessão já foi encerrada antes). */
+  criadoPor: string | null = null,
 ): Promise<ResultadoRetentativaPendenciaBot> {
   const { data, error } = await admin
     .from("sessoes_copiloto")
@@ -337,7 +406,7 @@ export async function tentarNovamenteEncerrarBotPendente(
     // Fluxo COMPLETO: marca encerrada (a partir de 'erro', ver marcarEncerrada),
     // tira o bot da sala (dentro de executarEncerramentoCopiloto), consolida
     // a transcrição, expira sugestões — a sessão nunca passou por nada disso.
-    const resultado = await executarEncerramentoCopiloto(supabase, admin, { sessaoId, sessao });
+    const resultado = await executarEncerramentoCopiloto(supabase, admin, { sessaoId, sessao, criadoPor });
     if (!resultado.encerrado) {
       // Corrida: outra requisição já resolveu entre a leitura acima e agora.
       return { tentou: true, resolvida: true, resultadoEncerramento: null };

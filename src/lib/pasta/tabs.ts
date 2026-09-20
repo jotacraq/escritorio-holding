@@ -42,7 +42,9 @@ export const TABS_FICHA: DefinicaoTabFicha[] = [
   {
     chave: "sessao",
     rotulo: "Sessão",
-    itens: ["sessao", "briefing", "relatorio_sv", "analise_sessao", "diagnostico_sv", "material"],
+    // `retrospecto_sv` entra DEPOIS de `analise_sessao` (Fase 13, §D.6): é o
+    // fechamento do copiloto, lido junto do resto do que a sessão produziu.
+    itens: ["sessao", "briefing", "relatorio_sv", "analise_sessao", "retrospecto_sv", "diagnostico_sv", "material"],
   },
   {
     chave: "documentos",

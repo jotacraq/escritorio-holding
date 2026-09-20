@@ -139,7 +139,10 @@ describe("FichaCliente — vazio e piso", () => {
     expect(regiao).not.toBeNull();
     expect(regiao!.textContent).toContain("Item 0");
     expect(regiao!.textContent).toContain("Item 2");
-    expect(container.textContent).toContain("Ficha do cliente · sessão encerrada");
+    // D-5: o nome "Ficha do cliente" agora é o rótulo da ABA (`AbasColuna3`);
+    // aqui sobrevive só o que a aba não diz — que a sessão acabou.
+    expect(container.textContent).toContain("Sessão encerrada");
+    expect(container.textContent).not.toContain("Ficha do cliente");
   });
 });
 

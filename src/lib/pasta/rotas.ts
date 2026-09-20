@@ -26,6 +26,7 @@ export const ABA_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   analise_sessao: "analise-sessao",
   diagnostico_sv: "diagnostico",
   relatorio_sv: "relatorio",
+  retrospecto_sv: "retrospecto",
   croqui: "croqui",
   material: "material",
   patrimonio: "patrimonio",
@@ -52,6 +53,10 @@ export const ACAO_POR_ITEM_PASTA: Record<ChaveItemPasta, string> = {
   analise_sessao: "Gerar a análise",
   diagnostico_sv: "Montar o diagnóstico",
   relatorio_sv: "Preencher o relatório",
+  // Verbo de LEITURA, e é isso mesmo: ninguém "faz" um retrospecto — ele
+  // nasce quando o copiloto é encerrado. A frase nunca pede uma ação que não
+  // existe ("gerar o retrospecto" seria um botão inventado).
+  retrospecto_sv: "Ver o retrospecto",
   croqui: "Iniciar o croqui",
   material: "Gerar o material",
   patrimonio: "Cadastrar o patrimônio",
@@ -73,6 +78,7 @@ export const TITULO_ACAO_ITEM_PASTA: Partial<Record<ChaveItemPasta, string>> = {
   analise_sessao: `Análise da ${rotulo("sessao_viabilidade")}`,
   diagnostico_sv: `${rotulo("diagnostico")} da ${rotulo("sessao_viabilidade")}`,
   relatorio_sv: `Relatório da ${rotulo("sessao_viabilidade")}`,
+  retrospecto_sv: `Retrospecto da ${rotulo("sessao_viabilidade")}`,
   croqui: rotulo("croqui"),
   material: "Material pós-sessão",
   documentos: `${rotulo("imposto_renda")} e contrato social`,

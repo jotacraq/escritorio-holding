@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { montar, semViolacoes } from "@/components/ui/a11y-teste";
 import type { SegmentoCopiloto } from "@/types/copiloto";
 import type { PapelEquipe } from "@/types/banco";
-import { PainelTranscricao } from "./PainelTranscricao";
+import { PainelTranscricao, rolarAoFimInstantaneo, toleranciaDoFim } from "./PainelTranscricao";
 
 /**
  * F3 — a transcrição ENTRA na tela (achado do Fable, 17/09):
@@ -376,5 +376,187 @@ describe("PainelTranscricao — F3, a transcrição entra na tela", () => {
     const itens = container.querySelectorAll("li");
     expect(itens[0].classList.contains("border-l")).toBe(true);
     expect(itens[1].classList.contains("border-l")).toBe(true);
+  });
+});
+
+/**
+ * Fase 13, §B — auto-scroll que não sequestra a rolagem dela.
+ *
+ * jsdom NÃO calcula layout: aqui se testa a REGRA (a aritmética da
+ * tolerância, quem escreve em `scrollTop`, quando o aviso aparece). A prova
+ * de que a coluna cabe na dobra e de que existe uma única superfície de
+ * rolagem é em Chromium real (§C.4) — este arquivo não pretende substituí-la.
+ */
+describe("PainelTranscricao — Fase 13 §B, o auto-scroll", () => {
+  function regiaoDe(container: HTMLElement): HTMLDivElement {
+    return container.querySelector('[role="region"][aria-label="Transcrição da sessão"]') as HTMLDivElement;
+  }
+
+  function fingirGeometria(el: HTMLElement, { scrollHeight, clientHeight, lineHeight }: { scrollHeight: number; clientHeight: number; lineHeight?: string }) {
+    Object.defineProperty(el, "scrollHeight", { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: clientHeight, configurable: true });
+    if (lineHeight) el.style.lineHeight = lineHeight;
+  }
+
+  describe("B-1 — a tolerância sai da altura de linha real, não de 24 px fixos", () => {
+    it("escala Padrão (linha de 16 px): a tolerância é a MESMA que esta base já validava, 24 px", () => {
+      const el = document.createElement("div");
+      el.style.lineHeight = "16px";
+      document.body.appendChild(el);
+      expect(toleranciaDoFim(el)).toBe(24);
+      el.remove();
+    });
+
+    it("escala Grande (linha de 24,2 px): a tolerância CRESCE junto — 24 px deixaria de ser uma linha", () => {
+      const el = document.createElement("div");
+      el.style.lineHeight = "24.2px";
+      document.body.appendChild(el);
+      expect(toleranciaDoFim(el)).toBeCloseTo(36.3, 1);
+      el.remove();
+    });
+
+    it("piso e teto: linha minúscula nunca desce de 24; linha absurda nunca passa de 48", () => {
+      const pequeno = document.createElement("div");
+      pequeno.style.lineHeight = "4px";
+      const enorme = document.createElement("div");
+      enorme.style.lineHeight = "200px";
+      document.body.append(pequeno, enorme);
+      expect(toleranciaDoFim(pequeno)).toBe(24);
+      expect(toleranciaDoFim(enorme)).toBe(48);
+      pequeno.remove();
+      enorme.remove();
+    });
+
+    it("`line-height: normal` (sem número resolvido) cai no piso — nunca NaN numa comparação de rolagem", () => {
+      const el = document.createElement("div");
+      el.style.lineHeight = "normal";
+      document.body.appendChild(el);
+      expect(toleranciaDoFim(el)).toBe(24);
+      el.remove();
+    });
+  });
+
+  describe("B-2 — o auto-scroll é SEMPRE instantâneo", () => {
+    it("`rolarAoFimInstantaneo` escreve em scrollTop e NUNCA chama scrollTo", () => {
+      const el = document.createElement("div");
+      Object.defineProperty(el, "scrollHeight", { value: 900, configurable: true });
+      const espiao = vi.fn();
+      el.scrollTo = espiao as unknown as HTMLElement["scrollTo"];
+      rolarAoFimInstantaneo(el);
+      expect(el.scrollTop).toBe(900);
+      expect(espiao).not.toHaveBeenCalled();
+    });
+
+    it("segmento novo com o usuário no fim: rola sem `scrollTo` — nenhum `behavior` suave escapa sem guarda", () => {
+      const { container, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const regiao = regiaoDe(container);
+      const espiao = vi.fn();
+      regiao.scrollTo = espiao as unknown as HTMLElement["scrollTo"];
+      fingirGeometria(regiao, { scrollHeight: 400, clientHeight: 100 });
+
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+
+      expect(espiao).not.toHaveBeenCalled();
+      expect(regiao.scrollTop).toBe(400);
+    });
+  });
+
+  describe("B-3 — lendo para cima, a fala nova AVISA em vez de arrastar", () => {
+    it("nada aparece enquanto ela está no fim", () => {
+      const { container, queryByRole, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      fingirGeometria(regiaoDe(container), { scrollHeight: 400, clientHeight: 100 });
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+      expect(queryByRole("button", { name: /novas falas/i })).toBeNull();
+    });
+
+    it("ela rolou para cima + chegou fala nova: o botão aparece e o scroll NÃO se mexe", () => {
+      const { container, getByRole, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const regiao = regiaoDe(container);
+      fingirGeometria(regiao, { scrollHeight: 500, clientHeight: 100, lineHeight: "16px" });
+      regiao.scrollTop = 0; // distância do fim = 400, muito além da tolerância
+      fireEvent.scroll(regiao);
+
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+
+      expect(regiao.scrollTop).toBe(0);
+      expect(getByRole("button", { name: "Ir para novas falas" })).toBeTruthy();
+    });
+
+    it("clicar no botão volta ao fim, some o aviso e RE-ARMA o grude", () => {
+      const { container, getByRole, queryByRole, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const regiao = regiaoDe(container);
+      fingirGeometria(regiao, { scrollHeight: 500, clientHeight: 100, lineHeight: "16px" });
+      regiao.scrollTop = 0;
+      fireEvent.scroll(regiao);
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+
+      fireEvent.click(getByRole("button", { name: "Ir para novas falas" }));
+
+      expect(regiao.scrollTop).toBe(500);
+      expect(queryByRole("button", { name: /novas falas/i })).toBeNull();
+
+      // Grude re-armado: a PRÓXIMA fala volta a descer sozinha.
+      Object.defineProperty(regiao, "scrollHeight", { value: 600, configurable: true });
+      rerender(
+        <PainelTranscricao
+          segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 }), segmento({ id: "s3", ordem: 3 })]}
+        />,
+      );
+      expect(regiao.scrollTop).toBe(600);
+    });
+
+    it("voltar ao fim ROLANDO também some com o aviso, sem precisar do clique", () => {
+      const { container, queryByRole, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const regiao = regiaoDe(container);
+      fingirGeometria(regiao, { scrollHeight: 500, clientHeight: 100, lineHeight: "16px" });
+      regiao.scrollTop = 0;
+      fireEvent.scroll(regiao);
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+      expect(queryByRole("button", { name: /novas falas/i })).not.toBeNull();
+
+      regiao.scrollTop = 400; // 500 - 400 - 100 = 0 de distância: no fim
+      fireEvent.scroll(regiao);
+
+      expect(queryByRole("button", { name: /novas falas/i })).toBeNull();
+    });
+
+    it("re-render SEM fala nova não faz o aviso aparecer (só `segmento.id` novo conta)", () => {
+      const lista = [segmento({ id: "s1" })];
+      const { container, queryByRole, rerender } = montar(<PainelTranscricao segmentos={lista} />);
+      const regiao = regiaoDe(container);
+      fingirGeometria(regiao, { scrollHeight: 500, clientHeight: 100, lineHeight: "16px" });
+      regiao.scrollTop = 0;
+      fireEvent.scroll(regiao);
+
+      rerender(<PainelTranscricao segmentos={[...lista]} usuarioLogado={{ nome: "Elaine", papel: "admin" }} />);
+
+      expect(queryByRole("button", { name: /novas falas/i })).toBeNull();
+    });
+
+    it("axe limpo com o aviso na tela", async () => {
+      const { container, rerender } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const regiao = regiaoDe(container);
+      fingirGeometria(regiao, { scrollHeight: 500, clientHeight: 100, lineHeight: "16px" });
+      regiao.scrollTop = 0;
+      fireEvent.scroll(regiao);
+      rerender(<PainelTranscricao segmentos={[segmento({ id: "s1" }), segmento({ id: "s2", ordem: 2 })]} />);
+      await semViolacoes(container);
+    });
+  });
+
+  describe("B-4 — o painel é dono da ÚNICA superfície de rolagem", () => {
+    it("a região rola; o container externo (que ancora o aviso) não", () => {
+      const { container } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      const raiz = container.firstElementChild as HTMLElement;
+      expect(raiz.className).toContain("relative");
+      expect(raiz.className).not.toContain("overflow-y-auto");
+      expect(regiaoDe(container).className).toContain("overflow-y-auto");
+    });
+
+    it("o rótulo visível 'Transcrição' saiu (virou rótulo da ABA); o nome acessível continua inteiro", () => {
+      const { container, getByRole } = montar(<PainelTranscricao segmentos={[segmento({ id: "s1" })]} />);
+      expect(container.textContent).not.toContain("Transcrição");
+      expect(getByRole("region", { name: "Transcrição da sessão" })).toBeTruthy();
+    });
   });
 });

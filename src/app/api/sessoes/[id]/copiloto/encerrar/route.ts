@@ -76,7 +76,7 @@ async function buscarSessaoOuFalhar(supabase: SupabaseClient, sessaoId: string):
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await exigirVePatrimonio();
+    const usuario = await exigirVePatrimonio();
     const { id: sessaoId } = ParametroSchema.parse(await params);
 
     const supabase = await criarClienteServidor();
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // 🔴 CORREÇÃO: gate cobre 'encerrado' E 'erro' — ver doc-comment acima.
     if (sessao.sessoes_copiloto.estado === "encerrado" || sessao.sessoes_copiloto.estado === "erro") {
-      const retentativa = await tentarNovamenteEncerrarBotPendente(supabase, admin, sessaoId, sessaoParaEncerrar);
+      const retentativa = await tentarNovamenteEncerrarBotPendente(supabase, admin, sessaoId, sessaoParaEncerrar, usuario.id);
 
       if (retentativa.tentou && retentativa.resultadoEncerramento) {
         // A sessão estava em 'erro' e ACABOU de ser encerrada de verdade —
@@ -111,6 +111,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           transcricao_id: resultadoCompleto.transcricaoId,
           ja_existia_transcricao: resultadoCompleto.jaExistiaTranscricao,
           sugestoes_expiradas: resultadoCompleto.sugestoesExpiradas,
+          retrospecto: resultadoCompleto.retrospecto,
         };
         return NextResponse.json(resposta);
       }
@@ -126,7 +127,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       throw erroConflito("sessao_ja_encerrada", "Esta sessão do copiloto já está encerrada.");
     }
 
-    const resultado = await executarEncerramentoCopiloto(supabase, admin, { sessaoId, sessao: sessaoParaEncerrar });
+    const resultado = await executarEncerramentoCopiloto(supabase, admin, {
+      sessaoId,
+      sessao: sessaoParaEncerrar,
+      // FASE 13 — autoria do Retrospecto. `usuario.id` é o id do PERFIL
+      // (`perfis_equipe`), que é para onde `copiloto_retrospectos.criado_por`
+      // aponta (0125) — nunca `auth_user_id`. O encerramento AUTOMÁTICO (por
+      // `duracao_maxima_minutos`) não passa por aqui e grava `null`: não há
+      // humano por trás, e inventar autoria seria mentir.
+      criadoPor: usuario.id,
+    });
 
     if (!resultado.encerrado) {
       // Corrida: outra requisição (clique duplo, ou o encerramento
@@ -142,6 +152,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       transcricao_id: resultado.transcricaoId,
       ja_existia_transcricao: resultado.jaExistiaTranscricao,
       sugestoes_expiradas: resultado.sugestoesExpiradas,
+      // `null` = kill-switch desligado OU montagem falhou. A tela distingue
+      // stub rotulado de documento real — nunca mostra retrospecto vazio
+      // disfarçado de retrospecto (ver `RespostaEncerrarCopiloto`).
+      retrospecto: resultado.retrospecto,
     };
     return NextResponse.json(resposta);
   } catch (erro) {

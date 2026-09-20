@@ -21,6 +21,13 @@ vi.mock("./consolidar", () => ({ consolidarTranscricaoDaSessao: (...a: unknown[]
 const encerrarBotComRetentativaMock = vi.fn();
 vi.mock("./recall", () => ({ encerrarBotComRetentativa: (...a: unknown[]) => encerrarBotComRetentativaMock(...a) }));
 
+/** FASE 13 (19/09/2026) — o RETROSPECTO é o 4º efeito do encerramento. Tem
+ * teste próprio em `retrospecto.test.ts` (inclusive a cobertura contra os
+ * números reais); aqui só provamos o CONTRATO com o encerramento: roda 1×
+ * por sessão (o portão é `marcarEncerrada`) e NUNCA derruba a consolidação. */
+const gravarRetrospectoMock = vi.fn();
+vi.mock("./retrospecto", () => ({ gravarRetrospectoDaSessao: (...a: unknown[]) => gravarRetrospectoMock(...a) }));
+
 const { executarEncerramentoCopiloto, encerrarSePassouDoTempo, tentarNovamenteEncerrarBotPendente } = await import("./encerrar");
 
 interface Resultado {
@@ -108,6 +115,7 @@ function clientes(opts: {
 afterEach(() => {
   consolidarMock.mockReset();
   encerrarBotComRetentativaMock.mockReset();
+  gravarRetrospectoMock.mockReset();
 });
 
 describe("executarEncerramentoCopiloto", () => {
@@ -506,5 +514,97 @@ describe("tentarNovamenteEncerrarBotPendente — estado='erro' (fluxo COMPLETO, 
     const r = await tentarNovamenteEncerrarBotPendente(admin, admin, "s1", { jornadaId: "j1", realizadaEm: null });
 
     expect(r).toEqual({ tentou: true, resolvida: true, resultadoEncerramento: null });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FASE 13 (19/09/2026) — BE-3: o retrospecto pendurado no encerramento.
+// ---------------------------------------------------------------------------
+
+describe("executarEncerramentoCopiloto — RETROSPECTO (Fase 13, BE-3)", () => {
+  const RETROSPECTO = { sessao_id: "s1", jornada_id: "j1", origem: "derivado", blocos_com_atividade: 9, blocos_no_roteiro: 13 };
+
+  it("🔴 chamar 2× → o retrospecto é gravado UMA vez só (o portão é `marcarEncerrada`, não disciplina de quem chama)", async () => {
+    consolidarMock.mockResolvedValue({ transcricaoId: "t1", jaExistia: false });
+    gravarRetrospectoMock.mockResolvedValue(RETROSPECTO);
+
+    // 1ª chamada: o UPDATE de `marcarEncerrada` afeta a linha.
+    const primeira = clientes({ marcarEncerrada: { data: { sessao_id: "s1", gravacao_externa_id: null }, error: null } });
+    const r1 = await executarEncerramentoCopiloto(primeira.supabase, primeira.admin, {
+      sessaoId: "s1",
+      sessao: { jornadaId: "j1", realizadaEm: null },
+    });
+
+    // 2ª chamada: a linha já está 'encerrado', o `.in(estado,[...])` não casa,
+    // `marcarEncerrada` devolve null — é ISSO que impede o 2º retrospecto.
+    const segunda = clientes({ marcarEncerrada: { data: null, error: null } });
+    const r2 = await executarEncerramentoCopiloto(segunda.supabase, segunda.admin, {
+      sessaoId: "s1",
+      sessao: { jornadaId: "j1", realizadaEm: null },
+    });
+
+    expect(r1.encerrado).toBe(true);
+    expect(r1.retrospecto).toEqual(RETROSPECTO);
+    expect(r2.encerrado).toBe(false);
+    expect(r2.retrospecto).toBeNull();
+    expect(gravarRetrospectoMock).toHaveBeenCalledTimes(1); // 1 chamada em 2 encerramentos
+  });
+
+  it("🔴 retrospecto FALHANDO (devolve null) → encerrado:true assim mesmo, transcrição consolidada, retrospecto:null", async () => {
+    consolidarMock.mockResolvedValue({ transcricaoId: "t1", jaExistia: false });
+    gravarRetrospectoMock.mockResolvedValue(null); // o módulo nunca lança; null é como ele reporta falha
+
+    const { supabase, admin } = clientes({});
+    const r = await executarEncerramentoCopiloto(supabase, admin, { sessaoId: "s1", sessao: { jornadaId: "j1", realizadaEm: null } });
+
+    expect(r.encerrado).toBe(true);
+    expect(r.transcricaoId).toBe("t1"); // o que NÃO pode se perder continua salvo
+    expect(r.retrospecto).toBeNull();
+  });
+
+  it("🔴 retrospecto LANÇANDO (defesa em profundidade) NÃO derruba o encerramento", async () => {
+    // `gravarRetrospectoDaSessao` tem try/catch próprio e não deveria lançar
+    // nunca — mas o encerramento não pode DEPENDER dessa garantia.
+    consolidarMock.mockResolvedValue({ transcricaoId: "t1", jaExistia: false });
+    gravarRetrospectoMock.mockRejectedValue(new Error("explodiu"));
+
+    const { supabase, admin } = clientes({});
+    await expect(
+      executarEncerramentoCopiloto(supabase, admin, { sessaoId: "s1", sessao: { jornadaId: "j1", realizadaEm: null } }),
+    ).resolves.toMatchObject({ encerrado: true, transcricaoId: "t1", retrospecto: null });
+  });
+
+  it("roda DEPOIS de expirar as sugestões (o documento retrata a sessão já fechada)", async () => {
+    const ordem: string[] = [];
+    consolidarMock.mockImplementation(async () => {
+      ordem.push("consolidar");
+      return { transcricaoId: "t1", jaExistia: false };
+    });
+    gravarRetrospectoMock.mockImplementation(async () => {
+      ordem.push("retrospecto");
+      return RETROSPECTO;
+    });
+
+    const { supabase, admin } = clientes({});
+    await executarEncerramentoCopiloto(supabase, admin, { sessaoId: "s1", sessao: { jornadaId: "j1", realizadaEm: null } });
+    expect(ordem).toEqual(["consolidar", "retrospecto"]);
+  });
+
+  it("encerramento AUTOMÁTICO (duração máxima) grava o retrospecto com criadoPor NULL — não inventa autoria humana", async () => {
+    consolidarMock.mockResolvedValue({ transcricaoId: "t1", jaExistia: false });
+    gravarRetrospectoMock.mockResolvedValue(RETROSPECTO);
+
+    const { supabase, admin } = clientes({});
+    await encerrarSePassouDoTempo(supabase, admin, {
+      sessaoId: "s1",
+      jornadaId: "j1",
+      realizadaEm: null,
+      inicioSessaoIso: "2026-09-18T12:00:00.000Z",
+      duracaoMaximaMinutos: 60,
+      agoraMs: Date.parse("2026-09-18T14:00:00.000Z"),
+    });
+
+    expect(gravarRetrospectoMock).toHaveBeenCalledTimes(1);
+    expect(gravarRetrospectoMock.mock.calls[0][2]).toMatchObject({ sessaoId: "s1", jornadaId: "j1", criadoPor: null });
   });
 });

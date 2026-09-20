@@ -73,51 +73,55 @@ describe("RodapeTranscricao — indicador tricolor", () => {
   });
 });
 
-describe("RodapeTranscricao — overlay da transcrição completa", () => {
-  it("botão 'Abrir transcrição' abre o overlay em role=dialog, sem tirar o conteúdo do rodapé da tela", () => {
+describe("RodapeTranscricao — Fase 13: a transcrição SAIU daqui", () => {
+  /**
+   * FE-5. Estes testes são a trava de uma DECISÃO, não de um detalhe: o
+   * achado que desligou esta chave em 18/09 foi "transcrição duplicada" (a
+   * COL 3 e o overlay renderizando a mesma coisa). Se alguém reintroduzir um
+   * segundo lugar que mostre transcrição, é aqui que quebra.
+   */
+  it("não existe mais botão 'Abrir transcrição' nem overlay nenhum", () => {
     const segmentos = [segmento("2026-09-18T10:00:00.000Z", "texto completo da fala")];
-    const { getByRole, queryByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
+    const { queryByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
+
+    expect(queryByRole("button", { name: /abrir transcrição/i })).toBeNull();
     expect(queryByRole("dialog")).toBeNull();
-
-    fireEvent.click(getByRole("button", { name: /abrir transcrição/i }));
-
-    const dialogo = getByRole("dialog");
-    expect(dialogo.getAttribute("aria-modal")).toBe("true");
   });
 
-  it("Esc fecha o overlay e devolve o foco ao botão que abriu", () => {
+  it("nenhuma tecla abre diálogo: Esc no rodapé não tem nada para fechar", () => {
     const segmentos = [segmento("2026-09-18T10:00:00.000Z")];
-    const { getByRole, queryByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
-    const botaoAbrir = getByRole("button", { name: /abrir transcrição/i });
-    fireEvent.click(botaoAbrir);
-    expect(getByRole("dialog")).toBeTruthy();
-
+    const { queryByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
     fireEvent.keyDown(document, { key: "Escape" });
-
     expect(queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(botaoAbrir);
   });
 
-  it("botão 'Fechar' também fecha o overlay", () => {
+  it("a linha inteira cabe no orçamento de 1 linha: nenhum botão dentro dela", () => {
+    // §C.1 do plano reserva 44 px (`min-h-11`) para esta sub-linha. Um botão
+    // de 44 px dentro dela era o que a fazia disputar altura com o mosaico —
+    // o que sobra é ponto + rótulo + última fala com reticências.
     const segmentos = [segmento("2026-09-18T10:00:00.000Z")];
-    const { getByRole, queryByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
-    fireEvent.click(getByRole("button", { name: /abrir transcrição/i }));
-    fireEvent.click(getByRole("button", { name: /fechar/i }));
-    expect(queryByRole("dialog")).toBeNull();
+    const { container } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
+    expect(container.querySelectorAll("button").length).toBe(0);
+    expect(container.firstElementChild?.className).toContain("min-h-11");
+  });
+
+  it("a última fala continua visível e com `title` para o texto inteiro", () => {
+    const segmentos = [segmento("2026-09-18T10:00:00.000Z", "o apartamento está no nome das meninas")];
+    const { container } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
+    expect(container.textContent).toContain("o apartamento está no nome das meninas");
+    expect(container.querySelector('[title="o apartamento está no nome das meninas"]')).not.toBeNull();
   });
 });
 
 describe("RodapeTranscricao — a11y", () => {
-  it("axe limpo: rodapé fechado", async () => {
+  it("axe limpo", async () => {
     const segmentos = [segmento("2026-09-18T10:00:00.000Z")];
     const { container } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
     await semViolacoes(container);
   });
 
-  it("axe limpo: overlay aberto", async () => {
-    const segmentos = [segmento("2026-09-18T10:00:00.000Z")];
-    const { container, getByRole } = montar(<RodapeTranscricao segmentos={segmentos} sessaoEncerrada={false} />);
-    fireEvent.click(getByRole("button", { name: /abrir transcrição/i }));
+  it("axe limpo sem nenhum segmento ainda", async () => {
+    const { container } = montar(<RodapeTranscricao segmentos={[]} sessaoEncerrada={false} />);
     await semViolacoes(container);
   });
 });

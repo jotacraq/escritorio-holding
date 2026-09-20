@@ -1,5 +1,47 @@
 # Continuar daqui — SIC-HF
 
+> ### ⚠️ ERRATA (19/09/2026, Fase 13, BE-7) — DOIS FATOS DO BLOCO ABAIXO ESTAVAM ERRADOS
+>
+> O bloco "DECISÃO PENDENTE COM O MARCIO" (18/09, noite) é preservado como
+> registro histórico da decisão, **mas duas afirmações dele foram medidas de
+> novo em 19/09/2026 e são falsas**. As duas sustentavam a mesma conclusão
+> ("não dá para rodar a bancada, e o sistema hoje não trunca"), então corrigir
+> importa:
+>
+> **1. NÃO são "0 truncadas em 299 execuções".** Medido em 19/09 em produção
+> (`execucoes_ia` × `prompts_versoes`, chave `copiloto_sessao`):
+>
+> | versão | execuções | truncadas (`stop_reason` = `max_tokens`/`length`) |
+> |---|---|---|
+> | v5 | 183 | **0** |
+> | v6 | 131 | **16** (12,2%) |
+> | v7 | 299 | **49 (16,4%)** |
+>
+> A v7 já trunca **1 em cada 6 chamadas**. A conclusão do bloco abaixo ("seria
+> trocar um sistema que não falha por um que falha") parte de uma premissa que
+> não se sustenta: o sistema **já falha**, em silêncio, em 16,4% das janelas.
+> Isso REFORÇA a necessidade da bancada — não a dispensa.
+>
+> **2. O `.env.local` EXISTE nesta máquina** (11 chaves, incluindo
+> `SUPABASE_SERVICE_ROLE_KEY`). A razão registrada para não rodar a bancada
+> ("não existe `.env.local` nesta máquina") está desatualizada. A regra da casa
+> continua valendo — **agente não BUSCA credencial de produção** — mas ler uma
+> que já está no diretório do projeto é outra coisa, e foi o que permitiu medir
+> os números acima e os da Fase 13 sem pedir nada a ninguém. O que a bancada
+> ainda exige e **não** está no `.env.local` é a `OPENROUTER_API_KEY`.
+>
+> **Estado de produção mudou desde aquele bloco** (aplicado pelo orquestrador
+> em 19/09 ~17h20): prompt **v10 ATIVO**, `ficha_cliente=true`,
+> `resumo_acumulado=true`, `max_tokens=1900`, `timeout_ms=28000`. A tabela de
+> chaves logo abaixo ("Estado das chaves em produção AGORA") descreve o dia
+> 18/09, não hoje.
+>
+> **E `copiloto_sessao.rodape_transcricao` foi DEPRECADA** pela migration 0125
+> (Fase 13): o rodapé não tem mais transcrição nenhuma — a transcrição virou
+> aba da COL 3 e o rodapé ficou só com o indicador de saúde da captura, ligado
+> por `copiloto_sessao.saude_captura`. A linha antiga fica no banco como
+> histórico, com a `descricao` marcando a depreciação; nenhum código a lê.
+
 > ### 🔴 DECISÃO PENDENTE COM O MARCIO — ativar o prompt v10 sem bancada é APOSTA (18/09/2026, noite)
 >
 > O Marcio pediu para eu finalizar sozinho e deixar tudo no ar ("coloca a última
@@ -11,8 +53,12 @@
 > | versão | execuções | saída média | **p99 saída** | truncadas | latência |
 > |---|---|---|---|---|---|
 > | v5 | 183 | 368 | 601 | 0 | 6.369 ms |
-> | v6 | 131 | 497 | 1.055 | 0 | 8.279 ms |
-> | **v7 (ATIVA)** | 299 | 691 | **1.371** | 0 | 10.490 ms |
+> | v6 | 131 | 497 | 1.055 | ~~0~~ **16** | 8.279 ms |
+> | **v7 (ATIVA em 18/09)** | 299 | 691 | **1.371** | ~~0~~ **49 (16,4%)** | 10.490 ms |
+>
+> ⚠️ A coluna "truncadas" desta tabela estava ERRADA — ver a ERRATA no topo do
+> arquivo. Os valores tachados são os que estavam aqui; os em negrito são os
+> medidos em 19/09/2026.
 >
 > `copiloto_sessao.max_tokens` = **1.400**. A v7 já usa **1.371 no p99** — sobram
 > **29 tokens**. A v10 acrescenta o campo `ficha_cliente[]` (até 2 itens, cada um
@@ -41,14 +87,27 @@
 > 13 tokens de folga não bastam.
 >
 > **Consequência de ativar às cegas:** `stop_reason='length'` — a resposta trunca,
-> o JSON quebra e a sugestão inteira se perde. Hoje são **0 truncadas em 299
+> o JSON quebra e a sugestão inteira se perde. ~~Hoje são **0 truncadas em 299
 > execuções**; seria trocar um sistema que não falha por um que falha na sessão
-> que o Marcio quer usar para validar.
+> que o Marcio quer usar para validar.~~
 >
-> **Por que não rodei a bancada:** exige `SUPABASE_SERVICE_ROLE_KEY` e
-> `OPENROUTER_API_KEY`; não existe `.env.local` nesta máquina e **eu não busco
+> ⚠️ **CORRIGIDO em 19/09** (ver ERRATA no topo): são **49 truncadas em 299
+> execuções (16,4%)** na v7. O sistema já falha em 1 de cada 6 janelas, sem
+> aparecer em lugar nenhum da tela — cada truncamento descarta a sugestão
+> inteira em silêncio. Não é "trocar um sistema que não falha por um que
+> falha": é agravar uma falha que já existe e ninguém estava medindo.
+>
+> **Por que não rodei a bancada:** ~~exige `SUPABASE_SERVICE_ROLE_KEY` e
+> `OPENROUTER_API_KEY`; não existe `.env.local` nesta máquina~~ e **eu não busco
 > credencial de produção** (regra da casa, com incidente registrado). Custo
 > estimado pelo Fable: **~US$ 0,32** só a `v10_ficha`, ~US$ 1,30 as 4 variantes.
+>
+> ⚠️ **CORRIGIDO em 19/09** (ver ERRATA no topo): o `.env.local` **EXISTE** neste
+> diretório, com 11 chaves, incluindo a `SUPABASE_SERVICE_ROLE_KEY`. O que
+> falta de verdade para a bancada é só a **`OPENROUTER_API_KEY`** — essa sim
+> não está lá, e essa sim precisa vir do Marcio. A regra continua valendo:
+> agente não BUSCA credencial de produção; ler a que já está no projeto é o que
+> permitiu medir os números da ERRATA sem pedir nada a ninguém.
 >
 > **Além disso, a v10 é cumulativa:** deriva da v9 (memória), que deriva da v8
 > (economia). Ativar a v10 liga **três** incrementos nunca medidos de uma vez.

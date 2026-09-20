@@ -12,15 +12,59 @@ export class ErroApi extends Error {
   readonly status: number;
   readonly codigo: string;
   readonly detalhes?: unknown;
+  /**
+   * Cabeçalhos HTTP que a resposta de erro DEVE carregar — hoje só
+   * `Retry-After`, o caso que motivou o campo (achado F6 do pentest da Fase
+   * 13, 19/09/2026).
+   *
+   * 🔴 POR QUE ISTO MORA NO ERRO, e não em cada rota: as rotas de exportação
+   * já devolviam 429 com `detalhes.esperar_segundos` no CORPO — informação
+   * que só serve para humano lendo JSON. `Retry-After` é o cabeçalho que
+   * cliente HTTP, proxy e navegador entendem SOZINHOS (RFC 9110 §10.2.3), e
+   * sem ele um retry automático volta imediatamente e toma 429 de novo, em
+   * laço. Resolver no `ErroApi` conserta de uma vez TODAS as rotas que já
+   * lançam 429 — `api/croquis/[id]/docx`, `api/croquis/[id]/pdf` e a rota
+   * nova do retrospecto — em vez de espalhar a mesma linha por cada uma e
+   * esquecer a próxima.
+   *
+   * Nunca carrega dado de cliente: é só nome/valor de cabeçalho de
+   * protocolo.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 
-  constructor(status: number, codigo: string, mensagem: string, detalhes?: unknown) {
+  constructor(
+    status: number,
+    codigo: string,
+    mensagem: string,
+    detalhes?: unknown,
+    headers?: Readonly<Record<string, string>>,
+  ) {
     super(mensagem);
     this.name = "ErroApi";
     this.status = status;
     this.codigo = codigo;
     this.detalhes = detalhes;
+    this.headers = headers;
   }
 }
+
+/**
+ * 429 de teto de uso, com `Retry-After` — o construtor que as rotas de
+ * exportação devem usar em vez de montar o `ErroApi` na mão (F6).
+ * `esperarSegundos` aparece nos DOIS lugares de propósito: no corpo, para a
+ * tela poder escrever "tente de novo em N segundos"; no cabeçalho, para o
+ * cliente HTTP respeitar sem ler o corpo.
+ */
+export const erroLimite = (codigo: string, mensagem: string, esperarSegundos: number) =>
+  new ErroApi(
+    429,
+    codigo,
+    mensagem,
+    { esperar_segundos: esperarSegundos },
+    // RFC 9110: delay-seconds é inteiro >= 0. `Math.max(1, ...)` evita
+    // `Retry-After: 0`, que alguns clientes leem como "pode agora".
+    { "Retry-After": String(Math.max(1, Math.ceil(esperarSegundos))) },
+  );
 
 export const erroNaoAutenticado = (mensagem = "Não autenticado.") =>
   new ErroApi(401, "nao_autenticado", mensagem);
@@ -133,7 +177,10 @@ export function respostaErro(contexto: string, erro: unknown, extra?: Record<str
     }
     return NextResponse.json(
       { erro: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes },
-      { status: erro.status },
+      // `headers` só existe quando quem lançou pediu (hoje: `Retry-After` do
+      // 429 de teto de uso, F6). `undefined` mantém o comportamento de
+      // sempre — nenhuma rota existente muda de resposta por causa disto.
+      { status: erro.status, headers: erro.headers },
     );
   }
 

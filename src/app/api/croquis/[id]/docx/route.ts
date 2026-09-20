@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { exigirVePatrimonio, type UsuarioAtual } from "@/server/auth";
-import { ErroApi, erroConflito, erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
+import { erroConflito, erroLimite, erroNaoEncontrado, registrarErro, respostaErro } from "@/server/erros";
 import { MIME_DOCX, montarDocxCroqui, type CabecalhoDocxCroqui } from "@/server/exportacao/docx-croqui";
 import { consumir } from "@/server/exportacao/limite";
 import type { ResultadoCroqui } from "@/types/croqui-calculo";
@@ -142,9 +142,11 @@ function respostaArquivo(bytes: Buffer, nomeArquivo: string): NextResponse {
 function exigirLimite(usuario: UsuarioAtual, operacao: string, teto: number) {
   const limite = consumir(`${usuario.id}:${operacao}`, teto, JANELA_MS);
   if (!limite.permitido) {
-    throw new ErroApi(429, "limite_exportacao", "Muitas exportações seguidas. Tente de novo em instantes.", {
-      esperar_segundos: limite.esperarSegundos,
-    });
+    // F6 (pentest Fase 13): `erroLimite` acrescenta `Retry-After` ao 429.
+    // Sem ele, um cliente que reage a 429 automaticamente volta no mesmo
+    // instante e toma 429 de novo — laço que o teto deveria justamente
+    // evitar. `esperar_segundos` continua no corpo para a tela.
+    throw erroLimite("limite_exportacao", "Muitas exportações seguidas. Tente de novo em instantes.", limite.esperarSegundos);
   }
 }
 

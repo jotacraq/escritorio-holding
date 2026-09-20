@@ -164,14 +164,36 @@ export interface EstadoPollingCopiloto {
    * (nunca substituição pura): um único tick sem o campo não pode apagar um
    * `false` já confirmado antes. */
   realceInsightNovoAtivo: boolean;
-  /** 🔴 F3-2 (Fable, rodada 3, 18/09) — kill-switch `copiloto_sessao.
-   * rodape_transcricao` (0122). `estado.ts` JÁ devolve esta chave desde a
-   * F4; esta correção é quem primeiro a copia para o estado do hook (até
-   * aqui o campo chegava no payload e morria sem uso, e `PainelCopiloto`
-   * exibia o rodapé incondicionalmente). `true` até a 1ª resposta chegar
-   * (nasce ligada na 0122) e `??` — mesma disciplina de `realceInsightNovoAtivo`:
-   * um tick sem o campo não apaga um `false` já visto. */
-  rodapeTranscricaoAtivo: boolean;
+  /** 🔴 Fase 13 (FE-5/BE-6) — kill-switch `copiloto_sessao.saude_captura`
+   * (0125), que SUBSTITUI `copiloto_sessao.rodape_transcricao` (0122).
+   *
+   * A chave trocou de nome porque o nome antigo passaria a mentir: o rodapé
+   * não tem mais transcrição nenhuma (o overlay e o botão "Abrir
+   * transcrição" saíram inteiros em FE-5; a transcrição virou aba da COL 3).
+   * O que a chave governa hoje é a LINHA DE SAÚDE DA CAPTURA — ponto
+   * tricolor + última fala —, e é esse o nome dela. A chave antiga não é
+   * apagada no banco (vira histórico, `ativo=false` em vez de `delete` é a
+   * regra da casa), mas **nenhum código a lê a partir daqui**.
+   *
+   * `true` até a 1ª resposta chegar — herdado tal e qual da disciplina
+   * anterior, e por dois motivos: a chave nasce LIGADA na 0125 (é
+   * reorganização de UI sobre dado que o poller já traz, não capacidade
+   * nova), e um default `false` faria a linha APARECER 3 s depois de abrir a
+   * tela, empurrando o mosaico em 44 px no meio de uma sessão ao vivo. `??`
+   * (nunca substituição pura): um tick sem o campo não apaga um `false` já
+   * confirmado por quem desligou a chave de propósito. */
+  saudeCapturaAtiva: boolean;
+  /** Fase 13 (FE-6/BE-6) — kill-switch `copiloto_sessao.retrospecto_ativo`
+   * (0125). Governa o pop-up do Retrospecto no encerramento MANUAL (e, do
+   * lado do servidor, a gravação).
+   *
+   * `false` até a 1ª resposta chegar, ao contrário de `saudeCapturaAtiva`:
+   * aqui o default não tem custo de layout nenhum (o encerramento acontece
+   * minutos depois, muito além do 1º tick) e a regra que vale é a de
+   * capacidade nova — fail-closed. Backend sem a 0125 aplicada → campo
+   * ausente → nenhum pop-up abre, e o encerramento volta a ser exatamente o
+   * que é hoje. */
+  retrospectoAtivo: boolean;
   /** 🔴 F3-2 — `copiloto_sessao.silencio_atencao_s`/`silencio_alerta_s`
    * (0122), MESMA correção do campo acima. `estado.ts` sempre devolve um
    * número válido (nunca `null` — padrão de fábrica cobre config
@@ -222,7 +244,8 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
     ficha: null,
     bot: null,
     realceInsightNovoAtivo: true,
-    rodapeTranscricaoAtivo: true,
+    saudeCapturaAtiva: true,
+    retrospectoAtivo: false,
     silencioAtencaoS: 12,
     silencioAlertaS: 25,
   };
@@ -382,9 +405,11 @@ export function usePollingCopiloto(sessaoId: string, indiceAtual: number, sessao
             // — a Ficha já vem completa e ordenada a cada resposta.
             ficha: resposta.ficha ?? null,
             realceInsightNovoAtivo: resposta.realce_insight_novo ?? atual.realceInsightNovoAtivo,
-            // F3-2: mesma disciplina de `realceInsightNovoAtivo` — `??`
+            // Fase 13: mesma disciplina de `realceInsightNovoAtivo` — `??`
             // nunca substitui por um tick sem o campo.
-            rodapeTranscricaoAtivo: resposta.rodape_transcricao ?? atual.rodapeTranscricaoAtivo,
+            //
+            saudeCapturaAtiva: resposta.saude_captura ?? atual.saudeCapturaAtiva,
+            retrospectoAtivo: resposta.retrospecto_ativo ?? atual.retrospectoAtivo,
             silencioAtencaoS: resposta.silencio_atencao_s ?? atual.silencioAtencaoS,
             silencioAlertaS: resposta.silencio_alerta_s ?? atual.silencioAlertaS,
             // Fatia 5a: `??`, NUNCA substituição pura (ver comentário do

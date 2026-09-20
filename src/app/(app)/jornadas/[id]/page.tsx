@@ -111,6 +111,9 @@ const MaterialAba = dynamic(() => import("@/components/ficha360/MaterialAba").th
 const AnaliseSessaoAba = dynamic(() => import("@/components/ficha360/AnaliseSessaoAba").then((m) => m.AnaliseSessaoAba), {
   loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo a análise…" />,
 });
+const RetrospectoAba = dynamic(() => import("@/components/ficha360/RetrospectoAba").then((m) => m.RetrospectoAba), {
+  loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o retrospecto…" />,
+});
 const TimelineAba = dynamic(() => import("@/components/ficha360/TimelineAba").then((m) => m.TimelineAba), {
   loading: () => <EsqueletoLista linhas={6} rotulo="Abrindo o histórico…" />,
 });
@@ -128,6 +131,10 @@ const TITULO_GAVETA: Record<string, string> = {
   sessao: "Sessão",
   analise_sessao: "Análise da sessão",
   relatorio_sv: "Relatório da sessão",
+  // Fase 13 — "Retrospecto", NUNCA "Relatório": a linha de cima é o
+  // documento que a advogada preenche à mão; este é o fechamento do
+  // copiloto, gerado pela máquina (§D.1 do plano, `Glossario.md`).
+  retrospecto_sv: "Retrospecto da sessão",
   diagnostico_sv: "Diagnóstico",
   material: "Material",
   transcricao: "Histórico",
@@ -145,6 +152,7 @@ const CHAVES_EM_GAVETA = new Set<string>([
   "sessao",
   "analise_sessao",
   "relatorio_sv",
+  "retrospecto_sv",
   "diagnostico_sv",
   "material",
   "historico",
@@ -152,6 +160,7 @@ const CHAVES_EM_GAVETA = new Set<string>([
   "links",
   "analise-sessao",
   "relatorio",
+  "retrospecto",
   "diagnostico",
   "timeline",
 ]);
@@ -160,6 +169,9 @@ const CHAVES_EM_GAVETA = new Set<string>([
 const ALIAS_HASH: Record<string, string> = {
   "analise-sessao": "analise_sessao",
   relatorio: "relatorio_sv",
+  // `/jornadas/<id>#retrospecto` é a URL de consulta publicada no pop-up do
+  // encerramento (§D.6) — mesmo par hash/chave de `relatorio`.
+  retrospecto: "retrospecto_sv",
   diagnostico: "diagnostico_sv",
   timeline: "historico",
   // `links` era a aba de emissão; hoje quem responde por link é a barra "Enviar".
@@ -419,6 +431,12 @@ function ConteudoFicha({ id, ficha, recarregar }: { id: string; ficha: Ficha360;
           </Gaveta>
           <Gaveta aberta={gavetaAberta === "relatorio_sv"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.relatorio_sv} largura="larga">
             <RelatorioAba jornadaId={id} ficha={ficha} aoAtualizar={recarregar} />
+          </Gaveta>
+          {/* Fase 13 — o retrospecto é da SESSÃO (é o fechamento do copiloto
+              daquela sessão), então a chave que a rota usa é `ficha.sessao.id`,
+              não a jornada. Sem sessão, a gaveta abre com o vazio honesto. */}
+          <Gaveta aberta={gavetaAberta === "retrospecto_sv"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.retrospecto_sv} largura="larga">
+            <RetrospectoAba sessaoId={ficha.sessao?.id ?? null} />
           </Gaveta>
           <Gaveta aberta={gavetaAberta === "diagnostico_sv"} aoFechar={fechar} rotulo={ficha.pessoa.nome} titulo={TITULO_GAVETA.diagnostico_sv} largura="larga">
             <DiagnosticoSv jornadaId={id} hrefApresentar={`/jornadas/${id}/diagnostico?apresentar=1`} aoMudar={recarregar} />

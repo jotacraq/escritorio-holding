@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SegmentoCopiloto } from "@/types/copiloto";
-import type { PapelEquipe } from "@/types/banco";
-import { PainelTranscricao } from "@/components/sessao/copiloto/PainelTranscricao";
 
 /** Limiares de silêncio na sala, em segundos — `copiloto_sessao.
  * silencio_atencao_s`/`silencio_alerta_s` (migration 0122, valores de
@@ -57,12 +55,27 @@ const COR_NIVEL: Record<NivelSilencio, string> = {
 
 /**
  * F4 (18/09) — faixa de 1 linha no rodapé (linha 2 do grid de
- * `PainelCopiloto.tsx`, `min-h-[3.25rem]`, MANTIDA): indicador de saúde da
- * captura + última fala corrente + botão que abre a transcrição completa em
- * OVERLAY (`role="dialog"`, mesmo padrão de `Apresentacao.tsx` — foco na
- * raiz ao abrir, `Esc` fecha, as 3 colunas do mosaico NÃO saem da tela por
- * baixo do overlay). `PainelTranscricao` não muda por dentro — é a MESMA
- * folha, só o container que a exibe é novo.
+ * `PainelCopiloto.tsx`): indicador de saúde da captura + última fala
+ * corrente.
+ *
+ * 🔴 Fase 13 (FE-5, 19/09) — **o overlay saiu inteiro, e com ele o botão
+ * "Abrir transcrição"** (~60 linhas, incluindo o SEGUNDO ponto de montagem
+ * de `PainelTranscricao` em toda a árvore). O que sobra aqui é o SINAL, e só
+ * ele: ponto colorido + rótulo por extenso + última fala com reticências +
+ * `sr-only` `aria-live="polite"`. Uma linha, sempre, em qualquer aba.
+ *
+ * Por que isso importa e não é só "menos código": o achado que desligou esta
+ * chave em 18/09 foi "transcrição duplicada" — a COL 3 e o overlay
+ * renderizavam a mesma coisa. Depois desta fase **não existe mais um segundo
+ * lugar que renderize a transcrição** (ela é uma aba da COL 3, e só), então
+ * ligar a chave deixa de ser o estado intermediário que ninguém testou.
+ *
+ * A separação que o desenho da Fase 13 faz (§A.1): **o SINAL é permanente, o
+ * CONTEÚDO é aba.** Se a transcrição vira aba e o sinal some junto, o pedido
+ * do dono ("a transcrição é apenas para captar com clareza se o bot está
+ * operante") é traído pelo pedido de layout. Esta linha é a resposta
+ * permanente a "o bot está vivo?" — custa 44 px do orçamento da dobra
+ * (§C.1), e é o que ela não pode perder ao trocar de aba.
  *
  * Indicador tricolor, medido na sessão real citada no plano (fala chega a
  * cada 2,9s em média; p99 8,7s; maior silêncio real observado 15,8s):
@@ -76,22 +89,18 @@ const COR_NIVEL: Record<NivelSilencio, string> = {
 export function RodapeTranscricao({
   segmentos,
   sessaoEncerrada,
-  usuarioLogado,
   silencioAtencaoS = 12,
   silencioAlertaS = 25,
 }: {
   segmentos: SegmentoCopiloto[];
   sessaoEncerrada: boolean;
-  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
   /** `copiloto_sessao.silencio_atencao_s`/`silencio_alerta_s` (0122) — vêm
    * de `usePollingCopiloto` (F3-2). Defaults só cobrem o instante antes da
    * 1ª resposta do polling (mesmos valores de fábrica da migration). */
   silencioAtencaoS?: number;
   silencioAlertaS?: number;
 }) {
-  const [aberto, setAberto] = useState(false);
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
-  const botaoAbrirRef = useRef<HTMLButtonElement>(null);
 
   const ultimoSegmento = segmentos.length > 0 ? segmentos[segmentos.length - 1] : null;
 
@@ -122,104 +131,26 @@ export function RodapeTranscricao({
         : `sem captura há ${segundosSemFala}s`;
 
   return (
-    <>
-      <div className="flex min-h-11 items-center gap-2 rounded-controle border border-linha bg-papel-elevado px-3 py-1.5 text-sm">
-        <span
-          aria-hidden="true"
-          className="inline-block h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: COR_NIVEL[nivel] }}
-        />
-        <span className="shrink-0 font-medium text-tinta" style={{ color: nivel === "ouvindo" ? undefined : COR_NIVEL[nivel] }}>
-          {ROTULO_NIVEL[nivel]}
-        </span>
-        <span className="sr-only" role="status" aria-live="polite">
-          {sessaoEncerrada ? "transcrição encerrada" : rotulo}
-        </span>
+    <div className="flex min-h-11 items-center gap-2 rounded-controle border border-linha bg-papel-elevado px-3 py-1.5 text-sm">
+      <span
+        aria-hidden="true"
+        className="inline-block h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: COR_NIVEL[nivel] }}
+      />
+      <span className="shrink-0 font-medium text-tinta" style={{ color: nivel === "ouvindo" ? undefined : COR_NIVEL[nivel] }}>
+        {ROTULO_NIVEL[nivel]}
+      </span>
+      <span className="sr-only" role="status" aria-live="polite">
+        {sessaoEncerrada ? "transcrição encerrada" : rotulo}
+      </span>
 
-        {ultimoSegmento ? (
-          <p className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-tinta-suave" title={ultimoSegmento.texto}>
-            &ldquo;{ultimoSegmento.texto}&rdquo;
-          </p>
-        ) : (
-          <p className="min-w-0 flex-1 text-tinta-fraca">Aguardando a fala da sessão.</p>
-        )}
-
-        <button
-          ref={botaoAbrirRef}
-          type="button"
-          onClick={() => setAberto(true)}
-          className="min-h-11 shrink-0 rounded-controle border border-linha-forte px-2.5 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:bg-papel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--foco)]"
-        >
-          Abrir transcrição
-        </button>
-      </div>
-
-      {aberto && (
-        <OverlayTranscricao
-          segmentos={segmentos}
-          usuarioLogado={usuarioLogado}
-          aoFechar={() => {
-            setAberto(false);
-            // Foco volta para quem abriu — nunca perdido no `<body>`.
-            botaoAbrirRef.current?.focus();
-          }}
-        />
+      {ultimoSegmento ? (
+        <p className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-tinta-suave" title={ultimoSegmento.texto}>
+          &ldquo;{ultimoSegmento.texto}&rdquo;
+        </p>
+      ) : (
+        <p className="min-w-0 flex-1 text-tinta-fraca">Aguardando a fala da sessão.</p>
       )}
-    </>
-  );
-}
-
-/**
- * Overlay da transcrição completa — as 3 colunas do mosaico NÃO saem da
- * tela (ficam por baixo, o overlay é que cobre a viewport). Mesmo padrão de
- * `Apresentacao.tsx`: `role="dialog"` + `aria-modal="true"`, foco na raiz ao
- * abrir, `Esc` fecha. `PainelTranscricao` não muda por dentro.
- */
-function OverlayTranscricao({
-  segmentos,
-  usuarioLogado,
-  aoFechar,
-}: {
-  segmentos: SegmentoCopiloto[];
-  usuarioLogado?: { nome: string | null; papel: PapelEquipe | null } | null;
-  aoFechar: () => void;
-}) {
-  const raizRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    raizRef.current?.focus();
-    function aoTeclar(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        aoFechar();
-      }
-    }
-    document.addEventListener("keydown", aoTeclar);
-    return () => document.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar]);
-
-  return (
-    <div
-      ref={raizRef}
-      tabIndex={-1}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Transcrição da sessão"
-      className="fixed inset-0 z-50 flex flex-col gap-3 bg-papel p-4 outline-none"
-    >
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <p className="text-subtitulo font-bold text-tinta">Transcrição</p>
-        <button
-          type="button"
-          onClick={aoFechar}
-          className="min-h-11 rounded-controle border border-linha-forte px-3 text-sm font-medium text-tinta transition-colors duration-[var(--transicao-rapida)] hover:bg-papel-elevado focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--foco)]"
-        >
-          Fechar <kbd className="ml-1 text-legenda">Esc</kbd>
-        </button>
-      </div>
-      <div className="min-h-0 flex-1">
-        <PainelTranscricao segmentos={segmentos} usuarioLogado={usuarioLogado} />
-      </div>
     </div>
   );
 }

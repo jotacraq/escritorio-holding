@@ -64,6 +64,17 @@ interface SugestaoRow {
   conteudo: SugestaoCopiloto;
 }
 
+/** 🔴 FASE 13 (19/09/2026, migration 0125) — `copiloto_retrospectos`. O
+ * documento CONGELADO no encerramento copia a citação literal para dentro
+ * de `conteudo.observacoes_do_cliente[].evidencia`; sem `redigirRetrospecto
+ * DaSessao`, `carimbarSessoesSemPendencia` marcaria a sessão "limpa" com PII
+ * viva — o padrão que já falhou 2× nesta base. */
+interface RetrospectoRow {
+  sessao_id: string;
+  conteudo: { observacoes_do_cliente: Array<{ texto: string; evidencia: string | null }> } | null;
+  evidencias_redigidas_em: string | null;
+}
+
 /**
  * Cliente falso ÚNICO para todo o teste, com estado mutável em memória para
  * `configuracoes`, `sessoes_copiloto` e `sessoes_copiloto_segmentos` — o
@@ -78,8 +89,12 @@ function clienteFalso(estado: {
   sessoes: SessaoCopilotoRow[];
   segmentos: SegmentoRow[];
   sugestoes?: SugestaoRow[];
+  retrospectos?: RetrospectoRow[];
+  /** F9 — força a leitura de `copiloto_retrospectos` a falhar. */
+  falhaLeituraRetrospecto?: boolean;
 }): SupabaseClient {
   const sugestoes = estado.sugestoes ?? [];
+  const retrospectos = estado.retrospectos ?? [];
   const from = vi.fn((tabela: string): any => {
     if (tabela === "configuracoes") {
       const builder: any = {};
@@ -248,6 +263,39 @@ function clienteFalso(estado: {
       return builder;
     }
 
+    if (tabela === "copiloto_retrospectos") {
+      const builder: any = { _filtros: {} };
+      builder.select = () => builder;
+      builder.eq = (campo: string, valor: string) => {
+        builder._filtros[campo] = valor;
+        return builder;
+      };
+      builder.update = (patch: Record<string, unknown>) => {
+        builder._patch = patch;
+        return builder;
+      };
+      builder.maybeSingle = async () => {
+        // 🔴 F9: modo de FALHA. Sem ele, nenhum teste exercita o caminho de
+        // erro de `redigirRetrospectoDaSessao` — e um contador que só é
+        // afirmado como `toBe(0)` mantém a suíte verde mesmo se a redação
+        // parar de funcionar por completo.
+        if (estado.falhaLeituraRetrospecto) return { data: null, error: { message: "timeout na leitura do retrospecto" } };
+        const alvo = retrospectos.find((r) => r.sessao_id === builder._filtros.sessao_id);
+        return {
+          data: alvo ? { conteudo: alvo.conteudo, evidencias_redigidas_em: alvo.evidencias_redigidas_em } : null,
+          error: null,
+        };
+      };
+      builder.then = (resolve: (v: { data: unknown; error: unknown }) => unknown) => {
+        if (builder._patch) {
+          const alvo = retrospectos.find((r) => r.sessao_id === builder._filtros.sessao_id);
+          if (alvo) Object.assign(alvo, builder._patch);
+        }
+        return Promise.resolve(resolve({ data: null, error: null }));
+      };
+      return builder;
+    }
+
     throw new Error(`tabela inesperada no mock: ${tabela}`);
   });
   return { from } as unknown as SupabaseClient;
@@ -272,6 +320,7 @@ describe("etapaExpurgoSegmentosCopiloto", () => {
       sessoesComRedacaoParcial: 0,
       sessoesComFalhaDeRedacaoInventario: 0,
       sessoesComFalhaDeRedacaoFicha: 0,
+      sessoesComFalhaDeRedacaoRetrospecto: 0,
       pulada: "expurgo_desligado",
     });
   });
@@ -1230,3 +1279,190 @@ describe("etapaExpurgoSegmentosCopiloto — redação de evidência em inventari
   });
 });
 
+// ---------------------------------------------------------------------------
+// 🔴 FASE 13 (19/09/2026, migration 0125) — BE-5: REDAÇÃO DO RETROSPECTO.
+//
+// Por que estes testes existem: o Retrospecto COPIA a citação literal para
+// dentro de um documento CONGELADO. Redigir só `ficha_acumulada` e
+// `inventario_acumulado` limparia a ORIGEM e deixaria a CÓPIA intacta — e
+// `carimbarSessoesSemPendencia` carimbaria a sessão "expurgo concluído" com
+// PII viva. É EXATAMENTE o padrão que já falhou 2× nesta base.
+// ---------------------------------------------------------------------------
+
+function retrospectoComCitacao(sessaoId = "s1"): RetrospectoRow {
+  return {
+    sessao_id: sessaoId,
+    conteudo: {
+      observacoes_do_cliente: [
+        { texto: "Teme perder qualidade de vida", evidencia: "eu vou perder qualidade de vida" },
+        { texto: "Acha o imposto alto", evidencia: "imposto de renda e 30 por 100" },
+      ],
+    },
+    evidencias_redigidas_em: null,
+  };
+}
+
+describe("etapaExpurgoSegmentosCopiloto — redação de copiloto_retrospectos (Fase 13, BE-5)", () => {
+  it("🔴 expurgo CONCLUÍDO → a citação literal dentro do retrospecto some na MESMA passagem, e evidencias_redigidas_em é carimbado", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [retrospectoComCitacao()],
+    };
+    const r = await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+
+    expect(r.sessoesConcluidas).toBe(1);
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBe(0);
+
+    const gravado = estado.retrospectos[0];
+    // A citação SUMIU — as duas, não só a primeira.
+    expect(gravado.conteudo!.observacoes_do_cliente.every((o) => o.evidencia === null)).toBe(true);
+    // As CITAÇÕES literais exatas somem; o TEXTO parafraseado fica (é o que
+    // a máquina observou, não fala do cliente).
+    expect(JSON.stringify(gravado.conteudo)).not.toContain("eu vou perder qualidade de vida");
+    expect(JSON.stringify(gravado.conteudo)).not.toContain("30 por 100");
+    // O que a máquina OBSERVOU continua valendo — só a citação sai.
+    expect(gravado.conteudo!.observacoes_do_cliente[0].texto).toBe("Teme perder qualidade de vida");
+    // E o carimbo prova que passou.
+    expect(gravado.evidencias_redigidas_em).toBeTruthy();
+  });
+
+  it("🔴 a sessão NÃO é carimbada 'limpa' com PII viva: carimbo do expurgo e redação do retrospecto acontecem na MESMA passagem", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [retrospectoComCitacao()],
+    };
+    await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+
+    // As duas coisas verdadeiras ao mesmo tempo — nunca uma sem a outra.
+    expect(estado.sessoes[0].expurgo_segmentos_em).toBeTruthy();
+    expect(estado.retrospectos[0].evidencias_redigidas_em).toBeTruthy();
+  });
+
+  it("IDEMPOTENTE: retrospecto já redigido (evidencias_redigidas_em preenchido) não é reescrito", async () => {
+    const carimbo = "2026-09-01T00:00:00.000Z";
+    const jaRedigido: RetrospectoRow = {
+      sessao_id: "s1",
+      conteudo: { observacoes_do_cliente: [{ texto: "Teme perder qualidade de vida", evidencia: null }] },
+      evidencias_redigidas_em: carimbo,
+    };
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [jaRedigido],
+    };
+    const r = await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBe(0);
+    expect(estado.retrospectos[0].evidencias_redigidas_em).toBe(carimbo); // não foi reescrito
+  });
+
+  it("sessão SEM retrospecto (encerrada antes da Fase 13, ou kill-switch desligado) não é falha — contador fica 0", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [],
+    };
+    const r = await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+    expect(r.sessoesConcluidas).toBe(1);
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBe(0);
+  });
+
+  it("sessão SEM segmento vencido (nada a expurgar) NÃO redige o retrospecto — sem carimbo, sem redação", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(1) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(1) }], // dentro do prazo
+      retrospectos: [retrospectoComCitacao()],
+    };
+    await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+    expect(estado.retrospectos[0].evidencias_redigidas_em).toBeNull();
+    expect(estado.retrospectos[0].conteudo!.observacoes_do_cliente[0].evidencia).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 F9 (pentest Fase 13) — O CAMINHO DE FALHA DA REDAÇÃO.
+//
+// Antes disto, TODOS os testes dos 4 contadores de falha de redação
+// afirmavam `toBe(0)`. Um contador só afirmado como zero é um contador que
+// nunca foi visto subir: se `redigirRetrospectoDaSessao` parasse de
+// funcionar por completo, a suíte continuaria verde e a única pista seria um
+// campo do JSON do cron que ninguém lê.
+//
+// Estes dois testes afirmam `> 0` e travam as DUAS propriedades que importam
+// quando a redação falha: (1) o contador sobe, e (2) a sessão é carimbada
+// assim mesmo — porque o DELETE dos segmentos já commitou, e reverter o
+// carimbo faria a sessão voltar ao pool para sempre (o "squatter eterno" que
+// esta base já pagou).
+// ---------------------------------------------------------------------------
+
+describe("etapaExpurgoSegmentosCopiloto — caminho de FALHA da redação do retrospecto (F9)", () => {
+  it("🔴 redação do retrospecto FALHA → sessoesComFalhaDeRedacaoRetrospecto > 0 (o contador SOBE, não fica em 0 para sempre)", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [retrospectoComCitacao()],
+      falhaLeituraRetrospecto: true,
+    };
+    const r = await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+
+    // (1) A anomalia é VISÍVEL no resultado do cron.
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBeGreaterThan(0);
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBe(1);
+
+    // (2) O carimbo aconteceu assim mesmo — o DELETE já commitou, e desfazer
+    // o carimbo devolveria a sessão ao pool eternamente.
+    expect(r.sessoesConcluidas).toBe(1);
+    expect(estado.sessoes[0].expurgo_segmentos_em).toBeTruthy();
+
+    // (3) 🔴 E a consequência REAL, que é o motivo de o contador existir: a
+    // citação literal continua viva no retrospecto, além do prazo de
+    // retenção, sem nenhuma passagem futura para consertar sozinha.
+    expect(estado.retrospectos[0].evidencias_redigidas_em).toBeNull();
+    expect(estado.retrospectos[0].conteudo!.observacoes_do_cliente[0].evidencia).not.toBeNull();
+  });
+
+  it("falha do retrospecto NÃO contamina os contadores das outras 3 redações (são passos independentes)", async () => {
+    const estado = {
+      configs: [
+        { chave: CHAVE_EXPURGO_ATIVO, valor: true },
+        { chave: CHAVE_RETENCAO_DIAS_SEGMENTOS, valor: 7 },
+      ],
+      sessoes: [{ sessao_id: "s1", transcricao_id: "t1", expurgo_segmentos_em: null, encerrado_em: DIAS(29) } as SessaoCopilotoRow],
+      segmentos: [{ id: "seg1", sessao_id: "s1", criado_em: DIAS(30) }],
+      retrospectos: [retrospectoComCitacao()],
+      falhaLeituraRetrospecto: true,
+    };
+    const r = await etapaExpurgoSegmentosCopiloto(clienteFalso(estado));
+
+    expect(r.sessoesComFalhaDeRedacaoRetrospecto).toBe(1);
+    expect(r.sessoesComFalhaDeRedacao).toBe(0);
+    expect(r.sessoesComFalhaDeRedacaoInventario).toBe(0);
+    expect(r.sessoesComFalhaDeRedacaoFicha).toBe(0);
+  });
+});

@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   it("copiloto_sessao.ativo=false → 409 copiloto_desligado, ZERO chamada de executarEncerramentoCopiloto", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: false }, error: null });
       throw new Error(`tabela não mockada: ${t}`);
@@ -75,7 +75,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   });
 
   it("sessão já 'encerrada' SEM pendência de bot → 409 sessao_ja_encerrada, ZERO chamada de executarEncerramentoCopiloto", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -97,13 +97,18 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
       supabaseAdminMock,
       "11111111-1111-4111-8111-111111111111",
       { jornadaId: "j1", realizadaEm: null },
+      // FASE 13 — autoria do Retrospecto quando ESTA chamada tira a sessão do
+      // 'erro' e a encerra de verdade. `usuario.id` é o id do PERFIL
+      // (`perfis_equipe`), que é para onde `copiloto_retrospectos.criado_por`
+      // aponta na 0125 — nunca `auth_user_id`.
+      "perfil-1",
     );
   });
 
   // 🔴 Achado B do Fable: sessão já encerrada COM pendência de bot ganha
   // uma retentativa — não recusa cegamente.
   it("sessão já 'encerrada' COM pendência: tenta encerrarBotComRetentativa de novo, 409 mas mensagem reflete SUCESSO", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -126,7 +131,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   });
 
   it("sessão já 'encerrada' COM pendência: retentativa AINDA FALHA, mensagem NÃO afirma sucesso", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -154,7 +159,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   // `executarEncerramentoCopiloto`, que recusava `'erro'` como origem: 409
   // puro, SEM retry, sessão BRICADA.
   it("sessão em estado='erro' (nascedouro da rota do bot) ENTRA no gate de retry — não é mais ignorada", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -176,6 +181,11 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
       supabaseAdminMock,
       "11111111-1111-4111-8111-111111111111",
       { jornadaId: "j1", realizadaEm: null },
+      // FASE 13 — autoria do Retrospecto quando ESTA chamada tira a sessão do
+      // 'erro' e a encerra de verdade. `usuario.id` é o id do PERFIL
+      // (`perfis_equipe`), que é para onde `copiloto_retrospectos.criado_por`
+      // aponta na 0125 — nunca `auth_user_id`.
+      "perfil-1",
     );
     expect(resposta.status).toBe(409);
     expect(executarEncerramentoMock).not.toHaveBeenCalled();
@@ -185,7 +195,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   // verdade (fluxo completo, dentro de tentarNovamenteEncerrarBotPendente)
   // — a resposta é SUCESSO NORMAL (200), não mais um 409.
   it("sessão em estado='erro', retry com sucesso: devolve 200 com o payload de encerramento REAL (não 409)", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -226,7 +236,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   });
 
   it("sessão sem sessoes_copiloto (Fatia 1 nunca ativada) → 409 sessao_ja_encerrada (nada para encerrar)", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -241,7 +251,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   });
 
   it("executarEncerramentoCopiloto devolve encerrado:false (corrida) → 409 sessao_ja_encerrada", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -262,7 +272,7 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
   });
 
   it("caminho feliz: repassa o resultado de executarEncerramentoCopiloto para o payload HTTP", async () => {
-    exigirVePatrimonioMock.mockResolvedValue({ papel: "advogada" });
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
     supabaseServidorMock.from.mockImplementation((t: string) => {
       if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
       if (t === "sessoes_viabilidade") {
@@ -279,6 +289,9 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
       transcricaoId: "transcricao-1",
       jaExistiaTranscricao: false,
       sugestoesExpiradas: 2,
+      // FASE 13 — o retrospecto vem PRONTO de `executarEncerramentoCopiloto`
+      // (gravado lá dentro); a rota só repassa. O POP-UP é decisão da tela.
+      retrospecto: { sessao_id: "sessao-1", blocos_com_atividade: 9, blocos_no_roteiro: 13 },
     });
 
     const resposta = await POST(requisicao(), PARAMS);
@@ -291,11 +304,49 @@ describe("POST /api/sessoes/[id]/copiloto/encerrar", () => {
       transcricao_id: "transcricao-1",
       ja_existia_transcricao: false,
       sugestoes_expiradas: 2,
+      retrospecto: { sessao_id: "sessao-1", blocos_com_atividade: 9, blocos_no_roteiro: 13 },
     });
     expect(executarEncerramentoMock).toHaveBeenCalledWith(
       supabaseServidorMock,
       supabaseAdminMock,
-      { sessaoId: "11111111-1111-4111-8111-111111111111", sessao: { jornadaId: "j1", realizadaEm: "2026-09-11T10:00:00Z" } },
+      {
+        sessaoId: "11111111-1111-4111-8111-111111111111",
+        sessao: { jornadaId: "j1", realizadaEm: "2026-09-11T10:00:00Z" },
+        // `usuario.id` = id do PERFIL (`perfis_equipe`), para onde
+        // `copiloto_retrospectos.criado_por` aponta na 0125.
+        criadoPor: "perfil-1",
+      },
     );
+  });
+
+  it("🔴 retrospecto NULL (kill-switch desligado ou montagem falhou) → 200 normal com `retrospecto: null`, nunca um documento vazio", async () => {
+    exigirVePatrimonioMock.mockResolvedValue({ id: "perfil-1", papel: "advogada" });
+    supabaseServidorMock.from.mockImplementation((t: string) => {
+      if (t === "configuracoes") return consultaEncadeavel({ data: { valor: true }, error: null });
+      if (t === "sessoes_viabilidade") {
+        return consultaEncadeavel({
+          data: { id: "sessao-1", jornada_id: "j1", realizada_em: null, sessoes_copiloto: { estado: "ativo" } },
+          error: null,
+        });
+      }
+      throw new Error(`tabela não mockada: ${t}`);
+    });
+    executarEncerramentoMock.mockResolvedValue({
+      encerrado: true,
+      encerradoEm: "2026-09-11T14:00:00.000Z",
+      transcricaoId: "transcricao-1",
+      jaExistiaTranscricao: false,
+      sugestoesExpiradas: 0,
+      retrospecto: null,
+    });
+
+    const resposta = await POST(requisicao(), PARAMS);
+    expect(resposta.status).toBe(200);
+    const corpo = await resposta.json();
+    // O encerramento continua VÁLIDO — é o retrospecto que falta, e a tela
+    // sabe disso pelo `null` explícito (stub rotulado, nunca zeros).
+    expect(corpo.estado).toBe("encerrado");
+    expect(corpo.transcricao_id).toBe("transcricao-1");
+    expect(corpo.retrospecto).toBeNull();
   });
 });

@@ -372,8 +372,8 @@ describe("montarEstadoCopiloto — zero leitura extra por ciclo (aceite explíci
       // 5 `configuracoes` no total (correção da 3ª rodada, achado do Fable:
       // a 2ª rodada tinha deixado 7, 2 A MAIS que o HEAD anterior). As 4
       // leituras de `resolverBlocoAtual` (histerese, unitárias) + 1 ÚNICA
-      // chamada de `lerConfiguracoesEmLote` — que resolve as 5 flags
-      // booleanas (inclui `rodape_transcricao`/`realce_insight_novo`),
+      // chamada de `lerConfiguracoesEmLote` — que resolve as 6 flags
+      // booleanas (inclui `saude_captura`/`retrospecto_ativo`/`realce_insight_novo`),
       // `ficha_teto_fixos` (json) e as 2 chaves de silêncio (int) na MESMA
       // `select ... in(...)` — TODAS no MESMO `Promise.all`, nenhuma
       // sequencial em relação às outras. Se este teste subir para 6+
@@ -1136,23 +1136,57 @@ describe("montarEstadoCopiloto — ficha do cliente no payload (migration 0122)"
     expect(resultado.ficha).toBeNull();
   });
 
-  it("realce_insight_novo/rodape_transcricao vêm no payload (achado do Fable: o front já lia estas 2 chaves, o servidor nunca as enviava)", async () => {
+  it("realce_insight_novo vem no payload (achado do Fable: o front já lia a chave, o servidor nunca a enviava)", async () => {
     const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }), undefined, {
-      configuracoes: {
-        "copiloto_sessao.realce_insight_novo": false,
-        "copiloto_sessao.rodape_transcricao": false,
-      },
+      configuracoes: { "copiloto_sessao.realce_insight_novo": false },
     });
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
     expect(resultado.realce_insight_novo).toBe(false);
-    expect(resultado.rodape_transcricao).toBe(false);
   });
 
-  it("realce_insight_novo/rodape_transcricao caem no padrão de fábrica (true) quando a chave não está configurada", async () => {
+  it("realce_insight_novo cai no padrão de fábrica (true) quando a chave não está configurada", async () => {
     const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
     const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
     expect(resultado.realce_insight_novo).toBe(true);
-    expect(resultado.rodape_transcricao).toBe(true);
+  });
+
+  // FASE 13 (19/09/2026, migration 0125, BE-6) — `rodape_transcricao` SAIU do
+  // payload: a chave foi deprecada porque o nome passou a mentir (o rodapé
+  // não tem mais transcrição). No lugar entram DUAS chaves novas, as duas
+  // FAIL-CLOSED — o oposto de `realce_insight_novo` acima, e é de propósito.
+  it("saude_captura/retrospecto_ativo vêm no payload com o valor configurado", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }), undefined, {
+      configuracoes: {
+        "copiloto_sessao.saude_captura": true,
+        "copiloto_sessao.retrospecto_ativo": true,
+      },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.saude_captura).toBe(true);
+    expect(resultado.retrospecto_ativo).toBe(true);
+  });
+
+  it("🔴 FAIL-CLOSED: chave AUSENTE → saude_captura e retrospecto_ativo vêm FALSE (nunca o padrão de fábrica do banco)", async () => {
+    // A 0125 cria as duas chaves com `true`. A AUSÊNCIA delas significa
+    // "migration não aplicada" — estado de defeito, e defeito não liga
+    // feature. Se alguém trocar o `padrao` do lote para `true`, este teste
+    // quebra: é essa a função dele.
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }));
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.saude_captura).toBe(false);
+    expect(resultado.retrospecto_ativo).toBe(false);
+  });
+
+  it("🔴 FAIL-CLOSED: chave configurada como FALSE continua false", async () => {
+    const supabase = montarSupabase(sessaoBase({ sessoes_copiloto: null }), undefined, {
+      configuracoes: {
+        "copiloto_sessao.saude_captura": false,
+        "copiloto_sessao.retrospecto_ativo": false,
+      },
+    });
+    const resultado = await montarEstadoCopiloto(supabase, "sessao-1", 0);
+    expect(resultado.saude_captura).toBe(false);
+    expect(resultado.retrospecto_ativo).toBe(false);
   });
 
   it("silencio_atencao_s/silencio_alerta_s vêm no payload com os valores configurados", async () => {

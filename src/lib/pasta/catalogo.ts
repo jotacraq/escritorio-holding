@@ -60,6 +60,7 @@ export type ChaveItemPasta =
   | "analise_sessao"
   | "diagnostico_sv"
   | "relatorio_sv"
+  | "retrospecto_sv"
   | "croqui"
   | "material"
   | "patrimonio"
@@ -91,6 +92,17 @@ export const CATALOGO_PASTA: ItemCatalogoPasta[] = [
   // Ver nota de bloqueio no topo de `derivar.ts` — sempre 'ainda_nao' por ora.
   { chave: "diagnostico_sv", rotulo: rotulo("diagnostico"), titulo: `${titleDe("diagnostico")} · ${rotulo("sessao_viabilidade")}`, procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
   { chave: "relatorio_sv", rotulo: "Relatório", procedencia: "produzido", dono: "advogada", requerPatrimonio: true },
+  // Fase 13 (§D.1) — **"Retrospecto", nunca "Relatório".** `relatorio_sv`
+  // logo acima é o documento que a Dra. Elaine PREENCHE à mão
+  // (`relatorios_sessao`, `RelatorioAba.tsx`); este é o fechamento do
+  // COPILOTO, gerado pela máquina e congelado no encerramento da sessão.
+  // Dois "Relatório" na mesma aba da Ficha seria ambiguidade permanente, e a
+  // regra do CLAUDE.md é literal nos dois sentidos: não invente sinônimo, e
+  // não reuse um nome já ocupado para uma coisa nova.
+  // `procedencia: "gerado_ia"` porque é produzido pela máquina (a v1 é
+  // derivada do que a sessão já gravou, sem chamada de IA nova — a
+  // procedência descreve quem produz, não qual motor).
+  { chave: "retrospecto_sv", rotulo: "Retrospecto", titulo: `Retrospecto da ${rotulo("sessao_viabilidade")}`, procedencia: "gerado_ia", dono: "equipe", requerPatrimonio: true },
   { chave: "croqui", rotulo: "Croqui", procedencia: "gerado_ia", dono: "advogada", requerPatrimonio: true },
   { chave: "material", rotulo: "Material", procedencia: "gerado_ia", dono: "sistema", requerPatrimonio: false },
   { chave: "patrimonio", rotulo: "Patrimônio", procedencia: "produzido", dono: "equipe", requerPatrimonio: true },
@@ -120,6 +132,7 @@ export const SESSAO_POR_ITEM: Record<ChaveItemPasta, ChaveSessao> = {
   analise_sessao: "croqui",
   diagnostico_sv: "croqui",
   relatorio_sv: "croqui",
+  retrospecto_sv: "croqui",
   croqui: "croqui",
   material: "croqui",
   patrimonio: "croqui",

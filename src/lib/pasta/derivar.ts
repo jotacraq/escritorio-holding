@@ -56,8 +56,29 @@ export function derivarPasta(ficha: Ficha360, podeVerPatrimonio: boolean): ItemP
 export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPatrimonio: boolean): ItemPasta[] {
   const sessaoRealizada = Boolean(sinais.sessaoRealizadaEm);
   const temAgendamentoAtivo = sinais.proximaSessaoEm !== null;
-  const temAnaliseSessao = ficha.timeline.some((e) => e.tipo === "analise_sessao");
-  const temTranscricao = ficha.timeline.some((e) => e.tipo === "transcricao");
+  // 🔴 OS TRÊS SINAIS DE TIMELINE FICAM ATRÁS DE `podeVerPatrimonio`, e isso
+  // é GUARDA, não redundância (achado BAIXO do pentest da Fase 13, 19/09;
+  // espelha o achado MÉDIO de 04/09 que pôs a mesma guarda em
+  // `jornadas/[id]/page.tsx:229`).
+  //
+  // Os três (`analise_sessao`, `transcricao`, `retrospecto`) leem
+  // `eventos_timeline`, que a RLS expõe por `eh_interno()` — recorte mais
+  // LARGO que o `ve_patrimonio()` que os três itens correspondentes exigem.
+  // Sem a guarda, um papel `relacionamento` enxerga a EXISTÊNCIA de
+  // artefatos cujo conteúdo não pode ver.
+  //
+  // Hoje o filtro de `requerPatrimonio` no fim desta função já barraria os
+  // três itens — e é exatamente por isso que a guarda entra aqui: proteção
+  // que depende de um segundo filtro, sem estar escrita, é a que quebra
+  // quando alguém mexe no filtro depois. A guarda fica na LEITURA, junto do
+  // fato, e vale para a classe inteira: dois vizinhos idênticos sem ela
+  // sugeririam que a diferença é intencional.
+  const temAnaliseSessao = podeVerPatrimonio && ficha.timeline.some((e) => e.tipo === "analise_sessao");
+  const temTranscricao = podeVerPatrimonio && ficha.timeline.some((e) => e.tipo === "transcricao");
+  // ⚠️ Enquanto o backend não gravar o evento `retrospecto`, o item nunca
+  // aparece como `pronto` — e é assim que tem de degradar: "nunca inventar
+  // `pronto`" (§D.6). Nada aqui simula existência.
+  const temRetrospecto = podeVerPatrimonio && ficha.timeline.some((e) => e.tipo === "retrospecto");
   // Lei de texto (§2): a nota de `ainda_nao` já sai do fluxo e vira `title`
   // (`PastaDoCliente`), mas continua sendo lida em voz alta e por quem passa o
   // mouse — então também encolhe. "Só depois da sessão" diz o mesmo que a
@@ -126,6 +147,16 @@ export function derivarPastaDeSinais(ficha: Ficha360, sinais: Sinais, podeVerPat
     // acontecido (o relatório é da Sessão de Viabilidade).
     relatorio_sv: () => {
       if (sinais.temRelatorio) return { estado: "pronto" };
+      if (!sessaoRealizada) return { estado: "ainda_nao", nota: SO_DEPOIS_DA_SESSAO };
+      return { estado: "falta" };
+    },
+
+    // Requer patrimônio: o corpo carrega objeção/dor/desejo com citação
+    // literal de família real — o mesmo recorte de `copiloto_sugestoes`.
+    // Pré-requisito é a sessão ter acontecido: o retrospecto é o fechamento
+    // do copiloto, e antes da sessão não há copiloto nenhum para fechar.
+    retrospecto_sv: () => {
+      if (temRetrospecto) return { estado: "pronto" };
       if (!sessaoRealizada) return { estado: "ainda_nao", nota: SO_DEPOIS_DA_SESSAO };
       return { estado: "falta" };
     },

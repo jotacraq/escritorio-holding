@@ -318,7 +318,7 @@ html[data-escala="grande"] {
    tentativa fez isso e o shell leu o default para sempre: a tela continuou
    limitada, com o vão intacto. `:has()` lê para cima e resolve. */
 @media (min-width: 1024px) {
-  main:has(> .largura-cheia) > * {
+  main:has(.largura-cheia) > * {
     max-width: none;
   }
 }
@@ -341,9 +341,44 @@ html[data-escala="grande"] {
    que sobra da coluna `flex-col` do `AppShell` no mobile (viewport menos o
    cabeçalho `sticky`) — sem precisar de um número mágico de altura de
    cabeçalho recalculado à mão. */
-main:has(> .largura-cheia) {
+main:has(.largura-cheia) {
   padding: 0;
   min-height: 0;
+}
+
+/* CORRECAO MEDIDA (Fase 13, 19/09/2026) — as duas regras acima diziam
+   `:has(> .largura-cheia)` e NUNCA CASARAM: `.largura-cheia` (marcada no
+   `layout.tsx` de `/sessoes/[id]/conduzir`) nao e filha DIRETA do `<main>`;
+   entre os dois existe o `<div class="mx-auto w-full max-w-7xl">` que o
+   `AppShell` sempre desenhou em volta de `{children}` (`AppShell.tsx:238`).
+   O combinador `>` derrubava as duas.
+
+   Medido em Chromium (1536x826, modo normal, HEAD e92d322, ANTES desta
+   correcao): `main` com `padding: 24px` e `min-height: auto`, a tela ainda
+   limitada a `max-w-7xl` (o "vao branco" que a regra existia para matar),
+   e — o pior — a cadeia de altura QUEBRADA: o wrapper `mx-auto` tem altura
+   `auto`, entao o `h-full` de `ConduzirSessaoApp` resolvia para `auto`
+   tambem, o `minmax(0,1fr)` do mosaico virava `max-content` e a pagina
+   rolava: `documentElement.scrollHeight` 970 contra `clientHeight` 826 na
+   escala Padrao, 1207 contra 826 na Grande. "Encerrar copiloto desta
+   sessao" ficava 58px (padrao) a 344px (grande) ABAIXO da dobra.
+
+   A tela so ficava travada em `.modo-tela-cheia-sessao`, porque AQUELE
+   seletor (`body:has(.modo-tela-cheia-sessao) main`) e descendente e casa.
+
+   `height: 100%` no wrapper e a outra metade: sem ela, zerar o padding nao
+   devolve altura nenhuma para o `h-full` do filho descer. Fora de
+   `/conduzir` nada muda — `.largura-cheia` marca EXCLUSIVAMENTE esta rota.
+
+   Sao DOIS niveis, nao um: `main > div.mx-auto` (AppShell) e o proprio
+   `div.largura-cheia` (layout da rota). Uma altura percentual so resolve
+   quando TODO ancestral da cadeia tem altura definida — parar no primeiro
+   deixa o segundo em `auto` e o `minmax(0,1fr)` do mosaico volta a ser
+   `max-content`. Medido: com so o primeiro nivel, 1536x826 padrao ainda
+   rolava (mosaico 627). */
+main:has(.largura-cheia) > * ,
+.largura-cheia {
+  height: 100%;
 }
 
 /* Tema verde ESCOPADO à rota /sessoes/[id]/conduzir (Fase 12, revogação de

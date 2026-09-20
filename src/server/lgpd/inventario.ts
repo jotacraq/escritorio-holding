@@ -86,6 +86,38 @@ export const INVENTARIO_TITULAR: readonly DescritorInventario[] = [
   { tabela: "links_publicos", rotulo: "Links públicos emitidos", por: "jornada" },
   { tabela: "documentos_pedidos", rotulo: "Documentos pedidos", por: "jornada" },
   { tabela: "transcricoes", rotulo: "Transcrições de reunião", por: "jornada" },
+  // 🔴 A FAMÍLIA DO COPILOTO (achado F1 do pentest da Fase 13, 19/09/2026;
+  // escopo ampliado por decisão do João no mesmo dia: não só a tabela nova,
+  // as QUATRO). Todas nasceram DEPOIS da 0081, que foi a última vez que esta
+  // lista e a `anonimizar_titular` foram alinhadas — por isso nenhuma estava
+  // aqui, e por isso um titular que exercesse o art. 18 recebia menos do que
+  // o sistema realmente guarda dele.
+  //
+  // As quatro chegam ao titular por `sessao_id` (a Sessão de Viabilidade),
+  // nunca por `pessoa_id`: é a sessão que pertence à jornada que pertence à
+  // pessoa. `copiloto_retrospectos` também tem `jornada_id`, mas entra por
+  // `sessao` como as irmãs — uma chave só para a família inteira.
+  //
+  // Nenhuma é `interna: true`: o que está guardado aqui é FALA DO TITULAR
+  // (transcrição bruta, citação literal de dor/objeção/desejo, inventário de
+  // bens que ele declarou em voz alta). A LEITURA que a IA fez em cima disso
+  // é anotação do escritório — mas o insumo é dele, e é ele quem tem direito
+  // de saber que existe. `copiloto_sugestoes` carrega as duas coisas no mesmo
+  // jsonb (`conteudo`), e na dúvida entre "interna" e "do titular" a regra da
+  // casa manda mostrar.
+  { tabela: "sessoes_copiloto", rotulo: "Sessões do copiloto ao vivo", por: "sessao" },
+  { tabela: "sessoes_copiloto_segmentos", rotulo: "Falas transcritas na sessão", por: "sessao" },
+  {
+    tabela: "copiloto_sugestoes",
+    rotulo: "Sugestões do copiloto durante a sessão",
+    por: "sessao",
+    // A sugestão é a LEITURA da IA sobre a condução — anotação do escritório.
+    // A `evidencia` dentro dela é citação literal do titular, mas não há como
+    // separar por coluna: `conteudo` é um jsonb só. Marcado como interno com
+    // o aviso próprio, que é o tratamento honesto para conteúdo misto.
+    camposInternos: ["conteudo"],
+  },
+  { tabela: "copiloto_retrospectos", rotulo: "Retrospectos da Sessão de Viabilidade", por: "sessao" },
   { tabela: "pesquisas_publicas", rotulo: "Pesquisas em fontes públicas", por: "jornada" },
   { tabela: "relatorios_sessao", rotulo: "Relatórios da sessão", por: "sessao" },
   // Saídas de IA sobre o titular, penduradas no croqui e na transcrição. Não

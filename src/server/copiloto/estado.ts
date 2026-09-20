@@ -254,10 +254,24 @@ export interface EstadoCopilotoCompleto extends EstadoCopiloto {
    * componente aplica o realce incondicionalmente"). Sempre presente
    * (nunca opcional aqui — é este módulo que fecha a lacuna). */
   realce_insight_novo: boolean;
-  /** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — mesma disciplina
-   * de `realce_insight_novo` acima: a migration criou a chave, esta
-   * correção é quem primeiro a devolve no payload. */
-  rodape_transcricao: boolean;
+  /** SAÚDE DA CAPTURA (19/09/2026, Fase 13, migration 0125) — kill-switch
+   * `copiloto_sessao.saude_captura`. SUBSTITUI `rodape_transcricao` (0122),
+   * DEPRECADA porque o nome passou a mentir: depois da Fase 13 o rodapé não
+   * tem mais transcrição nenhuma (o overlay saiu, a transcrição virou aba da
+   * COL 3). O que sobra no rodapé é o SINAL — indicador tricolor + última
+   * fala, 1 linha, sempre visível em qualquer aba.
+   *
+   * 🔴 FAIL-CLOSED (`padrao: false` no lote abaixo), ao contrário de
+   * `realce_insight_novo`: chave ausente ⇒ o indicador some. A 0125 nasce
+   * com `true`; a AUSÊNCIA da chave significa "migration não aplicada", que
+   * é estado de defeito — e defeito não liga feature. */
+  saude_captura: boolean;
+  /** RETROSPECTO DA SESSÃO (19/09/2026, Fase 13, migration 0125) —
+   * kill-switch `copiloto_sessao.retrospecto_ativo`, no MESMO lote (zero ida
+   * a mais ao banco). A tela usa isto para saber se deve esperar o campo
+   * `retrospecto` na resposta de encerrar e se deve oferecer "Ver
+   * retrospecto". FAIL-CLOSED pelo mesmo motivo de `saude_captura`. */
+  retrospecto_ativo: boolean;
   /** SILÊNCIO NA SALA (18/09/2026, migration 0122) — segundos para os
    * níveis ATENÇÃO/ALERTA do indicador de `RodapeTranscricao.tsx`. Sempre
    * presentes (nunca `null`): a chave sempre tem padrão de fábrica válido,
@@ -295,14 +309,29 @@ const CHAVE_FICHA_CLIENTE_ATIVA = "copiloto_sessao.ficha_cliente";
  * viewport. */
 const CHAVE_FICHA_TETO_FIXOS = "copiloto_sessao.ficha_teto_fixos";
 
-/** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — nasce `true`
- * (reorganização de UI sobre dado que já existe, não capacidade nova a
- * testar com cautela; ver comentário da 0122). Entra no MESMO lote de
- * `lerConfiguracoesEmLote` que as demais chaves desta função — nenhuma ida a
- * mais ao banco. `false` esconde o rodapé (decisão do dono, 3ª rodada: a aba
- * própria que existia antes, `ColunaTranscricaoInventario`, foi REMOVIDA
- * neste mesmo diff — não há layout anterior para voltar). */
-const CHAVE_RODAPE_TRANSCRICAO_ATIVO = "copiloto_sessao.rodape_transcricao";
+/** SAÚDE DA CAPTURA (19/09/2026, Fase 13, migration 0125) — a chave que
+ * SUBSTITUI `copiloto_sessao.rodape_transcricao` (0122).
+ *
+ * 🔴 A chave antiga NÃO É MAIS LIDA POR NENHUM CÓDIGO a partir desta
+ * entrega (BE-6): a linha em `configuracoes` continua lá, com a `descricao`
+ * atualizada pela 0125 dizendo que está deprecada — histórico se preserva,
+ * `ativo=false` em vez de `delete` é a regra da casa. O motivo da troca de
+ * nome é que o nome passaria a MENTIR: depois da Fase 13 o rodapé não tem
+ * transcrição nenhuma (o `OverlayTranscricao` saiu e a transcrição virou aba
+ * da COL 3). O que a chave liga agora é o INDICADOR DE SAÚDE da captura.
+ *
+ * Entra no MESMO lote de `lerConfiguracoesEmLote` que as demais chaves desta
+ * função — nenhuma ida a mais ao banco. Padrão `false` (fail-CLOSED, ver o
+ * comentário do campo `saude_captura` em `EstadoCopilotoCompleto`). */
+const CHAVE_SAUDE_CAPTURA_ATIVA = "copiloto_sessao.saude_captura";
+
+/** RETROSPECTO DA SESSÃO (19/09/2026, Fase 13, migration 0125) — kill-switch
+ * da gravação no encerramento, da rota `GET .../retrospecto` e do pop-up.
+ * Entra no MESMO lote (zero ida a mais). Padrão `false`, fail-CLOSED: a
+ * ausência da chave é "migration não aplicada", não "pode ligar". Mesma
+ * constante é lida por `server/copiloto/retrospecto.ts::retrospectoEstaAtivo`
+ * no caminho de escrita — uma chave, dois consumidores, mesmo padrão. */
+const CHAVE_RETROSPECTO_ATIVO = "copiloto_sessao.retrospecto_ativo";
 
 /** REALCE DE INSIGHT NOVO (17/09, migration 0115) — nasce `true`. MESMA
  * chave que `usePollingCopiloto.ts:356` já consome
@@ -881,7 +910,8 @@ export async function montarEstadoCopiloto(
       [CHAVE_INVENTARIO_MENCIONADO_ATIVO]: { tipo: "bool", padrao: true },
       [CHAVE_RESUMO_ACUMULADO_ATIVO]: { tipo: "bool", padrao: false },
       [CHAVE_FICHA_CLIENTE_ATIVA]: { tipo: "bool", padrao: false },
-      [CHAVE_RODAPE_TRANSCRICAO_ATIVO]: { tipo: "bool", padrao: true },
+      [CHAVE_SAUDE_CAPTURA_ATIVA]: { tipo: "bool", padrao: false },
+      [CHAVE_RETROSPECTO_ATIVO]: { tipo: "bool", padrao: false },
       [CHAVE_REALCE_INSIGHT_NOVO_ATIVO]: { tipo: "bool", padrao: true },
       [CHAVE_FICHA_TETO_FIXOS]: { tipo: "json", padrao: null as number | null },
       [CHAVE_SILENCIO_ATENCAO_S]: { tipo: "int", padrao: PADRAO_SILENCIO_ATENCAO_S },
@@ -891,7 +921,8 @@ export async function montarEstadoCopiloto(
   const inventarioMencionadoAtivo = config[CHAVE_INVENTARIO_MENCIONADO_ATIVO];
   const resumoAcumuladoAtivo = config[CHAVE_RESUMO_ACUMULADO_ATIVO];
   const fichaClienteAtiva = config[CHAVE_FICHA_CLIENTE_ATIVA];
-  const rodapeTranscricaoAtivo = config[CHAVE_RODAPE_TRANSCRICAO_ATIVO];
+  const saudeCapturaAtiva = config[CHAVE_SAUDE_CAPTURA_ATIVA];
+  const retrospectoAtivo = config[CHAVE_RETROSPECTO_ATIVO];
   const realceInsightNovoAtivo = config[CHAVE_REALCE_INSIGHT_NOVO_ATIVO];
   // Descarta o valor lido quando a Ficha está desligada — a leitura já
   // aconteceu no mesmo lote, só o USO permanece condicional.
@@ -970,7 +1001,8 @@ export async function montarEstadoCopiloto(
       fichaTetoFixos,
     ),
     realce_insight_novo: realceInsightNovoAtivo,
-    rodape_transcricao: rodapeTranscricaoAtivo,
+    saude_captura: saudeCapturaAtiva,
+    retrospecto_ativo: retrospectoAtivo,
     silencio_atencao_s: config[CHAVE_SILENCIO_ATENCAO_S],
     silencio_alerta_s: config[CHAVE_SILENCIO_ALERTA_S],
   };

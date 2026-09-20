@@ -202,6 +202,11 @@ export const PASSO_POR_CHAVE: Record<ChavePasso, ChaveTrilho | null> = {
   analise_sessao: "sessao",
   diagnostico_sv: "sessao",
   relatorio_sv: "croqui", // o pós-sessão empurra a família para o croqui
+  // Fase 13 — o Retrospecto é o fechamento do COPILOTO daquela sessão: no
+  // trilho ele pertence ao passo da sessão, como `analise_sessao`.
+  // (`derivarProximoPasso` nunca DEVOLVE esta chave — retrospecto não é uma
+  // ação a fazer, nasce do encerramento —, mas o Record é exaustivo.)
+  retrospecto_sv: "sessao",
   croqui: "croqui",
   material: "croqui",
   patrimonio: "croqui",

@@ -825,16 +825,29 @@ export interface EstadoCopilotoComPolling extends EstadoCopiloto {
    * sem quebrar nenhum teste existente. `false` explícito é a ÚNICA forma
    * de desligar. */
   realce_insight_novo?: boolean;
-  /** RODAPÉ DE TRANSCRIÇÃO (18/09/2026, migration 0122) — kill-switch
-   * `copiloto_sessao.rodape_transcricao` (nasce `true`). MESMA disciplina de
-   * `realce_insight_novo` acima: até esta correção (achado do Fable) a
-   * migration criava a chave, mas nenhuma rota a devolvia —
-   * `PainelCopiloto.tsx` sempre exibia o rodapé, equivalente ao default
-   * `true` do banco (comentário de topo daquele componente). Campo
-   * OPCIONAL pelo mesmo motivo dos demais desta interface: contrato novo
-   * por composição, `undefined` tem o MESMO efeito de `true` (o padrão de
-   * fábrica), sem quebrar teste existente. */
-  rodape_transcricao?: boolean;
+  /** SAÚDE DA CAPTURA (19/09/2026, Fase 13, migration 0125) — kill-switch
+   * `copiloto_sessao.saude_captura`. SUBSTITUI `rodape_transcricao` (0122),
+   * que foi DEPRECADA porque o nome passaria a mentir: depois da Fase 13 o
+   * rodapé não tem mais transcrição nenhuma (o `OverlayTranscricao` saiu, a
+   * transcrição virou aba da COL 3). O que sobra no rodapé é o SINAL — ponto
+   * tricolor 🟢 ouvindo / 🟡 sem áudio / 🔴 sem captura + última fala, 1
+   * linha, sempre visível em qualquer aba.
+   *
+   * 🔴 FAIL-CLOSED, ao contrário de `realce_insight_novo` acima: `undefined`
+   * (chave ausente, migration ainda não aplicada, leitura de config falhou)
+   * significa **`false`** — o indicador simplesmente não aparece. NUNCA
+   * escreva `saude_captura ?? true`. A chave nasce `true` na 0125; a
+   * ausência dela é um estado de DEFEITO, e defeito não liga feature. */
+  saude_captura?: boolean;
+  /** RETROSPECTO DA SESSÃO (19/09/2026, Fase 13, migration 0125) —
+   * kill-switch `copiloto_sessao.retrospecto_ativo`. Desligado: o
+   * encerramento volta a ser exatamente o que era antes da Fase 13 (sem
+   * gravar retrospecto, sem pop-up, e `GET .../retrospecto` recusa com
+   * `retrospecto_desligado`). Caminho de volta em 1 comando.
+   *
+   * 🔴 FAIL-CLOSED pelo mesmo motivo de `saude_captura`: `undefined` ⇒
+   * `false`. Nunca `?? true`. */
+  retrospecto_ativo?: boolean;
   /** SILÊNCIO NA SALA (18/09/2026, migration 0122) — segundos de silêncio
    * para os níveis ATENÇÃO/ALERTA de `RodapeTranscricao.tsx`. Até esta
    * correção (achado do Fable) o componente usava 2 CONSTANTES FIXAS
@@ -866,6 +879,23 @@ export interface RespostaEncerrarCopiloto {
   transcricao_id: string | null;
   ja_existia_transcricao: boolean;
   sugestoes_expiradas: number;
+  /** FASE 13 (19/09/2026) — o Retrospecto da Sessão, montado e gravado
+   * DENTRO do encerramento, em TODOS os caminhos (clique, `duracao_maxima_
+   * minutos`, retomada de sessão em `erro`). O pop-up só abre no
+   * encerramento MANUAL — isso é decisão da TELA, não deste payload.
+   *
+   * `null` significa exatamente uma de três coisas, e a tela precisa
+   * distinguir stub rotulado de documento real:
+   *   - `copiloto_sessao.retrospecto_ativo` desligado (ou ausente —
+   *     fail-closed): a fase inteira está desligada;
+   *   - a montagem FALHOU (o `try/catch` de `executarEncerramentoCopiloto`
+   *     nunca deixa isso derrubar o encerramento — a sessão encerra assim
+   *     mesmo, mesma disciplina de `tirarBotDaSalaSeHouver`);
+   *   - corrida perdida no `on conflict do nothing` sem releitura.
+   * Em qualquer um dos casos a tela mostra "não foi possível montar o
+   * retrospecto desta sessão" — NUNCA um retrospecto vazio disfarçado de
+   * retrospecto real. */
+  retrospecto: RetrospectoDaSessao | null;
 }
 
 /** `sessao_ja_encerrada` é o caso normal de clicar duas vezes — 409, nunca
@@ -1114,3 +1144,221 @@ export interface InventarioParaPainel {
    * tipo não assume isso). */
   recentes: ItemInventarioRecentePainel[];
 }
+
+// ---------------------------------------------------------------------------
+// FASE 13 (19/09/2026) — RETROSPECTO DA SESSÃO. Tabela `copiloto_retrospectos`
+// (migration 0125), montagem em `server/copiloto/retrospecto.ts`, leitura por
+// `GET /api/sessoes/[id]/copiloto/retrospecto`.
+//
+// 🔴 NÃO É O "RELATÓRIO DA SV". `relatorios_sessao` / `RelatorioAba.tsx` /
+// item de pasta `relatorio_sv` (Glossario.md) é o documento que a Dra. Elaine
+// PREENCHE À MÃO. O Retrospecto é o fechamento do COPILOTO: o que a máquina
+// observou enquanto a sessão acontecia, congelado no instante em que ela
+// terminou. É gerado, não preenchido; é imutável (PK = `sessao_id`: encerrar
+// duas vezes não gera dois).
+//
+// 🔴 NÃO EXISTE NOTA 0-10 na v1, e isso é uma DECISÃO MEDIDA, não uma
+// omissão: os dois campos que a 0119 criou para julgar a condução estão
+// vazios em produção (`cobriu_no_bloco` = 11 itens em 369 sugestões, em 1 de
+// 3 sessões; `desfecho` = 366 `expirada` de 369 = 99,2%). Uma nota construída
+// sobre isso daria um número plausível e FALSO — o padrão já catalogado de
+// "buraco virando número plausível". O que existe medido e é auditável é
+// COBERTURA: partes do roteiro em que o copiloto registrou atividade, sobre o
+// total de partes DAQUELE roteiro. Medido em 19/09 nas 3 sessões reais:
+// 4/13, 9/13, 6/13.
+// ---------------------------------------------------------------------------
+
+/** `copiloto_retrospectos.origem` (CHECK no banco). `derivado` = calculado
+ * do que a sessão já gravou, ZERO chamada de IA (a v1 inteira). `ia` = fora
+ * da v1; o valor existe para a ponte ligar sem migration nova (mesma técnica
+ * de `croqui_analises.schema_versao`, 0043). */
+export type OrigemRetrospecto = "derivado" | "ia";
+
+/** Uma parte do roteiro em que o copiloto NÃO registrou nenhuma sugestão —
+ * o complemento auditável da cobertura. `indice` é a posição no roteiro
+ * (0-based), para a tela poder listar na ordem do script sem reordenar. */
+export interface BlocoNaoPercorridoRetrospecto {
+  id: string;
+  titulo: string;
+  indice: number;
+}
+
+/** O "score rate" da v1 — FRAÇÃO, nunca nota. Os dois campos vêm SEMPRE
+ * separados (nunca só um percentual): "9 de 13 partes" é conferível por quem
+ * olha a `BarraPartes` da tela; "69%" esconde o denominador. */
+export interface CoberturaRetrospecto {
+  /** `count(distinct copiloto_sugestoes.bloco_id)` da sessão, contando SÓ
+   * blocos que existem no roteiro daquela sessão (id órfão não infla). */
+  blocos_com_atividade: number;
+  /** Total de blocos do roteiro DAQUELA sessão (`sessoes_viabilidade.
+   * roteiro_versao_id`), com o MESMO fallback para o roteiro ativo que
+   * `estado.ts`/`contexto.ts` já aplicam quando a FK é nula. Nunca o roteiro
+   * ativo "de hoje" quando a sessão declarou outro. */
+  blocos_no_roteiro: number;
+  nao_percorridos: BlocoNaoPercorridoRetrospecto[];
+}
+
+/** Fato, não estimativa: os dois carimbos de `sessoes_copiloto` e a diferença
+ * entre eles. `minutos` é `null` quando falta qualquer um dos dois — vazio é
+ * vazio, nunca zero. */
+export interface DuracaoRetrospecto {
+  iniciado_em: string | null;
+  encerrado_em: string | null;
+  minutos: number | null;
+}
+
+/** O que foi captado de patrimônio — o MESMO `resumirInventario()` que já
+ * alimenta a IA e o painel (zero lógica nova). `null` quando a sessão não
+ * acumulou nenhum item (vazio é vazio, nunca um objeto de zeros). Medido nas
+ * 3 sessões reais: 0 · 31 · 70 itens. */
+export interface PatrimonioRetrospecto {
+  total_itens_proprios: number;
+  total_itens_incertos: number;
+  por_categoria: ResumoCategoriaInventario[];
+}
+
+/** Uma observação sobre o CLIENTE, vinda de uma das duas fontes que a sessão
+ * já gravou. Nenhuma é escrita agora: são as que a IA produziu DURANTE a
+ * sessão, com evidência conferida na hora. */
+export interface ObservacaoDoClienteRetrospecto {
+  /** `ficha` = `sessoes_copiloto.ficha_acumulada` (+ inventário próprio
+   * combinado, exatamente como `ordenarFicha` já entrega ao painel).
+   * `observacao` = `copiloto_sugestoes.conteudo.observacao`. */
+  origem: "ficha" | "observacao";
+  /** Só em `origem:"ficha"` — objecao/dor/desejo/fato_decisor/patrimonio, na
+   * ordem de negócio do dono (`ficha.ts::RANK_CATEGORIA`). `null` em
+   * `origem:"observacao"`. */
+  categoria: CategoriaFichaCliente | "patrimonio" | null;
+  /** Só em `origem:"observacao"` — a separação `fato · hipótese · inferência
+   * · recomendação` que a regra da casa exige da IA, cumprida de graça
+   * porque o campo já nasce assim. `null` em `origem:"ficha"`. */
+  tipo: TipoObservacaoCopiloto | null;
+  texto: string;
+  /** Citação LITERAL da fala do cliente — a PII mais pesada deste documento.
+   * `null` depois que `server/copiloto/expurgo.ts::redigirRetrospectoDaSessao`
+   * passa (o carimbo é `copiloto_retrospectos.evidencias_redigidas_em`), e
+   * `null` desde o nascimento quando a fonte já estava redigida. */
+  evidencia: string | null;
+  /** Quantas vezes o MESMO fato foi registrado na sessão. */
+  n: number;
+  /** Só em `origem:"observacao"` (a IA declara confiança por observação).
+   * `null` em `origem:"ficha"`. */
+  confianca: number | null;
+}
+
+/** Ponto de melhoria da CONDUÇÃO. 🔴 NÃO é a IA opinando agora sobre a
+ * advogada: é o que ela apontou DURANTE a sessão (`falta_no_bloco[].item`) e
+ * que NUNCA apareceu em `cobriu_no_bloco` na mesma sessão. Sem `evidencia`
+ * de propósito — o `item` é a descrição do que faltou perguntar, não uma
+ * citação do cliente; carregar a citação aqui seria PII sem função. */
+export interface PontoDeMelhoriaRetrospecto {
+  item: string;
+  /** Em quantas sugestões distintas a IA apontou este mesmo item. */
+  n: number;
+  /** Bloco da ocorrência mais recente — `null` quando a sugestão não tinha
+   * `bloco_id`, ou quando o id não existe no roteiro daquela sessão. */
+  bloco_id: string | null;
+  bloco_titulo: string | null;
+}
+
+/** "Dá para confiar neste retrospecto?" — responde antes de o dono
+ * perguntar. Tudo em NUMERADOR + DENOMINADOR, nunca percentual pronto
+ * (denominador explícito é regra da casa). */
+export interface SaudeMotorRetrospecto {
+  /** Denominador de tudo abaixo: sugestões gravadas nesta sessão. */
+  sugestoes: number;
+  /** Média de `copiloto_sugestoes.confianca`. `null` quando não há nenhuma
+   * sugestão com confiança gravada (vazio é vazio, nunca 0). */
+  confianca_media: number | null;
+  /** Sugestões com pelo menos 1 item em `campos_evidencia_nao_conferida` —
+   * saúde da IA, não da condução. Medido em 19/09: 223 de 369 (60,4%). */
+  sugestoes_com_evidencia_nao_conferida: number;
+  /** Execuções do prompt `copiloto_sessao` DESTA jornada dentro da janela da
+   * sessão — TODAS, não só as que viraram sugestão.
+   *
+   * 🔴 NÃO é `count(distinct copiloto_sugestoes.execucao_ia_id)`, e a
+   * diferença é o ponto inteiro deste par de campos: quando o modelo estoura
+   * o teto de saída, o JSON quebra, a sugestão é descartada e NENHUMA linha
+   * de `copiloto_sugestoes` aponta para aquela execução. Medido em
+   * 19/09/2026: pelo lado das sugestões dá 0 truncadas nas 3 sessões reais;
+   * pelo recorte correto (jornada + janela + prompt) dá 0, 49 e 16.
+   *
+   * `null` = janela desconhecida (falta `iniciado_em`/`encerrado_em`), então
+   * não foi possível medir. A tela mostra "—", NUNCA 0 — vazio é vazio. */
+  execucoes_ia: number | null;
+  /** Dessas, quantas o modelo cortou por teto de saída (`execucoes_ia.
+   * stop_reason` em `max_tokens`/`length`). Medido em 19/09 na v7: 49 de 299
+   * (16,4%) — o `CONTINUAR-AQUI.md` afirmava 0, e estava errado. `null` pelo
+   * mesmo motivo de `execucoes_ia`. */
+  execucoes_truncadas: number | null;
+}
+
+/** `copiloto_retrospectos.conteudo` (jsonb, CHECK de 32 KB no banco). jsonb e
+ * não colunas porque a v2 vai acrescentar seções e a forma ainda vai mudar —
+ * mas com teto, MESMO backstop de `resumo_acumulado`/`ficha_acumulada`
+ * (0091/0120/0122). */
+export interface ConteudoRetrospecto {
+  /** Casa com `copiloto_retrospectos.schema_versao`. */
+  versao: 1;
+  cobertura: CoberturaRetrospecto;
+  duracao: DuracaoRetrospecto;
+  patrimonio: PatrimonioRetrospecto | null;
+  observacoes_do_cliente: ObservacaoDoClienteRetrospecto[];
+  pontos_de_melhoria: PontoDeMelhoriaRetrospecto[];
+  saude_do_motor: SaudeMotorRetrospecto;
+  /** `true` quando a poda por bytes cortou item para caber no CHECK de 32 KB
+   * — a tela DIZ que cortou, nunca omite em silêncio. */
+  podado: boolean;
+  /** A frase que o documento carrega no rodapé, congelada junto com o resto:
+   * por que NÃO há nota de 0 a 10 nesta versão. Fica no jsonb (e não numa
+   * constante da tela) porque o Retrospecto é um artefato CONGELADO — o que
+   * ele diz é o que ele dizia no dia em que foi gerado. */
+  nota_de_rodape: string;
+}
+
+/** Uma linha de `copiloto_retrospectos`, como a rota e o encerramento
+ * devolvem. */
+export interface RetrospectoDaSessao {
+  sessao_id: string;
+  jornada_id: string;
+  origem: OrigemRetrospecto;
+  schema_versao: number;
+  /** Repetidos fora do `conteudo` porque são COLUNAS no banco (com CHECK) —
+   * a fração é consultável por SQL sem abrir o jsonb. Sempre iguais aos de
+   * `conteudo.cobertura`. */
+  blocos_com_atividade: number;
+  blocos_no_roteiro: number;
+  conteudo: ConteudoRetrospecto;
+  /** `null` = o `conteudo` ainda tem citação literal. Timestamp = o expurgo
+   * já redigiu (`expurgo.ts::redigirRetrospectoDaSessao`). */
+  evidencias_redigidas_em: string | null;
+  criado_em: string;
+}
+
+/** Recusas estáveis de `GET /api/sessoes/[id]/copiloto/retrospecto` — todas
+ * como `{ erro, mensagem }`, nunca 500, nunca 200 com corpo vazio. */
+export type CodigoRecusaRetrospecto =
+  /** `copiloto_sessao.ativo=false` — mesmo contrato das outras rotas do copiloto. */
+  | "copiloto_desligado"
+  /** `copiloto_sessao.retrospecto_ativo=false` (ou a chave ausente —
+   * fail-closed). O kill-switch desliga a gravação E a leitura. */
+  | "retrospecto_desligado"
+  /** Não existe retrospecto para esta sessão — 404 COM código, nunca 200 com
+   * um documento vazio disfarçado de documento real.
+   *
+   * 🔴 Desde a D-2 (19/09/2026) este código ficou RARO: quando a sessão está
+   * encerrada e a linha não existe, o `GET` REMONTA o documento sob demanda
+   * (`remontarRetrospectoSeEncerrada`) antes de desistir. Sobra para sessão
+   * que nunca foi encerrada, ou cuja remontagem também falhou. */
+  | "retrospecto_nao_encontrado"
+  /** 🔴 D-1 (19/09/2026) — a linha EXISTE, mas o corpo foi esvaziado pela
+   * anonimização do titular (migration 0127, LGPD art. 18): `conteudo` virou
+   * `{}` e não tem `versao`. Não é erro e não é "sumiu": é o art. 18
+   * funcionando.
+   *
+   * A tela deve dizer que o tratamento daquele titular foi encerrado — nunca
+   * tentar renderizar o corpo (`conteudo.cobertura.x` sobre `{}` é
+   * TypeError, que era exatamente o crash que a D-1 fechou no servidor) e
+   * nunca oferecer "tentar de novo", porque não há o que remontar: as fontes
+   * foram zeradas junto. */
+  | "retrospecto_indisponivel";
