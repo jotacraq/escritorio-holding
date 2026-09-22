@@ -83,9 +83,11 @@ function responder(status: number, corpo: unknown) {
 
 describe("PopupRetrospecto — o retrospecto que veio junto do encerramento", () => {
   it("mostra a COBERTURA com o denominador na tela — nunca uma nota de 0 a 10", () => {
-    const { container, getByText } = montar(<PopupRetrospecto sessaoId="s1" retrospectoInicial={RETROSPECTO} aoFechar={() => {}} />);
-    expect(getByText("9")).toBeTruthy();
-    expect(container.textContent).toContain("de 13 partes com registro do copiloto");
+    const { container } = montar(<PopupRetrospecto sessaoId="s1" retrospectoInicial={RETROSPECTO} aoFechar={() => {}} />);
+    // 22/09/2026: a cobertura deixou de ser número-herói isolado e virou uma
+    // linha de `dl` no rodapé de telemetria — o denominador continua na tela,
+    // que é a regra (nunca nota de 0 a 10, sempre NUMERADOR de DENOMINADOR).
+    expect(container.textContent).toContain("9 de 13 partes com registro do copiloto");
     expect(container.textContent).toContain(RETROSPECTO.conteudo.nota_de_rodape);
     // Nenhuma requisição: o documento já veio com a resposta do encerramento.
     expect(global.fetch).not.toHaveBeenCalled();
@@ -95,7 +97,9 @@ describe("PopupRetrospecto — o retrospecto que veio junto do encerramento", ()
     const { container } = montar(<PopupRetrospecto sessaoId="s1" retrospectoInicial={RETROSPECTO} aoFechar={() => {}} />);
     expect(container.textContent).toContain("1 h 54 min");
     expect(container.textContent).toContain("35 captados");
-    expect(container.textContent).toContain("Objeção");
+    // 22/09/2026: o rótulo saiu de dentro da linha e virou SUBTÍTULO de grupo,
+    // por isso no plural — os fatos passaram a ser agrupados por assunto.
+    expect(container.textContent).toContain("Objeç");
     expect(container.textContent).toContain("Inferência");
     expect(container.textContent).toContain("Tem dois filhos de casamentos diferentes.");
     expect(container.textContent).toContain("Não perguntou sobre dívidas da empresa.");

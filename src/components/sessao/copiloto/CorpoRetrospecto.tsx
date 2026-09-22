@@ -6,6 +6,7 @@ import type {
   TipoObservacaoCopiloto,
 } from "@/types/copiloto";
 import { formatarDataHora } from "@/lib/formatar";
+import { colapsarObservacoes, type ObservacaoColapsada } from "./colapsarObservacoes";
 
 /**
  * Fase 13, §D — **o corpo do Retrospecto da Sessão, um só, em dois
@@ -38,21 +39,52 @@ import { formatarDataHora } from "@/lib/formatar";
  * extenso; nunca 0, nunca percentual de um denominador que não veio. Toda
  * proporção aparece como NUMERADOR de DENOMINADOR ("223 de 369"), nunca como
  * porcentagem pronta — mesma disciplina da cobertura.
+ *
+ * ---
+ *
+ * 🔴 **ORDEM DAS SEÇÕES, revista em 22/09 a pedido do dono** ("tá muito feio,
+ * confuso, a disposição dos dados fica confusa"). A causa não era CSS: o
+ * documento dava o MESMO peso visual à telemetria do sistema e aos fatos
+ * sobre a cliente, e não existe hierarquia possível entre "confiança média
+ * 0,70" e "ela quer evitar inventário para os dois filhos". A ordem hoje:
+ *
+ *  1. **O que a cliente disse** — o documento abre pelos fatos dela, agrupados
+ *     por assunto. É o que a advogada vem ler.
+ *  2. **Pontos de melhoria da condução** — o que ficou por perguntar.
+ *  3. **Registro do sistema** — cobertura, duração, patrimônio captado e saúde
+ *     do motor, juntos, em letra miúda, no pé. Continuam auditáveis e
+ *     continuam inteiros; só deixam de disputar a atenção com o conteúdo.
+ *
+ * Hierarquia por POSIÇÃO e por peso de texto — sem card, sem ícone, sem
+ * sombra, sem cor de estado. Este documento abre DEPOIS que a sessão acabou:
+ * ninguém o lê de relance, então a exceção visual da tela `/conduzir` ao vivo
+ * **não vale aqui** (decisão de 18/09, escopo fechado em uma tela).
  */
 
-const ROTULO_CATEGORIA_FICHA: Record<CategoriaFichaCliente | "patrimonio", string> = {
-  objecao: "Objeção",
-  dor: "Dor",
-  desejo: "Desejo",
-  fato_decisor: "Fato",
+/** Subtítulo de GRUPO — plural, porque encabeça uma lista.
+ *
+ * Substitui o `ROTULO_CATEGORIA_FICHA` singular que existia aqui: o rótulo
+ * saiu de dentro de cada linha e virou o cabeçalho do grupo, então a forma
+ * singular deixou de ter chamador. A ORDEM das chaves é irrelevante para a
+ * tela — quem manda na ordem é o servidor (`RANK_CATEGORIA`), e
+ * `agruparObservacoes` só a preserva. */
+const TITULO_GRUPO_FICHA: Record<CategoriaFichaCliente | "patrimonio", string> = {
+  objecao: "Objeções",
+  dor: "Dores",
+  desejo: "Desejos",
+  fato_decisor: "Fatos do decisor",
   patrimonio: "Patrimônio",
 };
 
-const ROTULO_TIPO_OBSERVACAO: Record<TipoObservacaoCopiloto, string> = {
-  fato: "Fato",
-  hipotese: "Hipótese",
-  inferencia: "Inferência",
-  recomendacao: "Recomendação",
+/** Subtítulo de grupo das observações da IA (substitui o
+ * `ROTULO_TIPO_OBSERVACAO` singular, pelo mesmo motivo do de categoria). A separação `fato · hipótese ·
+ * inferência · recomendação` é regra da casa: a IA nunca mistura o que foi
+ * dito com o que ela deduziu, e o agrupamento torna isso visível de uma vez. */
+const TITULO_GRUPO_OBSERVACAO: Record<TipoObservacaoCopiloto, string> = {
+  fato: "Fatos observados pelo copiloto",
+  hipotese: "Hipóteses do copiloto",
+  inferencia: "Inferências do copiloto",
+  recomendacao: "Recomendações do copiloto",
 };
 
 const ROTULO_CATEGORIA_INVENTARIO: Record<string, string> = {
@@ -71,105 +103,86 @@ function formatarDuracao(minutos: number | null): string | null {
   return horas === 0 ? `${resto} min` : `${horas} h ${String(resto).padStart(2, "0")} min`;
 }
 
+/** Um grupo de fatos com o mesmo assunto, pronto para desenhar. */
+interface GrupoObservacoes {
+  chave: string;
+  titulo: string;
+  itens: ObservacaoColapsada[];
+}
+
+/**
+ * Agrupa por assunto **preservando a ordem de chegada do servidor**.
+ *
+ * 🔴 O servidor entrega objeção › dor › desejo › fato_decisor › patrimônio
+ * (`ficha.ts::RANK_CATEGORIA`) e só depois as observações da IA. Esta função
+ * NÃO ordena nada: ela abre um grupo na primeira vez que vê cada assunto e
+ * anexa os demais ali. O resultado herda a ordem do servidor exatamente —
+ * reordenar aqui seria uma segunda regra de negócio na tela, divergindo da do
+ * dono.
+ */
+function agruparObservacoes(observacoes: ObservacaoDoClienteRetrospecto[]): GrupoObservacoes[] {
+  const grupos: GrupoObservacoes[] = [];
+  const porChave = new Map<string, ObservacaoDoClienteRetrospecto[]>();
+
+  for (const o of observacoes) {
+    const chave = o.categoria !== null ? `categoria:${o.categoria}` : o.tipo !== null ? `tipo:${o.tipo}` : "outros";
+    const existente = porChave.get(chave);
+    if (existente === undefined) {
+      const lista = [o];
+      porChave.set(chave, lista);
+      grupos.push({ chave, titulo: tituloDoGrupo(o), itens: [] });
+    } else {
+      existente.push(o);
+    }
+  }
+
+  // O colapso roda DENTRO de cada grupo, já homogêneo.
+  return grupos.map((g) => ({ ...g, itens: colapsarObservacoes(porChave.get(g.chave) ?? []) }));
+}
+
+function tituloDoGrupo(o: ObservacaoDoClienteRetrospecto): string {
+  if (o.categoria !== null) return TITULO_GRUPO_FICHA[o.categoria];
+  if (o.tipo !== null) return TITULO_GRUPO_OBSERVACAO[o.tipo];
+  return "Outras observações";
+}
+
 export function CorpoRetrospecto({ retrospecto }: { retrospecto: RetrospectoDaSessao }) {
   const { conteudo } = retrospecto;
   const cobertura = conteudo.cobertura;
   const duracao = formatarDuracao(conteudo.duracao.minutos);
   const patrimonio = conteudo.patrimonio;
-  const observacoes = conteudo.observacoes_do_cliente;
   const melhorias = conteudo.pontos_de_melhoria;
+  const grupos = agruparObservacoes(conteudo.observacoes_do_cliente);
 
   return (
     <div className="flex flex-col gap-cartao text-tinta">
-      {/* ------------------------------------------------------ cobertura */}
-      <section aria-labelledby="retrospecto-cobertura" className="flex flex-col gap-2">
-        <h3 id="retrospecto-cobertura" className="text-rotulo font-bold uppercase tracking-wide text-tinta-fraca">
-          Cobertura do roteiro
-        </h3>
-        <p>
-          <span className="text-titulo font-bold tabular-nums">{cobertura.blocos_com_atividade}</span>
-          <span className="ml-1.5 text-corpo text-tinta-suave">
-            de {cobertura.blocos_no_roteiro} {cobertura.blocos_no_roteiro === 1 ? "parte" : "partes"} com registro do
-            copiloto
-          </span>
-        </p>
-        {cobertura.nao_percorridos.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <p className="text-rotulo font-semibold text-tinta-fraca">Partes sem registro nesta sessão</p>
-            <ul className="flex flex-col gap-0.5">
-              {cobertura.nao_percorridos.map((parte) => (
-                <li key={parte.id} className="text-sm text-tinta-suave">
-                  {parte.titulo}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-
-      {/* ---------------------------------------------------- fatos da sessão */}
-      <section aria-labelledby="retrospecto-fatos" className="flex flex-col gap-2 border-t border-linha pt-cartao">
-        <h3 id="retrospecto-fatos" className="text-rotulo font-bold uppercase tracking-wide text-tinta-fraca">
-          A sessão
-        </h3>
-        <dl className="flex flex-col gap-1 text-sm">
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-tinta-suave">Duração</dt>
-            <dd className={duracao === null ? "text-tinta-suave" : "font-semibold tabular-nums"}>
-              {duracao ?? "não registrada"}
-            </dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-tinta-suave">Patrimônio captado</dt>
-            <dd className={patrimonio === null ? "text-tinta-suave" : "font-semibold tabular-nums"}>
-              {patrimonio === null ? (
-                "nenhum item mencionado"
-              ) : (
-                <>
-                  {patrimonio.total_itens_proprios + patrimonio.total_itens_incertos} captados
-                  {patrimonio.total_itens_incertos > 0 && (
-                    <span className="ml-1.5 font-normal text-tinta-fraca">
-                      · {patrimonio.total_itens_incertos} a confirmar
-                    </span>
-                  )}
-                </>
-              )}
-            </dd>
-          </div>
-        </dl>
-        {patrimonio !== null && patrimonio.por_categoria.length > 0 && (
-          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-legenda text-tinta-suave">
-            {patrimonio.por_categoria.map((c) => (
-              <li key={c.categoria} className="tabular-nums">
-                {ROTULO_CATEGORIA_INVENTARIO[c.categoria] ?? c.categoria}: {c.contagem_propria}
-                {c.contagem_incerta > 0 && <> · {c.contagem_incerta} a confirmar</>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* ---------------------------------------------- observações do cliente */}
-      <section aria-labelledby="retrospecto-observacoes" className="flex flex-col gap-2 border-t border-linha pt-cartao">
+      {/* ============================================ 1. o que a cliente disse
+        * Primeiro, porque é o que a advogada vem ler. Antes ficava em 3º,
+        * embaixo de duas seções de telemetria. */}
+      <section aria-labelledby="retrospecto-observacoes" className="flex flex-col gap-3">
         <h3 id="retrospecto-observacoes" className="text-rotulo font-bold uppercase tracking-wide text-tinta-fraca">
-          Observações sobre o cliente
+          O que a cliente disse
         </h3>
-        {observacoes.length === 0 ? (
+        {grupos.length === 0 ? (
           <p className="text-sm text-tinta-suave">Nenhuma observação registrada durante a sessão.</p>
         ) : (
-          // Ordem do SERVIDOR, sem reordenar: ele já entrega objeção › dor ›
-          // desejo › fato › patrimônio (a hierarquia de negócio do dono) e só
-          // depois as observações da IA. Reordenar aqui seria uma segunda
-          // regra de negócio na tela, divergindo da do servidor.
-          <ul className="flex flex-col gap-2.5">
-            {observacoes.map((o, i) => (
-              <ItemObservacao key={i} observacao={o} />
-            ))}
-          </ul>
+          grupos.map((grupo) => (
+            <section key={grupo.chave} aria-labelledby={`retrospecto-grupo-${grupo.chave}`} className="flex flex-col gap-1">
+              {/* h4: filho do h3 da seção — nível coerente, sem pular. */}
+              <h4 id={`retrospecto-grupo-${grupo.chave}`} className="text-rotulo font-semibold text-tinta-suave">
+                {grupo.titulo}
+              </h4>
+              <ul className="flex flex-col gap-2">
+                {grupo.itens.map((item, i) => (
+                  <ItemObservacao key={`${grupo.chave}-${i}`} item={item} />
+                ))}
+              </ul>
+            </section>
+          ))
         )}
       </section>
 
-      {/* ------------------------------------------------ pontos de melhoria */}
+      {/* ================================== 2. pontos de melhoria da condução */}
       <section aria-labelledby="retrospecto-melhorias" className="flex flex-col gap-2 border-t border-linha pt-cartao">
         <h3 id="retrospecto-melhorias" className="text-rotulo font-bold uppercase tracking-wide text-tinta-fraca">
           Pontos de melhoria da condução
@@ -191,15 +204,74 @@ export function CorpoRetrospecto({ retrospecto }: { retrospecto: RetrospectoDaSe
         )}
       </section>
 
-      {/* --------------------------------------------------- saúde do motor */}
-      <section aria-labelledby="retrospecto-motor" className="flex flex-col gap-1 border-t border-linha pt-cartao">
-        <h3 id="retrospecto-motor" className="text-legenda font-semibold uppercase tracking-wide text-tinta-fraca">
-          Saúde do motor nesta sessão
+      {/* ==================================== 3. registro do sistema (rodapé)
+        * Cobertura, duração, patrimônio captado e saúde do motor, JUNTOS e em
+        * letra miúda. Nada foi removido — tudo continua auditável, e toda
+        * proporção continua NUMERADOR de DENOMINADOR. O que mudou é o peso:
+        * telemetria não disputa mais a atenção com o que a cliente disse. */}
+      <section aria-labelledby="retrospecto-sistema" className="flex flex-col gap-2 border-t border-linha pt-cartao">
+        <h3 id="retrospecto-sistema" className="text-legenda font-semibold uppercase tracking-wide text-tinta-fraca">
+          Registro do sistema
         </h3>
+
+        <dl className="flex flex-col gap-0.5 text-legenda">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-tinta-fraca">Cobertura do roteiro</dt>
+            <dd className="tabular-nums text-tinta-suave">
+              {cobertura.blocos_com_atividade} de {cobertura.blocos_no_roteiro}{" "}
+              {cobertura.blocos_no_roteiro === 1 ? "parte" : "partes"} com registro do copiloto
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-tinta-fraca">Duração</dt>
+            <dd className={duracao === null ? "text-tinta-fraca" : "tabular-nums text-tinta-suave"}>
+              {duracao ?? "não registrada"}
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-tinta-fraca">Patrimônio captado</dt>
+            <dd className={patrimonio === null ? "text-tinta-fraca" : "tabular-nums text-tinta-suave"}>
+              {patrimonio === null ? (
+                "nenhum item mencionado"
+              ) : (
+                <>
+                  {patrimonio.total_itens_proprios + patrimonio.total_itens_incertos} captados
+                  {patrimonio.total_itens_incertos > 0 && <> · {patrimonio.total_itens_incertos} a confirmar</>}
+                </>
+              )}
+            </dd>
+          </div>
+        </dl>
+
+        {patrimonio !== null && patrimonio.por_categoria.length > 0 && (
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-legenda text-tinta-fraca">
+            {patrimonio.por_categoria.map((c) => (
+              <li key={c.categoria} className="tabular-nums">
+                {ROTULO_CATEGORIA_INVENTARIO[c.categoria] ?? c.categoria}: {c.contagem_propria}
+                {c.contagem_incerta > 0 && <> · {c.contagem_incerta} a confirmar</>}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {cobertura.nao_percorridos.length > 0 && (
+          <div className="flex flex-col gap-0.5">
+            <p className="text-legenda text-tinta-fraca">Partes sem registro nesta sessão</p>
+            <ul className="flex flex-col">
+              {cobertura.nao_percorridos.map((parte) => (
+                <li key={parte.id} className="text-legenda text-tinta-suave">
+                  {parte.titulo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Responde "dá para confiar neste retrospecto?" antes de alguém
          * perguntar — e por isso vem discreto, no rodapé, nunca disputando
          * com o conteúdo. */}
         <LinhasDoMotor saude={conteudo.saude_do_motor} />
+
         {conteudo.podado && (
           <p className="text-legenda text-tinta-suave">
             Parte do conteúdo foi cortada por tamanho — o documento diz que cortou, em vez de omitir em silêncio.
@@ -217,32 +289,35 @@ export function CorpoRetrospecto({ retrospecto }: { retrospecto: RetrospectoDaSe
   );
 }
 
-/** Um fato sobre o cliente. O rótulo sai da CATEGORIA quando veio da Ficha
- * (objeção/dor/desejo/fato/patrimônio) e do TIPO quando veio de uma
- * observação da IA (fato/hipótese/inferência/recomendação) — os dois campos
- * são mutuamente exclusivos por contrato, e a separação existe porque a
- * regra da casa exige que a IA nunca misture o que foi dito com o que ela
- * deduziu. */
-function ItemObservacao({ observacao }: { observacao: ObservacaoDoClienteRetrospecto }) {
-  const rotulo =
-    observacao.categoria !== null
-      ? ROTULO_CATEGORIA_FICHA[observacao.categoria]
-      : observacao.tipo !== null
-        ? ROTULO_TIPO_OBSERVACAO[observacao.tipo]
-        : null;
-
+/**
+ * Um fato sobre a cliente, já colapsado.
+ *
+ * O rótulo de categoria/tipo NÃO se repete por item: ele virou o subtítulo do
+ * grupo. Antes cada linha carregava "OBJEÇÃO"/"DOR" na frente, e com a lista
+ * corrida isso era ruído repetido a cada linha.
+ *
+ * **Toda evidência das linhas colapsadas fica na tela**, empilhada sob o item.
+ * Nunca se descarta citação em silêncio — quando N linhas viram uma, as N
+ * citações continuam ali, e a contagem de linhas colapsadas é dita por
+ * extenso.
+ */
+function ItemObservacao({ item }: { item: ObservacaoColapsada }) {
   return (
     <li className="flex flex-col gap-0.5">
       <p className="text-sm text-tinta">
-        {rotulo !== null && (
-          <span className="mr-1.5 text-legenda font-bold uppercase tracking-wide text-tinta-fraca">{rotulo}</span>
-        )}
-        {observacao.texto}
-        {observacao.n > 1 && <span className="ml-1.5 text-legenda tabular-nums text-tinta-fraca">dito {observacao.n}×</span>}
+        {item.texto}
+        {item.n > 1 && <span className="ml-1.5 text-legenda tabular-nums text-tinta-fraca">dito {item.n}×</span>}
       </p>
-      {observacao.evidencia !== null && (
-        <p className="text-legenda italic text-tinta-fraca">&ldquo;{observacao.evidencia}&rdquo;</p>
+      {item.linhas > 1 && (
+        <p className="text-legenda text-tinta-fraca">
+          {item.linhas} registros do copiloto reunidos aqui — as citações de todos estão abaixo.
+        </p>
       )}
+      {item.evidencias.map((evidencia, i) => (
+        <p key={i} className="text-legenda italic text-tinta-fraca">
+          &ldquo;{evidencia}&rdquo;
+        </p>
+      ))}
     </li>
   );
 }
@@ -265,7 +340,7 @@ function LinhasDoMotor({ saude }: { saude: SaudeMotorRetrospecto }) {
 
   return (
     <>
-      <p className="text-legenda tabular-nums text-tinta-suave">{partes.join(" · ")}</p>
+      <p className="text-legenda tabular-nums text-tinta-fraca">{partes.join(" · ")}</p>
       {saude.execucoes_ia === null && (
         <p className="text-legenda text-tinta-fraca">
           Respostas truncadas: não foi possível medir nesta sessão (falta o início ou o fim registrado).
